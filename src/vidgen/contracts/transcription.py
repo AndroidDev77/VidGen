@@ -194,6 +194,29 @@ class TranscriptionResult(StrictContract):
         return self
 
 
+class CanonicalTranscriptArtifact(StrictContract):
+    schema_version: Literal["1.0"] = "1.0"
+    project_id: UUID
+    run_id: UUID
+    transcript_id: UUID
+    source_video_id: UUID
+    source_audio_asset_id: UUID
+    language: str | None = None
+    text: str
+    segments: list[TranscriptSegment]
+    speaker_turns: list[SpeakerTurn]
+    coverage: TranscriptCoverage
+    warnings: list[TranscriptionWarning] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def validate_order(self) -> CanonicalTranscriptArtifact:
+        if [item.sequence for item in self.segments] != list(range(len(self.segments))):
+            raise ValueError("transcript segment sequences must be contiguous and ordered")
+        if [item.sequence for item in self.speaker_turns] != list(range(len(self.speaker_turns))):
+            raise ValueError("speaker turn sequences must be contiguous and ordered")
+        return self
+
+
 def _validate_timed_order(items: list[TranscriptWord], label: str) -> None:
     starts = [item.start_seconds for item in items]
     if starts != sorted(starts):
