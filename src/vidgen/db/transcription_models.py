@@ -19,6 +19,7 @@ from sqlalchemy import (
 from sqlalchemy import text as sql_text
 from sqlalchemy.orm import Mapped, mapped_column
 
+import vidgen.db.subtitle_models  # noqa: F401
 from vidgen.db.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
 
 
@@ -109,8 +110,11 @@ class Transcript(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     project_id: Mapped[UUID] = mapped_column(
         ForeignKey("projects.id", ondelete="CASCADE"), nullable=False, index=True
     )
-    run_id: Mapped[UUID] = mapped_column(
-        ForeignKey("transcription_runs.id", ondelete="CASCADE"), nullable=False, unique=True
+    run_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("transcription_runs.id", ondelete="CASCADE"), nullable=True, unique=True
+    )
+    subtitle_run_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("subtitle_runs.id", ondelete="CASCADE"), nullable=True, unique=True
     )
     version: Mapped[int] = mapped_column(Integer, nullable=False)
     language: Mapped[str | None] = mapped_column(String(32))
@@ -129,6 +133,11 @@ class Transcript(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         CheckConstraint("version > 0", name="version_positive"),
         CheckConstraint("duration_seconds > 0", name="duration_positive"),
         CheckConstraint("coverage_score BETWEEN 0 AND 1", name="coverage_score_range"),
+        CheckConstraint(
+            "(run_id IS NOT NULL AND subtitle_run_id IS NULL) OR "
+            "(run_id IS NULL AND subtitle_run_id IS NOT NULL)",
+            name="exactly_one_origin_run",
+        ),
         Index(
             "uq_transcripts_selected_project",
             "project_id",

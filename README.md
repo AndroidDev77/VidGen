@@ -2,7 +2,7 @@
 
 VidGen is an automated, restartable pipeline for turning long-form video into animated comedy recap videos.
 
-This repository implements roadmap tasks T01 through T07:
+This repository implements roadmap tasks T01 through T07 plus subtitle-first transcript acquisition:
 
 - Python monorepo, CI, and local infrastructure
 - Versioned Pydantic contracts plus exported JSON Schema
@@ -12,6 +12,7 @@ This repository implements roadmap tasks T01 through T07:
 - Owner-scoped resumable source-video uploads
 - Deterministic FFmpeg media probing, audio extraction, scene detection, and frame extraction
 - Restartable transcription, overlap reconciliation, and anonymous speaker diarization
+- Embedded, sidecar, and OpenSubtitles acquisition with audio-transcription fallback
 
 ## Quick start
 
@@ -89,3 +90,28 @@ least 98 percent voiced-audio coverage.
 
 Overlap reconciliation requires timestamp agreement for text matches and preserves distinct-time
 repeated dialogue when provider chunks disagree.
+
+## Subtitle-first transcript acquisition
+
+Configure `VIDGEN_OPENSUBTITLES_API_KEY` and optionally the matching username and password, then
+run:
+
+```bash
+uv run python scripts/acquire_transcript.py PROJECT_UUID
+```
+
+The command checks embedded text subtitle tracks first, then sidecar assets, then performs an
+OpenSubtitles movie-hash search with title/episode fallback. An adequate subtitle is normalized
+into the same selected canonical transcript tables used by T07. If none passes validation, the
+command falls back to the configured OpenAI transcription provider.
+
+For deterministic local verification with no network or paid calls:
+
+```bash
+uv run python scripts/acquire_transcript.py PROJECT_UUID \
+  --subtitle-provider fake --transcription-provider fake
+```
+
+Set `VIDGEN_SUBTITLE_SYNC_ENABLED=true` when the optional `ffsubsync` command is installed to
+audio-align downloaded provider subtitles and include its offset and correlation in candidate
+ranking. Embedded extraction stays FFmpeg-only; MKVToolNix is not required.

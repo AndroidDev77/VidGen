@@ -253,3 +253,104 @@ export interface CanonicalTranscriptArtifact {
   coverage: TranscriptCoverage;
   warnings: TranscriptionWarning[];
 }
+
+export type SubtitleSourceType = "embedded" | "sidecar" | "provider";
+
+export interface SubtitleCue {
+  schema_version: "1.0";
+  sequence: number;
+  start_seconds: number;
+  end_seconds: number;
+  text: string;
+  speaker_hint: string | null;
+}
+
+export interface SubtitleCandidate {
+  schema_version: "1.0";
+  candidate_id: string;
+  source_type: SubtitleSourceType;
+  provider: string;
+  provider_subtitle_id: string | null;
+  provider_file_id: number | null;
+  asset_id: UUID | null;
+  stream_index: number | null;
+  language: string | null;
+  subtitle_format: string;
+  hearing_impaired: boolean;
+  forced: boolean;
+  release_name: string | null;
+  file_name: string | null;
+  fps: number | null;
+  download_count: number;
+  metadata: Record<string, unknown>;
+}
+
+export interface SubtitleQuality {
+  schema_version: "1.0";
+  candidate_id: string;
+  score: number;
+  cue_count: number;
+  timeline_coverage: number;
+  voiced_coverage: number | null;
+  sync_offset_seconds: number | null;
+  sync_correlation: number | null;
+  passed: boolean;
+  reasons: string[];
+}
+
+export interface SubtitleSearchRequest {
+  schema_version: "1.0";
+  idempotency_key: string;
+  movie_hash: string | null;
+  byte_size: number | null;
+  query: string | null;
+  imdb_id: string | null;
+  season_number: number | null;
+  episode_number: number | null;
+  languages: string[];
+}
+
+export interface ProviderSubtitleDownload {
+  schema_version: "1.0";
+  candidate_id: string;
+  provider: string;
+  provider_request_id: string;
+  file_name: string;
+  media_type: string;
+  content: string;
+  remaining_downloads: number | null;
+}
+
+export interface CanonicalSubtitleTranscriptArtifact {
+  schema_version: "1.0";
+  project_id: UUID;
+  subtitle_run_id: UUID;
+  transcript_id: UUID;
+  source_video_id: UUID;
+  source_subtitle_asset_id: UUID;
+  language: string | null;
+  text: string;
+  segments: TranscriptSegment[];
+  coverage: TranscriptCoverage;
+  candidate: SubtitleCandidate;
+  quality: SubtitleQuality;
+  warnings: TranscriptionWarning[];
+}
+
+export interface SubtitleImportResult {
+  schema_version: "1.0";
+  project_id: UUID;
+  subtitle_run_id: UUID;
+  transcript_id: UUID;
+  source_video_id: UUID;
+  source_subtitle_asset_id: UUID;
+  transcript_asset_id: UUID;
+  status: "subtitle_imported";
+  language: string | null;
+  text: string;
+  segments: TranscriptSegment[];
+  coverage: TranscriptCoverage;
+  candidate: SubtitleCandidate;
+  quality: SubtitleQuality;
+  warnings: TranscriptionWarning[];
+}
