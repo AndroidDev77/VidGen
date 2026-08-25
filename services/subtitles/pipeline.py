@@ -750,9 +750,53 @@ def _format_from_name_or_media(filename: str, media_type: str) -> str:
 def _language_from_filename(filename: str) -> str | None:
     parts = Path(filename).stem.lower().split(".")
     for value in reversed(parts):
-        if re.fullmatch(r"[a-z]{2,3}", value):
+        if value in _SUBTITLE_LANGUAGE_CODES:
             return value
     return None
+
+
+_SUBTITLE_LANGUAGE_CODES = frozenset(
+    {
+        "ar",
+        "cs",
+        "da",
+        "de",
+        "deu",
+        "el",
+        "en",
+        "eng",
+        "es",
+        "spa",
+        "fi",
+        "fr",
+        "fra",
+        "fre",
+        "he",
+        "hi",
+        "hu",
+        "id",
+        "it",
+        "ita",
+        "ja",
+        "jpn",
+        "ko",
+        "kor",
+        "nl",
+        "no",
+        "pl",
+        "por",
+        "pt",
+        "ro",
+        "ru",
+        "sv",
+        "th",
+        "tr",
+        "uk",
+        "vi",
+        "zh",
+        "zho",
+    }
+)
 
 
 def _media_identity(filename: str) -> tuple[str, int | None, int | None]:

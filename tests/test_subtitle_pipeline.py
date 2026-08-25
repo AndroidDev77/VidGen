@@ -333,6 +333,9 @@ async def test_audio_transcript_selection_clears_selected_subtitle_run(
 
 
 def test_stored_media_type_overrides_stale_provider_filename() -> None:
-    from services.subtitles.pipeline import _format_from_name_or_media
+    from services.subtitles.pipeline import _format_from_name_or_media, _language_from_filename
 
     assert _format_from_name_or_media("provider.ass", "application/x-subrip") == "srt"
+    assert _language_from_filename("Movie.2026.WEB.srt") is None
+    assert _language_from_filename("Show.SDH.srt") is None
+    assert _language_from_filename("episode.en.srt") == "en"
