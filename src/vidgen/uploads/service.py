@@ -148,6 +148,17 @@ class UploadService:
             temporary.unlink(missing_ok=True)
 
     def finalize(self, upload: UploadSession) -> FinalizedUpload:
+        directory = self._upload_directory(upload.id)
+        directory.mkdir(parents=True, exist_ok=True)
+        with self._file_lock(directory / "finalize.lock"):
+            # The upload may have completed in another request while this one
+            # waited for the filesystem lock.
+            self.session.refresh(upload)
+            return self._finalize_locked(upload, directory)
+
+    def _finalize_locked(
+        self, upload: UploadSession, directory: Path
+    ) -> FinalizedUpload:
         if upload.status == "complete" and upload.completed_asset_id is not None:
             source = self.session.scalar(
                 select(SourceVideo).where(SourceVideo.asset_id == upload.completed_asset_id)
@@ -166,7 +177,7 @@ class UploadService:
         upload.status = "finalizing"
         upload.error_code = None
         self.session.commit()
-        assembled = self._upload_directory(upload.id) / "assembled.mp4"
+        assembled = directory / f"assembled.{uuid4().hex}.mp4"
         with assembled.open("wb") as output:
             for part in parts:
                 with Path(part.storage_path).open("rb") as input_stream:
@@ -214,7 +225,7 @@ class UploadService:
         if project is not None:
             project.status = "uploaded"
         self.session.commit()
-        shutil.rmtree(self._upload_directory(upload.id), ignore_errors=True)
+        shutil.rmtree(directory, ignore_errors=True)
         return FinalizedUpload(upload, source)
 
     def _return_to_uploading(self, upload: UploadSession, error_code: str) -> None:
@@ -230,7 +241,11 @@ class UploadService:
 
     @contextmanager
     def _part_lock(self, directory: Path, part_number: int) -> Iterator[None]:
-        lock_path = directory / f"part-{part_number:08d}.lock"
+        with self._file_lock(directory / f"part-{part_number:08d}.lock"):
+            yield
+
+    @contextmanager
+    def _file_lock(self, lock_path: Path) -> Iterator[None]:
         with lock_path.open("a+b") as lock_file:
             fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
             try:
