@@ -2,6 +2,10 @@
 
 VidGen is a restartable media workflow. Keep AI reasoning behind provider interfaces and keep orchestration deterministic.
 
+## Canonical design
+
+Read `docs/TECHNICAL_DESIGN.md` before planning roadmap work. It is the authoritative architecture and T01-T26 implementation backlog. Reconcile its original roadmap with the completion status documented in `README.md` and the code already present on `main`; never reimplement a completed task.
+
 ## Required practices
 
 - Python 3.12, Pydantic v2, SQLAlchemy 2, Alembic, pytest, Ruff, and mypy.
