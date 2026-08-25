@@ -3,7 +3,12 @@ from __future__ import annotations
 from uuid import uuid4
 
 from services.transcription.diarization import reconcile_speakers
-from vidgen.contracts.transcription import AudioChunk, DiarizationResult, SpeakerTurn
+from vidgen.contracts.transcription import (
+    AudioChunk,
+    DiarizationResult,
+    SpeakerTurn,
+    TranscriptionWarning,
+)
 
 
 def _chunk(sequence: int, start: float, end: float) -> AudioChunk:
@@ -55,13 +60,26 @@ def test_speaker_labels_reconcile_across_overlap() -> None:
                 provider="fake",
                 model="fake",
                 provider_request_ids=["b"],
-                turns=[_turn("speaker_001", 3, 7, second.asset_id)],
+                turns=[
+                    _turn("speaker_001", 3, 7, second.asset_id).model_copy(
+                        update={
+                            "alternate_labels": ["speaker_999"],
+                            "warnings": [
+                                TranscriptionWarning(
+                                    code="uncertain_turn", message="low separation"
+                                )
+                            ],
+                        }
+                    )
+                ],
             ),
         ),
     ]
     turns, warnings = reconcile_speakers(results, duration_seconds=7)
     assert {turn.speaker_label for turn in turns} == {"speaker_001"}
     assert [(turn.start_seconds, turn.end_seconds) for turn in turns] == [(0, 7)]
+    assert turns[0].alternate_labels == ["speaker_999"]
+    assert [warning.code for warning in turns[0].warnings] == ["uncertain_turn"]
     assert not warnings
 
 

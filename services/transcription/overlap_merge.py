@@ -46,14 +46,11 @@ def merge_chunk_words(
             current_overlap[:maximum_alignment_words],
         )
         if remove == 0 and merged and current_overlap:
-            boundary = merged[-1].end_seconds
-            remove = next(
-                (index for index, word in enumerate(words) if word.start_seconds >= boundary),
-                len(words),
-            )
-            confidence = 1.0 if remove else confidence
+            merged, remove = _timestamp_merge(merged, words)
+            confidence = 1.0 if remove else 0.5
             method = "timestamp"
-        merged.extend(words[remove:])
+        else:
+            merged.extend(words[remove:])
         diagnostics.append(MergeDiagnostic(result.chunk.sequence, remove, confidence, method))
         previous = result
     _validate_words(merged, 0.0, float("inf"))
@@ -69,7 +66,11 @@ def _alignment_count(
     for length in range(maximum, 0, -1):
         left = [normalize_token(word.text) for word in previous[-length:]]
         right = [normalize_token(word.text) for word in current[:length]]
-        if left == right and all(left):
+        timestamps_match = all(
+            _substantial_time_overlap(old, new)
+            for old, new in zip(previous[-length:], current[:length], strict=True)
+        )
+        if left == right and all(left) and timestamps_match:
             return length, 1.0, "exact"
     best_length = 0
     best_score = 0.0
@@ -88,6 +89,31 @@ def _alignment_count(
     if best_score >= 0.78:
         return best_length, best_score, "fuzzy"
     return 0, best_score, "none"
+
+
+def _timestamp_merge(
+    previous: list[TranscriptWord], current: list[TranscriptWord]
+) -> tuple[list[TranscriptWord], int]:
+    retained: list[TranscriptWord] = []
+    for word in current:
+        if any(_substantial_time_overlap(word, existing) for existing in previous):
+            continue
+        retained.append(word)
+    combined = [*previous, *retained]
+    combined.sort(key=lambda word: (word.start_seconds, word.end_seconds))
+    return combined, len(current) - len(retained)
+
+
+def _substantial_time_overlap(first: TranscriptWord, second: TranscriptWord) -> bool:
+    overlap = max(
+        0.0,
+        min(first.end_seconds, second.end_seconds) - max(first.start_seconds, second.start_seconds),
+    )
+    shorter = min(
+        first.end_seconds - first.start_seconds,
+        second.end_seconds - second.start_seconds,
+    )
+    return shorter > 0 and overlap / shorter >= 0.5
 
 
 def _validate_words(words: list[TranscriptWord], lower: float, upper: float) -> None:

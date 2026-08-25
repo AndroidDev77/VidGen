@@ -86,3 +86,6 @@ Audio is encoded into content-addressed FLAC chunks below the configured byte ce
 chunk is independently checkpointed, transcribed, and diarized. The canonical transcript removes
 overlap deterministically, retains source timestamps and anonymous speaker labels, and requires at
 least 98 percent voiced-audio coverage.
+
+Overlap reconciliation requires timestamp agreement for text matches and preserves distinct-time
+repeated dialogue when provider chunks disagree.
