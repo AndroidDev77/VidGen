@@ -1,0 +1,135 @@
+{
+  "$defs": {
+    "AudioStreamInfo": {
+      "additionalProperties": false,
+      "properties": {
+        "channels": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Channels"
+        },
+        "codec": {
+          "title": "Codec",
+          "type": "string"
+        },
+        "sample_rate": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sample Rate"
+        }
+      },
+      "required": [
+        "codec"
+      ],
+      "title": "AudioStreamInfo",
+      "type": "object"
+    },
+    "VideoStreamInfo": {
+      "additionalProperties": false,
+      "properties": {
+        "codec": {
+          "title": "Codec",
+          "type": "string"
+        },
+        "frame_rate": {
+          "exclusiveMinimum": 0,
+          "title": "Frame Rate",
+          "type": "number"
+        },
+        "height": {
+          "exclusiveMinimum": 0,
+          "title": "Height",
+          "type": "integer"
+        },
+        "pixel_format": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Pixel Format"
+        },
+        "width": {
+          "exclusiveMinimum": 0,
+          "title": "Width",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "codec",
+        "width",
+        "height",
+        "frame_rate"
+      ],
+      "title": "VideoStreamInfo",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "audio_streams": {
+      "items": {
+        "$ref": "#/$defs/AudioStreamInfo"
+      },
+      "title": "Audio Streams",
+      "type": "array"
+    },
+    "byte_size": {
+      "minimum": 0,
+      "title": "Byte Size",
+      "type": "integer"
+    },
+    "duration_seconds": {
+      "exclusiveMinimum": 0,
+      "title": "Duration Seconds",
+      "type": "number"
+    },
+    "format_name": {
+      "title": "Format Name",
+      "type": "string"
+    },
+    "raw_probe": {
+      "additionalProperties": true,
+      "title": "Raw Probe",
+      "type": "object"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "video": {
+      "$ref": "#/$defs/VideoStreamInfo"
+    }
+  },
+  "required": [
+    "duration_seconds",
+    "format_name",
+    "byte_size",
+    "video",
+    "raw_probe"
+  ],
+  "title": "MediaProbeResult",
+  "type": "object"
+}

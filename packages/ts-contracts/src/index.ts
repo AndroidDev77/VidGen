@@ -59,3 +59,71 @@ export interface Storyboard {
   shots: ShotDefinition[];
 }
 
+export interface VideoStreamInfo {
+  codec: string;
+  width: number;
+  height: number;
+  frame_rate: number;
+  pixel_format: string | null;
+}
+
+export interface AudioStreamInfo {
+  codec: string;
+  sample_rate: number | null;
+  channels: number | null;
+}
+
+export interface MediaProbeResult {
+  schema_version: "1.0";
+  duration_seconds: number;
+  format_name: string;
+  byte_size: number;
+  video: VideoStreamInfo;
+  audio_streams: AudioStreamInfo[];
+  raw_probe: Record<string, unknown>;
+}
+
+export interface AudioExtractionResult {
+  schema_version: "1.0";
+  asset_id: UUID;
+  sha256: string;
+  duration_seconds: number;
+  sample_rate: number;
+  channels: number;
+  codec: string;
+}
+
+export interface SceneBoundary {
+  sequence: number;
+  start_seconds: number;
+  end_seconds: number;
+  confidence: number;
+}
+
+export interface SceneDetectionResult {
+  schema_version: "1.0";
+  threshold: number;
+  duration_seconds: number;
+  scenes: SceneBoundary[];
+}
+
+export interface ExtractedFrame {
+  schema_version: "1.0";
+  asset_id: UUID;
+  scene_sequence: number;
+  timestamp_seconds: number;
+  sha256: string;
+  width: number;
+  height: number;
+}
+
+export interface MediaProcessingResult {
+  schema_version: "1.0";
+  project_id: UUID;
+  source_video_id: UUID;
+  source_asset_id: UUID;
+  probe: MediaProbeResult;
+  audio: AudioExtractionResult;
+  scene_detection: SceneDetectionResult;
+  frames: ExtractedFrame[];
+}

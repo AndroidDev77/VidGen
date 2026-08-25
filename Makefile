@@ -1,4 +1,4 @@
-.PHONY: install lint format typecheck test schemas verify infra-up infra-down migrate migrate-down verify-stack
+.PHONY: install lint format typecheck test schemas verify infra-up infra-down migrate migrate-down verify-stack run-api
 
 export UV_CACHE_DIR ?= .uv-cache
 
@@ -6,14 +6,14 @@ install:
 	uv sync --all-groups
 
 lint:
-	uv run ruff check src tests scripts
+	uv run ruff check src apps services tests scripts migrations
 
 format:
-	uv run ruff format src tests scripts
-	uv run ruff check --fix src tests scripts
+	uv run ruff format src apps services tests scripts migrations
+	uv run ruff check --fix src apps services tests scripts migrations
 
 typecheck:
-	uv run mypy src
+	uv run mypy src apps services
 
 test:
 	uv run pytest --cov=vidgen --cov-report=term-missing
@@ -36,4 +36,7 @@ migrate-down:
 	uv run alembic downgrade base
 
 verify-stack:
-	uv run python scripts/verify_stack.py
+	VIDGEN_DATABASE_URL=postgresql+psycopg://vidgen:vidgen@localhost:5432/vidgen VIDGEN_ALLOW_DESTRUCTIVE_MIGRATION_TEST=1 uv run python scripts/verify_stack.py
+
+run-api:
+	uv run uvicorn apps.api.main:app --reload --host 0.0.0.0 --port 8000

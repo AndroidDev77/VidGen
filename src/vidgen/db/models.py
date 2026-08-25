@@ -34,6 +34,7 @@ asset_dependencies = Table(
 class Project(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "projects"
     name: Mapped[str] = mapped_column(String(255), nullable=False)
+    owner_subject: Mapped[str] = mapped_column(String(255), default="local-user", nullable=False)
     status: Mapped[str] = mapped_column(String(64), default="uploaded", nullable=False, index=True)
     target_duration_seconds: Mapped[float] = mapped_column(Float, default=300, nullable=False)
     visual_style: Mapped[str] = mapped_column(Text, nullable=False)
@@ -51,10 +52,10 @@ class Asset(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         ForeignKey("projects.id", ondelete="CASCADE"), nullable=True, index=True
     )
     kind: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
-    sha256: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
+    sha256: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     byte_size: Mapped[int] = mapped_column(Integer, nullable=False)
     media_type: Mapped[str] = mapped_column(String(255), nullable=False)
-    storage_key: Mapped[str] = mapped_column(Text, nullable=False, unique=True)
+    storage_key: Mapped[str] = mapped_column(Text, nullable=False)
     provider: Mapped[str | None] = mapped_column(String(128))
     provider_request_id: Mapped[str | None] = mapped_column(String(255))
     idempotency_key: Mapped[str | None] = mapped_column(String(255), index=True)
@@ -72,6 +73,14 @@ class Asset(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __table_args__ = (
         CheckConstraint("byte_size >= 0", name="nonnegative_byte_size"),
         CheckConstraint("length(sha256) = 64", name="sha256_length"),
+        Index(
+            "uq_assets_project_idempotency",
+            "project_id",
+            "idempotency_key",
+            unique=True,
+            postgresql_where=sql_text("idempotency_key IS NOT NULL"),
+            sqlite_where=sql_text("idempotency_key IS NOT NULL"),
+        ),
     )
 
 

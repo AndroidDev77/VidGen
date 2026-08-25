@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import os
+import shutil
 import time
 from collections.abc import Callable
 from pathlib import Path
@@ -14,9 +15,13 @@ from uuid import uuid4
 class BlobStore(Protocol):
     def put_if_absent(self, key: str, content: bytes) -> bool: ...
 
+    def put_file_if_absent(self, key: str, source: Path) -> bool: ...
+
     def read(self, key: str) -> bytes: ...
 
     def exists(self, key: str) -> bool: ...
+
+    def copy_to(self, key: str, destination: Path) -> None: ...
 
     def signed_read_url(self, key: str, expires_in_seconds: int = 900) -> str: ...
 
@@ -57,11 +62,35 @@ class FilesystemBlobStore:
         finally:
             temporary.unlink(missing_ok=True)
 
+    def put_file_if_absent(self, key: str, source: Path) -> bool:
+        destination = self._path(key)
+        if destination.exists():
+            return False
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        temporary = destination.with_name(f".{destination.name}.{uuid4().hex}.upload")
+        try:
+            with source.open("rb") as input_stream, temporary.open("xb") as output_stream:
+                shutil.copyfileobj(input_stream, output_stream, length=1024 * 1024)
+                output_stream.flush()
+                os.fsync(output_stream.fileno())
+            try:
+                os.link(temporary, destination)
+                return True
+            except FileExistsError:
+                return False
+        finally:
+            temporary.unlink(missing_ok=True)
+
     def read(self, key: str) -> bytes:
         return self._path(key).read_bytes()
 
     def exists(self, key: str) -> bool:
         return self._path(key).is_file()
+
+    def copy_to(self, key: str, destination: Path) -> None:
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        with self._path(key).open("rb") as input_stream, destination.open("wb") as output_stream:
+            shutil.copyfileobj(input_stream, output_stream, length=1024 * 1024)
 
     def _signature(self, key: str, expires: int) -> str:
         message = f"{key}\n{expires}".encode()

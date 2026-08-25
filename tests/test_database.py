@@ -2,7 +2,8 @@ from __future__ import annotations
 
 from sqlalchemy import create_engine, inspect
 
-import vidgen.db.models  # noqa: F401
+import vidgen.db.models
+import vidgen.db.upload_models  # noqa: F401
 from vidgen.db.base import Base
 
 
@@ -27,6 +28,8 @@ def test_core_schema_creates_with_expected_tables_and_indexes() -> None:
         "render_jobs",
         "assets",
         "asset_dependencies",
+        "upload_sessions",
+        "upload_parts",
     }
     assert expected <= set(inspector.get_table_names())
     indexes = {index["name"] for index in inspector.get_indexes("shots")}

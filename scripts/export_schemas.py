@@ -7,11 +7,16 @@ import json
 from pathlib import Path
 
 from vidgen.contracts import (
+    AudioExtractionResult,
     CharacterDefinition,
     EpisodeAnalysis,
+    ExtractedFrame,
+    MediaProbeResult,
+    MediaProcessingResult,
     QAResult,
     RecapScript,
     SceneDefinition,
+    SceneDetectionResult,
     ShotDefinition,
     Storyboard,
 )
@@ -26,6 +31,11 @@ CONTRACTS = (
     Storyboard,
     ShotDefinition,
     QAResult,
+    MediaProbeResult,
+    AudioExtractionResult,
+    SceneDetectionResult,
+    ExtractedFrame,
+    MediaProcessingResult,
 )
 
 
