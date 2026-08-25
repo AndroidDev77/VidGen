@@ -69,6 +69,15 @@ def test_timestamp_fallback_preserves_order_when_text_disagrees() -> None:
     assert diagnostics[1].removed_words == 1
 
 
+def test_exact_text_at_distinct_timestamps_is_not_deduplicated() -> None:
+    first = _result(0, 0, 4, [("again", 2, 2.5)])
+    second = _result(1, 2, 5, [("again", 3, 3.5), ("later", 4, 5)])
+    words, diagnostics = merge_chunk_words([first, second])
+    assert [word.text for word in words] == ["again", "again", "later"]
+    assert diagnostics[1].method == "timestamp"
+    assert diagnostics[1].removed_words == 0
+
+
 def test_timestamp_reversal_is_rejected() -> None:
     with pytest.raises(ValueError, match="ordered"):
         _result(0, 0, 3, [("later", 2, 3), ("earlier", 1, 2)])
