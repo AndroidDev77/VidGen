@@ -5,6 +5,22 @@
 **Verified:** August 25, 2026  
 **Target:** A restartable production pipeline that converts a 30 to 60+ minute source into a 4 to 6 minute, 1080p animated comedy recap.
 
+## Implementation status
+
+This document began as the complete target design and is maintained alongside the shipped code.
+The current `main` branch and validated contract schemas remain authoritative when an original
+example conflicts with an implemented interface.
+
+| Scope | Status | Notes |
+| --- | --- | --- |
+| T01-T07 | Complete | Monorepo, contracts, database, asset storage, ingestion API, deterministic media processing, and restartable transcription are merged. |
+| T07B | Complete extension | Embedded, sidecar, and OpenSubtitles acquisition now precedes T07 audio transcription fallback and writes the same canonical transcript model. |
+| T08-T09 | Next | Temporal project orchestration and deterministic scene evidence packages are the next bounded implementation. Evidence must consume the selected canonical transcript regardless of subtitle or audio origin. |
+| T10-T26 | Planned | Do not begin a later task until its dependencies and the current implementation are reconciled. |
+
+When a roadmap task is completed, update this table, `README.md`, and any affected design section in
+the same pull request.
+
 ## Fixed architectural decisions
 
 | Area | Recommended choice | Why | Alternative |
@@ -13,7 +29,7 @@
 | Workflow engine | Temporal Cloud with the Python SDK | Durable execution, activity retries, timers, child workflows per shot, signals for human approval, and workflow replay directly fit a long-running media pipeline. Temporal retry policies are native and explicit. [Temporal retry documentation](https://docs.temporal.io/encyclopedia/retry-policies) | Azure Durable Functions for an Azure-only organization. Use n8n only for notifications and upload integrations, never as the authoritative state machine. Celery and BullMQ are task queues, not full durable workflow histories. |
 | API and creative models | OpenAI Responses API, `gpt-5.6-terra` for creative and editorial agents, `gpt-5.6-luna` for inexpensive extraction and first-pass QA | Both models support image input and Structured Outputs. Terra is the balanced default, while Luna is suitable for high-volume, schema-constrained work. Current model positioning and prices are in the [official OpenAI model catalog](https://developers.openai.com/api/docs/models). | Use `gpt-5.6-sol` only for failed editorial passes or exceptionally ambiguous source material. |
 | Structured agent output | JSON Schema through OpenAI Structured Outputs, then Pydantic validation | Schema adherence is enforced at generation time, followed by application validation and database constraints. [OpenAI Structured Outputs](https://developers.openai.com/api/docs/guides/structured-outputs) | Tool calling is useful when an agent must invoke a deterministic service, but ordinary stage outputs should use a structured response format. |
-| Transcription | `gpt-transcribe` for the canonical transcript plus `gpt-4o-transcribe-diarize` for speaker segments | The first pass gives a high-quality transcript with context hints. The second returns speaker, start, and end fields. Files over 25 MB are split at silence boundaries. [OpenAI file transcription and diarization](https://developers.openai.com/api/docs/guides/speech-to-text) | Local Whisper large-v3 plus pyannote or WhisperX when media cannot leave the deployment boundary. |
+| Transcription | Subtitle-first acquisition, then `whisper-1` for timestamp-preserving audio transcription plus `gpt-4o-transcribe-diarize` for speaker segments | Embedded, sidecar, and OpenSubtitles text is preferred when adequate. Audio fallback uses `whisper-1` because the shipped T07 contract requires word or segment timestamps; diarization remains a separate pass. Files over 25 MB are split at silence boundaries. [OpenAI file transcription and diarization](https://developers.openai.com/api/docs/guides/speech-to-text) | Local Whisper large-v3 plus pyannote or WhisperX when media cannot leave the deployment boundary. |
 | Image generation | OpenAI `gpt-image-2` through the Image API | Strong instruction following, image inputs, edits, and high-fidelity reference handling suit character sheets and shot keyframes. [OpenAI image generation](https://developers.openai.com/api/docs/guides/image-generation) | Vertex AI Imagen or a self-hosted diffusion workflow with character LoRAs for very high volume. |
 | Video generation | Runway API adapter, default `gen4_turbo`, upgrade hero shots to `gen4.5`; Veo 3.1 Fast adapter as fallback | Runway exposes an official Python SDK, asynchronous tasks, image-to-video, and multiple models. Current rates are $0.05 per generated second for `gen4_turbo` and $0.12 for `gen4.5`. [Runway SDK](https://docs.dev.runwayml.com/api-details/sdks/), [Runway pricing](https://docs.dev.runwayml.com/guides/pricing/) | Direct Vertex AI Veo 3.1 Fast. It supports 4, 6, or 8 second outputs, first/last frames, and reference assets. [Veo 3.1 specifications](https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/veo/3-1-generate) |
 | Voice | OpenAI `gpt-4o-mini-tts`, `marin` or `cedar`, with explicit delivery instructions | Low integration complexity, controllable tone and speed, and good default narration quality. [OpenAI text to speech](https://developers.openai.com/api/docs/guides/text-to-speech) | ElevenLabs Multilingual v2 for the premium voice tier and Flash v2.5 for low latency. [ElevenLabs TTS](https://elevenlabs.io/docs/overview/capabilities/text-to-speech) |
@@ -165,17 +181,20 @@ Every agent receives an immutable envelope. It has no database credentials and n
 
 ```json
 {
-  "contractVersion": "1.0.0",
-  "promptVersion": "episode-analyst/1.3.0",
-  "projectId": "0191f1d0-54e0-7c74-9d0b-90bc8c8af101",
-  "traceId": "01J64Y7F2BDH0FZQMBP0A5W9NE",
-  "inputAssetIds": ["asset_transcript_v1", "asset_contact_sheet_03"],
-  "constraints": {"targetDurationMs": 300000, "humorIntensity": 0.7},
+  "schema_version": "1.0",
+  "prompt_version": "episode-analyst/1.3.0",
+  "project_id": "0191f1d0-54e0-7c74-9d0b-90bc8c8af101",
+  "trace_id": "01J64Y7F2BDH0FZQMBP0A5W9NE",
+  "input_asset_ids": [
+    "0191f1d0-54e0-7c74-9d0b-90bc8c8af102",
+    "0191f1d0-54e0-7c74-9d0b-90bc8c8af103"
+  ],
+  "constraints": {"target_duration_seconds": 300, "humor_intensity": 7},
   "payload": {}
 }
 ```
 
-All outputs include `contractVersion`, `sourceRefs`, `assumptions`, `warnings`, and the agent-specific payload. `sourceRefs` must cite scene IDs, transcript span IDs, frame IDs, or approved reference IDs. Free-form factual claims without provenance are invalid.
+All public outputs use the repository's snake-case Pydantic contracts, including an explicit `schema_version`. Provenance fields defined by the target contract must cite scene IDs, transcript span IDs, asset IDs, or approved reference IDs. Free-form factual claims without provenance are invalid.
 
 ## Episode Analyst
 
@@ -572,7 +591,7 @@ CREATE TABLE stage_runs (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     project_id uuid NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
     stage text NOT NULL,
-    entity_id uuid,
+    entity_id uuid NOT NULL,
     input_hash char(64) NOT NULL,
     contract_version text NOT NULL,
     status text NOT NULL,
@@ -586,15 +605,27 @@ CREATE TABLE stage_runs (
     UNIQUE(project_id, stage, entity_id, input_hash, contract_version)
 );
 
+For a project-level stage, `entity_id` is the owning `project_id`. Entity-scoped stages use the
+actual entity UUID. This portable non-null convention makes the uniqueness constraint deduplicate
+retries consistently in PostgreSQL and SQLite.
+
 CREATE INDEX idx_scenes_project_time ON scenes(project_id, source_start_ms);
 CREATE INDEX idx_shots_project_order ON shots(project_id, storyboard_version, sequence_no);
 CREATE INDEX idx_attempts_open ON generation_attempts(provider, status, created_at);
 CREATE INDEX idx_qa_failed ON qa_results(project_id, verdict, created_at);
 ```
 
-# 5. JSON Contracts
+# 5. Contract Design Sketches
 
-The examples below are complete instances of version 1 contracts. Production JSON Schemas are generated from equivalent Pydantic classes and checked into `/packages/contracts/jsonschema`.
+The canonical public contracts are the strict Pydantic models in `src/vidgen/contracts`, with
+exported JSON Schemas checked into `packages/contracts/schema` and matching TypeScript contracts.
+Those shipped schemas and their validated fixtures are authoritative for field names, types, and
+required values.
+
+The JSON blocks below are historical design sketches that preserve intended product semantics.
+They predate the shipped snake-case contracts and are not valid v1 fixtures. Implementations must
+not submit these camel-case sketches to strict contracts. When implementing a roadmap task, update
+or replace its sketch with a fixture generated from the corresponding shipped Pydantic model.
 
 ## EpisodeAnalysis
 
@@ -1800,11 +1831,20 @@ class RunwayVideoAdapter:
 
     async def generate(self, request: VideoRequest,
                        ctx: GenerationContext) -> GenerationResult:
-        existing = await self._find_attempt(ctx.idempotency_key)
-        if existing and existing.provider_task_id:
-            return await self._poll(existing.provider_task_id, ctx)
+        attempt = await self._claim_attempt(ctx.idempotency_key)
+        if attempt.provider_task_id:
+            return await self._poll(attempt.provider_task_id, ctx)
+        if attempt.submission_status == "SUBMITTING":
+            task_id = await self._reconcile_indeterminate_submission(attempt, ctx)
+            if task_id is None:
+                raise IndeterminateProviderSubmission(
+                    "remote submission outcome is unknown; automatic resubmission is disabled"
+                )
+            await self._persist_remote_task(ctx, task_id)
+            return await self._poll(task_id, ctx)
 
         seconds = self._supported_seconds(request.duration_ms)
+        await self._mark_submitting(attempt, ctx)
         task = await asyncio.to_thread(
             self.client.image_to_video.create,
             model=self.model,
@@ -1835,6 +1875,14 @@ class RunwayVideoAdapter:
         )
 ```
 
+`_claim_attempt` must acquire the unique database claim before submission, and
+`_mark_submitting` must commit `SUBMITTING` before the provider call. A timeout or worker death
+after that commit is an indeterminate submission, not permission to submit again. The adapter may
+resume only after reconciling a provider task through a provider-supported idempotency key,
+client-request metadata, callback, or task listing. If reconciliation is unavailable, the attempt
+enters operations review and automatic retries stop. This closes the unavoidable local/remote
+atomicity gap without risking a duplicate paid job.
+
 The SDK is type annotated, but adapter integration tests must pin and verify its current method signature. Provider API changes are isolated to this module. Runway states that older API versions are supported for four months after a new version, which makes SDK pinning and scheduled compatibility tests necessary. [Runway versioning policy](https://docs.dev.runwayml.com/api-details/versioning/)
 
 ## Example Veo adapter outline
@@ -1852,11 +1900,12 @@ class VeoVideoAdapter:
 
     async def generate(self, request: VideoRequest,
                        ctx: GenerationContext) -> GenerationResult:
-        duration = choose_from(request.duration_ms, allowed=(4, 6, 8))
+        duration_ms = choose_from(request.duration_ms, allowed=(4000, 6000, 8000))
+        duration_seconds = duration_ms // 1000
         payload = {
             "prompt": request.prompt,
             "image": await materialize_vertex_image(request.first_frame),
-            "durationSeconds": duration,
+            "durationSeconds": duration_seconds,
             "aspectRatio": "16:9",
             "resolution": "1080p",
             "seed": request.seed,
@@ -1919,7 +1968,7 @@ input_hash = SHA256(
 )
 ```
 
-Before a side effect, an activity inserts or locks the matching `stage_runs` or `generation_attempts` row. If a successful output already exists, it returns the stored reference. If a provider task ID exists but is incomplete, it resumes polling. A unique database constraint prevents two workers from submitting the same creative generation.
+Before a side effect, an activity inserts or locks the matching `stage_runs` or `generation_attempts` row. Project-level stage runs use `project_id` as their non-null `entity_id`. If a successful output already exists, the activity returns the stored reference. If a provider task ID exists but is incomplete, it resumes polling. A unique database constraint prevents two workers from owning the same creative generation. The activity commits a `SUBMITTING` state before a paid remote call; a retry that finds `SUBMITTING` without a task ID must reconcile the remote outcome or enter operations review, never automatically resubmit.
 
 Provider APIs that support idempotency headers receive `input_hash`. For those that do not, the database claim is acquired with `INSERT ... ON CONFLICT DO NOTHING`, followed by `SELECT ... FOR UPDATE SKIP LOCKED`.
 
