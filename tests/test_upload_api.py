@@ -7,10 +7,11 @@ from typing import Any
 from uuid import UUID
 
 from fastapi.testclient import TestClient
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session, sessionmaker
 
 from vidgen.db.models import Asset, SourceVideo
-from vidgen.db.upload_models import UploadSession
+from vidgen.db.upload_models import UploadPart, UploadSession
 
 
 def create_project(client: TestClient) -> dict[str, Any]:
@@ -62,6 +63,15 @@ def test_project_api_and_resumable_upload(
         assert response.status_code == 200
         assert response.json()["duplicate"] is False
 
+    with factory() as session:
+        stored_part = session.scalar(
+            select(UploadPart).where(
+                UploadPart.upload_id == UUID(upload["id"]), UploadPart.part_number == 0
+            )
+        )
+        assert stored_part is not None
+        Path(stored_part.storage_path).unlink()
+
     duplicate = client.put(f"/api/v1/uploads/{upload['id']}/parts/0", content=parts[0])
     assert duplicate.status_code == 200
     assert duplicate.json()["duplicate"] is True
@@ -91,6 +101,47 @@ def test_project_api_and_resumable_upload(
         assert source is not None and asset is not None
         assert asset.project_id == source.project_id
         assert asset.generation_parameters["part_count"] == math.ceil(len(content) / part_size)
+
+
+def test_new_upload_becomes_latest_without_breaking_prior_completion(
+    api_client: tuple[TestClient, sessionmaker[Session]], golden_video: Path
+) -> None:
+    client, factory = api_client
+    project = create_project(client)
+    content = golden_video.read_bytes()
+    completed: list[dict[str, Any]] = []
+
+    for filename in ("first.mp4", "replacement.mp4"):
+        upload = initialize(
+            client,
+            project["id"],
+            content,
+            filename=filename,
+            part_size=max(4096, len(content)),
+        )
+        assert (
+            client.put(f"/api/v1/uploads/{upload['id']}/parts/0", content=content).status_code
+            == 200
+        )
+        response = client.post(f"/api/v1/uploads/{upload['id']}/complete")
+        assert response.status_code == 200
+        completed.append(response.json())
+
+    metadata = client.get(f"/api/v1/projects/{project['id']}/source-video")
+    status_response = client.get(f"/api/v1/projects/{project['id']}/status")
+    assert metadata.json()["id"] == completed[1]["source_video_id"]
+    assert status_response.json()["source_video_id"] == completed[1]["source_video_id"]
+
+    first_retry = client.post(f"/api/v1/uploads/{completed[0]['upload_id']}/complete")
+    assert first_retry.status_code == 200
+    assert first_retry.json() == completed[0]
+    with factory() as session:
+        source_count = session.scalar(
+            select(func.count()).select_from(SourceVideo).where(
+                SourceVideo.project_id == UUID(project["id"])
+            )
+        )
+        assert source_count == 2
 
 
 def test_upload_validation_and_finalization_recovery(
