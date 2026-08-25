@@ -67,8 +67,7 @@ def _alignment_count(
         left = [normalize_token(word.text) for word in previous[-length:]]
         right = [normalize_token(word.text) for word in current[:length]]
         timestamps_match = all(
-            abs(old.start_seconds - new.start_seconds) <= 0.75
-            and abs(old.end_seconds - new.end_seconds) <= 0.75
+            _substantial_time_overlap(old, new)
             for old, new in zip(previous[-length:], current[:length], strict=True)
         )
         if left == right and all(left) and timestamps_match:
