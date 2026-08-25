@@ -13,7 +13,7 @@ format:
 	uv run ruff check --fix src apps services tests scripts migrations
 
 typecheck:
-	uv run mypy src apps services
+	uv run mypy --strict src apps services scripts
 
 test:
 	uv run pytest --cov=vidgen --cov-report=term-missing
