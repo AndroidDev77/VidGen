@@ -168,6 +168,10 @@ class MediaPipeline:
             scene.sequence: scene
             for scene in self.session.scalars(select(Scene).where(Scene.project_id == project_id))
         }
+        active_sequences = {boundary.sequence for boundary in boundaries}
+        for sequence, stale_scene in existing.items():
+            if sequence not in active_sequences:
+                self.session.delete(stale_scene)
         scenes: list[Scene] = []
         for boundary in boundaries:
             sequence = boundary.sequence
