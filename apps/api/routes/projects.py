@@ -74,7 +74,11 @@ def get_project_status(
     project_id: UUID, session: SessionDependency, principal: PrincipalDependency
 ) -> ProjectStatusResponse:
     project = owned_project(session, project_id, principal)
-    source = session.scalar(select(SourceVideo).where(SourceVideo.project_id == project.id))
+    source = session.scalar(
+        select(SourceVideo)
+        .where(SourceVideo.project_id == project.id)
+        .order_by(SourceVideo.created_at.desc(), SourceVideo.id.desc())
+    )
     upload = session.scalar(
         select(UploadSession)
         .where(UploadSession.project_id == project.id)
@@ -95,7 +99,11 @@ def get_source_video(
     project_id: UUID, session: SessionDependency, principal: PrincipalDependency
 ) -> dict[str, object]:
     project = owned_project(session, project_id, principal)
-    source = session.scalar(select(SourceVideo).where(SourceVideo.project_id == project.id))
+    source = session.scalar(
+        select(SourceVideo)
+        .where(SourceVideo.project_id == project.id)
+        .order_by(SourceVideo.created_at.desc(), SourceVideo.id.desc())
+    )
     if source is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="source video not found")
     return {
