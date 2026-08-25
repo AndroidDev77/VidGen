@@ -5,9 +5,10 @@ from logging.config import fileConfig
 from alembic import context
 from sqlalchemy import engine_from_config, pool
 
+import vidgen.db.models
+import vidgen.db.upload_models  # noqa: F401
 from vidgen.db.base import Base
 from vidgen.db.session import database_url
-import vidgen.db.models  # noqa: F401
 
 config = context.config
 config.set_main_option("sqlalchemy.url", database_url())
@@ -45,4 +46,3 @@ if context.is_offline_mode():
     run_migrations_offline()
 else:
     run_migrations_online()
-

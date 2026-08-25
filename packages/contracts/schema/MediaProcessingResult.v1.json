@@ -1,0 +1,360 @@
+{
+  "$defs": {
+    "AudioExtractionResult": {
+      "additionalProperties": false,
+      "properties": {
+        "asset_id": {
+          "format": "uuid",
+          "title": "Asset Id",
+          "type": "string"
+        },
+        "channels": {
+          "exclusiveMinimum": 0,
+          "title": "Channels",
+          "type": "integer"
+        },
+        "codec": {
+          "title": "Codec",
+          "type": "string"
+        },
+        "duration_seconds": {
+          "exclusiveMinimum": 0,
+          "title": "Duration Seconds",
+          "type": "number"
+        },
+        "sample_rate": {
+          "exclusiveMinimum": 0,
+          "title": "Sample Rate",
+          "type": "integer"
+        },
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "sha256": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Sha256",
+          "type": "string"
+        }
+      },
+      "required": [
+        "asset_id",
+        "sha256",
+        "duration_seconds",
+        "sample_rate",
+        "channels",
+        "codec"
+      ],
+      "title": "AudioExtractionResult",
+      "type": "object"
+    },
+    "AudioStreamInfo": {
+      "additionalProperties": false,
+      "properties": {
+        "channels": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Channels"
+        },
+        "codec": {
+          "title": "Codec",
+          "type": "string"
+        },
+        "sample_rate": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sample Rate"
+        }
+      },
+      "required": [
+        "codec"
+      ],
+      "title": "AudioStreamInfo",
+      "type": "object"
+    },
+    "ExtractedFrame": {
+      "additionalProperties": false,
+      "properties": {
+        "asset_id": {
+          "format": "uuid",
+          "title": "Asset Id",
+          "type": "string"
+        },
+        "height": {
+          "exclusiveMinimum": 0,
+          "title": "Height",
+          "type": "integer"
+        },
+        "scene_sequence": {
+          "minimum": 0,
+          "title": "Scene Sequence",
+          "type": "integer"
+        },
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "sha256": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Sha256",
+          "type": "string"
+        },
+        "timestamp_seconds": {
+          "minimum": 0,
+          "title": "Timestamp Seconds",
+          "type": "number"
+        },
+        "width": {
+          "exclusiveMinimum": 0,
+          "title": "Width",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "asset_id",
+        "scene_sequence",
+        "timestamp_seconds",
+        "sha256",
+        "width",
+        "height"
+      ],
+      "title": "ExtractedFrame",
+      "type": "object"
+    },
+    "MediaProbeResult": {
+      "additionalProperties": false,
+      "properties": {
+        "audio_streams": {
+          "items": {
+            "$ref": "#/$defs/AudioStreamInfo"
+          },
+          "title": "Audio Streams",
+          "type": "array"
+        },
+        "byte_size": {
+          "minimum": 0,
+          "title": "Byte Size",
+          "type": "integer"
+        },
+        "duration_seconds": {
+          "exclusiveMinimum": 0,
+          "title": "Duration Seconds",
+          "type": "number"
+        },
+        "format_name": {
+          "title": "Format Name",
+          "type": "string"
+        },
+        "raw_probe": {
+          "additionalProperties": true,
+          "title": "Raw Probe",
+          "type": "object"
+        },
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "video": {
+          "$ref": "#/$defs/VideoStreamInfo"
+        }
+      },
+      "required": [
+        "duration_seconds",
+        "format_name",
+        "byte_size",
+        "video",
+        "raw_probe"
+      ],
+      "title": "MediaProbeResult",
+      "type": "object"
+    },
+    "SceneBoundary": {
+      "additionalProperties": false,
+      "properties": {
+        "confidence": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Confidence",
+          "type": "number"
+        },
+        "end_seconds": {
+          "exclusiveMinimum": 0,
+          "title": "End Seconds",
+          "type": "number"
+        },
+        "sequence": {
+          "minimum": 0,
+          "title": "Sequence",
+          "type": "integer"
+        },
+        "start_seconds": {
+          "minimum": 0,
+          "title": "Start Seconds",
+          "type": "number"
+        }
+      },
+      "required": [
+        "sequence",
+        "start_seconds",
+        "end_seconds",
+        "confidence"
+      ],
+      "title": "SceneBoundary",
+      "type": "object"
+    },
+    "SceneDetectionResult": {
+      "additionalProperties": false,
+      "properties": {
+        "duration_seconds": {
+          "exclusiveMinimum": 0,
+          "title": "Duration Seconds",
+          "type": "number"
+        },
+        "scenes": {
+          "items": {
+            "$ref": "#/$defs/SceneBoundary"
+          },
+          "minItems": 1,
+          "title": "Scenes",
+          "type": "array"
+        },
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "threshold": {
+          "exclusiveMaximum": 1,
+          "exclusiveMinimum": 0,
+          "title": "Threshold",
+          "type": "number"
+        }
+      },
+      "required": [
+        "threshold",
+        "duration_seconds",
+        "scenes"
+      ],
+      "title": "SceneDetectionResult",
+      "type": "object"
+    },
+    "VideoStreamInfo": {
+      "additionalProperties": false,
+      "properties": {
+        "codec": {
+          "title": "Codec",
+          "type": "string"
+        },
+        "frame_rate": {
+          "exclusiveMinimum": 0,
+          "title": "Frame Rate",
+          "type": "number"
+        },
+        "height": {
+          "exclusiveMinimum": 0,
+          "title": "Height",
+          "type": "integer"
+        },
+        "pixel_format": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Pixel Format"
+        },
+        "width": {
+          "exclusiveMinimum": 0,
+          "title": "Width",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "codec",
+        "width",
+        "height",
+        "frame_rate"
+      ],
+      "title": "VideoStreamInfo",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "audio": {
+      "$ref": "#/$defs/AudioExtractionResult"
+    },
+    "frames": {
+      "items": {
+        "$ref": "#/$defs/ExtractedFrame"
+      },
+      "title": "Frames",
+      "type": "array"
+    },
+    "probe": {
+      "$ref": "#/$defs/MediaProbeResult"
+    },
+    "project_id": {
+      "format": "uuid",
+      "title": "Project Id",
+      "type": "string"
+    },
+    "scene_detection": {
+      "$ref": "#/$defs/SceneDetectionResult"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "source_asset_id": {
+      "format": "uuid",
+      "title": "Source Asset Id",
+      "type": "string"
+    },
+    "source_video_id": {
+      "format": "uuid",
+      "title": "Source Video Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "project_id",
+    "source_video_id",
+    "source_asset_id",
+    "probe",
+    "audio",
+    "scene_detection",
+    "frames"
+  ],
+  "title": "MediaProcessingResult",
+  "type": "object"
+}

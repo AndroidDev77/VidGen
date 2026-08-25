@@ -42,7 +42,11 @@ def test_asset_deduplication_and_provenance(tmp_path: Path) -> None:
         metadata={"scene": 1},
     )
     duplicate = service.store(
-        content=b"frame", kind="frame", media_type="image/png", project_id=project.id
+        content=b"frame",
+        kind="frame",
+        media_type="image/png",
+        project_id=project.id,
+        idempotency_key="frame-1",
     )
     assert duplicate.id == child.id
     assert duplicate.deduplicated
@@ -57,11 +61,51 @@ def test_missing_blob_is_recovered_on_deduplicated_write(tmp_path: Path) -> None
     session = build_session()
     store = FilesystemBlobStore(tmp_path, b"secret")
     service = AssetService(session, store)
-    stored = service.store(content=b"recover", kind="json", media_type="application/json")
+    stored = service.store(
+        content=b"recover",
+        kind="json",
+        media_type="application/json",
+        idempotency_key="recover-1",
+    )
     (tmp_path / stored.storage_key).unlink()
-    recovered = service.store(content=b"recover", kind="json", media_type="application/json")
+    recovered = service.store(
+        content=b"recover",
+        kind="json",
+        media_type="application/json",
+        idempotency_key="recover-1",
+    )
     assert recovered.deduplicated
     assert store.read(stored.storage_key) == b"recover"
+
+
+def test_blob_dedup_preserves_cross_project_provenance(tmp_path: Path) -> None:
+    session = build_session()
+    first_project = Project(name="first", visual_style="flat")
+    second_project = Project(name="second", visual_style="flat")
+    session.add_all([first_project, second_project])
+    session.flush()
+    service = AssetService(session, FilesystemBlobStore(tmp_path, b"secret"))
+    first = service.store(
+        content=b"shared",
+        kind="frame",
+        media_type="image/png",
+        project_id=first_project.id,
+        idempotency_key="frame-1",
+    )
+    second = service.store(
+        content=b"shared",
+        kind="source_video",
+        media_type="video/mp4",
+        project_id=second_project.id,
+        idempotency_key="source-1",
+    )
+    assert first.id != second.id
+    assert first.storage_key == second.storage_key
+    assert second.deduplicated
+    persisted = session.get(Asset, second.id)
+    assert persisted is not None
+    assert persisted.project_id == second_project.id
+    assert persisted.kind == "source_video"
 
 
 def test_signed_read_url_expires(tmp_path: Path) -> None:

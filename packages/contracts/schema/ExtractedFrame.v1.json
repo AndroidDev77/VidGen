@@ -1,0 +1,51 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "asset_id": {
+      "format": "uuid",
+      "title": "Asset Id",
+      "type": "string"
+    },
+    "height": {
+      "exclusiveMinimum": 0,
+      "title": "Height",
+      "type": "integer"
+    },
+    "scene_sequence": {
+      "minimum": 0,
+      "title": "Scene Sequence",
+      "type": "integer"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "sha256": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Sha256",
+      "type": "string"
+    },
+    "timestamp_seconds": {
+      "minimum": 0,
+      "title": "Timestamp Seconds",
+      "type": "number"
+    },
+    "width": {
+      "exclusiveMinimum": 0,
+      "title": "Width",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "asset_id",
+    "scene_sequence",
+    "timestamp_seconds",
+    "sha256",
+    "width",
+    "height"
+  ],
+  "title": "ExtractedFrame",
+  "type": "object"
+}
