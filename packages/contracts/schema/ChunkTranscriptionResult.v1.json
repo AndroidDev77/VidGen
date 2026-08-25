@@ -1,0 +1,341 @@
+{
+  "$defs": {
+    "AudioChunk": {
+      "additionalProperties": false,
+      "properties": {
+        "asset_id": {
+          "format": "uuid",
+          "title": "Asset Id",
+          "type": "string"
+        },
+        "byte_size": {
+          "exclusiveMinimum": 0,
+          "title": "Byte Size",
+          "type": "integer"
+        },
+        "codec": {
+          "title": "Codec",
+          "type": "string"
+        },
+        "end_seconds": {
+          "exclusiveMinimum": 0,
+          "title": "End Seconds",
+          "type": "number"
+        },
+        "idempotency_key": {
+          "title": "Idempotency Key",
+          "type": "string"
+        },
+        "overlap_after_seconds": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Overlap After Seconds",
+          "type": "number"
+        },
+        "overlap_before_seconds": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Overlap Before Seconds",
+          "type": "number"
+        },
+        "parent_audio_asset_id": {
+          "format": "uuid",
+          "title": "Parent Audio Asset Id",
+          "type": "string"
+        },
+        "sample_rate": {
+          "exclusiveMinimum": 0,
+          "title": "Sample Rate",
+          "type": "integer"
+        },
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "sequence": {
+          "minimum": 0,
+          "title": "Sequence",
+          "type": "integer"
+        },
+        "sha256": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Sha256",
+          "type": "string"
+        },
+        "start_seconds": {
+          "minimum": 0,
+          "title": "Start Seconds",
+          "type": "number"
+        }
+      },
+      "required": [
+        "asset_id",
+        "parent_audio_asset_id",
+        "sequence",
+        "start_seconds",
+        "end_seconds",
+        "byte_size",
+        "sha256",
+        "codec",
+        "sample_rate",
+        "idempotency_key"
+      ],
+      "title": "AudioChunk",
+      "type": "object"
+    },
+    "TranscriptSegment": {
+      "additionalProperties": false,
+      "properties": {
+        "confidence": {
+          "anyOf": [
+            {
+              "maximum": 1,
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Confidence"
+        },
+        "end_seconds": {
+          "exclusiveMinimum": 0,
+          "title": "End Seconds",
+          "type": "number"
+        },
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "sequence": {
+          "minimum": 0,
+          "title": "Sequence",
+          "type": "integer"
+        },
+        "source_chunk_ids": {
+          "items": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Source Chunk Ids",
+          "type": "array"
+        },
+        "speaker_label": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Speaker Label"
+        },
+        "start_seconds": {
+          "minimum": 0,
+          "title": "Start Seconds",
+          "type": "number"
+        },
+        "text": {
+          "minLength": 1,
+          "title": "Text",
+          "type": "string"
+        },
+        "words": {
+          "items": {
+            "$ref": "#/$defs/TranscriptWord"
+          },
+          "title": "Words",
+          "type": "array"
+        }
+      },
+      "required": [
+        "sequence",
+        "start_seconds",
+        "end_seconds",
+        "text",
+        "source_chunk_ids"
+      ],
+      "title": "TranscriptSegment",
+      "type": "object"
+    },
+    "TranscriptWord": {
+      "additionalProperties": false,
+      "properties": {
+        "confidence": {
+          "anyOf": [
+            {
+              "maximum": 1,
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Confidence"
+        },
+        "end_seconds": {
+          "exclusiveMinimum": 0,
+          "title": "End Seconds",
+          "type": "number"
+        },
+        "start_seconds": {
+          "minimum": 0,
+          "title": "Start Seconds",
+          "type": "number"
+        },
+        "text": {
+          "minLength": 1,
+          "title": "Text",
+          "type": "string"
+        }
+      },
+      "required": [
+        "text",
+        "start_seconds",
+        "end_seconds"
+      ],
+      "title": "TranscriptWord",
+      "type": "object"
+    },
+    "TranscriptionWarning": {
+      "additionalProperties": false,
+      "properties": {
+        "chunk_sequence": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Chunk Sequence"
+        },
+        "code": {
+          "title": "Code",
+          "type": "string"
+        },
+        "message": {
+          "title": "Message",
+          "type": "string"
+        }
+      },
+      "required": [
+        "code",
+        "message"
+      ],
+      "title": "TranscriptionWarning",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "attempt": {
+      "minimum": 1,
+      "title": "Attempt",
+      "type": "integer"
+    },
+    "chunk": {
+      "$ref": "#/$defs/AudioChunk"
+    },
+    "confidence": {
+      "anyOf": [
+        {
+          "maximum": 1,
+          "minimum": 0,
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Confidence"
+    },
+    "language": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Language"
+    },
+    "model": {
+      "title": "Model",
+      "type": "string"
+    },
+    "provider": {
+      "title": "Provider",
+      "type": "string"
+    },
+    "provider_request_id": {
+      "title": "Provider Request Id",
+      "type": "string"
+    },
+    "raw_metadata": {
+      "additionalProperties": true,
+      "title": "Raw Metadata",
+      "type": "object"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "segments": {
+      "items": {
+        "$ref": "#/$defs/TranscriptSegment"
+      },
+      "title": "Segments",
+      "type": "array"
+    },
+    "text": {
+      "title": "Text",
+      "type": "string"
+    },
+    "warnings": {
+      "items": {
+        "$ref": "#/$defs/TranscriptionWarning"
+      },
+      "title": "Warnings",
+      "type": "array"
+    },
+    "words": {
+      "items": {
+        "$ref": "#/$defs/TranscriptWord"
+      },
+      "title": "Words",
+      "type": "array"
+    }
+  },
+  "required": [
+    "chunk",
+    "provider",
+    "model",
+    "provider_request_id",
+    "attempt",
+    "text",
+    "segments",
+    "words"
+  ],
+  "title": "ChunkTranscriptionResult",
+  "type": "object"
+}
