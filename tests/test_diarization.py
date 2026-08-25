@@ -61,6 +61,7 @@ def test_speaker_labels_reconcile_across_overlap() -> None:
     ]
     turns, warnings = reconcile_speakers(results, duration_seconds=7)
     assert {turn.speaker_label for turn in turns} == {"speaker_001"}
+    assert [(turn.start_seconds, turn.end_seconds) for turn in turns] == [(0, 7)]
     assert not warnings
 
 
