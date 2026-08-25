@@ -45,6 +45,14 @@ def merge_chunk_words(
             previous_overlap[-maximum_alignment_words:],
             current_overlap[:maximum_alignment_words],
         )
+        if remove == 0 and merged and current_overlap:
+            boundary = merged[-1].end_seconds
+            remove = next(
+                (index for index, word in enumerate(words) if word.start_seconds >= boundary),
+                len(words),
+            )
+            confidence = 1.0 if remove else confidence
+            method = "timestamp"
         merged.extend(words[remove:])
         diagnostics.append(MergeDiagnostic(result.chunk.sequence, remove, confidence, method))
         previous = result
