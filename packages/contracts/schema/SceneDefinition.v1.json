@@ -1,0 +1,93 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "actions": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Actions",
+      "type": "array"
+    },
+    "character_ids": {
+      "items": {
+        "format": "uuid",
+        "type": "string"
+      },
+      "title": "Character Ids",
+      "type": "array"
+    },
+    "confidence": {
+      "maximum": 1,
+      "minimum": 0,
+      "title": "Confidence",
+      "type": "number"
+    },
+    "dialogue_summary": {
+      "default": "",
+      "title": "Dialogue Summary",
+      "type": "string"
+    },
+    "location_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Location Id"
+    },
+    "representative_frame_asset_ids": {
+      "items": {
+        "format": "uuid",
+        "type": "string"
+      },
+      "title": "Representative Frame Asset Ids",
+      "type": "array"
+    },
+    "scene_id": {
+      "format": "uuid",
+      "title": "Scene Id",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "sequence": {
+      "minimum": 0,
+      "title": "Sequence",
+      "type": "integer"
+    },
+    "source_end_seconds": {
+      "minimum": 0,
+      "title": "Source End Seconds",
+      "type": "number"
+    },
+    "source_start_seconds": {
+      "minimum": 0,
+      "title": "Source Start Seconds",
+      "type": "number"
+    },
+    "summary": {
+      "minLength": 1,
+      "title": "Summary",
+      "type": "string"
+    }
+  },
+  "required": [
+    "scene_id",
+    "sequence",
+    "source_start_seconds",
+    "source_end_seconds",
+    "summary",
+    "confidence"
+  ],
+  "title": "SceneDefinition",
+  "type": "object"
+}

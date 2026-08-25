@@ -1,0 +1,11 @@
+{
+  "name": "vidgen",
+  "private": true,
+  "packageManager": "pnpm@11.19.0",
+  "scripts": {
+    "lint": "pnpm -r --if-present lint",
+    "test": "pnpm -r --if-present test",
+    "typecheck": "pnpm -r --if-present typecheck"
+  }
+}
+
