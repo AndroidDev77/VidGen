@@ -2,6 +2,10 @@
 
 VidGen is an automated, restartable pipeline for turning long-form video into animated comedy recap videos.
 
+The complete system architecture and T01-T26 implementation roadmap are maintained in
+[`docs/TECHNICAL_DESIGN.md`](docs/TECHNICAL_DESIGN.md). Contributors and coding agents should
+read it together with `AGENTS.md` before planning the next roadmap task.
+
 This repository implements roadmap tasks T01 through T07 plus subtitle-first transcript acquisition:
 
 - Python monorepo, CI, and local infrastructure
