@@ -60,6 +60,15 @@ def test_fuzzy_overlap_and_three_chunks_are_deterministic() -> None:
     assert [word.text for word in first_merge[0]][-3:] == ["go", "right", "now"]
 
 
+def test_timestamp_fallback_preserves_order_when_text_disagrees() -> None:
+    first = _result(0, 0, 3, [("alpha", 0, 1), ("bravo", 1, 2), ("charlie", 2, 3)])
+    second = _result(1, 2, 5, [("different", 2, 3), ("delta", 3, 4), ("echo", 4, 5)])
+    words, diagnostics = merge_chunk_words([first, second])
+    assert [word.text for word in words] == ["alpha", "bravo", "charlie", "delta", "echo"]
+    assert diagnostics[1].method == "timestamp"
+    assert diagnostics[1].removed_words == 1
+
+
 def test_timestamp_reversal_is_rejected() -> None:
     with pytest.raises(ValueError, match="ordered"):
         _result(0, 0, 3, [("later", 2, 3), ("earlier", 1, 2)])
