@@ -11,7 +11,10 @@ import vidgen.db.transcription_models  # noqa: F401
 from services.transcription.chunker import ChunkerConfig
 from services.transcription.fake import FakeTranscriptionProvider
 from services.transcription.pipeline import TranscriptionPipeline
-from vidgen.contracts.transcription import TranscriptionWarning
+from vidgen.contracts.transcription import (
+    CanonicalTranscriptArtifact,
+    TranscriptionWarning,
+)
 from vidgen.db.base import Base
 from vidgen.db.models import Asset, AudioAsset, Project, SourceVideo
 from vidgen.db.transcription_models import Transcript, TranscriptionChunk, TranscriptionRun
@@ -103,6 +106,7 @@ async def test_pipeline_is_idempotent_and_persists_provenance(
     transcript_asset = session.get(Asset, first.transcript_asset_id)
     assert transcript_asset is not None
     assert transcript_asset.parents[0].id == audio.id
+    CanonicalTranscriptArtifact.model_validate_json(store.read(transcript_asset.storage_key))
     assert session.scalar(select(func.count()).select_from(TranscriptionRun)) == 1
     assert session.scalar(select(func.count()).select_from(Transcript)) == 1
     run = session.scalar(select(TranscriptionRun))
@@ -264,3 +268,62 @@ async def test_provider_warnings_are_propagated_to_canonical_transcript(
     transcript = session.get(Transcript, result.transcript_id)
     assert transcript is not None
     assert transcript.warnings[0]["code"] == "provider_warning"
+
+
+@pytest.mark.asyncio
+async def test_provider_request_keys_are_namespaced_across_projects(
+    tmp_path: Path, golden_transcription_audio: Path
+) -> None:
+    session, store, project, source, audio = _foundation(tmp_path, golden_transcription_audio)
+    service = AssetService(session, store)
+    second_project = Project(name="second", visual_style="flat")
+    session.add(second_project)
+    session.flush()
+    second_source_asset = service.store(
+        content=b"second-source",
+        kind="source_video",
+        media_type="video/mp4",
+        project_id=second_project.id,
+        idempotency_key="second-source",
+    )
+    second_source = SourceVideo(
+        project_id=second_project.id,
+        asset_id=second_source_asset.id,
+        filename="second.mp4",
+        duration_seconds=6,
+        probe={},
+    )
+    session.add(second_source)
+    second_audio = service.store_file(
+        path=golden_transcription_audio,
+        kind="audio",
+        media_type="audio/wav",
+        project_id=second_project.id,
+        parent_asset_ids=(second_source_asset.id,),
+        idempotency_key="second-audio",
+    )
+    session.commit()
+    provider = FakeTranscriptionProvider()
+    pipeline = TranscriptionPipeline(
+        session,
+        store,
+        provider,
+        chunker_config=ChunkerConfig(hard_duration_seconds=20),
+    )
+    for values in (
+        (project.id, source.id, audio.id),
+        (second_project.id, second_source.id, second_audio.id),
+    ):
+        await pipeline.process(
+            project_id=values[0],
+            source_video_id=values[1],
+            source_audio_asset_id=values[2],
+            idempotency_key="same-explicit-key",
+        )
+    request_ids = list(
+        session.scalars(
+            select(TranscriptionChunk.provider_request_id).order_by(TranscriptionChunk.id)
+        )
+    )
+    assert len(request_ids) == 2
+    assert len(set(request_ids)) == 2
