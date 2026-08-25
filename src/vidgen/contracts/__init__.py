@@ -20,6 +20,7 @@ from vidgen.contracts.script import RecapScript, ScriptSegment
 from vidgen.contracts.storyboard import ShotDefinition, Storyboard
 from vidgen.contracts.transcription import (
     AudioChunk,
+    CanonicalTranscriptArtifact,
     ChunkTranscriptionResult,
     DiarizationRequest,
     DiarizationResult,
@@ -36,6 +37,7 @@ from vidgen.contracts.transcription import (
 __all__ = [
     "AudioChunk",
     "AudioExtractionResult",
+    "CanonicalTranscriptArtifact",
     "CharacterDefinition",
     "CharacterState",
     "ChunkTranscriptionResult",
