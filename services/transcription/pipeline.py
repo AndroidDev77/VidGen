@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import json
+from dataclasses import asdict
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from uuid import UUID, uuid4
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from services.transcription.chunker import CHUNKER_VERSION, ChunkerConfig, create_audio_chunks
@@ -22,7 +24,7 @@ from vidgen.contracts.transcription import (
     TranscriptSegment,
     TranscriptWord,
 )
-from vidgen.db.models import Asset, Project, SourceVideo
+from vidgen.db.models import Asset, Project, SourceVideo, asset_dependencies
 from vidgen.db.transcription_models import (
     SpeakerTurnRecord,
     Transcript,
@@ -74,6 +76,13 @@ class TranscriptionPipeline:
             or source_audio.project_id != project_id
         ):
             raise ValueError("project, source video, or transcription audio not found")
+        if not self._asset_descends_from(source_audio_asset_id, source_video.asset_id):
+            raise ValueError("transcription audio does not descend from the source video")
+        parameters = {
+            "chunker": asdict(self.chunker_config),
+            "minimum_coverage": self.minimum_coverage,
+            "language_hint": language_hint,
+        }
         run = self.repository.get_run(project_id, idempotency_key)
         if run is None:
             run = self.repository.add_run(
@@ -88,20 +97,15 @@ class TranscriptionPipeline:
                     provider=self.provider.provider_name,
                     transcription_model=self.provider.transcription_model,
                     diarization_model=self.provider.diarization_model,
-                    parameters={
-                        "chunker": {
-                            "max_bytes": self.chunker_config.max_bytes,
-                            "overlap_seconds": self.chunker_config.overlap_seconds,
-                            "hard_duration_seconds": self.chunker_config.hard_duration_seconds,
-                        },
-                        "minimum_coverage": self.minimum_coverage,
-                    },
+                    parameters=parameters,
                 )
             )
             self.session.commit()
-        elif (
-            run.source_video_id != source_video_id
-            or run.source_audio_asset_id != source_audio_asset_id
+        elif not self._run_matches_inputs(
+            run,
+            source_video_id=source_video_id,
+            source_audio_asset_id=source_audio_asset_id,
+            parameters=parameters,
         ):
             raise ValueError("idempotency key belongs to different transcription inputs")
         completed = self.repository.transcript_for_run(run.id)
@@ -209,6 +213,9 @@ class TranscriptionPipeline:
                 turns, speaker_warnings = reconcile_speakers(
                     diarization_results, duration_seconds=duration
                 )
+                language, language_warnings = self._canonical_language(
+                    language_hint, transcription_results
+                )
                 segment = TranscriptSegment(
                     sequence=0,
                     start_seconds=words[0].start_seconds,
@@ -221,18 +228,26 @@ class TranscriptionPipeline:
                     source_chunk_ids=[chunk.asset_id for chunk in chunks],
                     words=words,
                 )
-                warnings = [
-                    TranscriptionWarning(
-                        code="overlap_merge",
-                        message=(
-                            f"chunk {item.chunk_sequence}: removed {item.removed_words} words "
-                            f"using {item.method} alignment ({item.confidence:.3f})"
-                        ),
-                        chunk_sequence=item.chunk_sequence,
-                    )
-                    for item in diagnostics
-                    if item.removed_words
-                ] + speaker_warnings
+                provider_warnings = [
+                    warning for result in transcription_results for warning in result.warnings
+                ] + [warning for _, result in diarization_results for warning in result.warnings]
+                warnings = (
+                    provider_warnings
+                    + language_warnings
+                    + [
+                        TranscriptionWarning(
+                            code="overlap_merge",
+                            message=(
+                                f"chunk {item.chunk_sequence}: removed {item.removed_words} words "
+                                f"using {item.method} alignment ({item.confidence:.3f})"
+                            ),
+                            chunk_sequence=item.chunk_sequence,
+                        )
+                        for item in diagnostics
+                        if item.removed_words
+                    ]
+                    + speaker_warnings
+                )
                 transcript_id = uuid4()
                 canonical = {
                     "schema_version": "1.0",
@@ -241,7 +256,7 @@ class TranscriptionPipeline:
                     "transcript_id": str(transcript_id),
                     "source_video_id": str(source_video_id),
                     "source_audio_asset_id": str(source_audio_asset_id),
-                    "language": language_hint,
+                    "language": language,
                     "text": segment.text,
                     "segments": [segment.model_dump(mode="json")],
                     "speaker_turns": [turn.model_dump(mode="json") for turn in turns],
@@ -268,7 +283,7 @@ class TranscriptionPipeline:
                     project_id=project_id,
                     run_id=run.id,
                     version=self.repository.next_version(project_id),
-                    language=language_hint,
+                    language=language,
                     text=segment.text,
                     transcript_asset_id=transcript_asset.id,
                     duration_seconds=duration,
@@ -307,6 +322,7 @@ class TranscriptionPipeline:
                         )
                     )
                 run.coverage_score = coverage.ratio
+                run.language = language
                 run.error_code = None
                 run.status = "transcribed"
                 self.repository.select_run_and_transcript(run, transcript_row)
@@ -320,7 +336,7 @@ class TranscriptionPipeline:
                     source_audio_asset_id=source_audio_asset_id,
                     transcript_asset_id=transcript_asset.id,
                     status="transcribed",
-                    language=language_hint,
+                    language=language,
                     text=segment.text,
                     segments=[segment],
                     speaker_turns=turns,
@@ -359,6 +375,65 @@ class TranscriptionPipeline:
                 )
             elif row.chunk_asset_id != chunk.asset_id or row.sha256 != chunk.sha256:
                 raise ValueError("chunking parameters changed for an existing transcription run")
+
+    def _asset_descends_from(self, asset_id: UUID, ancestor_id: UUID) -> bool:
+        frontier = [asset_id]
+        visited: set[UUID] = set()
+        while frontier:
+            current = frontier.pop()
+            if current in visited:
+                continue
+            visited.add(current)
+            parent_ids = list(
+                self.session.scalars(
+                    select(asset_dependencies.c.parent_asset_id).where(
+                        asset_dependencies.c.asset_id == current
+                    )
+                )
+            )
+            if ancestor_id in parent_ids:
+                return True
+            frontier.extend(parent_id for parent_id in parent_ids if parent_id not in visited)
+        return False
+
+    def _run_matches_inputs(
+        self,
+        run: TranscriptionRun,
+        *,
+        source_video_id: UUID,
+        source_audio_asset_id: UUID,
+        parameters: dict[str, object],
+    ) -> bool:
+        return (
+            run.source_video_id == source_video_id
+            and run.source_audio_asset_id == source_audio_asset_id
+            and run.chunker_version == CHUNKER_VERSION
+            and run.provider == self.provider.provider_name
+            and run.transcription_model == self.provider.transcription_model
+            and run.diarization_model == self.provider.diarization_model
+            and run.parameters == parameters
+        )
+
+    @staticmethod
+    def _canonical_language(
+        language_hint: str | None,
+        results: list[ChunkTranscriptionResult],
+    ) -> tuple[str | None, list[TranscriptionWarning]]:
+        if language_hint:
+            return language_hint, []
+        languages = list(
+            dict.fromkeys(result.language for result in results if result.language is not None)
+        )
+        if not languages:
+            return None, []
+        if len(languages) == 1:
+            return languages[0], []
+        return languages[0], [
+            TranscriptionWarning(
+                code="conflicting_detected_languages",
+                message=f"provider returned multiple languages: {', '.join(languages)}",
+            )
+        ]
 
     def _status(self, project: Project, run: TranscriptionRun, status: str) -> None:
         project.status = status
