@@ -40,6 +40,7 @@ def test_migrations_render_in_offline_mode(monkeypatch: MonkeyPatch) -> None:
     rendered = output.getvalue()
     assert "CREATE TABLE projects" in rendered
     assert "CREATE TABLE upload_sessions" in rendered
+    assert "CREATE TABLE transcription_runs" in rendered
 
 
 def test_ingestion_downgrade_refuses_to_destroy_deduplicated_provenance(
