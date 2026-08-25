@@ -11,6 +11,7 @@ requires-python = ">=3.12"
 dependencies = [
   "alembic>=1.16,<2",
   "fastapi>=0.116,<1",
+  "httpx>=0.28,<1",
   "pydantic>=2.11,<3",
   "pydantic-settings>=2.10,<3",
   "psycopg[binary]>=3.2,<4",
@@ -20,7 +21,6 @@ dependencies = [
 
 [dependency-groups]
 dev = [
-  "httpx>=0.28,<1",
   "mypy>=1.16,<2",
   "pytest>=8.4,<9",
   "pytest-asyncio>=1.0,<2",
