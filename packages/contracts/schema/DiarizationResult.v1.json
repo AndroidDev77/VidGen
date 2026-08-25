@@ -1,0 +1,169 @@
+{
+  "$defs": {
+    "SpeakerTurn": {
+      "additionalProperties": false,
+      "properties": {
+        "alternate_labels": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Alternate Labels",
+          "type": "array"
+        },
+        "confidence": {
+          "anyOf": [
+            {
+              "maximum": 1,
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Confidence"
+        },
+        "end_seconds": {
+          "exclusiveMinimum": 0,
+          "title": "End Seconds",
+          "type": "number"
+        },
+        "model": {
+          "title": "Model",
+          "type": "string"
+        },
+        "provider": {
+          "title": "Provider",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "sequence": {
+          "minimum": 0,
+          "title": "Sequence",
+          "type": "integer"
+        },
+        "source_chunk_ids": {
+          "items": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Source Chunk Ids",
+          "type": "array"
+        },
+        "speaker_label": {
+          "pattern": "^speaker_[0-9]{3}$",
+          "title": "Speaker Label",
+          "type": "string"
+        },
+        "start_seconds": {
+          "minimum": 0,
+          "title": "Start Seconds",
+          "type": "number"
+        },
+        "warnings": {
+          "items": {
+            "$ref": "#/$defs/TranscriptionWarning"
+          },
+          "title": "Warnings",
+          "type": "array"
+        }
+      },
+      "required": [
+        "sequence",
+        "speaker_label",
+        "start_seconds",
+        "end_seconds",
+        "source_chunk_ids",
+        "provider",
+        "model"
+      ],
+      "title": "SpeakerTurn",
+      "type": "object"
+    },
+    "TranscriptionWarning": {
+      "additionalProperties": false,
+      "properties": {
+        "chunk_sequence": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Chunk Sequence"
+        },
+        "code": {
+          "title": "Code",
+          "type": "string"
+        },
+        "message": {
+          "title": "Message",
+          "type": "string"
+        }
+      },
+      "required": [
+        "code",
+        "message"
+      ],
+      "title": "TranscriptionWarning",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "model": {
+      "title": "Model",
+      "type": "string"
+    },
+    "provider": {
+      "title": "Provider",
+      "type": "string"
+    },
+    "provider_request_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Provider Request Ids",
+      "type": "array"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "turns": {
+      "items": {
+        "$ref": "#/$defs/SpeakerTurn"
+      },
+      "title": "Turns",
+      "type": "array"
+    },
+    "warnings": {
+      "items": {
+        "$ref": "#/$defs/TranscriptionWarning"
+      },
+      "title": "Warnings",
+      "type": "array"
+    }
+  },
+  "required": [
+    "provider",
+    "model",
+    "provider_request_ids",
+    "turns"
+  ],
+  "title": "DiarizationResult",
+  "type": "object"
+}
