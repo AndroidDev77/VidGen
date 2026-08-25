@@ -23,7 +23,9 @@ def main() -> int:
     blob_store = FilesystemBlobStore(settings.blob_root, settings.signing_secret.encode())
     with Session(engine, expire_on_commit=False) as session:
         source = session.scalar(
-            select(SourceVideo).where(SourceVideo.project_id == args.project_id)
+            select(SourceVideo)
+            .where(SourceVideo.project_id == args.project_id)
+            .order_by(SourceVideo.created_at.desc(), SourceVideo.id.desc())
         )
         if source is None:
             parser.error("project has no finalized source video")
