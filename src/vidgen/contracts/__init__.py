@@ -18,11 +18,31 @@ from vidgen.contracts.media import (
 from vidgen.contracts.qa import QAResult
 from vidgen.contracts.script import RecapScript, ScriptSegment
 from vidgen.contracts.storyboard import ShotDefinition, Storyboard
+from vidgen.contracts.transcription import (
+    AudioChunk,
+    CanonicalTranscriptArtifact,
+    ChunkTranscriptionResult,
+    DiarizationRequest,
+    DiarizationResult,
+    SpeakerTurn,
+    TimeInterval,
+    TranscriptCoverage,
+    TranscriptionRequest,
+    TranscriptionResult,
+    TranscriptionWarning,
+    TranscriptSegment,
+    TranscriptWord,
+)
 
 __all__ = [
+    "AudioChunk",
     "AudioExtractionResult",
+    "CanonicalTranscriptArtifact",
     "CharacterDefinition",
     "CharacterState",
+    "ChunkTranscriptionResult",
+    "DiarizationRequest",
+    "DiarizationResult",
     "EpisodeAnalysis",
     "ExtractedFrame",
     "LocationDefinition",
@@ -35,5 +55,13 @@ __all__ = [
     "SceneDetectionResult",
     "ScriptSegment",
     "ShotDefinition",
+    "SpeakerTurn",
     "Storyboard",
+    "TimeInterval",
+    "TranscriptCoverage",
+    "TranscriptSegment",
+    "TranscriptWord",
+    "TranscriptionRequest",
+    "TranscriptionResult",
+    "TranscriptionWarning",
 ]

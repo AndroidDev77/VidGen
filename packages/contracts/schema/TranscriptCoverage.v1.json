@@ -1,0 +1,69 @@
+{
+  "$defs": {
+    "TimeInterval": {
+      "additionalProperties": false,
+      "properties": {
+        "end_seconds": {
+          "exclusiveMinimum": 0,
+          "title": "End Seconds",
+          "type": "number"
+        },
+        "start_seconds": {
+          "minimum": 0,
+          "title": "Start Seconds",
+          "type": "number"
+        }
+      },
+      "required": [
+        "start_seconds",
+        "end_seconds"
+      ],
+      "title": "TimeInterval",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "covered_voiced_seconds": {
+      "minimum": 0,
+      "title": "Covered Voiced Seconds",
+      "type": "number"
+    },
+    "passed": {
+      "title": "Passed",
+      "type": "boolean"
+    },
+    "ratio": {
+      "maximum": 1,
+      "minimum": 0,
+      "title": "Ratio",
+      "type": "number"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "uncovered_intervals": {
+      "items": {
+        "$ref": "#/$defs/TimeInterval"
+      },
+      "title": "Uncovered Intervals",
+      "type": "array"
+    },
+    "voiced_seconds": {
+      "minimum": 0,
+      "title": "Voiced Seconds",
+      "type": "number"
+    }
+  },
+  "required": [
+    "voiced_seconds",
+    "covered_voiced_seconds",
+    "ratio",
+    "passed"
+  ],
+  "title": "TranscriptCoverage",
+  "type": "object"
+}

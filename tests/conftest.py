@@ -71,6 +71,46 @@ def golden_video(tmp_path: Path) -> Path:
 
 
 @pytest.fixture
+def golden_transcription_audio(tmp_path: Path) -> Path:
+    output = tmp_path / "transcription.wav"
+    subprocess.run(
+        [
+            "ffmpeg",
+            "-nostdin",
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-y",
+            "-f",
+            "lavfi",
+            "-i",
+            "sine=frequency=440:duration=2:sample_rate=16000",
+            "-f",
+            "lavfi",
+            "-i",
+            "anullsrc=r=16000:cl=mono:d=0.5",
+            "-f",
+            "lavfi",
+            "-i",
+            "sine=frequency=660:duration=3.5:sample_rate=16000",
+            "-filter_complex",
+            "[0:a][1:a][2:a]concat=n=3:v=0:a=1[out]",
+            "-map",
+            "[out]",
+            "-ac",
+            "1",
+            "-ar",
+            "16000",
+            "-c:a",
+            "pcm_s16le",
+            str(output),
+        ],
+        check=True,
+    )
+    return output
+
+
+@pytest.fixture
 def api_client(tmp_path: Path) -> Generator[tuple[TestClient, sessionmaker[Session]], None, None]:
     engine = create_engine(
         f"sqlite+pysqlite:///{tmp_path / 'api.db'}",

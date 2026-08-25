@@ -1,9 +1,18 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Protocol, TypeVar
+from pathlib import Path
+from typing import TYPE_CHECKING, Any, Protocol, TypeVar
 
 from pydantic import BaseModel
+
+if TYPE_CHECKING:
+    from vidgen.contracts.transcription import (
+        ChunkTranscriptionResult,
+        DiarizationRequest,
+        DiarizationResult,
+        TranscriptionRequest,
+    )
 
 ContractT = TypeVar("ContractT", bound=BaseModel)
 
@@ -59,3 +68,15 @@ class VoiceGenerator(Protocol):
         voice: str,
         idempotency_key: str,
     ) -> ProviderArtifact: ...
+
+
+class TranscriptionProvider(Protocol):
+    provider_name: str
+    transcription_model: str
+    diarization_model: str
+
+    async def transcribe(
+        self, request: TranscriptionRequest, audio_path: Path
+    ) -> ChunkTranscriptionResult: ...
+
+    async def diarize(self, request: DiarizationRequest, audio_path: Path) -> DiarizationResult: ...

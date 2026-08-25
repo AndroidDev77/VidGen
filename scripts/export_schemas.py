@@ -7,8 +7,12 @@ import json
 from pathlib import Path
 
 from vidgen.contracts import (
+    AudioChunk,
     AudioExtractionResult,
+    CanonicalTranscriptArtifact,
     CharacterDefinition,
+    ChunkTranscriptionResult,
+    DiarizationResult,
     EpisodeAnalysis,
     ExtractedFrame,
     MediaProbeResult,
@@ -18,7 +22,12 @@ from vidgen.contracts import (
     SceneDefinition,
     SceneDetectionResult,
     ShotDefinition,
+    SpeakerTurn,
     Storyboard,
+    TranscriptCoverage,
+    TranscriptionResult,
+    TranscriptSegment,
+    TranscriptWord,
 )
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -36,6 +45,15 @@ CONTRACTS = (
     SceneDetectionResult,
     ExtractedFrame,
     MediaProcessingResult,
+    AudioChunk,
+    CanonicalTranscriptArtifact,
+    TranscriptWord,
+    TranscriptSegment,
+    SpeakerTurn,
+    ChunkTranscriptionResult,
+    DiarizationResult,
+    TranscriptCoverage,
+    TranscriptionResult,
 )
 
 

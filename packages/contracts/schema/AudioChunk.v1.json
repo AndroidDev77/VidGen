@@ -1,0 +1,85 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "asset_id": {
+      "format": "uuid",
+      "title": "Asset Id",
+      "type": "string"
+    },
+    "byte_size": {
+      "exclusiveMinimum": 0,
+      "title": "Byte Size",
+      "type": "integer"
+    },
+    "codec": {
+      "title": "Codec",
+      "type": "string"
+    },
+    "end_seconds": {
+      "exclusiveMinimum": 0,
+      "title": "End Seconds",
+      "type": "number"
+    },
+    "idempotency_key": {
+      "title": "Idempotency Key",
+      "type": "string"
+    },
+    "overlap_after_seconds": {
+      "default": 0,
+      "minimum": 0,
+      "title": "Overlap After Seconds",
+      "type": "number"
+    },
+    "overlap_before_seconds": {
+      "default": 0,
+      "minimum": 0,
+      "title": "Overlap Before Seconds",
+      "type": "number"
+    },
+    "parent_audio_asset_id": {
+      "format": "uuid",
+      "title": "Parent Audio Asset Id",
+      "type": "string"
+    },
+    "sample_rate": {
+      "exclusiveMinimum": 0,
+      "title": "Sample Rate",
+      "type": "integer"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "sequence": {
+      "minimum": 0,
+      "title": "Sequence",
+      "type": "integer"
+    },
+    "sha256": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Sha256",
+      "type": "string"
+    },
+    "start_seconds": {
+      "minimum": 0,
+      "title": "Start Seconds",
+      "type": "number"
+    }
+  },
+  "required": [
+    "asset_id",
+    "parent_audio_asset_id",
+    "sequence",
+    "start_seconds",
+    "end_seconds",
+    "byte_size",
+    "sha256",
+    "codec",
+    "sample_rate",
+    "idempotency_key"
+  ],
+  "title": "AudioChunk",
+  "type": "object"
+}
