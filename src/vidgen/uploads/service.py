@@ -120,6 +120,12 @@ class UploadService:
             if existing is not None:
                 if existing.sha256 != actual_hash or existing.byte_size != byte_size:
                     raise UploadError("conflicting_part", "part retry has different content")
+                # A matching retry is also the recovery mechanism for a part file
+                # lost after its database row was committed. Replacing it is atomic
+                # and harmless when the existing file is already healthy.
+                destination = Path(existing.storage_path)
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                os.replace(temporary, destination)
                 return PartWriteResult(existing, duplicate=True)
 
             destination = directory / f"part-{part_number:08d}"
@@ -190,9 +196,7 @@ class UploadService:
             },
             metadata={"original_filename": upload.filename},
         )
-        source = self.session.scalar(
-            select(SourceVideo).where(SourceVideo.project_id == upload.project_id)
-        )
+        source = self.session.scalar(select(SourceVideo).where(SourceVideo.asset_id == stored.id))
         if source is None:
             source = SourceVideo(
                 project_id=upload.project_id,
