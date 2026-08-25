@@ -303,6 +303,7 @@ class SubtitlePipeline:
             ]
             | None
         ) = None
+        provider_failure: httpx.HTTPError | None = None
         ordered = sorted(
             candidates,
             key=lambda item: candidate_sort_key(item, self.config.languages),
@@ -387,7 +388,9 @@ class SubtitlePipeline:
                 failed_row.error_code = type(error).__name__
                 self.session.commit()
                 if isinstance(error, httpx.HTTPError):
-                    raise
+                    provider_failure = error
+        if best is None and provider_failure is not None:
+            raise provider_failure
         return best
 
     def _sidecar_candidates(self, assets: list[Asset | None]) -> list[SubtitleCandidate]:

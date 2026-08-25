@@ -13,7 +13,12 @@ import vidgen.db.transcription_models  # noqa: F401
 from packages.providers import FakeSubtitleProvider
 from services.subtitles.pipeline import SubtitlePipeline, SubtitlePipelineConfig
 from services.subtitles.sync import SubtitleSyncResult
-from vidgen.contracts.subtitles import CanonicalSubtitleTranscriptArtifact
+from vidgen.contracts.subtitles import (
+    CanonicalSubtitleTranscriptArtifact,
+    ProviderSubtitleDownload,
+    SubtitleCandidate,
+    SubtitleSearchRequest,
+)
 from vidgen.db.base import Base
 from vidgen.db.models import Asset, Project, SourceVideo
 from vidgen.db.subtitle_models import SubtitleCandidateRecord, SubtitleRun
@@ -195,6 +200,43 @@ async def test_provider_http_failure_remains_retryable(tmp_path: Path, golden_vi
         )
     run = session.scalar(select(SubtitleRun))
     assert run is not None and run.status == "subtitle_failed"
+
+
+@pytest.mark.asyncio
+async def test_provider_http_failure_does_not_hide_usable_candidate(
+    tmp_path: Path, golden_video: Path
+) -> None:
+    session, store, project, source, _ = _foundation(tmp_path, golden_video)
+
+    class PartialOutageProvider(FakeSubtitleProvider):
+        async def search(self, request: SubtitleSearchRequest) -> list[SubtitleCandidate]:
+            candidates = await super().search(request)
+            usable = candidates[0].model_copy(
+                update={"candidate_id": "usable", "provider_subtitle_id": "usable"}
+            )
+            stale = candidates[0].model_copy(
+                update={
+                    "candidate_id": "stale",
+                    "provider_subtitle_id": "stale",
+                    "download_count": 1_000,
+                }
+            )
+            return [usable, stale]
+
+        async def download(
+            self, candidate: SubtitleCandidate, *, idempotency_key: str
+        ) -> ProviderSubtitleDownload:
+            if candidate.candidate_id == "stale":
+                raise httpx.ReadTimeout("stale download link")
+            return await super().download(candidate, idempotency_key=idempotency_key)
+
+    result = await SubtitlePipeline(session, store, PartialOutageProvider()).process(
+        project_id=project.id,
+        source_video_id=source.id,
+        idempotency_key="partial-provider-outage",
+    )
+    assert result.candidate.candidate_id == "usable"
+    assert result.status == "subtitle_imported"
 
 
 @pytest.mark.asyncio
