@@ -70,10 +70,10 @@ def test_timestamp_fallback_preserves_order_when_text_disagrees() -> None:
 
 
 def test_exact_text_at_distinct_timestamps_is_not_deduplicated() -> None:
-    first = _result(0, 0, 4, [("again", 2, 2.5)])
-    second = _result(1, 2, 5, [("again", 3, 3.5), ("later", 4, 5)])
+    first = _result(0, 0, 4, [("no", 2, 2.1)])
+    second = _result(1, 2, 5, [("no", 2.6, 2.7), ("later", 4, 5)])
     words, diagnostics = merge_chunk_words([first, second])
-    assert [word.text for word in words] == ["again", "again", "later"]
+    assert [word.text for word in words] == ["no", "no", "later"]
     assert diagnostics[1].method == "timestamp"
     assert diagnostics[1].removed_words == 0
 
