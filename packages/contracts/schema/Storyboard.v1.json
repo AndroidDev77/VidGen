@@ -1,0 +1,222 @@
+{
+  "$defs": {
+    "CharacterState": {
+      "additionalProperties": false,
+      "properties": {
+        "character_id": {
+          "format": "uuid",
+          "title": "Character Id",
+          "type": "string"
+        },
+        "emotional_state": {
+          "default": "neutral",
+          "title": "Emotional State",
+          "type": "string"
+        },
+        "injury_state": {
+          "default": "none",
+          "title": "Injury State",
+          "type": "string"
+        },
+        "location_id": {
+          "format": "uuid",
+          "title": "Location Id",
+          "type": "string"
+        },
+        "props": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Props",
+          "type": "array"
+        },
+        "scene_id": {
+          "format": "uuid",
+          "title": "Scene Id",
+          "type": "string"
+        },
+        "wardrobe_state": {
+          "title": "Wardrobe State",
+          "type": "string"
+        }
+      },
+      "required": [
+        "character_id",
+        "wardrobe_state",
+        "location_id",
+        "scene_id"
+      ],
+      "title": "CharacterState",
+      "type": "object"
+    },
+    "ShotDefinition": {
+      "additionalProperties": false,
+      "properties": {
+        "action": {
+          "minLength": 1,
+          "title": "Action",
+          "type": "string"
+        },
+        "camera_motion": {
+          "default": "locked",
+          "title": "Camera Motion",
+          "type": "string"
+        },
+        "character_states": {
+          "items": {
+            "$ref": "#/$defs/CharacterState"
+          },
+          "title": "Character States",
+          "type": "array"
+        },
+        "composition": {
+          "minLength": 1,
+          "title": "Composition",
+          "type": "string"
+        },
+        "duration_seconds": {
+          "exclusiveMinimum": 0,
+          "title": "Duration Seconds",
+          "type": "number"
+        },
+        "image_prompt": {
+          "default": "",
+          "title": "Image Prompt",
+          "type": "string"
+        },
+        "location_id": {
+          "format": "uuid",
+          "title": "Location Id",
+          "type": "string"
+        },
+        "max_provider_clip_seconds": {
+          "default": 10,
+          "exclusiveMinimum": 0,
+          "title": "Max Provider Clip Seconds",
+          "type": "number"
+        },
+        "negative_prompt": {
+          "default": "random text, watermark, extra limbs, duplicate characters",
+          "title": "Negative Prompt",
+          "type": "string"
+        },
+        "reference_asset_ids": {
+          "items": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "title": "Reference Asset Ids",
+          "type": "array"
+        },
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "seed": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Seed"
+        },
+        "segment_id": {
+          "format": "uuid",
+          "title": "Segment Id",
+          "type": "string"
+        },
+        "sequence": {
+          "minimum": 0,
+          "title": "Sequence",
+          "type": "integer"
+        },
+        "shot_id": {
+          "format": "uuid",
+          "title": "Shot Id",
+          "type": "string"
+        },
+        "video_prompt": {
+          "default": "",
+          "title": "Video Prompt",
+          "type": "string"
+        },
+        "visual_gag": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Visual Gag"
+        }
+      },
+      "required": [
+        "shot_id",
+        "segment_id",
+        "sequence",
+        "duration_seconds",
+        "location_id",
+        "action",
+        "composition"
+      ],
+      "title": "ShotDefinition",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "project_id": {
+      "format": "uuid",
+      "title": "Project Id",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "script_revision": {
+      "minimum": 1,
+      "title": "Script Revision",
+      "type": "integer"
+    },
+    "shots": {
+      "items": {
+        "$ref": "#/$defs/ShotDefinition"
+      },
+      "minItems": 1,
+      "title": "Shots",
+      "type": "array"
+    },
+    "total_duration_seconds": {
+      "exclusiveMinimum": 0,
+      "title": "Total Duration Seconds",
+      "type": "number"
+    },
+    "visual_style": {
+      "minLength": 1,
+      "title": "Visual Style",
+      "type": "string"
+    }
+  },
+  "required": [
+    "project_id",
+    "script_revision",
+    "total_duration_seconds",
+    "visual_style",
+    "shots"
+  ],
+  "title": "Storyboard",
+  "type": "object"
+}

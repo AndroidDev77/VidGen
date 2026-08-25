@@ -1,0 +1,165 @@
+{
+  "$defs": {
+    "DialogueLine": {
+      "additionalProperties": false,
+      "properties": {
+        "character_id": {
+          "format": "uuid",
+          "title": "Character Id",
+          "type": "string"
+        },
+        "delivery": {
+          "default": "",
+          "title": "Delivery",
+          "type": "string"
+        },
+        "text": {
+          "minLength": 1,
+          "title": "Text",
+          "type": "string"
+        }
+      },
+      "required": [
+        "character_id",
+        "text"
+      ],
+      "title": "DialogueLine",
+      "type": "object"
+    },
+    "ScriptSegment": {
+      "additionalProperties": false,
+      "properties": {
+        "dialogue": {
+          "items": {
+            "$ref": "#/$defs/DialogueLine"
+          },
+          "title": "Dialogue",
+          "type": "array"
+        },
+        "measured_duration_seconds": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Measured Duration Seconds"
+        },
+        "narration": {
+          "minLength": 1,
+          "title": "Narration",
+          "type": "string"
+        },
+        "plot_beat_ids": {
+          "items": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Plot Beat Ids",
+          "type": "array"
+        },
+        "segment_id": {
+          "format": "uuid",
+          "title": "Segment Id",
+          "type": "string"
+        },
+        "sequence": {
+          "minimum": 0,
+          "title": "Sequence",
+          "type": "integer"
+        },
+        "target_duration_seconds": {
+          "exclusiveMinimum": 0,
+          "title": "Target Duration Seconds",
+          "type": "number"
+        },
+        "visual_gags": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Visual Gags",
+          "type": "array"
+        }
+      },
+      "required": [
+        "segment_id",
+        "sequence",
+        "plot_beat_ids",
+        "narration",
+        "target_duration_seconds"
+      ],
+      "title": "ScriptSegment",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "humor_intensity": {
+      "maximum": 10,
+      "minimum": 0,
+      "title": "Humor Intensity",
+      "type": "integer"
+    },
+    "narrator_style": {
+      "title": "Narrator Style",
+      "type": "string"
+    },
+    "project_id": {
+      "format": "uuid",
+      "title": "Project Id",
+      "type": "string"
+    },
+    "revision": {
+      "minimum": 1,
+      "title": "Revision",
+      "type": "integer"
+    },
+    "safety_notes": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Safety Notes",
+      "type": "array"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "segments": {
+      "items": {
+        "$ref": "#/$defs/ScriptSegment"
+      },
+      "minItems": 1,
+      "title": "Segments",
+      "type": "array"
+    },
+    "target_duration_seconds": {
+      "exclusiveMinimum": 0,
+      "title": "Target Duration Seconds",
+      "type": "number"
+    },
+    "title": {
+      "minLength": 1,
+      "title": "Title",
+      "type": "string"
+    }
+  },
+  "required": [
+    "project_id",
+    "revision",
+    "title",
+    "target_duration_seconds",
+    "humor_intensity",
+    "narrator_style",
+    "segments"
+  ],
+  "title": "RecapScript",
+  "type": "object"
+}

@@ -1,0 +1,144 @@
+{
+  "$defs": {
+    "WardrobeState": {
+      "additionalProperties": false,
+      "properties": {
+        "accessories": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Accessories",
+          "type": "array"
+        },
+        "colors": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Colors",
+          "type": "array"
+        },
+        "description": {
+          "minLength": 1,
+          "title": "Description",
+          "type": "string"
+        },
+        "state_id": {
+          "minLength": 1,
+          "title": "State Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "state_id",
+        "description"
+      ],
+      "title": "WardrobeState",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "aliases": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Aliases",
+      "type": "array"
+    },
+    "appearance": {
+      "minLength": 1,
+      "title": "Appearance",
+      "type": "string"
+    },
+    "body_proportions": {
+      "title": "Body Proportions",
+      "type": "string"
+    },
+    "canonical_name": {
+      "minLength": 1,
+      "title": "Canonical Name",
+      "type": "string"
+    },
+    "character_id": {
+      "format": "uuid",
+      "title": "Character Id",
+      "type": "string"
+    },
+    "default_wardrobe_state": {
+      "title": "Default Wardrobe State",
+      "type": "string"
+    },
+    "face": {
+      "title": "Face",
+      "type": "string"
+    },
+    "hair": {
+      "title": "Hair",
+      "type": "string"
+    },
+    "personality": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Personality",
+      "type": "array"
+    },
+    "reference_asset_ids": {
+      "items": {
+        "format": "uuid",
+        "type": "string"
+      },
+      "title": "Reference Asset Ids",
+      "type": "array"
+    },
+    "role": {
+      "enum": [
+        "protagonist",
+        "antagonist",
+        "supporting",
+        "minor"
+      ],
+      "title": "Role",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "signature_accessories": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Signature Accessories",
+      "type": "array"
+    },
+    "skin_tone": {
+      "title": "Skin Tone",
+      "type": "string"
+    },
+    "wardrobe_states": {
+      "items": {
+        "$ref": "#/$defs/WardrobeState"
+      },
+      "minItems": 1,
+      "title": "Wardrobe States",
+      "type": "array"
+    }
+  },
+  "required": [
+    "character_id",
+    "canonical_name",
+    "role",
+    "appearance",
+    "face",
+    "hair",
+    "skin_tone",
+    "body_proportions",
+    "default_wardrobe_state",
+    "wardrobe_states"
+  ],
+  "title": "CharacterDefinition",
+  "type": "object"
+}

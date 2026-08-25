@@ -1,0 +1,460 @@
+{
+  "$defs": {
+    "CharacterDefinition": {
+      "additionalProperties": false,
+      "properties": {
+        "aliases": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Aliases",
+          "type": "array"
+        },
+        "appearance": {
+          "minLength": 1,
+          "title": "Appearance",
+          "type": "string"
+        },
+        "body_proportions": {
+          "title": "Body Proportions",
+          "type": "string"
+        },
+        "canonical_name": {
+          "minLength": 1,
+          "title": "Canonical Name",
+          "type": "string"
+        },
+        "character_id": {
+          "format": "uuid",
+          "title": "Character Id",
+          "type": "string"
+        },
+        "default_wardrobe_state": {
+          "title": "Default Wardrobe State",
+          "type": "string"
+        },
+        "face": {
+          "title": "Face",
+          "type": "string"
+        },
+        "hair": {
+          "title": "Hair",
+          "type": "string"
+        },
+        "personality": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Personality",
+          "type": "array"
+        },
+        "reference_asset_ids": {
+          "items": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "title": "Reference Asset Ids",
+          "type": "array"
+        },
+        "role": {
+          "enum": [
+            "protagonist",
+            "antagonist",
+            "supporting",
+            "minor"
+          ],
+          "title": "Role",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "signature_accessories": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Signature Accessories",
+          "type": "array"
+        },
+        "skin_tone": {
+          "title": "Skin Tone",
+          "type": "string"
+        },
+        "wardrobe_states": {
+          "items": {
+            "$ref": "#/$defs/WardrobeState"
+          },
+          "minItems": 1,
+          "title": "Wardrobe States",
+          "type": "array"
+        }
+      },
+      "required": [
+        "character_id",
+        "canonical_name",
+        "role",
+        "appearance",
+        "face",
+        "hair",
+        "skin_tone",
+        "body_proportions",
+        "default_wardrobe_state",
+        "wardrobe_states"
+      ],
+      "title": "CharacterDefinition",
+      "type": "object"
+    },
+    "LocationDefinition": {
+      "additionalProperties": false,
+      "properties": {
+        "canonical_name": {
+          "minLength": 1,
+          "title": "Canonical Name",
+          "type": "string"
+        },
+        "description": {
+          "minLength": 1,
+          "title": "Description",
+          "type": "string"
+        },
+        "fixed_features": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Fixed Features",
+          "type": "array"
+        },
+        "layout": {
+          "title": "Layout",
+          "type": "string"
+        },
+        "location_id": {
+          "format": "uuid",
+          "title": "Location Id",
+          "type": "string"
+        },
+        "palette": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Palette",
+          "type": "array"
+        },
+        "reference_asset_ids": {
+          "items": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "title": "Reference Asset Ids",
+          "type": "array"
+        },
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        }
+      },
+      "required": [
+        "location_id",
+        "canonical_name",
+        "description",
+        "layout"
+      ],
+      "title": "LocationDefinition",
+      "type": "object"
+    },
+    "PlotBeat": {
+      "additionalProperties": false,
+      "properties": {
+        "importance": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Importance",
+          "type": "number"
+        },
+        "payoff_ids": {
+          "items": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "title": "Payoff Ids",
+          "type": "array"
+        },
+        "plot_beat_id": {
+          "format": "uuid",
+          "title": "Plot Beat Id",
+          "type": "string"
+        },
+        "required_for_coherence": {
+          "title": "Required For Coherence",
+          "type": "boolean"
+        },
+        "scene_ids": {
+          "items": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Scene Ids",
+          "type": "array"
+        },
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "sequence": {
+          "minimum": 0,
+          "title": "Sequence",
+          "type": "integer"
+        },
+        "setup_ids": {
+          "items": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "title": "Setup Ids",
+          "type": "array"
+        },
+        "summary": {
+          "minLength": 1,
+          "title": "Summary",
+          "type": "string"
+        }
+      },
+      "required": [
+        "plot_beat_id",
+        "sequence",
+        "scene_ids",
+        "summary",
+        "importance",
+        "required_for_coherence"
+      ],
+      "title": "PlotBeat",
+      "type": "object"
+    },
+    "SceneDefinition": {
+      "additionalProperties": false,
+      "properties": {
+        "actions": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Actions",
+          "type": "array"
+        },
+        "character_ids": {
+          "items": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "title": "Character Ids",
+          "type": "array"
+        },
+        "confidence": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Confidence",
+          "type": "number"
+        },
+        "dialogue_summary": {
+          "default": "",
+          "title": "Dialogue Summary",
+          "type": "string"
+        },
+        "location_id": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Location Id"
+        },
+        "representative_frame_asset_ids": {
+          "items": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "title": "Representative Frame Asset Ids",
+          "type": "array"
+        },
+        "scene_id": {
+          "format": "uuid",
+          "title": "Scene Id",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "sequence": {
+          "minimum": 0,
+          "title": "Sequence",
+          "type": "integer"
+        },
+        "source_end_seconds": {
+          "minimum": 0,
+          "title": "Source End Seconds",
+          "type": "number"
+        },
+        "source_start_seconds": {
+          "minimum": 0,
+          "title": "Source Start Seconds",
+          "type": "number"
+        },
+        "summary": {
+          "minLength": 1,
+          "title": "Summary",
+          "type": "string"
+        }
+      },
+      "required": [
+        "scene_id",
+        "sequence",
+        "source_start_seconds",
+        "source_end_seconds",
+        "summary",
+        "confidence"
+      ],
+      "title": "SceneDefinition",
+      "type": "object"
+    },
+    "WardrobeState": {
+      "additionalProperties": false,
+      "properties": {
+        "accessories": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Accessories",
+          "type": "array"
+        },
+        "colors": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Colors",
+          "type": "array"
+        },
+        "description": {
+          "minLength": 1,
+          "title": "Description",
+          "type": "string"
+        },
+        "state_id": {
+          "minLength": 1,
+          "title": "State Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "state_id",
+        "description"
+      ],
+      "title": "WardrobeState",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "characters": {
+      "items": {
+        "$ref": "#/$defs/CharacterDefinition"
+      },
+      "title": "Characters",
+      "type": "array"
+    },
+    "genre": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Genre",
+      "type": "array"
+    },
+    "locations": {
+      "items": {
+        "$ref": "#/$defs/LocationDefinition"
+      },
+      "title": "Locations",
+      "type": "array"
+    },
+    "logline": {
+      "minLength": 1,
+      "title": "Logline",
+      "type": "string"
+    },
+    "plot_beats": {
+      "items": {
+        "$ref": "#/$defs/PlotBeat"
+      },
+      "title": "Plot Beats",
+      "type": "array"
+    },
+    "project_id": {
+      "format": "uuid",
+      "title": "Project Id",
+      "type": "string"
+    },
+    "scenes": {
+      "items": {
+        "$ref": "#/$defs/SceneDefinition"
+      },
+      "title": "Scenes",
+      "type": "array"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "source_duration_seconds": {
+      "minimum": 0,
+      "title": "Source Duration Seconds",
+      "type": "number"
+    },
+    "themes": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Themes",
+      "type": "array"
+    },
+    "title": {
+      "minLength": 1,
+      "title": "Title",
+      "type": "string"
+    },
+    "unresolved_ambiguities": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Unresolved Ambiguities",
+      "type": "array"
+    }
+  },
+  "required": [
+    "project_id",
+    "title",
+    "source_duration_seconds",
+    "logline",
+    "characters",
+    "locations",
+    "scenes",
+    "plot_beats"
+  ],
+  "title": "EpisodeAnalysis",
+  "type": "object"
+}

@@ -1,0 +1,143 @@
+{
+  "$defs": {
+    "QACheck": {
+      "additionalProperties": false,
+      "properties": {
+        "evidence": {
+          "title": "Evidence",
+          "type": "string"
+        },
+        "name": {
+          "enum": [
+            "character_identity",
+            "character_count",
+            "location",
+            "wardrobe",
+            "artifact_free",
+            "face_quality",
+            "text_free",
+            "action",
+            "composition",
+            "continuity",
+            "style"
+          ],
+          "title": "Name",
+          "type": "string"
+        },
+        "score": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Score",
+          "type": "number"
+        }
+      },
+      "required": [
+        "name",
+        "score",
+        "evidence"
+      ],
+      "title": "QACheck",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "asset_id": {
+      "format": "uuid",
+      "title": "Asset Id",
+      "type": "string"
+    },
+    "attempt": {
+      "minimum": 1,
+      "title": "Attempt",
+      "type": "integer"
+    },
+    "checks": {
+      "items": {
+        "$ref": "#/$defs/QACheck"
+      },
+      "minItems": 1,
+      "title": "Checks",
+      "type": "array"
+    },
+    "decision": {
+      "enum": [
+        "pass",
+        "fail",
+        "human_review"
+      ],
+      "title": "Decision",
+      "type": "string"
+    },
+    "evaluator_model": {
+      "title": "Evaluator Model",
+      "type": "string"
+    },
+    "evaluator_provider": {
+      "title": "Evaluator Provider",
+      "type": "string"
+    },
+    "failure_codes": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Failure Codes",
+      "type": "array"
+    },
+    "overall_score": {
+      "maximum": 1,
+      "minimum": 0,
+      "title": "Overall Score",
+      "type": "number"
+    },
+    "project_id": {
+      "format": "uuid",
+      "title": "Project Id",
+      "type": "string"
+    },
+    "qa_result_id": {
+      "format": "uuid",
+      "title": "Qa Result Id",
+      "type": "string"
+    },
+    "repair_instructions": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Repair Instructions",
+      "type": "array"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "shot_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Shot Id"
+    }
+  },
+  "required": [
+    "qa_result_id",
+    "project_id",
+    "asset_id",
+    "attempt",
+    "decision",
+    "overall_score",
+    "checks",
+    "evaluator_provider",
+    "evaluator_model"
+  ],
+  "title": "QAResult",
+  "type": "object"
+}
