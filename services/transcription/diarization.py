@@ -64,7 +64,14 @@ def reconcile_speakers(
                         "source_chunk_ids": list(
                             dict.fromkeys([*turn.source_chunk_ids, chunk.asset_id])
                         ),
-                        "alternate_labels": alternatives[turn.speaker_label],
+                        "alternate_labels": list(
+                            dict.fromkeys(
+                                [
+                                    *turn.alternate_labels,
+                                    *alternatives[turn.speaker_label],
+                                ]
+                            )
+                        ),
                     }
                 )
             )
@@ -89,6 +96,10 @@ def _merge_adjacent(turns: list[SpeakerTurn], gap: float) -> list[SpeakerTurn]:
                     "end_seconds": max(previous.end_seconds, turn.end_seconds),
                     "source_chunk_ids": source_ids,
                     "confidence": _minimum_confidence(previous.confidence, turn.confidence),
+                    "alternate_labels": list(
+                        dict.fromkeys([*previous.alternate_labels, *turn.alternate_labels])
+                    ),
+                    "warnings": _merge_warnings(previous.warnings, turn.warnings),
                 }
             )
         else:
@@ -103,3 +114,13 @@ def _overlap(a_start: float, a_end: float, b_start: float, b_end: float) -> floa
 def _minimum_confidence(first: float | None, second: float | None) -> float | None:
     values = [value for value in (first, second) if value is not None]
     return min(values) if values else None
+
+
+def _merge_warnings(
+    first: list[TranscriptionWarning], second: list[TranscriptionWarning]
+) -> list[TranscriptionWarning]:
+    keyed = {
+        (warning.code, warning.message, warning.chunk_sequence): warning
+        for warning in [*first, *second]
+    }
+    return list(keyed.values())
