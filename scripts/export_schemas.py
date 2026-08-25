@@ -9,6 +9,7 @@ from pathlib import Path
 from vidgen.contracts import (
     AudioChunk,
     AudioExtractionResult,
+    CanonicalTranscriptArtifact,
     CharacterDefinition,
     ChunkTranscriptionResult,
     DiarizationResult,
@@ -45,6 +46,7 @@ CONTRACTS = (
     ExtractedFrame,
     MediaProcessingResult,
     AudioChunk,
+    CanonicalTranscriptArtifact,
     TranscriptWord,
     TranscriptSegment,
     SpeakerTurn,
