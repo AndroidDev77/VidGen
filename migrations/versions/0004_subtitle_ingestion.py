@@ -150,11 +150,19 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     connection = op.get_bind()
-    if connection.execute(sa.text("SELECT 1 FROM subtitle_runs LIMIT 1")).first() is not None:
-        raise RuntimeError(
-            "cannot downgrade 0004_subtitle_ingestion while subtitle transcripts exist; "
-            "export or delete subtitle runs before retrying"
+    connection.execute(
+        sa.text(
+            "DELETE FROM speaker_turns WHERE transcript_id IN "
+            "(SELECT id FROM transcripts WHERE subtitle_run_id IS NOT NULL)"
         )
+    )
+    connection.execute(
+        sa.text(
+            "DELETE FROM transcript_segments WHERE transcript_id IN "
+            "(SELECT id FROM transcripts WHERE subtitle_run_id IS NOT NULL)"
+        )
+    )
+    connection.execute(sa.text("DELETE FROM transcripts WHERE subtitle_run_id IS NOT NULL"))
     with op.batch_alter_table("transcripts") as batch:
         batch.drop_constraint("exactly_one_origin_run", type_="check")
         batch.drop_constraint("uq_transcripts_subtitle_run_id", type_="unique")

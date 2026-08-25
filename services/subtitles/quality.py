@@ -62,6 +62,7 @@ def score_subtitle(
         score >= minimum_score
         and bool(cues)
         and (allow_forced or not candidate.forced)
+        and (voiced_coverage is None or voiced_coverage >= 0.55)
         and not any(cue.end_seconds > duration_seconds + 2 for cue in cues)
     )
     return SubtitleQuality(

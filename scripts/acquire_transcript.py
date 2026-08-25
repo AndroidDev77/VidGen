@@ -65,6 +65,7 @@ async def run(args: argparse.Namespace) -> int:
                 project_id=args.project_id,
                 source_video_id=source.id,
                 source_audio_asset_id=audio.asset_id,
+                sidecar_asset_ids=tuple(args.sidecar_asset_id),
                 idempotency_key=args.idempotency_key or f"transcript-acquisition:{source.id}:v1",
                 query=args.query,
                 imdb_id=args.imdb_id,
@@ -103,7 +104,7 @@ def _transcription_provider(name: str, settings: APISettings) -> TranscriptionPr
     )
 
 
-def main() -> int:
+def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Acquire subtitles first, then fall back to audio transcription"
     )
@@ -118,7 +119,18 @@ def main() -> int:
     parser.add_argument("--query")
     parser.add_argument("--imdb-id")
     parser.add_argument("--language")
-    return asyncio.run(run(parser.parse_args()))
+    parser.add_argument(
+        "--sidecar-asset-id",
+        action="append",
+        default=[],
+        type=UUID,
+        help="Project-scoped subtitle asset UUID; repeat for multiple candidates",
+    )
+    return parser
+
+
+def main() -> int:
+    return asyncio.run(run(build_parser().parse_args()))
 
 
 if __name__ == "__main__":

@@ -161,15 +161,21 @@ class SubtitlePipeline:
                     for message in discovery_warnings
                 )
                 candidates.extend(self._sidecar_candidates(sidecars))
-                local_may_be_usable = any(
-                    self.config.allow_forced_subtitles or not candidate.forced
-                    for candidate in candidates
+                candidates = _deduplicate_candidates(candidates)
+                self._checkpoint_candidates(run, candidates)
+                self.session.commit()
+                self._status(project, run, "subtitle_validating")
+                best = await self._evaluate_candidates(
+                    candidates,
+                    run=run,
+                    video_path=video_path,
+                    workspace=workspace,
+                    source_asset=source_asset,
+                    idempotency_key=idempotency_key,
+                    duration=duration,
+                    voiced=voiced,
                 )
-                if (
-                    self.provider
-                    and self.config.allow_provider_search
-                    and not local_may_be_usable
-                ):
+                if best is None and self.provider and self.config.allow_provider_search:
                     self._status(project, run, "subtitle_searching")
                     title, season, episode = _media_identity(query or source_video.filename)
                     request = SubtitleSearchRequest(
@@ -182,102 +188,22 @@ class SubtitlePipeline:
                         episode_number=episode,
                         languages=list(self.config.languages),
                     )
-                    candidates.extend(await self.provider.search(request))
-                candidates = _deduplicate_candidates(candidates)
-                self._checkpoint_candidates(run, candidates)
-                self.session.commit()
-                if not candidates:
-                    raise SubtitleUnavailableError("no subtitle candidates were found")
-
-                self._status(project, run, "subtitle_validating")
-                best: (
-                    tuple[
-                        SubtitleCandidate,
-                        SubtitleCandidateRecord,
-                        Asset,
-                        list[SubtitleCue],
-                        SubtitleQuality,
-                    ]
-                    | None
-                ) = None
-                ordered = sorted(
-                    candidates,
-                    key=lambda item: candidate_sort_key(item, self.config.languages),
-                    reverse=True,
-                )
-                rows = {row.candidate_id: row for row in self.repository.candidates(run.id)}
-                for candidate in ordered:
-                    row = rows[candidate.candidate_id]
-                    try:
-                        material = await self._materialize_candidate(
-                            candidate,
-                            row,
-                            video_path,
-                            workspace,
-                            source_asset,
-                            idempotency_key,
-                        )
-                        content = self.blob_store.read(material.storage_key)
-                        cues = parse_subtitles(content, _format(candidate, material))
-                        sync_offset = None
-                        sync_correlation = None
-                        if (
-                            candidate.source_type == "provider"
-                            and self.config.synchronize_provider_subtitles
-                        ):
-                            source_sub = workspace / f"{candidate.candidate_id}.srt"
-                            source_sub.write_bytes(content)
-                            synced = synchronize_subtitle(
-                                video_path,
-                                source_sub,
-                                workspace / f"{candidate.candidate_id}.synced.srt",
-                            )
-                            sync_offset = synced.offset_seconds
-                            sync_correlation = synced.correlation
-                            synced_asset = self.assets.store_file(
-                                path=synced.path,
-                                kind="subtitle",
-                                media_type="application/x-subrip",
-                                project_id=project_id,
-                                parent_asset_ids=(material.id, source_asset.id),
-                                provider="ffsubsync",
-                                idempotency_key=f"{idempotency_key}:sync:{candidate.candidate_id}",
-                                generation_parameters={
-                                    "offset_seconds": sync_offset,
-                                    "correlation": sync_correlation,
-                                },
-                            )
-                            synced_material = self.session.get(Asset, synced_asset.id)
-                            if synced_material is None:
-                                raise RuntimeError("synchronized subtitle asset is missing")
-                            material = synced_material
-                            cues = parse_subtitles(
-                                self.blob_store.read(material.storage_key), "srt"
-                            )
-                        quality = score_subtitle(
-                            candidate,
-                            cues,
-                            duration_seconds=duration,
-                            requested_languages=self.config.languages,
-                            voiced=voiced,
-                            sync_offset_seconds=sync_offset,
-                            sync_correlation=sync_correlation,
-                            minimum_score=self.config.minimum_quality_score,
-                            allow_forced=self.config.allow_forced_subtitles,
-                        )
-                        row.asset_id = material.id
-                        row.score = quality.score
-                        row.quality = quality.model_dump(mode="json")
-                        row.status = "accepted" if quality.passed else "rejected"
-                        self.session.commit()
-                        if quality.passed and (best is None or quality.score > best[4].score):
-                            best = (candidate, row, material, cues, quality)
-                    except (ValueError, MediaCommandError, httpx.HTTPError) as error:
-                        self.session.rollback()
-                        row = rows[candidate.candidate_id]
-                        row.status = "failed"
-                        row.error_code = type(error).__name__
-                        self.session.commit()
+                    provider_candidates = _deduplicate_candidates(
+                        await self.provider.search(request)
+                    )
+                    self._checkpoint_candidates(run, provider_candidates)
+                    self.session.commit()
+                    self._status(project, run, "subtitle_validating")
+                    best = await self._evaluate_candidates(
+                        provider_candidates,
+                        run=run,
+                        video_path=video_path,
+                        workspace=workspace,
+                        source_asset=source_asset,
+                        idempotency_key=idempotency_key,
+                        duration=duration,
+                        voiced=voiced,
+                    )
                 if best is None:
                     raise SubtitleUnavailableError(
                         "no subtitle candidate passed quality validation"
@@ -319,6 +245,117 @@ class SubtitlePipeline:
                 project.status = run.status
                 self.session.commit()
             raise
+
+    async def _evaluate_candidates(
+        self,
+        candidates: list[SubtitleCandidate],
+        *,
+        run: SubtitleRun,
+        video_path: Path,
+        workspace: Path,
+        source_asset: Asset,
+        idempotency_key: str,
+        duration: float,
+        voiced: list[TimeInterval] | None,
+    ) -> (
+        tuple[
+            SubtitleCandidate,
+            SubtitleCandidateRecord,
+            Asset,
+            list[SubtitleCue],
+            SubtitleQuality,
+        ]
+        | None
+    ):
+        best: (
+            tuple[
+                SubtitleCandidate,
+                SubtitleCandidateRecord,
+                Asset,
+                list[SubtitleCue],
+                SubtitleQuality,
+            ]
+            | None
+        ) = None
+        ordered = sorted(
+            candidates,
+            key=lambda item: candidate_sort_key(item, self.config.languages),
+            reverse=True,
+        )
+        rows = {row.candidate_id: row for row in self.repository.candidates(run.id)}
+        for candidate in ordered:
+            row = rows[candidate.candidate_id]
+            try:
+                material = await self._materialize_candidate(
+                    candidate,
+                    row,
+                    video_path,
+                    workspace,
+                    source_asset,
+                    idempotency_key,
+                )
+                content = self.blob_store.read(material.storage_key)
+                cues = parse_subtitles(content, _format(candidate, material))
+                sync_offset = None
+                sync_correlation = None
+                if (
+                    candidate.source_type == "provider"
+                    and self.config.synchronize_provider_subtitles
+                ):
+                    source_sub = workspace / f"{candidate.candidate_id}.srt"
+                    source_sub.write_bytes(content)
+                    synced = synchronize_subtitle(
+                        video_path,
+                        source_sub,
+                        workspace / f"{candidate.candidate_id}.synced.srt",
+                    )
+                    sync_offset = synced.offset_seconds
+                    sync_correlation = synced.correlation
+                    synced_asset = self.assets.store_file(
+                        path=synced.path,
+                        kind="subtitle",
+                        media_type="application/x-subrip",
+                        project_id=source_asset.project_id,
+                        parent_asset_ids=(material.id, source_asset.id),
+                        provider="ffsubsync",
+                        idempotency_key=f"{idempotency_key}:sync:{candidate.candidate_id}",
+                        generation_parameters={
+                            "offset_seconds": sync_offset,
+                            "correlation": sync_correlation,
+                        },
+                    )
+                    synced_material = self.session.get(Asset, synced_asset.id)
+                    if synced_material is None:
+                        raise RuntimeError("synchronized subtitle asset is missing")
+                    material = synced_material
+                    cues = parse_subtitles(self.blob_store.read(material.storage_key), "srt")
+                quality = score_subtitle(
+                    candidate,
+                    cues,
+                    duration_seconds=duration,
+                    requested_languages=self.config.languages,
+                    voiced=voiced,
+                    sync_offset_seconds=sync_offset,
+                    sync_correlation=sync_correlation,
+                    minimum_score=self.config.minimum_quality_score,
+                    allow_forced=self.config.allow_forced_subtitles,
+                )
+                row.asset_id = material.id
+                row.score = quality.score
+                row.quality = quality.model_dump(mode="json")
+                row.status = "accepted" if quality.passed else "rejected"
+                self.session.commit()
+                if quality.passed and (best is None or quality.score > best[4].score):
+                    best = (candidate, row, material, cues, quality)
+            except (ValueError, MediaCommandError, httpx.HTTPError) as error:
+                self.session.rollback()
+                failed_row = self.session.get(SubtitleCandidateRecord, row.id)
+                if failed_row is None:
+                    raise RuntimeError("subtitle candidate checkpoint is missing") from error
+                failed_row.status = "failed"
+                failed_row.error_code = type(error).__name__
+                self.session.commit()
+        return best
 
     def _sidecar_candidates(self, assets: list[Asset | None]) -> list[SubtitleCandidate]:
         result: list[SubtitleCandidate] = []
@@ -530,13 +567,14 @@ class SubtitlePipeline:
 
     def _checkpoint_candidates(self, run: SubtitleRun, candidates: list[SubtitleCandidate]) -> None:
         existing = {row.candidate_id: row for row in self.repository.candidates(run.id)}
-        for sequence, candidate in enumerate(candidates):
+        next_sequence = max((row.sequence for row in existing.values()), default=-1) + 1
+        for candidate in candidates:
             row = existing.get(candidate.candidate_id)
             if row is None:
                 self.session.add(
                     SubtitleCandidateRecord(
                         run_id=run.id,
-                        sequence=sequence,
+                        sequence=next_sequence,
                         candidate_id=candidate.candidate_id,
                         source_type=candidate.source_type,
                         provider=candidate.provider,
@@ -550,7 +588,8 @@ class SubtitlePipeline:
                         provider_metadata=candidate.metadata,
                     )
                 )
-            elif row.sequence != sequence or row.provider != candidate.provider:
+                next_sequence += 1
+            elif row.provider != candidate.provider:
                 raise ValueError("subtitle candidate discovery changed for an existing run")
 
     def _voiced_intervals(

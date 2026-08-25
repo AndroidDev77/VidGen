@@ -140,3 +140,31 @@ async def test_local_sidecar_prevents_provider_request(tmp_path: Path, golden_vi
     )
     assert result.candidate.source_type == "sidecar"
     assert provider.search_calls == []
+
+
+@pytest.mark.asyncio
+async def test_invalid_local_sidecar_falls_through_to_provider(
+    tmp_path: Path, golden_video: Path
+) -> None:
+    session, store, project, source, assets = _foundation(tmp_path, golden_video)
+    sidecar = assets.store(
+        content=b"this is not a timed subtitle",
+        kind="subtitle",
+        media_type="application/x-subrip",
+        project_id=project.id,
+        idempotency_key="invalid-sidecar",
+        metadata={"filename": "episode.en.srt"},
+    )
+    session.commit()
+    provider = FakeSubtitleProvider(
+        b"1\n00:00:00,000 --> 00:00:01,500\nProvider line\n\n"
+        b"2\n00:00:01,500 --> 00:00:03,000\nSecond line\n"
+    )
+    result = await SubtitlePipeline(session, store, provider).process(
+        project_id=project.id,
+        source_video_id=source.id,
+        sidecar_asset_ids=(sidecar.id,),
+        idempotency_key="invalid-local-fallback",
+    )
+    assert result.candidate.source_type == "provider"
+    assert len(provider.search_calls) == 1
