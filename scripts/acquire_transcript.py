@@ -8,10 +8,11 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from apps.api.settings import APISettings, get_settings
+from packages.providers import FakeSubtitleProvider
 from services.subtitles.acquisition import TranscriptAcquisitionService
 from services.subtitles.opensubtitles import OpenSubtitlesAdapter
 from services.subtitles.pipeline import SubtitlePipeline, SubtitlePipelineConfig
-from services.subtitles.providers import FakeSubtitleProvider, SubtitleProvider
+from services.subtitles.providers import SubtitleProvider
 from services.transcription.fake import FakeTranscriptionProvider
 from services.transcription.openai_adapter import OpenAITranscriptionAdapter
 from services.transcription.pipeline import TranscriptionPipeline

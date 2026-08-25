@@ -144,6 +144,11 @@ class SubtitlePipeline:
         completed = self.repository.transcript_for_run(run.id)
         if run.status == "subtitle_imported" and completed is not None:
             return self._result_from_asset(run, completed)
+        if completed is None:
+            run.selected = False
+            run.selected_candidate_id = None
+            for checkpoint in self.repository.candidates(run.id):
+                checkpoint.selected = False
 
         try:
             with TemporaryDirectory(prefix="vidgen-subtitles-") as directory:
@@ -175,6 +180,22 @@ class SubtitlePipeline:
                     duration=duration,
                     voiced=voiced,
                 )
+                persisted_provider_candidates = [
+                    self._candidate_from_row(checkpoint)
+                    for checkpoint in self.repository.candidates(run.id)
+                    if checkpoint.source_type == "provider"
+                ]
+                if best is None and persisted_provider_candidates:
+                    best = await self._evaluate_candidates(
+                        persisted_provider_candidates,
+                        run=run,
+                        video_path=video_path,
+                        workspace=workspace,
+                        source_asset=source_asset,
+                        idempotency_key=idempotency_key,
+                        duration=duration,
+                        voiced=voiced,
+                    )
                 if best is None and self.provider and self.config.allow_provider_search:
                     self._status(project, run, "subtitle_searching")
                     title, season, episode = _media_identity(query or source_video.filename)
@@ -210,8 +231,6 @@ class SubtitlePipeline:
                     )
                 candidate, row, subtitle_asset, cues, quality_value = best
                 quality = quality_value
-                row.selected = True
-                run.selected_candidate_id = candidate.candidate_id
                 run.quality_score = quality.score
                 run.coverage_score = (
                     quality.voiced_coverage
@@ -232,6 +251,8 @@ class SubtitlePipeline:
                     warnings,
                     idempotency_key,
                 )
+                row.selected = True
+                run.selected_candidate_id = candidate.candidate_id
                 self.session.commit()
                 return result
         except Exception as error:
@@ -585,12 +606,33 @@ class SubtitlePipeline:
                         language=candidate.language,
                         subtitle_format=candidate.subtitle_format,
                         status="discovered",
-                        provider_metadata=candidate.metadata,
+                        provider_metadata={
+                            "candidate": candidate.model_dump(mode="json"),
+                        },
                     )
                 )
                 next_sequence += 1
             elif row.provider != candidate.provider:
                 raise ValueError("subtitle candidate discovery changed for an existing run")
+
+    def _candidate_from_row(self, row: SubtitleCandidateRecord) -> SubtitleCandidate:
+        payload = row.provider_metadata.get("candidate")
+        if isinstance(payload, dict):
+            return SubtitleCandidate.model_validate(payload)
+        return SubtitleCandidate.model_validate(
+            {
+                "candidate_id": row.candidate_id,
+                "source_type": row.source_type,
+                "provider": row.provider,
+                "provider_subtitle_id": row.provider_subtitle_id,
+                "provider_file_id": row.provider_file_id,
+                "asset_id": row.asset_id,
+                "stream_index": row.stream_index,
+                "language": row.language,
+                "subtitle_format": row.subtitle_format,
+                "metadata": row.provider_metadata,
+            }
+        )
 
     def _voiced_intervals(
         self, source_audio: Asset | None, workspace: Path

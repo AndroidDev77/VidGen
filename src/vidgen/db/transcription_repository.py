@@ -5,6 +5,7 @@ from uuid import UUID
 from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 
+from vidgen.db.subtitle_models import SubtitleRun
 from vidgen.db.transcription_models import (
     SpeakerTurnRecord,
     Transcript,
@@ -61,6 +62,11 @@ class TranscriptionRepository:
         self.session.execute(
             update(TranscriptionRun)
             .where(TranscriptionRun.project_id == run.project_id)
+            .values(selected=False)
+        )
+        self.session.execute(
+            update(SubtitleRun)
+            .where(SubtitleRun.project_id == run.project_id)
             .values(selected=False)
         )
         self.session.execute(

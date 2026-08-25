@@ -6,14 +6,14 @@ install:
 	uv sync --all-groups
 
 lint:
-	uv run ruff check src apps services tests scripts migrations
+	uv run ruff check src apps services packages tests scripts migrations
 
 format:
-	uv run ruff format src apps services tests scripts migrations
-	uv run ruff check --fix src apps services tests scripts migrations
+	uv run ruff format src apps services packages tests scripts migrations
+	uv run ruff check --fix src apps services packages tests scripts migrations
 
 typecheck:
-	uv run mypy --strict src apps services scripts
+	uv run mypy --strict src apps services packages scripts
 
 test:
 	uv run pytest --cov=vidgen --cov-report=term-missing
