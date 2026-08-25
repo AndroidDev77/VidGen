@@ -1,0 +1,90 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "candidate_id": {
+      "title": "Candidate Id",
+      "type": "string"
+    },
+    "cue_count": {
+      "minimum": 0,
+      "title": "Cue Count",
+      "type": "integer"
+    },
+    "passed": {
+      "title": "Passed",
+      "type": "boolean"
+    },
+    "reasons": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Reasons",
+      "type": "array"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "score": {
+      "maximum": 1,
+      "minimum": 0,
+      "title": "Score",
+      "type": "number"
+    },
+    "sync_correlation": {
+      "anyOf": [
+        {
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Sync Correlation"
+    },
+    "sync_offset_seconds": {
+      "anyOf": [
+        {
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Sync Offset Seconds"
+    },
+    "timeline_coverage": {
+      "maximum": 1,
+      "minimum": 0,
+      "title": "Timeline Coverage",
+      "type": "number"
+    },
+    "voiced_coverage": {
+      "anyOf": [
+        {
+          "maximum": 1,
+          "minimum": 0,
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Voiced Coverage"
+    }
+  },
+  "required": [
+    "candidate_id",
+    "score",
+    "cue_count",
+    "timeline_coverage",
+    "passed"
+  ],
+  "title": "SubtitleQuality",
+  "type": "object"
+}

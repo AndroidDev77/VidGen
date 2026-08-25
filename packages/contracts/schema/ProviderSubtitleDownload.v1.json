@@ -1,0 +1,59 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "candidate_id": {
+      "title": "Candidate Id",
+      "type": "string"
+    },
+    "content": {
+      "format": "binary",
+      "title": "Content",
+      "type": "string"
+    },
+    "file_name": {
+      "title": "File Name",
+      "type": "string"
+    },
+    "media_type": {
+      "title": "Media Type",
+      "type": "string"
+    },
+    "provider": {
+      "title": "Provider",
+      "type": "string"
+    },
+    "provider_request_id": {
+      "title": "Provider Request Id",
+      "type": "string"
+    },
+    "remaining_downloads": {
+      "anyOf": [
+        {
+          "minimum": 0,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Remaining Downloads"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    }
+  },
+  "required": [
+    "candidate_id",
+    "provider",
+    "provider_request_id",
+    "file_name",
+    "media_type",
+    "content"
+  ],
+  "title": "ProviderSubtitleDownload",
+  "type": "object"
+}

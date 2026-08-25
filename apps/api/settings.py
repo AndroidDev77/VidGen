@@ -19,12 +19,24 @@ class APISettings(BaseSettings):
     openai_api_key: str | None = None
     transcription_model: str = "whisper-1"
     diarization_model: str = "gpt-4o-transcribe-diarize"
+    opensubtitles_api_key: str | None = None
+    opensubtitles_username: str | None = None
+    opensubtitles_password: str | None = None
+    subtitle_languages: tuple[str, ...] = ("en",)
+    subtitle_sync_enabled: bool = False
 
     @field_validator("allowed_video_types", mode="before")
     @classmethod
     def parse_allowed_types(cls, value: object) -> object:
         if isinstance(value, str):
             return tuple(item.strip() for item in value.split(",") if item.strip())
+        return value
+
+    @field_validator("subtitle_languages", mode="before")
+    @classmethod
+    def parse_subtitle_languages(cls, value: object) -> object:
+        if isinstance(value, str):
+            return tuple(item.strip().lower() for item in value.split(",") if item.strip())
         return value
 
 

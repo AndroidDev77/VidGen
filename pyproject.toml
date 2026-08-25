@@ -29,7 +29,7 @@ dev = [
 ]
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/vidgen", "apps", "services"]
+packages = ["src/vidgen", "apps", "services", "packages"]
 
 [tool.pytest.ini_options]
 addopts = "-q --strict-markers --strict-config"

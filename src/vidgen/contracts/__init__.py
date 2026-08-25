@@ -18,6 +18,15 @@ from vidgen.contracts.media import (
 from vidgen.contracts.qa import QAResult
 from vidgen.contracts.script import RecapScript, ScriptSegment
 from vidgen.contracts.storyboard import ShotDefinition, Storyboard
+from vidgen.contracts.subtitles import (
+    CanonicalSubtitleTranscriptArtifact,
+    ProviderSubtitleDownload,
+    SubtitleCandidate,
+    SubtitleCue,
+    SubtitleImportResult,
+    SubtitleQuality,
+    SubtitleSearchRequest,
+)
 from vidgen.contracts.transcription import (
     AudioChunk,
     CanonicalTranscriptArtifact,
@@ -37,6 +46,7 @@ from vidgen.contracts.transcription import (
 __all__ = [
     "AudioChunk",
     "AudioExtractionResult",
+    "CanonicalSubtitleTranscriptArtifact",
     "CanonicalTranscriptArtifact",
     "CharacterDefinition",
     "CharacterState",
@@ -49,6 +59,7 @@ __all__ = [
     "MediaProbeResult",
     "MediaProcessingResult",
     "PlotBeat",
+    "ProviderSubtitleDownload",
     "QAResult",
     "RecapScript",
     "SceneDefinition",
@@ -57,6 +68,11 @@ __all__ = [
     "ShotDefinition",
     "SpeakerTurn",
     "Storyboard",
+    "SubtitleCandidate",
+    "SubtitleCue",
+    "SubtitleImportResult",
+    "SubtitleQuality",
+    "SubtitleSearchRequest",
     "TimeInterval",
     "TranscriptCoverage",
     "TranscriptSegment",

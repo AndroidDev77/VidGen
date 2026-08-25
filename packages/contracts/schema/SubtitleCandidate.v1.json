@@ -1,0 +1,161 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "asset_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Asset Id"
+    },
+    "candidate_id": {
+      "minLength": 1,
+      "title": "Candidate Id",
+      "type": "string"
+    },
+    "download_count": {
+      "default": 0,
+      "minimum": 0,
+      "title": "Download Count",
+      "type": "integer"
+    },
+    "file_name": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "File Name"
+    },
+    "forced": {
+      "default": false,
+      "title": "Forced",
+      "type": "boolean"
+    },
+    "fps": {
+      "anyOf": [
+        {
+          "exclusiveMinimum": 0,
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Fps"
+    },
+    "hearing_impaired": {
+      "default": false,
+      "title": "Hearing Impaired",
+      "type": "boolean"
+    },
+    "language": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Language"
+    },
+    "metadata": {
+      "additionalProperties": true,
+      "title": "Metadata",
+      "type": "object"
+    },
+    "provider": {
+      "title": "Provider",
+      "type": "string"
+    },
+    "provider_file_id": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Provider File Id"
+    },
+    "provider_subtitle_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Provider Subtitle Id"
+    },
+    "release_name": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Release Name"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "source_type": {
+      "enum": [
+        "embedded",
+        "sidecar",
+        "provider"
+      ],
+      "title": "Source Type",
+      "type": "string"
+    },
+    "stream_index": {
+      "anyOf": [
+        {
+          "minimum": 0,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Stream Index"
+    },
+    "subtitle_format": {
+      "title": "Subtitle Format",
+      "type": "string"
+    }
+  },
+  "required": [
+    "candidate_id",
+    "source_type",
+    "provider",
+    "subtitle_format"
+  ],
+  "title": "SubtitleCandidate",
+  "type": "object"
+}
