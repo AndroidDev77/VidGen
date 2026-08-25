@@ -2,7 +2,15 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from sqlalchemy import CheckConstraint, ForeignKey, Index, Integer, String, UniqueConstraint
+from sqlalchemy import (
+    BigInteger,
+    CheckConstraint,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    UniqueConstraint,
+)
 from sqlalchemy.orm import Mapped, mapped_column
 
 from vidgen.db.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
@@ -17,7 +25,7 @@ class UploadSession(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     owner_subject: Mapped[str] = mapped_column(String(255), nullable=False)
     filename: Mapped[str] = mapped_column(String(512), nullable=False)
     media_type: Mapped[str] = mapped_column(String(255), nullable=False)
-    expected_size: Mapped[int] = mapped_column(Integer, nullable=False)
+    expected_size: Mapped[int] = mapped_column(BigInteger, nullable=False)
     expected_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
     part_size: Mapped[int] = mapped_column(Integer, nullable=False)
     status: Mapped[str] = mapped_column(String(32), default="uploading", nullable=False, index=True)
