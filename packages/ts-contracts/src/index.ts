@@ -238,3 +238,18 @@ export interface TranscriptionResult {
   coverage: TranscriptCoverage;
   warnings: TranscriptionWarning[];
 }
+
+export interface CanonicalTranscriptArtifact {
+  schema_version: "1.0";
+  project_id: UUID;
+  run_id: UUID;
+  transcript_id: UUID;
+  source_video_id: UUID;
+  source_audio_asset_id: UUID;
+  language: string | null;
+  text: string;
+  segments: TranscriptSegment[];
+  speaker_turns: SpeakerTurn[];
+  coverage: TranscriptCoverage;
+  warnings: TranscriptionWarning[];
+}
