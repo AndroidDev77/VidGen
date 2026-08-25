@@ -11,6 +11,7 @@ import vidgen.db.transcription_models  # noqa: F401
 from services.transcription.chunker import ChunkerConfig
 from services.transcription.fake import FakeTranscriptionProvider
 from services.transcription.pipeline import TranscriptionPipeline
+from vidgen.contracts.transcription import TranscriptionWarning
 from vidgen.db.base import Base
 from vidgen.db.models import Asset, AudioAsset, Project, SourceVideo
 from vidgen.db.transcription_models import Transcript, TranscriptionChunk, TranscriptionRun
@@ -84,7 +85,6 @@ async def test_pipeline_is_idempotent_and_persists_provenance(
         source_video_id=source.id,
         source_audio_asset_id=audio.id,
         idempotency_key="golden-transcription",
-        language_hint="en",
     )
     asset_count = session.scalar(select(func.count()).select_from(Asset))
     second = await pipeline.process(
@@ -92,19 +92,21 @@ async def test_pipeline_is_idempotent_and_persists_provenance(
         source_video_id=source.id,
         source_audio_asset_id=audio.id,
         idempotency_key="golden-transcription",
-        language_hint="en",
     )
     assert first == second
     assert provider.transcription_calls == [0]
     assert provider.diarization_calls == [0]
     assert session.scalar(select(func.count()).select_from(Asset)) == asset_count
     assert first.coverage.ratio == 1
+    assert first.language == "en"
     assert project.status == "transcribed"
     transcript_asset = session.get(Asset, first.transcript_asset_id)
     assert transcript_asset is not None
     assert transcript_asset.parents[0].id == audio.id
     assert session.scalar(select(func.count()).select_from(TranscriptionRun)) == 1
     assert session.scalar(select(func.count()).select_from(Transcript)) == 1
+    run = session.scalar(select(TranscriptionRun))
+    assert run is not None and run.language == "en"
 
 
 @pytest.mark.asyncio
@@ -169,3 +171,96 @@ async def test_low_coverage_fails_and_preserves_chunks(
     run = session.scalar(select(TranscriptionRun).where(TranscriptionRun.project_id == project.id))
     assert run is not None and run.status == "transcription_failed"
     assert session.scalar(select(func.count()).select_from(TranscriptionChunk)) == 1
+
+
+@pytest.mark.asyncio
+async def test_pipeline_rejects_audio_from_another_source_video(
+    tmp_path: Path, golden_transcription_audio: Path
+) -> None:
+    session, store, project, _, audio = _foundation(tmp_path, golden_transcription_audio)
+    service = AssetService(session, store)
+    other_source_asset = service.store(
+        content=b"other-source-video",
+        kind="source_video",
+        media_type="video/mp4",
+        project_id=project.id,
+        idempotency_key="other-source-video",
+    )
+    other_source = SourceVideo(
+        project_id=project.id,
+        asset_id=other_source_asset.id,
+        filename="other.mp4",
+        duration_seconds=6,
+        probe={},
+    )
+    session.add(other_source)
+    session.commit()
+    with pytest.raises(ValueError, match="does not descend"):
+        await TranscriptionPipeline(session, store, FakeTranscriptionProvider()).process(
+            project_id=project.id,
+            source_video_id=other_source.id,
+            source_audio_asset_id=audio.id,
+            idempotency_key="wrong-lineage",
+        )
+
+
+@pytest.mark.asyncio
+async def test_idempotency_key_is_bound_to_complete_run_configuration(
+    tmp_path: Path, golden_transcription_audio: Path
+) -> None:
+    session, store, project, source, audio = _foundation(tmp_path, golden_transcription_audio)
+    arguments = {
+        "project_id": project.id,
+        "source_video_id": source.id,
+        "source_audio_asset_id": audio.id,
+        "idempotency_key": "configuration-bound",
+    }
+    await TranscriptionPipeline(
+        session,
+        store,
+        FakeTranscriptionProvider(),
+        chunker_config=ChunkerConfig(hard_duration_seconds=20),
+    ).process(**arguments)
+    with pytest.raises(ValueError, match="different transcription inputs"):
+        await TranscriptionPipeline(
+            session,
+            store,
+            FakeTranscriptionProvider(),
+            chunker_config=ChunkerConfig(hard_duration_seconds=3),
+        ).process(**arguments)
+
+
+@pytest.mark.asyncio
+async def test_provider_warnings_are_propagated_to_canonical_transcript(
+    tmp_path: Path, golden_transcription_audio: Path
+) -> None:
+    session, store, project, source, audio = _foundation(tmp_path, golden_transcription_audio)
+    provider = FakeTranscriptionProvider()
+    original = provider.transcribe
+
+    async def warned(request: object, audio_path: Path):  # type: ignore[no-untyped-def]
+        result = await original(request, audio_path)  # type: ignore[arg-type]
+        return result.model_copy(
+            update={
+                "warnings": [
+                    TranscriptionWarning(code="provider_warning", message="degraded output")
+                ]
+            }
+        )
+
+    provider.transcribe = warned  # type: ignore[method-assign]
+    result = await TranscriptionPipeline(
+        session,
+        store,
+        provider,
+        chunker_config=ChunkerConfig(hard_duration_seconds=20),
+    ).process(
+        project_id=project.id,
+        source_video_id=source.id,
+        source_audio_asset_id=audio.id,
+        idempotency_key="warning-propagation",
+    )
+    assert any(warning.code == "provider_warning" for warning in result.warnings)
+    transcript = session.get(Transcript, result.transcript_id)
+    assert transcript is not None
+    assert transcript.warnings[0]["code"] == "provider_warning"
