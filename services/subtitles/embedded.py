@@ -40,8 +40,9 @@ def discover_embedded_subtitles(
         if codec not in TEXT_CODECS:
             warnings.append(f"ignored bitmap or unsupported subtitle stream {index} ({codec})")
             continue
-        language = str(tags.get("language") or "und").lower()
-        material = f"{video.stat().st_size}:{index}:{codec}:{language}"
+        language_value = str(tags.get("language") or "").strip().lower()
+        language = None if language_value in {"", "und", "unknown"} else language_value
+        material = f"{video.stat().st_size}:{index}:{codec}:{language or 'und'}"
         candidate_id = "embedded_" + hashlib.sha256(material.encode()).hexdigest()[:24]
         candidates.append(
             SubtitleCandidate(

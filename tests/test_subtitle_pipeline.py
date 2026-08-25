@@ -86,6 +86,8 @@ async def test_sidecar_is_imported_into_canonical_transcript_and_is_idempotent(
     assert first == second
     assert session.scalar(select(func.count()).select_from(Asset)) == asset_count
     assert first.text == "Hello there The story continues"
+    assert first.coverage.ratio < 1
+    assert len(first.coverage.uncovered_intervals) == 2
     assert first.candidate.source_type == "sidecar"
     assert project.status == "transcribed"
     canonical_asset = session.get(Asset, first.transcript_asset_id)
@@ -328,3 +330,9 @@ async def test_audio_transcript_selection_clears_selected_subtitle_run(
     session.commit()
     session.refresh(subtitle_run)
     assert not subtitle_run.selected
+
+
+def test_stored_media_type_overrides_stale_provider_filename() -> None:
+    from services.subtitles.pipeline import _format_from_name_or_media
+
+    assert _format_from_name_or_media("provider.ass", "application/x-subrip") == "srt"

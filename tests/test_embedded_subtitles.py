@@ -3,6 +3,7 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
+from services.media_worker.commands import CommandResult
 from services.subtitles.embedded import (
     discover_embedded_subtitles,
     extract_embedded_subtitle,
@@ -44,3 +45,20 @@ def test_discovers_and_extracts_embedded_text_subtitle(tmp_path: Path, golden_vi
     assert candidates[0].language == "eng"
     output = extract_embedded_subtitle(video, candidates[0], tmp_path / "out.vtt")
     assert parse_subtitles(output.read_bytes(), "vtt")[0].text == "Embedded hello"
+
+
+def test_untagged_embedded_subtitle_has_unknown_language(tmp_path: Path) -> None:
+    video = tmp_path / "untagged.mkv"
+    video.write_bytes(b"fixture")
+
+    class FakeRunner:
+        def run(self, arguments: list[str], timeout_seconds: int = 300) -> CommandResult:
+            del arguments, timeout_seconds
+            return CommandResult(
+                '{"streams":[{"index":2,"codec_name":"subrip","tags":{"language":"und"}}]}',
+                "",
+            )
+
+    candidates, warnings = discover_embedded_subtitles(video, FakeRunner())  # type: ignore[arg-type]
+    assert warnings == []
+    assert candidates[0].language is None

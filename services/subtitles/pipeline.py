@@ -511,7 +511,7 @@ class SubtitlePipeline:
         if not segments:
             raise SubtitleUnavailableError("subtitle has no cues inside the source duration")
         text = " ".join(segment.text for segment in segments)
-        coverage = _coverage(parsed_quality, duration, voiced)
+        coverage = _coverage(parsed_quality, duration, voiced, cues)
         transcript_id = uuid4()
         canonical = CanonicalSubtitleTranscriptArtifact(
             project_id=project.id,
@@ -732,9 +732,6 @@ def _format(candidate: SubtitleCandidate, asset: Asset) -> str:
 
 
 def _format_from_name_or_media(filename: str, media_type: str) -> str:
-    suffix = Path(filename).suffix.lower().lstrip(".")
-    if suffix in {"srt", "vtt", "ass", "ssa"}:
-        return suffix
     mapping = {
         "application/x-subrip": "srt",
         "text/srt": "srt",
@@ -744,6 +741,9 @@ def _format_from_name_or_media(filename: str, media_type: str) -> str:
     }
     if media_type in mapping:
         return mapping[media_type]
+    suffix = Path(filename).suffix.lower().lstrip(".")
+    if suffix in {"srt", "vtt", "ass", "ssa"}:
+        return suffix
     raise ValueError(f"unsupported subtitle media type: {media_type}")
 
 
@@ -768,21 +768,52 @@ def _media_identity(filename: str) -> tuple[str, int | None, int | None]:
 
 
 def _coverage(
-    quality: object, duration: float, voiced: list[TimeInterval] | None
+    quality: object,
+    duration: float,
+    voiced: list[TimeInterval] | None,
+    cues: list[SubtitleCue],
 ) -> TranscriptCoverage:
     from vidgen.contracts.subtitles import SubtitleQuality
 
     parsed = SubtitleQuality.model_validate(quality)
-    if voiced:
-        voiced_seconds = sum(item.end_seconds - item.start_seconds for item in voiced)
-        ratio = parsed.voiced_coverage or 0
-    else:
-        voiced_seconds = duration
-        ratio = parsed.timeline_coverage
+    source_intervals = (
+        [(item.start_seconds, item.end_seconds) for item in voiced] if voiced else [(0.0, duration)]
+    )
+    covered_intervals = [
+        (cue.start_seconds, min(cue.end_seconds, duration))
+        for cue in cues
+        if cue.start_seconds < duration
+    ]
+    uncovered = _subtract_intervals(source_intervals, covered_intervals)
+    voiced_seconds = sum(end - start for start, end in source_intervals)
+    uncovered_seconds = sum(end - start for start, end in uncovered)
+    covered_seconds = max(0.0, voiced_seconds - uncovered_seconds)
+    ratio = min(1.0, covered_seconds / voiced_seconds) if voiced_seconds else 0.0
     return TranscriptCoverage(
         voiced_seconds=voiced_seconds,
-        covered_voiced_seconds=voiced_seconds * ratio,
+        covered_voiced_seconds=covered_seconds,
         ratio=ratio,
         passed=parsed.passed,
-        uncovered_intervals=[],
+        uncovered_intervals=[
+            TimeInterval(start_seconds=start, end_seconds=end) for start, end in uncovered
+        ],
     )
+
+
+def _subtract_intervals(
+    source: list[tuple[float, float]], covered: list[tuple[float, float]]
+) -> list[tuple[float, float]]:
+    gaps: list[tuple[float, float]] = []
+    for start, end in source:
+        cursor = start
+        for covered_start, covered_end in sorted(covered):
+            if covered_end <= cursor or covered_start >= end:
+                continue
+            if covered_start > cursor:
+                gaps.append((cursor, min(covered_start, end)))
+            cursor = max(cursor, min(covered_end, end))
+            if cursor >= end:
+                break
+        if cursor < end:
+            gaps.append((cursor, end))
+    return gaps
