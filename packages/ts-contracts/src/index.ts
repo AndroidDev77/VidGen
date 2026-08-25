@@ -1,8 +1,19 @@
 export type UUID = string;
 
+export type AssetKind =
+  | "source_video"
+  | "frame"
+  | "image"
+  | "video"
+  | "audio"
+  | "subtitle"
+  | "render"
+  | "thumbnail"
+  | "json";
+
 export interface AssetRef {
   asset_id: UUID;
-  kind: string;
+  kind: AssetKind;
   sha256: string;
   uri: string;
   media_type: string;
