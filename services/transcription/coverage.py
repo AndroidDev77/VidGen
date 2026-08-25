@@ -13,7 +13,10 @@ def calculate_coverage(
     if not 0 <= minimum_ratio <= 1:
         raise ValueError("minimum coverage ratio must be between zero and one")
     voiced_union = _merge([(item.start_seconds, item.end_seconds) for item in voiced])
-    word_union = _merge([(word.start_seconds, word.end_seconds) for word in words])
+    word_union = _close_small_gaps(
+        _merge([(word.start_seconds, word.end_seconds) for word in words]),
+        gap_tolerance_seconds,
+    )
     total = sum(end - start for start, end in voiced_union)
     covered = sum(
         max(0.0, min(v_end, w_end) - max(v_start, w_start))
@@ -37,6 +40,18 @@ def _merge(intervals: list[tuple[float, float]]) -> list[tuple[float, float]]:
     result: list[tuple[float, float]] = []
     for start, end in sorted(intervals):
         if result and start <= result[-1][1]:
+            result[-1] = (result[-1][0], max(result[-1][1], end))
+        else:
+            result.append((start, end))
+    return result
+
+
+def _close_small_gaps(
+    intervals: list[tuple[float, float]], tolerance: float
+) -> list[tuple[float, float]]:
+    result: list[tuple[float, float]] = []
+    for start, end in intervals:
+        if result and start - result[-1][1] <= tolerance:
             result[-1] = (result[-1][0], max(result[-1][1], end))
         else:
             result.append((start, end))
