@@ -15,6 +15,7 @@ from services.transcription.diarization import reconcile_speakers
 from services.transcription.overlap_merge import merge_chunk_words
 from vidgen.contracts.transcription import (
     AudioChunk,
+    CanonicalTranscriptArtifact,
     ChunkTranscriptionResult,
     DiarizationRequest,
     DiarizationResult,
@@ -159,9 +160,7 @@ class TranscriptionPipeline:
                         else:
                             transcript = await self.provider.transcribe(
                                 TranscriptionRequest(
-                                    idempotency_key=(
-                                        f"{idempotency_key}:transcribe:{chunk.sequence}"
-                                    ),
+                                    idempotency_key=self._provider_key(run, chunk, "transcribe"),
                                     chunk=chunk,
                                     language_hint=language_hint,
                                     timestamp_granularity="word",
@@ -176,7 +175,7 @@ class TranscriptionPipeline:
                         self._status(project, run, "diarizing")
                         diarization = await self.provider.diarize(
                             DiarizationRequest(
-                                idempotency_key=f"{idempotency_key}:diarize:{chunk.sequence}",
+                                idempotency_key=self._provider_key(run, chunk, "diarize"),
                                 chunk=chunk,
                                 language_hint=language_hint,
                                 options={"attempt": row.attempt_count},
@@ -249,22 +248,23 @@ class TranscriptionPipeline:
                     + speaker_warnings
                 )
                 transcript_id = uuid4()
-                canonical = {
-                    "schema_version": "1.0",
-                    "project_id": str(project_id),
-                    "run_id": str(run.id),
-                    "transcript_id": str(transcript_id),
-                    "source_video_id": str(source_video_id),
-                    "source_audio_asset_id": str(source_audio_asset_id),
-                    "language": language,
-                    "text": segment.text,
-                    "segments": [segment.model_dump(mode="json")],
-                    "speaker_turns": [turn.model_dump(mode="json") for turn in turns],
-                    "coverage": coverage.model_dump(mode="json"),
-                    "warnings": [warning.model_dump(mode="json") for warning in warnings],
-                }
+                canonical = CanonicalTranscriptArtifact(
+                    project_id=project_id,
+                    run_id=run.id,
+                    transcript_id=transcript_id,
+                    source_video_id=source_video_id,
+                    source_audio_asset_id=source_audio_asset_id,
+                    language=language,
+                    text=segment.text,
+                    segments=[segment],
+                    speaker_turns=turns,
+                    coverage=coverage,
+                    warnings=warnings,
+                )
                 transcript_asset = self.assets.store(
-                    content=(json.dumps(canonical, sort_keys=True) + "\n").encode(),
+                    content=(
+                        json.dumps(canonical.model_dump(mode="json"), sort_keys=True) + "\n"
+                    ).encode(),
                     kind="json",
                     media_type="application/json",
                     project_id=project_id,
@@ -395,6 +395,13 @@ class TranscriptionPipeline:
                 return True
             frontier.extend(parent_id for parent_id in parent_ids if parent_id not in visited)
         return False
+
+    @staticmethod
+    def _provider_key(run: TranscriptionRun, chunk: AudioChunk, operation: str) -> str:
+        return (
+            f"transcription-run:{run.project_id}:{run.id}:{chunk.sha256}:"
+            f"{chunk.sequence}:{operation}"
+        )
 
     def _run_matches_inputs(
         self,
