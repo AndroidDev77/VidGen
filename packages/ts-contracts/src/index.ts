@@ -127,3 +127,114 @@ export interface MediaProcessingResult {
   scene_detection: SceneDetectionResult;
   frames: ExtractedFrame[];
 }
+
+export interface TranscriptionWarning {
+  code: string;
+  message: string;
+  chunk_sequence: number | null;
+}
+
+export interface TimeInterval {
+  start_seconds: number;
+  end_seconds: number;
+}
+
+export interface AudioChunk {
+  schema_version: "1.0";
+  asset_id: UUID;
+  parent_audio_asset_id: UUID;
+  sequence: number;
+  start_seconds: number;
+  end_seconds: number;
+  overlap_before_seconds: number;
+  overlap_after_seconds: number;
+  byte_size: number;
+  sha256: string;
+  codec: string;
+  sample_rate: number;
+  idempotency_key: string;
+}
+
+export interface TranscriptWord {
+  text: string;
+  start_seconds: number;
+  end_seconds: number;
+  confidence: number | null;
+}
+
+export interface TranscriptSegment {
+  schema_version: "1.0";
+  sequence: number;
+  start_seconds: number;
+  end_seconds: number;
+  text: string;
+  speaker_label: string | null;
+  confidence: number | null;
+  source_chunk_ids: UUID[];
+  words: TranscriptWord[];
+}
+
+export interface SpeakerTurn {
+  schema_version: "1.0";
+  sequence: number;
+  speaker_label: string;
+  start_seconds: number;
+  end_seconds: number;
+  confidence: number | null;
+  source_chunk_ids: UUID[];
+  provider: string;
+  model: string;
+  alternate_labels: string[];
+  warnings: TranscriptionWarning[];
+}
+
+export interface ChunkTranscriptionResult {
+  schema_version: "1.0";
+  chunk: AudioChunk;
+  provider: string;
+  model: string;
+  provider_request_id: string;
+  attempt: number;
+  language: string | null;
+  text: string;
+  segments: TranscriptSegment[];
+  words: TranscriptWord[];
+  confidence: number | null;
+  raw_metadata: Record<string, unknown>;
+  warnings: TranscriptionWarning[];
+}
+
+export interface DiarizationResult {
+  schema_version: "1.0";
+  provider: string;
+  model: string;
+  provider_request_ids: string[];
+  turns: SpeakerTurn[];
+  warnings: TranscriptionWarning[];
+}
+
+export interface TranscriptCoverage {
+  schema_version: "1.0";
+  voiced_seconds: number;
+  covered_voiced_seconds: number;
+  ratio: number;
+  passed: boolean;
+  uncovered_intervals: TimeInterval[];
+}
+
+export interface TranscriptionResult {
+  schema_version: "1.0";
+  project_id: UUID;
+  run_id: UUID;
+  transcript_id: UUID;
+  source_video_id: UUID;
+  source_audio_asset_id: UUID;
+  transcript_asset_id: UUID;
+  status: "transcribed";
+  language: string | null;
+  text: string;
+  segments: TranscriptSegment[];
+  speaker_turns: SpeakerTurn[];
+  coverage: TranscriptCoverage;
+  warnings: TranscriptionWarning[];
+}
