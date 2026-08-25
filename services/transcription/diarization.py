@@ -78,7 +78,7 @@ def _merge_adjacent(turns: list[SpeakerTurn], gap: float) -> list[SpeakerTurn]:
         if (
             merged
             and merged[-1].speaker_label == turn.speaker_label
-            and 0 <= turn.start_seconds - merged[-1].end_seconds <= gap
+            and turn.start_seconds <= merged[-1].end_seconds + gap
         ):
             previous = merged[-1]
             source_ids: list[UUID] = list(
@@ -86,7 +86,7 @@ def _merge_adjacent(turns: list[SpeakerTurn], gap: float) -> list[SpeakerTurn]:
             )
             merged[-1] = previous.model_copy(
                 update={
-                    "end_seconds": turn.end_seconds,
+                    "end_seconds": max(previous.end_seconds, turn.end_seconds),
                     "source_chunk_ids": source_ids,
                     "confidence": _minimum_confidence(previous.confidence, turn.confidence),
                 }
