@@ -16,6 +16,9 @@ class APISettings(BaseSettings):
     signing_secret: str = "local-development-only-change-me"
     max_upload_bytes: int = 10 * 1024 * 1024 * 1024
     allowed_video_types: tuple[str, ...] = ("video/mp4", "video/quicktime")
+    openai_api_key: str | None = None
+    transcription_model: str = "whisper-1"
+    diarization_model: str = "gpt-4o-transcribe-diarize"
 
     @field_validator("allowed_video_types", mode="before")
     @classmethod
