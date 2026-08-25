@@ -52,7 +52,12 @@ async def run(args: argparse.Namespace) -> int:
                 project_id=args.project_id,
                 source_video_id=source.id,
                 source_audio_asset_id=audio.asset_id,
-                idempotency_key=args.idempotency_key or f"transcription:{audio.asset_id}:v1",
+                idempotency_key=args.idempotency_key
+                or (
+                    f"transcription:{audio.asset_id}:{provider.provider_name}:"
+                    f"{provider.transcription_model}:{provider.diarization_model}:"
+                    f"{args.language or 'auto'}:v1"
+                ),
                 language_hint=args.language,
             )
             print(result.model_dump_json(indent=2))
