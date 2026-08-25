@@ -29,6 +29,9 @@ def upgrade() -> None:
     with op.batch_alter_table("assets") as batch:
         batch.drop_constraint("uq_assets_sha256", type_="unique")
         batch.drop_constraint("uq_assets_storage_key", type_="unique")
+        batch.alter_column(
+            "byte_size", existing_type=sa.Integer(), type_=sa.BigInteger(), nullable=False
+        )
         batch.create_index("ix_assets_sha256", ["sha256"], unique=False)
         batch.create_index(
             "uq_assets_project_idempotency",
@@ -44,7 +47,7 @@ def upgrade() -> None:
         sa.Column("owner_subject", sa.String(length=255), nullable=False),
         sa.Column("filename", sa.String(length=512), nullable=False),
         sa.Column("media_type", sa.String(length=255), nullable=False),
-        sa.Column("expected_size", sa.Integer(), nullable=False),
+        sa.Column("expected_size", sa.BigInteger(), nullable=False),
         sa.Column("expected_sha256", sa.String(length=64), nullable=False),
         sa.Column("part_size", sa.Integer(), nullable=False),
         sa.Column("status", sa.String(length=32), nullable=False),
@@ -117,6 +120,23 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    connection = op.get_bind()
+    duplicate = connection.execute(
+        sa.text(
+            "SELECT 1 FROM assets "
+            "GROUP BY sha256 HAVING COUNT(*) > 1 "
+            "UNION ALL "
+            "SELECT 1 FROM assets "
+            "GROUP BY storage_key HAVING COUNT(*) > 1 "
+            "LIMIT 1"
+        )
+    ).first()
+    if duplicate is not None:
+        raise RuntimeError(
+            "cannot downgrade 0002_ingestion while duplicate asset blobs exist; "
+            "export or consolidate per-project provenance before retrying"
+        )
+
     op.drop_index("ix_upload_parts_upload_id", table_name="upload_parts")
     op.drop_table("upload_parts")
     op.drop_index("ix_upload_sessions_project_status", table_name="upload_sessions")
@@ -127,6 +147,9 @@ def downgrade() -> None:
     with op.batch_alter_table("assets") as batch:
         batch.drop_index("uq_assets_project_idempotency")
         batch.drop_index("ix_assets_sha256")
+        batch.alter_column(
+            "byte_size", existing_type=sa.BigInteger(), type_=sa.Integer(), nullable=False
+        )
         batch.create_unique_constraint("uq_assets_storage_key", ["storage_key"])
         batch.create_unique_constraint("uq_assets_sha256", ["sha256"])
 
