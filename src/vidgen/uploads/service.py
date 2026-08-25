@@ -1,13 +1,15 @@
 from __future__ import annotations
 
+import fcntl
 import hashlib
 import math
 import os
 import shutil
-from collections.abc import AsyncIterable
+from collections.abc import AsyncIterable, Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -100,7 +102,7 @@ class UploadService:
 
         directory = self._upload_directory(upload.id)
         directory.mkdir(parents=True, exist_ok=True)
-        temporary = directory / f".{part_number}.{os.getpid()}.upload"
+        temporary = directory / f".{part_number}.{os.getpid()}.{uuid4().hex}.upload"
         digest = hashlib.sha256()
         byte_size = 0
         try:
@@ -116,31 +118,32 @@ class UploadService:
             if byte_size == 0:
                 raise UploadError("empty_part", "upload part cannot be empty")
             actual_hash = digest.hexdigest()
-            existing = self.uploads.get_part(upload.id, part_number)
-            if existing is not None:
-                if existing.sha256 != actual_hash or existing.byte_size != byte_size:
-                    raise UploadError("conflicting_part", "part retry has different content")
-                # A matching retry is also the recovery mechanism for a part file
-                # lost after its database row was committed. Replacing it is atomic
-                # and harmless when the existing file is already healthy.
-                destination = Path(existing.storage_path)
-                destination.parent.mkdir(parents=True, exist_ok=True)
-                os.replace(temporary, destination)
-                return PartWriteResult(existing, duplicate=True)
+            with self._part_lock(directory, part_number):
+                existing = self.uploads.get_part(upload.id, part_number)
+                if existing is not None:
+                    if existing.sha256 != actual_hash or existing.byte_size != byte_size:
+                        raise UploadError("conflicting_part", "part retry has different content")
+                    # A matching retry is also the recovery mechanism for a part file
+                    # lost after its database row was committed. Replacing it is atomic
+                    # and harmless when the existing file is already healthy.
+                    destination = Path(existing.storage_path)
+                    destination.parent.mkdir(parents=True, exist_ok=True)
+                    os.replace(temporary, destination)
+                    return PartWriteResult(existing, duplicate=True)
 
-            destination = directory / f"part-{part_number:08d}"
-            os.replace(temporary, destination)
-            part = self.uploads.add_part(
-                UploadPart(
-                    upload_id=upload.id,
-                    part_number=part_number,
-                    byte_size=byte_size,
-                    sha256=actual_hash,
-                    storage_path=str(destination),
+                destination = directory / f"part-{part_number:08d}"
+                os.replace(temporary, destination)
+                part = self.uploads.add_part(
+                    UploadPart(
+                        upload_id=upload.id,
+                        part_number=part_number,
+                        byte_size=byte_size,
+                        sha256=actual_hash,
+                        storage_path=str(destination),
+                    )
                 )
-            )
-            self.session.commit()
-            return PartWriteResult(part, duplicate=False)
+                self.session.commit()
+                return PartWriteResult(part, duplicate=False)
         finally:
             temporary.unlink(missing_ok=True)
 
@@ -224,3 +227,13 @@ class UploadService:
         if not path.is_relative_to(self.upload_root):
             raise ValueError("upload path escapes configured root")
         return path
+
+    @contextmanager
+    def _part_lock(self, directory: Path, part_number: int) -> Iterator[None]:
+        lock_path = directory / f"part-{part_number:08d}.lock"
+        with lock_path.open("a+b") as lock_file:
+            fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+            try:
+                yield
+            finally:
+                fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
