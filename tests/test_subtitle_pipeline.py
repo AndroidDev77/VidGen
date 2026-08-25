@@ -11,6 +11,7 @@ import vidgen.db.subtitle_models
 import vidgen.db.transcription_models  # noqa: F401
 from packages.providers import FakeSubtitleProvider
 from services.subtitles.pipeline import SubtitlePipeline, SubtitlePipelineConfig
+from services.subtitles.sync import SubtitleSyncResult
 from vidgen.contracts.subtitles import CanonicalSubtitleTranscriptArtifact
 from vidgen.db.base import Base
 from vidgen.db.models import Asset, Project, SourceVideo
@@ -89,6 +90,9 @@ async def test_sidecar_is_imported_into_canonical_transcript_and_is_idempotent(
     assert project.status == "transcribed"
     canonical_asset = session.get(Asset, first.transcript_asset_id)
     assert canonical_asset is not None
+    selected_subtitle = session.get(Asset, first.source_subtitle_asset_id)
+    assert selected_subtitle is not None
+    assert {parent.id for parent in selected_subtitle.parents} == {source.asset_id, sidecar.id}
     CanonicalSubtitleTranscriptArtifact.model_validate_json(store.read(canonical_asset.storage_key))
     segment = session.scalar(select(Transcript).where(Transcript.id == first.transcript_id))
     assert segment is not None and segment.run_id is None
@@ -184,6 +188,14 @@ async def test_interrupted_provider_import_reuses_checkpoint_without_stale_selec
     )
     original = SubtitlePipeline._persist_transcript
     interrupted = True
+    sync_calls = 0
+
+    def fake_sync(video: Path, subtitle: Path, destination: Path) -> SubtitleSyncResult:
+        del video
+        nonlocal sync_calls
+        sync_calls += 1
+        destination.write_bytes(subtitle.read_bytes())
+        return SubtitleSyncResult(destination, 0.25, 100_000, True)
 
     def fail_once(self: SubtitlePipeline, *args: object, **kwargs: object) -> object:
         nonlocal interrupted
@@ -193,7 +205,13 @@ async def test_interrupted_provider_import_reuses_checkpoint_without_stale_selec
         return original(self, *args, **kwargs)  # type: ignore[arg-type]
 
     monkeypatch.setattr(SubtitlePipeline, "_persist_transcript", fail_once)
-    pipeline = SubtitlePipeline(session, store, provider)
+    monkeypatch.setattr("services.subtitles.pipeline.synchronize_subtitle", fake_sync)
+    pipeline = SubtitlePipeline(
+        session,
+        store,
+        provider,
+        config=SubtitlePipelineConfig(synchronize_provider_subtitles=True),
+    )
     arguments = {
         "project_id": project.id,
         "source_video_id": source.id,
@@ -211,6 +229,37 @@ async def test_interrupted_provider_import_reuses_checkpoint_without_stale_selec
     assert result.status == "subtitle_imported"
     assert len(provider.search_calls) == 1
     assert len(provider.download_calls) == 1
+    assert sync_calls == 1
+
+
+@pytest.mark.asyncio
+async def test_rejects_audio_from_another_source_video(tmp_path: Path, golden_video: Path) -> None:
+    session, store, project, source, assets = _foundation(tmp_path, golden_video)
+    other_source = assets.store(
+        content=b"another source",
+        kind="source_video",
+        media_type="video/mp4",
+        project_id=project.id,
+        idempotency_key="other-source",
+    )
+    wrong_audio = assets.store(
+        content=b"not used",
+        kind="transcription_audio",
+        media_type="audio/wav",
+        project_id=project.id,
+        parent_asset_ids=(other_source.id,),
+        idempotency_key="wrong-audio",
+    )
+    session.commit()
+    with pytest.raises(
+        ValueError, match="transcription audio does not descend from the source video"
+    ):
+        await SubtitlePipeline(session, store).process(
+            project_id=project.id,
+            source_video_id=source.id,
+            source_audio_asset_id=wrong_audio.id,
+            idempotency_key="wrong-lineage",
+        )
 
 
 @pytest.mark.asyncio

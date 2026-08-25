@@ -8,6 +8,7 @@ from tempfile import TemporaryDirectory
 from uuid import UUID, uuid4
 
 import httpx
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from services.media_worker.commands import MediaCommandError
@@ -37,7 +38,7 @@ from vidgen.contracts.transcription import (
     TranscriptionWarning,
     TranscriptSegment,
 )
-from vidgen.db.models import Asset, Project, SourceVideo
+from vidgen.db.models import Asset, Project, SourceVideo, asset_dependencies
 from vidgen.db.subtitle_models import SubtitleCandidateRecord, SubtitleRun
 from vidgen.db.subtitle_repository import SubtitleRepository
 from vidgen.db.transcription_models import Transcript, TranscriptSegmentRecord
@@ -108,6 +109,10 @@ class SubtitlePipeline:
             and (source_audio is None or source_audio.project_id != project_id)
         ):
             raise ValueError("source video or audio asset not found")
+        if source_audio is not None and not self._asset_descends_from(
+            source_audio.id, source_asset.id
+        ):
+            raise ValueError("transcription audio does not descend from the source video")
         sidecars = [self.session.get(Asset, asset_id) for asset_id in sidecar_asset_ids]
         if any(asset is None or asset.project_id != project_id for asset in sidecars):
             raise ValueError("sidecar subtitle asset not found")
@@ -317,6 +322,11 @@ class SubtitlePipeline:
                 )
                 content = self.blob_store.read(material.storage_key)
                 cues = parse_subtitles(content, _format(candidate, material))
+                if row.status in {"accepted", "rejected"} and row.quality:
+                    quality = SubtitleQuality.model_validate(row.quality)
+                    if quality.passed and (best is None or quality.score > best[4].score):
+                        best = (candidate, row, material, cues, quality)
+                    continue
                 sync_offset = None
                 sync_correlation = None
                 if (
@@ -601,7 +611,9 @@ class SubtitlePipeline:
                         provider=candidate.provider,
                         provider_subtitle_id=candidate.provider_subtitle_id,
                         provider_file_id=candidate.provider_file_id,
-                        asset_id=candidate.asset_id,
+                        asset_id=(
+                            None if candidate.source_type == "sidecar" else candidate.asset_id
+                        ),
                         stream_index=candidate.stream_index,
                         language=candidate.language,
                         subtitle_format=candidate.subtitle_format,
@@ -644,6 +656,26 @@ class SubtitlePipeline:
         duration = probe_duration(path)
         silence = detect_silence_ranges(path, duration_seconds=duration)
         return voiced_intervals(duration, silence)
+
+    def _asset_descends_from(self, asset_id: UUID, ancestor_id: UUID) -> bool:
+        frontier = [asset_id]
+        visited: set[UUID] = set()
+        while frontier:
+            current = frontier.pop()
+            if current in visited:
+                continue
+            visited.add(current)
+            parent_ids = list(
+                self.session.scalars(
+                    select(asset_dependencies.c.parent_asset_id).where(
+                        asset_dependencies.c.asset_id == current
+                    )
+                )
+            )
+            if ancestor_id in parent_ids:
+                return True
+            frontier.extend(parent_id for parent_id in parent_ids if parent_id not in visited)
+        return False
 
     def _result_from_asset(self, run: SubtitleRun, transcript: Transcript) -> SubtitleImportResult:
         asset = self.session.get(Asset, transcript.transcript_asset_id)

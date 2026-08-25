@@ -49,3 +49,21 @@ def test_candidate_below_voiced_coverage_threshold_is_rejected() -> None:
     assert quality.voiced_coverage == 0
     assert not quality.passed
     assert "low voiced-audio coverage" in quality.reasons
+
+
+def test_explicit_language_mismatch_is_rejected() -> None:
+    quality = score_subtitle(
+        SubtitleCandidate(
+            candidate_id="spanish",
+            source_type="embedded",
+            provider="ffmpeg",
+            language="spa",
+            subtitle_format="vtt",
+        ),
+        [SubtitleCue(sequence=0, start_seconds=0, end_seconds=10, text="Hola")],
+        duration_seconds=10,
+        requested_languages=("en",),
+    )
+    assert quality.score >= 0.55
+    assert not quality.passed
+    assert "subtitle language does not match requested languages" in quality.reasons

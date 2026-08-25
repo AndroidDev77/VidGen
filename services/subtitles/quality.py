@@ -32,12 +32,8 @@ def score_subtitle(
         voiced_coverage = min(1.0, covered / voiced_seconds) if voiced_seconds else None
 
     source_score = {"embedded": 0.30, "sidecar": 0.28, "provider": 0.22}[candidate.source_type]
-    language_score = (
-        0.20
-        if candidate.language in requested_languages
-        or (candidate.language in {"en", "eng"} and "en" in requested_languages)
-        else 0.05
-    )
+    language_matches = _language_matches(candidate.language, requested_languages)
+    language_score = 0.20 if language_matches else 0.05
     coverage_basis = (
         voiced_coverage if voiced_coverage is not None else min(1.0, timeline_coverage * 4)
     )
@@ -58,10 +54,13 @@ def score_subtitle(
         reasons.append("cue extends beyond source duration")
     if voiced_coverage is not None and voiced_coverage < 0.55:
         reasons.append("low voiced-audio coverage")
+    if candidate.language is not None and not language_matches:
+        reasons.append("subtitle language does not match requested languages")
     passed = (
         score >= minimum_score
         and bool(cues)
         and (allow_forced or not candidate.forced)
+        and (candidate.language is None or language_matches)
         and (voiced_coverage is None or voiced_coverage >= 0.55)
         and not any(cue.end_seconds > duration_seconds + 2 for cue in cues)
     )
@@ -81,10 +80,7 @@ def score_subtitle(
 def candidate_sort_key(
     candidate: SubtitleCandidate, requested_languages: tuple[str, ...]
 ) -> tuple[int, int, int, int, str]:
-    language = int(
-        candidate.language in requested_languages
-        or (candidate.language in {"en", "eng"} and "en" in requested_languages)
-    )
+    language = int(_language_matches(candidate.language, requested_languages))
     source = {"embedded": 3, "sidecar": 2, "provider": 1}[candidate.source_type]
     return (
         language,
@@ -93,6 +89,34 @@ def candidate_sort_key(
         candidate.download_count,
         candidate.candidate_id,
     )
+
+
+_LANGUAGE_ALIASES = {
+    "eng": "en",
+    "spa": "es",
+    "fre": "fr",
+    "fra": "fr",
+    "ger": "de",
+    "deu": "de",
+    "ita": "it",
+    "por": "pt",
+    "jpn": "ja",
+    "kor": "ko",
+    "zho": "zh",
+    "chi": "zh",
+}
+
+
+def _language_matches(language: str | None, requested: tuple[str, ...]) -> bool:
+    if language is None:
+        return False
+    normalized = _normalize_language(language)
+    return normalized in {_normalize_language(value) for value in requested}
+
+
+def _normalize_language(language: str) -> str:
+    value = language.strip().lower().replace("_", "-").split("-", 1)[0]
+    return _LANGUAGE_ALIASES.get(value, value)
 
 
 def _sync_score(offset: float | None, correlation: float | None) -> float:
