@@ -83,3 +83,11 @@ def test_media_pipeline_is_deterministic_and_preserves_provenance(
     assert all(asset.parents[0].id == source_asset.id for asset in frame_assets)
     scenes = list(session.scalars(select(Scene).where(Scene.project_id == project.id)))
     assert len(scenes) == 3
+
+    pipeline._persist_scenes(project.id, first.scene_detection.scenes[:1])
+    remaining_scenes = list(
+        session.scalars(
+            select(Scene).where(Scene.project_id == project.id).order_by(Scene.sequence)
+        )
+    )
+    assert [scene.sequence for scene in remaining_scenes] == [0]
