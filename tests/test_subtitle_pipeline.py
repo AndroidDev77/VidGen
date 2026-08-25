@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import httpx
 import pytest
 from sqlalchemy import create_engine, func, select
 from sqlalchemy.orm import Session
@@ -175,6 +176,25 @@ async def test_invalid_local_sidecar_falls_through_to_provider(
     )
     assert result.candidate.source_type == "provider"
     assert len(provider.search_calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_provider_http_failure_remains_retryable(tmp_path: Path, golden_video: Path) -> None:
+    session, store, project, source, _ = _foundation(tmp_path, golden_video)
+
+    class OutageProvider(FakeSubtitleProvider):
+        async def download(self, *args: object, **kwargs: object) -> object:
+            del args, kwargs
+            raise httpx.ReadTimeout("temporary provider outage")
+
+    with pytest.raises(httpx.ReadTimeout, match="temporary provider outage"):
+        await SubtitlePipeline(session, store, OutageProvider()).process(
+            project_id=project.id,
+            source_video_id=source.id,
+            idempotency_key="provider-outage",
+        )
+    run = session.scalar(select(SubtitleRun))
+    assert run is not None and run.status == "subtitle_failed"
 
 
 @pytest.mark.asyncio

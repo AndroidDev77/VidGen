@@ -386,6 +386,8 @@ class SubtitlePipeline:
                 failed_row.status = "failed"
                 failed_row.error_code = type(error).__name__
                 self.session.commit()
+                if isinstance(error, httpx.HTTPError):
+                    raise
         return best
 
     def _sidecar_candidates(self, assets: list[Asset | None]) -> list[SubtitleCandidate]:
