@@ -166,6 +166,7 @@ def validate_episode_analysis(
         refs(f"plot_beats.{index}.source_references", beat.source_references)
     graph: dict[UUID, list[UUID]] = {beat_id: [] for beat_id in beat_ids}
     for index, dependency in enumerate(analysis.beat_dependencies):
+        refs(f"beat_dependencies.{index}.source_references", dependency.source_references)
         if dependency.cause_beat_id not in beat_ids or dependency.effect_beat_id not in beat_ids:
             error(
                 "UNKNOWN_BEAT_DEPENDENCY",

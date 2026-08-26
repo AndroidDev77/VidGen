@@ -8,7 +8,8 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from typing import Any
+from pathlib import Path
+from typing import Any, cast
 
 import httpx
 
@@ -50,18 +51,21 @@ class OpenAIEpisodeAnalysisProvider:
         prompt: str,
         context: GenerationContext,
     ) -> tuple[Any, ProviderMetadata]:
+        user_content = request.model_dump_json()
+        if context.validation_errors_json:
+            user_content += "\nValidation errors to repair:\n" + context.validation_errors_json
         body = {
             "model": self.config.model,
             "input": [
                 {"role": "system", "content": prompt},
-                {"role": "user", "content": request.model_dump_json()},
+                {"role": "user", "content": user_content},
             ],
             "text": {
                 "format": {
                     "type": "json_schema",
                     "name": schema.__name__,
                     "strict": True,
-                    "schema": schema.model_json_schema(),
+                    "schema": _strict_schema(schema.model_json_schema()),
                 }
             },
         }
@@ -75,7 +79,7 @@ class OpenAIEpisodeAnalysisProvider:
         )
         response.raise_for_status()
         payload = response.json()
-        parsed = schema.model_validate(json.loads(payload["output_text"]))
+        parsed = schema.model_validate(json.loads(_response_text(payload)))
         usage = payload.get("usage", {})
         metadata = ProviderMetadata(
             provider="openai",
@@ -97,7 +101,7 @@ class OpenAIEpisodeAnalysisProvider:
         output, metadata = await self._request(
             request=request,
             schema=SceneAnalysisResult,
-            prompt="Analyze only supported scene evidence. Preserve uncertainty.",
+            prompt=_prompt("episode_scene_v1.txt", request.prompt_version),
             context=context,
         )
         return ProviderSceneAnalysisResult(output=output, metadata=metadata)
@@ -108,7 +112,39 @@ class OpenAIEpisodeAnalysisProvider:
         output, metadata = await self._request(
             request=request,
             schema=EpisodeAnalysis,
-            prompt="Reduce validated scene analyses without adding facts.",
+            prompt=_prompt("episode_reduce_v1.txt", request.prompt_version),
             context=context,
         )
         return ProviderEpisodeAnalysisResult(output=output, metadata=metadata)
+
+
+def _prompt(filename: str, version: str) -> str:
+    if version != "episode-analysis-v1":
+        raise ValueError(f"unsupported prompt version: {version}")
+    return (Path(__file__).parent / "prompts" / filename).read_text()
+
+
+def _strict_schema(value: Any) -> Any:
+    """Convert Pydantic JSON Schema objects to the strict Responses subset."""
+    if isinstance(value, list):
+        return [_strict_schema(item) for item in value]
+    if not isinstance(value, dict):
+        return value
+    result = {key: _strict_schema(item) for key, item in value.items()}
+    if result.get("type") == "object" or "properties" in result:
+        properties = result.get("properties", {})
+        result["additionalProperties"] = False
+        result["required"] = list(properties)
+    return result
+
+
+def _response_text(payload: dict[str, Any]) -> str:
+    if payload.get("status") == "incomplete":
+        raise ValueError("OpenAI response was incomplete")
+    for output in payload.get("output", []):
+        for content in output.get("content", []):
+            if content.get("type") == "refusal":
+                raise ValueError("OpenAI refused the analysis request")
+            if content.get("type") == "output_text" and isinstance(content.get("text"), str):
+                return cast(str, content["text"])
+    raise ValueError("OpenAI response contained no output text")
