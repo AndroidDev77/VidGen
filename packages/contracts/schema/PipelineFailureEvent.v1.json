@@ -1,0 +1,104 @@
+{
+  "$defs": {
+    "FailureClass": {
+      "enum": [
+        "TRANSPORT",
+        "TIMEOUT",
+        "RATE_LIMIT",
+        "AUTHENTICATION",
+        "AUTHORIZATION",
+        "INVALID_REQUEST",
+        "PROVIDER_REJECTED",
+        "CONTENT_FILTER",
+        "CONTRACT_VALIDATION",
+        "QUALITY_FAILURE",
+        "BUDGET_EXCEEDED",
+        "CANCELLED",
+        "DATABASE",
+        "STORAGE",
+        "TEMPORAL",
+        "INTERNAL",
+        "UNKNOWN"
+      ],
+      "title": "FailureClass",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+    },
+    "error_code": {
+      "title": "Error Code",
+      "type": "string"
+    },
+    "event_id": {
+      "format": "uuid",
+      "title": "Event Id",
+      "type": "string"
+    },
+    "event_type": {
+      "default": "pipeline.failure.v1",
+      "title": "Event Type",
+      "type": "string"
+    },
+    "failure_class": {
+      "$ref": "#/$defs/FailureClass"
+    },
+    "project_id": {
+      "format": "uuid",
+      "title": "Project Id",
+      "type": "string"
+    },
+    "projected_status": {
+      "title": "Projected Status",
+      "type": "string"
+    },
+    "resolved_at": {
+      "anyOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Resolved At"
+    },
+    "retryable": {
+      "title": "Retryable",
+      "type": "boolean"
+    },
+    "schema_version": {
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "stage": {
+      "title": "Stage",
+      "type": "string"
+    },
+    "workflow_id": {
+      "title": "Workflow Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "event_id",
+    "project_id",
+    "workflow_id",
+    "stage",
+    "error_code",
+    "failure_class",
+    "retryable",
+    "projected_status",
+    "created_at"
+  ],
+  "title": "PipelineFailureEvent",
+  "type": "object"
+}

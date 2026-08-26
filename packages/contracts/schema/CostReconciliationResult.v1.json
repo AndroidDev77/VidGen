@@ -1,0 +1,53 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "committed_amount": {
+      "anyOf": [
+        {
+          "minimum": 0.0,
+          "type": "number"
+        },
+        {
+          "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+          "type": "string"
+        }
+      ],
+      "title": "Committed Amount"
+    },
+    "ledger_entry_id": {
+      "format": "uuid",
+      "title": "Ledger Entry Id",
+      "type": "string"
+    },
+    "released_amount": {
+      "anyOf": [
+        {
+          "minimum": 0.0,
+          "type": "number"
+        },
+        {
+          "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+          "type": "string"
+        }
+      ],
+      "title": "Released Amount"
+    },
+    "reused": {
+      "default": false,
+      "title": "Reused",
+      "type": "boolean"
+    },
+    "schema_version": {
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    }
+  },
+  "required": [
+    "ledger_entry_id",
+    "committed_amount",
+    "released_amount"
+  ],
+  "title": "CostReconciliationResult",
+  "type": "object"
+}

@@ -17,6 +17,7 @@ example conflicts with an implemented interface.
 | T07B | Complete extension | Embedded, sidecar, and OpenSubtitles acquisition now precedes T07 audio transcription fallback and writes the same canonical transcript model. |
 | T08-T09 | Complete | Temporal project orchestration and deterministic scene evidence packages consume the selected canonical transcript regardless of subtitle or audio origin. |
 | T10 | Complete | Restartable scene-map/global-reduce Episode Analyst, strict evidence-linked contracts, deterministic validation, provider abstraction, checkpoints, and canonical asset persistence are implemented. |
+| T23 | Complete | Structured/redacted telemetry, W3C tracing, bounded metrics, provider-attempt persistence, versioned Decimal pricing, transactional budgets, append-only cost ledger, operations APIs/CLI, and a local observability stack are implemented. |
 | T11-T26 | Planned | Do not begin a later task until its dependencies and the current implementation are reconciled. |
 
 When a roadmap task is completed, update this table, `README.md`, and any affected design section in

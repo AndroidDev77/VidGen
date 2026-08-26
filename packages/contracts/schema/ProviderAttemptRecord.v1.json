@@ -1,0 +1,402 @@
+{
+  "$defs": {
+    "FailureClass": {
+      "enum": [
+        "TRANSPORT",
+        "TIMEOUT",
+        "RATE_LIMIT",
+        "AUTHENTICATION",
+        "AUTHORIZATION",
+        "INVALID_REQUEST",
+        "PROVIDER_REJECTED",
+        "CONTENT_FILTER",
+        "CONTRACT_VALIDATION",
+        "QUALITY_FAILURE",
+        "BUDGET_EXCEEDED",
+        "CANCELLED",
+        "DATABASE",
+        "STORAGE",
+        "TEMPORAL",
+        "INTERNAL",
+        "UNKNOWN"
+      ],
+      "title": "FailureClass",
+      "type": "string"
+    },
+    "FailureClassification": {
+      "additionalProperties": false,
+      "properties": {
+        "diagnostic_metadata": {
+          "additionalProperties": true,
+          "title": "Diagnostic Metadata",
+          "type": "object"
+        },
+        "error_code": {
+          "title": "Error Code",
+          "type": "string"
+        },
+        "failure_class": {
+          "$ref": "#/$defs/FailureClass"
+        },
+        "provider_error_type": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Provider Error Type"
+        },
+        "provider_http_status": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Provider Http Status"
+        },
+        "retryable": {
+          "title": "Retryable",
+          "type": "boolean"
+        },
+        "sanitized_message": {
+          "title": "Sanitized Message",
+          "type": "string"
+        },
+        "schema_version": {
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        }
+      },
+      "required": [
+        "failure_class",
+        "error_code",
+        "retryable",
+        "sanitized_message"
+      ],
+      "title": "FailureClassification",
+      "type": "object"
+    },
+    "UsageQuantity": {
+      "additionalProperties": false,
+      "properties": {
+        "estimation_method": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Estimation Method"
+        },
+        "provider_reported": {
+          "default": false,
+          "title": "Provider Reported",
+          "type": "boolean"
+        },
+        "quantity": {
+          "anyOf": [
+            {
+              "minimum": 0.0,
+              "type": "number"
+            },
+            {
+              "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+              "type": "string"
+            }
+          ],
+          "title": "Quantity"
+        },
+        "schema_version": {
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "source_field": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Source Field"
+        },
+        "unit": {
+          "$ref": "#/$defs/UsageUnit"
+        },
+        "warnings": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Warnings",
+          "type": "array"
+        }
+      },
+      "required": [
+        "unit",
+        "quantity"
+      ],
+      "title": "UsageQuantity",
+      "type": "object"
+    },
+    "UsageUnit": {
+      "enum": [
+        "INPUT_TOKEN",
+        "OUTPUT_TOKEN",
+        "CACHED_INPUT_TOKEN",
+        "AUDIO_INPUT_SECOND",
+        "AUDIO_OUTPUT_SECOND",
+        "IMAGE_INPUT",
+        "IMAGE_OUTPUT",
+        "VIDEO_OUTPUT_SECOND",
+        "REQUEST",
+        "STORAGE_BYTE",
+        "COMPUTE_SECOND"
+      ],
+      "title": "UsageUnit",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "actual_cost": {
+      "anyOf": [
+        {
+          "minimum": 0.0,
+          "type": "number"
+        },
+        {
+          "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+          "type": "string"
+        }
+      ],
+      "default": "0",
+      "title": "Actual Cost"
+    },
+    "attempt_id": {
+      "format": "uuid",
+      "title": "Attempt Id",
+      "type": "string"
+    },
+    "attempt_number": {
+      "minimum": 1,
+      "title": "Attempt Number",
+      "type": "integer"
+    },
+    "completed_at": {
+      "anyOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Completed At"
+    },
+    "currency": {
+      "default": "USD",
+      "title": "Currency",
+      "type": "string"
+    },
+    "estimated_cost": {
+      "anyOf": [
+        {
+          "minimum": 0.0,
+          "type": "number"
+        },
+        {
+          "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+          "type": "string"
+        }
+      ],
+      "default": "0",
+      "title": "Estimated Cost"
+    },
+    "failure": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/FailureClassification"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "idempotency_key": {
+      "title": "Idempotency Key",
+      "type": "string"
+    },
+    "input_hash": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Input Hash",
+      "type": "string"
+    },
+    "latency_ms": {
+      "anyOf": [
+        {
+          "minimum": 0,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Latency Ms"
+    },
+    "model": {
+      "title": "Model",
+      "type": "string"
+    },
+    "operation": {
+      "title": "Operation",
+      "type": "string"
+    },
+    "pricing_version_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Pricing Version Id"
+    },
+    "project_id": {
+      "format": "uuid",
+      "title": "Project Id",
+      "type": "string"
+    },
+    "provider": {
+      "title": "Provider",
+      "type": "string"
+    },
+    "provider_request_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Provider Request Id"
+    },
+    "redacted_result_reference": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Redacted Result Reference"
+    },
+    "related_entity_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Related Entity Id"
+    },
+    "schema_version": {
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "span_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Span Id"
+    },
+    "started_at": {
+      "format": "date-time",
+      "title": "Started At",
+      "type": "string"
+    },
+    "status": {
+      "title": "Status",
+      "type": "string"
+    },
+    "trace_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Trace Id"
+    },
+    "usage": {
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/UsageQuantity"
+      },
+      "title": "Usage",
+      "type": "array"
+    },
+    "warnings": {
+      "default": [],
+      "items": {
+        "type": "string"
+      },
+      "title": "Warnings",
+      "type": "array"
+    }
+  },
+  "required": [
+    "attempt_id",
+    "project_id",
+    "provider",
+    "model",
+    "operation",
+    "attempt_number",
+    "input_hash",
+    "idempotency_key",
+    "started_at",
+    "status"
+  ],
+  "title": "ProviderAttemptRecord",
+  "type": "object"
+}

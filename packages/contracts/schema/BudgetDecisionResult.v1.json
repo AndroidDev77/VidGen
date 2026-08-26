@@ -1,0 +1,52 @@
+{
+  "$defs": {
+    "BudgetDecision": {
+      "enum": [
+        "ALLOW",
+        "ALLOW_WITH_WARNING",
+        "DENY_HARD_CAP",
+        "DENY_ENTITY_CAP",
+        "UNKNOWN_PRICE_REVIEW"
+      ],
+      "title": "BudgetDecision",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "decision": {
+      "$ref": "#/$defs/BudgetDecision"
+    },
+    "remaining_amount": {
+      "anyOf": [
+        {
+          "type": "number"
+        },
+        {
+          "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+          "type": "string"
+        }
+      ],
+      "title": "Remaining Amount"
+    },
+    "schema_version": {
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "warnings": {
+      "default": [],
+      "items": {
+        "type": "string"
+      },
+      "title": "Warnings",
+      "type": "array"
+    }
+  },
+  "required": [
+    "decision",
+    "remaining_amount"
+  ],
+  "title": "BudgetDecisionResult",
+  "type": "object"
+}
