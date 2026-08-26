@@ -6,7 +6,7 @@ The complete system architecture and T01-T26 implementation roadmap are maintain
 [`docs/TECHNICAL_DESIGN.md`](docs/TECHNICAL_DESIGN.md). Contributors and coding agents should
 read it together with `AGENTS.md` before planning the next roadmap task.
 
-This repository implements roadmap tasks T01 through T11 and T23, including subtitle-first transcript acquisition, restartable episode analysis, comedy script generation, and cloud-neutral observability/cost controls:
+This repository implements roadmap tasks T01 through T11 and T23, with T12 narration work in progress, including subtitle-first transcript acquisition, restartable episode analysis, comedy script generation, narration contracts/audio processing, and cloud-neutral observability/cost controls:
 
 - Python monorepo, CI, and local infrastructure
 - Versioned Pydantic contracts plus exported JSON Schema
@@ -18,6 +18,8 @@ This repository implements roadmap tasks T01 through T11 and T23, including subt
 - Restartable transcription, overlap reconciliation, and anonymous speaker diarization
 - Embedded, sidecar, and OpenSubtitles acquisition with audio-transcription fallback
 - Restartable plot compression and comedy script generation with editorial review and revision
+- Provider-neutral narration (fake, OpenAI, and optional ElevenLabs), deterministic 48 kHz mono
+  PCM normalization, bounded forced alignment, quality gates, and restartable relational checkpoints
 
 ## Quick start
 

@@ -1,0 +1,129 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "account_scope": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Account Scope"
+    },
+    "channels": {
+      "default": 1,
+      "enum": [
+        1,
+        2
+      ],
+      "title": "Channels",
+      "type": "integer"
+    },
+    "configuration_hash": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Configuration Hash",
+      "type": "string"
+    },
+    "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+    },
+    "default_pace": {
+      "default": 1,
+      "maximum": 2,
+      "minimum": 0.5,
+      "title": "Default Pace",
+      "type": "number"
+    },
+    "default_speaking_instructions": {
+      "default": "",
+      "title": "Default Speaking Instructions",
+      "type": "string"
+    },
+    "language": {
+      "default": "en",
+      "title": "Language",
+      "type": "string"
+    },
+    "model": {
+      "title": "Model",
+      "type": "string"
+    },
+    "output_format": {
+      "default": "wav",
+      "title": "Output Format",
+      "type": "string"
+    },
+    "profile_version": {
+      "exclusiveMinimum": 0,
+      "title": "Profile Version",
+      "type": "integer"
+    },
+    "project_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Project Id"
+    },
+    "pronunciation_dictionary": {
+      "additionalProperties": {
+        "type": "string"
+      },
+      "title": "Pronunciation Dictionary",
+      "type": "object"
+    },
+    "provider": {
+      "title": "Provider",
+      "type": "string"
+    },
+    "provider_voice_id": {
+      "title": "Provider Voice Id",
+      "type": "string"
+    },
+    "sample_rate_hz": {
+      "default": 48000,
+      "exclusiveMinimum": 0,
+      "title": "Sample Rate Hz",
+      "type": "integer"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "updated_at": {
+      "format": "date-time",
+      "title": "Updated At",
+      "type": "string"
+    },
+    "voice_profile_id": {
+      "format": "uuid",
+      "title": "Voice Profile Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "voice_profile_id",
+    "provider",
+    "provider_voice_id",
+    "model",
+    "profile_version",
+    "configuration_hash",
+    "created_at",
+    "updated_at"
+  ],
+  "title": "VoiceProfile",
+  "type": "object"
+}

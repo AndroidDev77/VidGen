@@ -73,6 +73,7 @@ def test_production_worker_configures_every_workflow_stage(tmp_path: Path) -> No
         "evidence",
         "episode_analysis",
         "script_generation",
+        "narration",
     }
 
 

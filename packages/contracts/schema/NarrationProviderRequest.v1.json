@@ -1,0 +1,139 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "attempt_number": {
+      "maximum": 3,
+      "minimum": 1,
+      "title": "Attempt Number",
+      "type": "integer"
+    },
+    "idempotency_key": {
+      "title": "Idempotency Key",
+      "type": "string"
+    },
+    "language": {
+      "title": "Language",
+      "type": "string"
+    },
+    "model": {
+      "title": "Model",
+      "type": "string"
+    },
+    "output_format": {
+      "title": "Output Format",
+      "type": "string"
+    },
+    "project_id": {
+      "format": "uuid",
+      "title": "Project Id",
+      "type": "string"
+    },
+    "pronunciation_instructions": {
+      "default": "",
+      "title": "Pronunciation Instructions",
+      "type": "string"
+    },
+    "provider_options": {
+      "additionalProperties": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "integer"
+          },
+          {
+            "type": "number"
+          },
+          {
+            "type": "boolean"
+          }
+        ]
+      },
+      "title": "Provider Options",
+      "type": "object"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "script_id": {
+      "format": "uuid",
+      "title": "Script Id",
+      "type": "string"
+    },
+    "script_segment_id": {
+      "format": "uuid",
+      "title": "Script Segment Id",
+      "type": "string"
+    },
+    "script_version": {
+      "exclusiveMinimum": 0,
+      "title": "Script Version",
+      "type": "integer"
+    },
+    "segment_sequence": {
+      "minimum": 0,
+      "title": "Segment Sequence",
+      "type": "integer"
+    },
+    "speaking_instructions": {
+      "default": "",
+      "title": "Speaking Instructions",
+      "type": "string"
+    },
+    "speed": {
+      "default": 1,
+      "maximum": 2,
+      "minimum": 0.5,
+      "title": "Speed",
+      "type": "number"
+    },
+    "text": {
+      "minLength": 1,
+      "title": "Text",
+      "type": "string"
+    },
+    "trace_context": {
+      "additionalProperties": {
+        "type": "string"
+      },
+      "title": "Trace Context",
+      "type": "object"
+    },
+    "voice_id": {
+      "title": "Voice Id",
+      "type": "string"
+    },
+    "voice_profile_id": {
+      "format": "uuid",
+      "title": "Voice Profile Id",
+      "type": "string"
+    },
+    "voice_profile_version": {
+      "exclusiveMinimum": 0,
+      "title": "Voice Profile Version",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "idempotency_key",
+    "project_id",
+    "script_id",
+    "script_version",
+    "script_segment_id",
+    "segment_sequence",
+    "text",
+    "voice_profile_id",
+    "voice_profile_version",
+    "voice_id",
+    "model",
+    "output_format",
+    "language",
+    "attempt_number"
+  ],
+  "title": "NarrationProviderRequest",
+  "type": "object"
+}

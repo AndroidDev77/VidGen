@@ -7,6 +7,7 @@ from uuid import UUID
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
+from temporalio import activity
 
 from apps.api.settings import APISettings, get_settings
 from packages.providers import FakeSubtitleProvider
@@ -17,6 +18,10 @@ from services.analysis.fake_provider import FakeEpisodeAnalysisProvider
 from services.analysis.openai_adapter import OpenAIAnalysisConfig, OpenAIEpisodeAnalysisProvider
 from services.analysis.pipeline import EpisodeAnalysisPipeline
 from services.media_worker.pipeline import MediaPipeline
+from services.narration.fake_provider import FakeNarrationProvider
+from services.narration.alignment import OpenAIWhisperAligner
+from services.narration.openai_adapter import OpenAINarrationProvider
+from services.narration.pipeline import NarrationPipeline
 from services.script.fake_provider import FakeScriptGenerationProvider
 from services.script.openai_adapter import OpenAIScriptConfig, OpenAIScriptGenerationProvider
 from services.script.pipeline import ScriptGenerationPipeline
@@ -29,7 +34,7 @@ from services.transcription.pipeline import TranscriptionPipeline
 from vidgen.contracts.media import ExtractedFrame, SceneBoundary
 from vidgen.contracts.transcription import TranscriptSegment, TranscriptWord
 from vidgen.contracts.workflow import StageActivityInput, StageActivityResult
-from vidgen.db.models import Asset, AudioAsset, Scene, SourceVideo, asset_dependencies
+from vidgen.db.models import Asset, AudioAsset, Project, Scene, SourceVideo, asset_dependencies
 from vidgen.db.session import build_engine
 from vidgen.db.subtitle_models import SubtitleCandidateRecord
 from vidgen.db.transcription_models import (
@@ -54,6 +59,7 @@ def build_production_handlers(
         "evidence": _with_session(configured, _build_evidence),
         "episode_analysis": _with_session(configured, _analyze_episode),
         "script_generation": _with_session(configured, _generate_script),
+        "narration": _with_session(configured, _generate_narration),
     }
 
 
@@ -410,6 +416,48 @@ def _generate_script(
         stage=request.stage,
         entity_id=result.script_id,
         asset_id=None,
+        reused=False,
+    )
+
+
+def _generate_narration(
+    session: Session,
+    blob_store: FilesystemBlobStore,
+    settings: APISettings,
+    request: StageActivityInput,
+) -> StageActivityResult:
+    project = session.get(Project, request.project_id)
+    if project is None:
+        raise ValueError("project does not exist")
+    try:
+        voice_profile_id = UUID(str(project.settings["voice_profile_id"]))
+    except (KeyError, ValueError) as error:
+        raise ValueError("project settings require a valid voice_profile_id") from error
+    if settings.openai_api_key:
+        provider = OpenAINarrationProvider(settings.openai_api_key)
+    elif settings.temporal_allow_fake_providers:
+        provider = FakeNarrationProvider()
+    else:
+        raise ValueError("narration provider is not configured")
+    result = asyncio.run(
+        NarrationPipeline(
+            session,
+            blob_store,
+            provider,
+            aligner=OpenAIWhisperAligner(settings.openai_api_key)
+            if settings.openai_api_key
+            else None,
+            cancellation_check=activity.is_cancelled,
+        ).process(
+            project_id=request.project_id,
+            voice_profile_id=voice_profile_id,
+            idempotency_key=request.idempotency_key,
+        )
+    )
+    return StageActivityResult(
+        stage=request.stage,
+        entity_id=result.narration_run_id,
+        asset_id=result.preview_manifest_asset_id,
         reused=False,
     )
 

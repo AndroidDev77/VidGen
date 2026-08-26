@@ -1,0 +1,108 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "attempt_number": {
+      "maximum": 3,
+      "minimum": 1,
+      "title": "Attempt Number",
+      "type": "integer"
+    },
+    "audio_format": {
+      "title": "Audio Format",
+      "type": "string"
+    },
+    "byte_size": {
+      "minimum": 0,
+      "title": "Byte Size",
+      "type": "integer"
+    },
+    "content_type": {
+      "title": "Content Type",
+      "type": "string"
+    },
+    "idempotency_key": {
+      "title": "Idempotency Key",
+      "type": "string"
+    },
+    "model": {
+      "title": "Model",
+      "type": "string"
+    },
+    "provider": {
+      "title": "Provider",
+      "type": "string"
+    },
+    "provider_duration_seconds": {
+      "minimum": 0,
+      "title": "Provider Duration Seconds",
+      "type": "number"
+    },
+    "provider_request_id": {
+      "title": "Provider Request Id",
+      "type": "string"
+    },
+    "response_metadata": {
+      "additionalProperties": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "integer"
+          },
+          {
+            "type": "number"
+          },
+          {
+            "type": "boolean"
+          }
+        ]
+      },
+      "title": "Response Metadata",
+      "type": "object"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "usage": {
+      "additionalProperties": {
+        "anyOf": [
+          {
+            "type": "integer"
+          },
+          {
+            "type": "number"
+          },
+          {
+            "type": "string"
+          }
+        ]
+      },
+      "title": "Usage",
+      "type": "object"
+    },
+    "warnings": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Warnings",
+      "type": "array"
+    }
+  },
+  "required": [
+    "provider",
+    "model",
+    "provider_request_id",
+    "attempt_number",
+    "content_type",
+    "audio_format",
+    "byte_size",
+    "provider_duration_seconds",
+    "idempotency_key"
+  ],
+  "title": "NarrationProviderResult",
+  "type": "object"
+}

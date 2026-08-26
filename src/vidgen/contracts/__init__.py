@@ -50,6 +50,19 @@ from vidgen.contracts.media import (
     MediaProcessingResult,
     SceneDetectionResult,
 )
+from vidgen.contracts.narration import (
+    NarrationAlignment,
+    NarrationAttempt,
+    NarrationPreviewManifest,
+    NarrationProviderRequest,
+    NarrationProviderResult,
+    NarrationQualityDiagnostic,
+    NarrationQualityReport,
+    NarrationResult,
+    NarrationSegmentResult,
+    NarrationWordTiming,
+    VoiceProfile,
+)
 from vidgen.contracts.qa import QAResult
 from vidgen.contracts.script import (
     BeatCoverage,
@@ -161,6 +174,16 @@ __all__ = [
     "LocationDefinition",
     "MediaProbeResult",
     "MediaProcessingResult",
+    "NarrationAlignment",
+    "NarrationAttempt",
+    "NarrationPreviewManifest",
+    "NarrationProviderRequest",
+    "NarrationProviderResult",
+    "NarrationQualityDiagnostic",
+    "NarrationQualityReport",
+    "NarrationResult",
+    "NarrationSegmentResult",
+    "NarrationWordTiming",
     "OmittedPlotBeat",
     "PacingAllocation",
     "PlotBeat",
@@ -213,6 +236,7 @@ __all__ = [
     "TranscriptionResult",
     "TranscriptionWarning",
     "UnresolvedAmbiguity",
+    "VoiceProfile",
     "WordBudget",
     "WorkflowFailure",
 ]

@@ -1,0 +1,308 @@
+{
+  "$defs": {
+    "NarrationProviderResult": {
+      "additionalProperties": false,
+      "properties": {
+        "attempt_number": {
+          "maximum": 3,
+          "minimum": 1,
+          "title": "Attempt Number",
+          "type": "integer"
+        },
+        "audio_format": {
+          "title": "Audio Format",
+          "type": "string"
+        },
+        "byte_size": {
+          "minimum": 0,
+          "title": "Byte Size",
+          "type": "integer"
+        },
+        "content_type": {
+          "title": "Content Type",
+          "type": "string"
+        },
+        "idempotency_key": {
+          "title": "Idempotency Key",
+          "type": "string"
+        },
+        "model": {
+          "title": "Model",
+          "type": "string"
+        },
+        "provider": {
+          "title": "Provider",
+          "type": "string"
+        },
+        "provider_duration_seconds": {
+          "minimum": 0,
+          "title": "Provider Duration Seconds",
+          "type": "number"
+        },
+        "provider_request_id": {
+          "title": "Provider Request Id",
+          "type": "string"
+        },
+        "response_metadata": {
+          "additionalProperties": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "integer"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              }
+            ]
+          },
+          "title": "Response Metadata",
+          "type": "object"
+        },
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "usage": {
+          "additionalProperties": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "string"
+              }
+            ]
+          },
+          "title": "Usage",
+          "type": "object"
+        },
+        "warnings": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Warnings",
+          "type": "array"
+        }
+      },
+      "required": [
+        "provider",
+        "model",
+        "provider_request_id",
+        "attempt_number",
+        "content_type",
+        "audio_format",
+        "byte_size",
+        "provider_duration_seconds",
+        "idempotency_key"
+      ],
+      "title": "NarrationProviderResult",
+      "type": "object"
+    },
+    "NarrationQualityDiagnostic": {
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "title": "Code",
+          "type": "string"
+        },
+        "measured_value": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Measured Value"
+        },
+        "message": {
+          "title": "Message",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "severity": {
+          "enum": [
+            "warning",
+            "error"
+          ],
+          "title": "Severity",
+          "type": "string"
+        },
+        "threshold": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Threshold"
+        }
+      },
+      "required": [
+        "code",
+        "severity",
+        "message"
+      ],
+      "title": "NarrationQualityDiagnostic",
+      "type": "object"
+    },
+    "NarrationQualityReport": {
+      "additionalProperties": false,
+      "properties": {
+        "alignment_coverage": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Alignment Coverage",
+          "type": "number"
+        },
+        "clipping_ratio": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Clipping Ratio",
+          "type": "number"
+        },
+        "diagnostics": {
+          "items": {
+            "$ref": "#/$defs/NarrationQualityDiagnostic"
+          },
+          "title": "Diagnostics",
+          "type": "array"
+        },
+        "leading_silence_seconds": {
+          "minimum": 0,
+          "title": "Leading Silence Seconds",
+          "type": "number"
+        },
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "speaking_rate_wpm": {
+          "minimum": 0,
+          "title": "Speaking Rate Wpm",
+          "type": "number"
+        },
+        "trailing_silence_seconds": {
+          "minimum": 0,
+          "title": "Trailing Silence Seconds",
+          "type": "number"
+        },
+        "valid": {
+          "title": "Valid",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "valid",
+        "clipping_ratio",
+        "leading_silence_seconds",
+        "trailing_silence_seconds",
+        "speaking_rate_wpm",
+        "alignment_coverage"
+      ],
+      "title": "NarrationQualityReport",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "attempt_id": {
+      "format": "uuid",
+      "title": "Attempt Id",
+      "type": "string"
+    },
+    "attempt_number": {
+      "maximum": 3,
+      "minimum": 1,
+      "title": "Attempt Number",
+      "type": "integer"
+    },
+    "failure_classification": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Failure Classification"
+    },
+    "normalized_asset_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Normalized Asset Id"
+    },
+    "original_asset_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Original Asset Id"
+    },
+    "provider_result": {
+      "$ref": "#/$defs/NarrationProviderResult"
+    },
+    "quality_report": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/NarrationQualityReport"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    }
+  },
+  "required": [
+    "attempt_id",
+    "attempt_number",
+    "provider_result"
+  ],
+  "title": "NarrationAttempt",
+  "type": "object"
+}
