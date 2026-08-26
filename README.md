@@ -6,7 +6,7 @@ The complete system architecture and T01-T26 implementation roadmap are maintain
 [`docs/TECHNICAL_DESIGN.md`](docs/TECHNICAL_DESIGN.md). Contributors and coding agents should
 read it together with `AGENTS.md` before planning the next roadmap task.
 
-This repository implements roadmap tasks T01 through T10, including subtitle-first transcript acquisition and restartable episode analysis:
+This repository implements roadmap tasks T01 through T10 and T23, including subtitle-first transcript acquisition, restartable episode analysis, and cloud-neutral observability/cost controls:
 
 - Python monorepo, CI, and local infrastructure
 - Versioned Pydantic contracts plus exported JSON Schema
@@ -136,6 +136,29 @@ boundaries, retains anonymous speaker labels and subtitle/audio provenance, refe
 contact-sheet assets by UUID, and derives package identity from canonical input hashes.
 
 ## Episode Analyst (T10)
+
+## Observability and cost ledger (T23)
+
+T23 adds structured JSON logging with recursive redaction, W3C trace propagation, bounded
+Prometheus/OpenTelemetry instruments, canonical failure classification, and a reusable
+`instrument_provider_attempt` context manager. Provider attempts, versioned pricing, transactional
+reservations, immutable reconciliation events, project budgets, and failed-work projections are
+persisted by migration `0007_observability_costs`.
+
+Start the unchanged base stack with `make infra-up`. Start the optional local stack with:
+
+```bash
+docker compose --profile observability up -d
+```
+
+Prometheus is at <http://localhost:9090/targets> and Grafana is at <http://localhost:3000>.
+Collector traces are available in `docker compose logs otel-collector`. Run deterministic fake
+providers using the existing `--provider fake` commands; no Azure or paid-provider credentials are
+needed. Generate a machine-readable report with:
+
+```bash
+uv run python scripts/cost_report.py PROJECT_UUID --json
+```
 
 The parent Temporal workflow runs Episode Analyst after the selected T09 evidence package is ready.
 The activity maps each evidence scene independently, commits successful scene checkpoints, then

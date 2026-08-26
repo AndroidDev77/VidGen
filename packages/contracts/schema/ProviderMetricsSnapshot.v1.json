@@ -1,0 +1,32 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "active": {
+      "minimum": 0,
+      "title": "Active",
+      "type": "integer"
+    },
+    "failures": {
+      "minimum": 0,
+      "title": "Failures",
+      "type": "integer"
+    },
+    "requests": {
+      "minimum": 0,
+      "title": "Requests",
+      "type": "integer"
+    },
+    "schema_version": {
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    }
+  },
+  "required": [
+    "requests",
+    "failures",
+    "active"
+  ],
+  "title": "ProviderMetricsSnapshot",
+  "type": "object"
+}

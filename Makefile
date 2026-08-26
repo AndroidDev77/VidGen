@@ -1,4 +1,4 @@
-.PHONY: install lint format typecheck test schemas verify infra-up infra-down migrate migrate-down verify-stack run-api
+.PHONY: install lint format typecheck test schemas verify infra-up infra-down observability-up migrate migrate-down verify-stack run-api
 
 export UV_CACHE_DIR ?= .uv-cache
 
@@ -28,6 +28,9 @@ infra-up:
 
 infra-down:
 	docker compose down
+
+observability-up:
+	docker compose --profile observability up -d
 
 migrate:
 	uv run alembic upgrade head

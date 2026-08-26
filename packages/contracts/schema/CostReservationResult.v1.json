@@ -1,0 +1,63 @@
+{
+  "$defs": {
+    "BudgetDecision": {
+      "enum": [
+        "ALLOW",
+        "ALLOW_WITH_WARNING",
+        "DENY_HARD_CAP",
+        "DENY_ENTITY_CAP",
+        "UNKNOWN_PRICE_REVIEW"
+      ],
+      "title": "BudgetDecision",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "decision": {
+      "$ref": "#/$defs/BudgetDecision"
+    },
+    "reservation_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Reservation Id"
+    },
+    "reserved_amount": {
+      "anyOf": [
+        {
+          "minimum": 0.0,
+          "type": "number"
+        },
+        {
+          "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+          "type": "string"
+        }
+      ],
+      "title": "Reserved Amount"
+    },
+    "reused": {
+      "default": false,
+      "title": "Reused",
+      "type": "boolean"
+    },
+    "schema_version": {
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    }
+  },
+  "required": [
+    "reservation_id",
+    "decision",
+    "reserved_amount"
+  ],
+  "title": "CostReservationResult",
+  "type": "object"
+}
