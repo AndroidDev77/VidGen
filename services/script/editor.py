@@ -47,7 +47,13 @@ def propose_revision(script: RecapScript) -> tuple[list[ScriptEdit], RecapScript
         return [], script
 
     old_words = target.text.split()
-    new_words = [word for word in old_words if word not in _FILLER_WORDS]
+    new_words = list(old_words)
+    # Only trim the padded filler tail _fit_segment_text() appends, never a filler
+    # word wherever it happens to occur - the beat summary or a joke clause may
+    # legitimately contain one, and deleting it there would rewrite content this
+    # editor is only supposed to trim, not paraphrase.
+    while len(new_words) > LONG_SEGMENT_WORDS and new_words and new_words[-1] in _FILLER_WORDS:
+        new_words.pop()
     if len(new_words) == len(old_words):
         return [], script
     new_text = " ".join(new_words)

@@ -12,7 +12,13 @@ from services.script.validator import (
 )
 from services.script.writer import _fit_segment_text, write_script
 from tests.test_script_pipeline import _make_analysis
-from vidgen.contracts.script import ChannelVoiceConfig, ComedyWritingRequest, PlotCompressionRequest
+from vidgen.contracts.script import (
+    ChannelVoiceConfig,
+    ComedyWritingRequest,
+    PlotCompressionRequest,
+    RecapScript,
+    ScriptSegment,
+)
 
 
 def _plan(analysis, **overrides):
@@ -339,6 +345,74 @@ def test_write_script_honors_small_per_beat_word_allocations() -> None:
     assert any(item.words < 4 for item in plan.word_budget.allocations)
     script = _script(analysis, plan, target_words=plan.word_budget.total_target_words)
     assert script.actual_word_count <= plan.word_budget.total_target_words * 1.5
+
+
+def test_propose_revision_only_trims_trailing_filler_not_mid_sentence_words() -> None:
+    # Regression for a Copilot review finding: propose_revision() used to strip
+    # every occurrence of a filler word anywhere in the segment, but _FILLER_BANK
+    # contains ordinary words ("with", "everyone", "just") that can legitimately
+    # appear in the beat summary or a joke clause. It must only trim the padded
+    # filler tail _fit_segment_text() appends, never rewrite meaningful content.
+    analysis = _make_analysis(uuid4())
+    beat = compress_plot(
+        analysis=analysis,
+        request=PlotCompressionRequest(
+            project_id=analysis.project_id,
+            episode_analysis_id=analysis.episode_id,
+            episode_analysis=analysis,
+            input_hash="a" * 64,
+            idempotency_key="k",
+            contract_version="1.0",
+            prompt_version="comedy-script-v1",
+            provider_configuration_version="fake-script-v1",
+            target_duration_ms=240_000,
+            target_words=600,
+            target_words_per_minute=150,
+            required_beat_ids=[],
+            excluded_topics=[],
+            recap_mode="full_recap",
+        ),
+        plan_id=uuid4(),
+    ).selected_beats[0]
+    mid_sentence = (
+        "The team met with the mayor and everyone just watched the whole thing "
+        "unfold in front of a crowd that had gathered downtown that afternoon while "
+        "several reporters took careful notes and a handful of onlookers debated "
+        "loudly about what exactly this development would mean for the neighborhood"
+    )
+    trailing_filler = "Anyway, somehow, everyone just went along with it, naturally."
+    text = f"{mid_sentence} {trailing_filler}"
+    assert canonical_word_count(text) > 40
+    segment = ScriptSegment(
+        segment_id=uuid4(),
+        sequence=0,
+        type="NARRATION",
+        speaker_kind="narrator",
+        text=text,
+        plot_beat_ids=[beat.plot_beat_id],
+        estimated_duration_ms=10_000,
+        content_hash="a" * 64,
+        locked=False,
+    )
+    script = RecapScript(
+        script_id=uuid4(),
+        version=1,
+        project_id=analysis.project_id,
+        episode_analysis_id=analysis.episode_id,
+        compressed_plot_plan_id=uuid4(),
+        target_duration_ms=10_000,
+        target_word_count=canonical_word_count(text),
+        actual_word_count=canonical_word_count(text),
+        voice_profile_ref="narrator",
+        humor_intensity=0.5,
+        segments=[segment],
+    )
+    edits, revised = propose_revision(script)
+    assert edits
+    revised_text = revised.segments[0].text
+    assert "met with the mayor" in revised_text
+    assert "everyone just watched" in revised_text
+    assert canonical_word_count(revised_text) < canonical_word_count(text)
 
 
 def test_fit_segment_text_never_exceeds_target_words_when_joke_clause_is_long() -> None:
