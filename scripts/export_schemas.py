@@ -7,6 +7,7 @@ import json
 from pathlib import Path
 
 from vidgen.contracts import (
+    AliasEvidence,
     AnalysisInference,
     AnalysisObservation,
     AnalysisValidationError,
@@ -82,6 +83,7 @@ CONTRACTS = (
     UnresolvedAmbiguity,
     AnalysisValidationError,
     AnalysisValidationReport,
+    AliasEvidence,
     ProviderMetadata,
     ProviderSceneAnalysisResult,
     ProviderEpisodeAnalysisResult,

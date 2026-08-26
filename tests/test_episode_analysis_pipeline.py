@@ -130,3 +130,28 @@ async def test_rejects_unselected_evidence(tmp_path: Path) -> None:
         await EpisodeAnalysisPipeline(session, blobs, FakeEpisodeAnalysisProvider()).process(
             project_id=project.id, evidence_package_id=evidence.id, idempotency_key="x"
         )
+
+
+@pytest.mark.asyncio
+async def test_interrupted_reduce_reuses_scene_checkpoints(tmp_path: Path) -> None:
+    session, blobs, project, evidence = _database(tmp_path)
+
+    class FailingReduce(FakeEpisodeAnalysisProvider):
+        async def synthesize_episode(self, request, context):  # type: ignore[no-untyped-def]
+            raise TimeoutError("interrupted")
+
+    with pytest.raises(TimeoutError):
+        await EpisodeAnalysisPipeline(session, blobs, FailingReduce()).process(
+            project_id=project.id,
+            evidence_package_id=evidence.id,
+            idempotency_key="resume-key",
+        )
+    assert project.status == "episode_analysis_failed"
+    resumed_provider = FakeEpisodeAnalysisProvider()
+    result = await EpisodeAnalysisPipeline(session, blobs, resumed_provider).process(
+        project_id=project.id,
+        evidence_package_id=evidence.id,
+        idempotency_key="resume-key",
+    )
+    assert result.validation_report.valid
+    assert resumed_provider.submissions == ["resume-key:reduce"]

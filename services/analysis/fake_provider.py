@@ -67,7 +67,7 @@ class FakeEpisodeAnalysisProvider:
     async def synthesize_episode(
         self, request: EpisodeSynthesisRequest, context: GenerationContext
     ) -> ProviderEpisodeAnalysisResult:
-        scenes = [self.scene_results[item] for item in request.scene_result_ids]
+        scenes = request.scene_results
         output = EpisodeAnalysis(
             episode_id=uuid5(FAKE_NAMESPACE, f"episode:{request.input_hash}"),
             project_id=request.project_id,

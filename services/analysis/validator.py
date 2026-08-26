@@ -259,4 +259,20 @@ def validate_episode_analysis(
     for collection_name in ("characters", "locations", "unresolved_ambiguities"):
         for index, entity in enumerate(getattr(analysis, collection_name)):
             refs(f"{collection_name}.{index}.source_references", entity.source_references)
+            aliases = getattr(entity, "aliases", [])
+            alias_evidence = getattr(entity, "alias_evidence", [])
+            if aliases and {item.alias.casefold() for item in alias_evidence} != {
+                item.casefold() for item in aliases
+            }:
+                error(
+                    "UNSUPPORTED_ALIAS_MERGE",
+                    f"{collection_name}.{index}.aliases",
+                    aliases,
+                    "Every merged alias requires explicit evidence",
+                )
+            for alias_index, claim in enumerate(alias_evidence):
+                refs(
+                    f"{collection_name}.{index}.alias_evidence.{alias_index}",
+                    claim.source_references,
+                )
     return AnalysisValidationReport(valid=not errors, errors=errors)

@@ -441,8 +441,9 @@ export type SourceReferenceType = "transcript_segment" | "speaker_turn" | "sourc
 export interface SourceReference { schema_version: "1.0"; reference_type: SourceReferenceType; reference_id: UUID; scene_id: UUID | null; start_ms: number | null; end_ms: number | null }
 export interface AnalysisObservation { schema_version: "1.0"; claim: string; source_references: SourceReference[] }
 export interface AnalysisInference extends AnalysisObservation { confidence: number }
-export interface CharacterCandidate { schema_version: "1.0"; character_id: UUID; canonical_name: string; aliases: string[]; anonymous: boolean; confidence: number; source_references: SourceReference[] }
-export interface LocationCandidate { schema_version: "1.0"; location_id: UUID; canonical_name: string; aliases: string[]; confidence: number; source_references: SourceReference[] }
+export interface AliasEvidence { alias: string; source_references: SourceReference[] }
+export interface CharacterCandidate { schema_version: "1.0"; character_id: UUID; canonical_name: string; aliases: string[]; alias_evidence: AliasEvidence[]; anonymous: boolean; confidence: number; source_references: SourceReference[] }
+export interface LocationCandidate { schema_version: "1.0"; location_id: UUID; canonical_name: string; aliases: string[]; alias_evidence: AliasEvidence[]; confidence: number; source_references: SourceReference[] }
 export interface StateEvent { schema_version: "1.0"; state_event_id: UUID; entity_id: UUID; scene_id: UUID; sequence: number; description: string; confidence: number; source_references: SourceReference[] }
 export interface Relationship { schema_version: "1.0"; relationship_id: UUID; source_character_id: UUID; target_character_id: UUID; description: string; confidence: number; source_references: SourceReference[] }
 export interface AnalysisPlotBeat { schema_version: "1.0"; plot_beat_id: UUID; sequence: number; scene_ids: UUID[]; character_ids: UUID[]; summary: string; importance: number; payoff_score: number; mandatory: boolean; source_references: SourceReference[] }

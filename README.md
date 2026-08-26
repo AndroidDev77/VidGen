@@ -6,7 +6,7 @@ The complete system architecture and T01-T26 implementation roadmap are maintain
 [`docs/TECHNICAL_DESIGN.md`](docs/TECHNICAL_DESIGN.md). Contributors and coding agents should
 read it together with `AGENTS.md` before planning the next roadmap task.
 
-This repository implements roadmap tasks T01 through T09, including subtitle-first transcript acquisition:
+This repository implements roadmap tasks T01 through T10, including subtitle-first transcript acquisition and restartable episode analysis:
 
 - Python monorepo, CI, and local infrastructure
 - Versioned Pydantic contracts plus exported JSON Schema
@@ -134,3 +134,30 @@ uv run python -m workers.temporal_worker.main
 Scene evidence remains provider-neutral. It clips overlapping transcript segments to source scene
 boundaries, retains anonymous speaker labels and subtitle/audio provenance, references frames and
 contact-sheet assets by UUID, and derives package identity from canonical input hashes.
+
+## Episode Analyst (T10)
+
+The parent Temporal workflow runs Episode Analyst after the selected T09 evidence package is ready.
+The activity maps each evidence scene independently, commits successful scene checkpoints, then
+reduces only validated map results into canonical `EpisodeAnalysis` 1.0. Temporal history contains
+only project/source IDs and the normal versioned stage envelope; provider payloads and canonical JSON
+are persisted outside workflow history.
+
+Deterministic validation resolves every source reference against the selected evidence package and
+checks chronology, entity foreign keys, alias evidence, state events, relationships, mandatory beat
+evidence, and the acyclic chronological beat dependency graph. Invalid scene output is repaired once
+without rerunning valid scenes; invalid reduce output receives one targeted repair. A failed replacement
+does not deselect the prior valid analysis.
+
+Run the zero-cost deterministic provider locally:
+
+```bash
+uv run python scripts/analyze_episode.py PROJECT_UUID --provider fake
+```
+
+Run the configured OpenAI Responses adapter (the model remains configuration):
+
+```bash
+VIDGEN_OPENAI_API_KEY=... VIDGEN_ANALYSIS_MODEL=... \
+  uv run python scripts/analyze_episode.py PROJECT_UUID --provider openai
+```

@@ -157,7 +157,7 @@ class EpisodeAnalysisPipeline:
                 attempted_request = request.model_copy(
                     update={
                         "idempotency_key": request.idempotency_key
-                        if attempt == 1
+                        if feedback is None
                         else f"{request.idempotency_key}:repair:{attempt}"
                     }
                 )
@@ -207,7 +207,13 @@ class EpisodeAnalysisPipeline:
                 feedback = report.model_dump_json()
             raise RuntimeError("scene attempts exhausted")
 
-        scenes = [await map_scene(row) for row in rows]
+        try:
+            scenes = [await map_scene(row) for row in rows]
+        except Exception:
+            run.status = project.status = "episode_analysis_failed"
+            run.error_code = "SCENE_ANALYSIS_FAILED"
+            self.session.commit()
+            raise
         project.status = run.status = "episode_global_reduction"
         self.session.commit()
         request = EpisodeSynthesisRequest(
@@ -221,21 +227,31 @@ class EpisodeAnalysisPipeline:
             prompt_version=PROMPT_VERSION,
             provider_configuration_version=CONFIG_VERSION,
             scene_result_ids=[item.scene_id for item in scenes],
+            scene_results=scenes,
         )
         valid_refs = {ref.reference_id for row in rows for ref in _references(evidence, row)}
         feedback = None
+        reduced = None
         for attempt in range(1, self.max_attempts + 1):
             attempted_request = request.model_copy(
                 update={
                     "idempotency_key": request.idempotency_key
-                    if attempt == 1
+                    if feedback is None
                     else f"{request.idempotency_key}:repair:{attempt}"
                 }
             )
-            reduced = await self.provider.synthesize_episode(
-                attempted_request,
-                GenerationContext(attempt_number=attempt, validation_errors_json=feedback),
-            )
+            try:
+                reduced = await self.provider.synthesize_episode(
+                    attempted_request,
+                    GenerationContext(attempt_number=attempt, validation_errors_json=feedback),
+                )
+            except Exception:
+                if attempt < self.max_attempts:
+                    continue
+                run.status = project.status = "episode_analysis_failed"
+                run.error_code = "EPISODE_REDUCTION_FAILED"
+                self.session.commit()
+                raise
             analysis = canonicalize(reduced.output)
             project.status = run.status = "episode_analysis_validating"
             self.session.commit()
@@ -250,6 +266,8 @@ class EpisodeAnalysisPipeline:
             run.status = project.status = "episode_analysis_failed"
             self.session.commit()
             raise ValueError("episode analysis failed deterministic validation")
+        if reduced is None:
+            raise RuntimeError("episode reduction produced no result")
         parent_ids = (
             tuple(UUID(str(value)) for value in evidence.provenance["parent_asset_ids"])
             if "parent_asset_ids" in evidence.provenance

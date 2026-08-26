@@ -8,6 +8,7 @@ from vidgen.contracts.episode import (
     SceneDefinition,
 )
 from vidgen.contracts.episode_analysis import (
+    AliasEvidence,
     AnalysisInference,
     AnalysisObservation,
     AnalysisValidationError,
@@ -81,6 +82,7 @@ from vidgen.contracts.workflow import (
 )
 
 __all__ = [
+    "AliasEvidence",
     "AnalysisInference",
     "AnalysisObservation",
     "AnalysisValidationError",

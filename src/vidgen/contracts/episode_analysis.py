@@ -47,11 +47,17 @@ class AnalysisInference(AnalysisObservation):
     confidence: Confidence = Field(ge=0, le=1)
 
 
+class AliasEvidence(StrictContract):
+    alias: str = Field(min_length=1)
+    source_references: list[SourceReference] = Field(min_length=1)
+
+
 class CharacterCandidate(StrictContract):
     schema_version: Version = "1.0"
     character_id: UUID
     canonical_name: str = Field(min_length=1)
     aliases: list[str] = Field(default_factory=list)
+    alias_evidence: list[AliasEvidence] = Field(default_factory=list)
     anonymous: bool = False
     confidence: Confidence = Field(ge=0, le=1)
     source_references: list[SourceReference] = Field(min_length=1)
@@ -62,6 +68,7 @@ class LocationCandidate(StrictContract):
     location_id: UUID
     canonical_name: str = Field(min_length=1)
     aliases: list[str] = Field(default_factory=list)
+    alias_evidence: list[AliasEvidence] = Field(default_factory=list)
     confidence: Confidence = Field(ge=0, le=1)
     source_references: list[SourceReference] = Field(min_length=1)
 
@@ -188,6 +195,7 @@ class EpisodeSynthesisRequest(StrictContract):
     prompt_version: str
     provider_configuration_version: str
     scene_result_ids: list[UUID] = Field(min_length=1)
+    scene_results: list[SceneAnalysisResult] = Field(min_length=1)
     validation_errors: list[AnalysisValidationError] = Field(default_factory=list)
 
 

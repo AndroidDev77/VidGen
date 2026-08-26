@@ -2,7 +2,12 @@ from uuid import uuid4
 
 from services.analysis.openai_adapter import _response_text, _strict_schema
 from services.analysis.validator import validate_episode_analysis
-from vidgen.contracts.episode_analysis import EpisodeAnalysis
+from vidgen.contracts.episode_analysis import (
+    BeatDependency,
+    CharacterCandidate,
+    EpisodeAnalysis,
+    PlotBeat,
+)
 
 
 def _golden() -> EpisodeAnalysis:
@@ -32,6 +37,68 @@ def test_unknown_character_and_overlapping_chronology_are_rejected() -> None:
     analysis = _golden().model_copy(deep=True)
     analysis.scenes[0].character_ids = [uuid4()]
     assert "UNKNOWN_CHARACTER" in {item.code for item in _validate(analysis).errors}
+
+
+def test_alias_merge_without_specific_evidence_is_rejected() -> None:
+    analysis = _golden().model_copy(deep=True)
+    reference = analysis.source_references[0]
+    analysis.characters = [
+        CharacterCandidate(
+            character_id=uuid4(),
+            canonical_name="Speaker 1",
+            aliases=["Alex"],
+            anonymous=True,
+            confidence=0.5,
+            source_references=[reference],
+        )
+    ]
+    assert "UNSUPPORTED_ALIAS_MERGE" in {item.code for item in _validate(analysis).errors}
+
+
+def test_mandatory_beat_and_dependency_failures_are_structured() -> None:
+    analysis = _golden().model_copy(deep=True)
+    scene_id = analysis.scenes[0].scene_id
+    first, second = uuid4(), uuid4()
+    analysis.plot_beats = [
+        PlotBeat(
+            plot_beat_id=first,
+            sequence=1,
+            scene_ids=[scene_id],
+            summary="Cause",
+            importance=1,
+            payoff_score=0,
+            mandatory=True,
+        ),
+        PlotBeat(
+            plot_beat_id=second,
+            sequence=2,
+            scene_ids=[scene_id],
+            summary="Effect",
+            importance=1,
+            payoff_score=1,
+            mandatory=False,
+            source_references=analysis.source_references,
+        ),
+    ]
+    analysis.beat_dependencies = [
+        BeatDependency(
+            cause_beat_id=second, effect_beat_id=first, source_references=analysis.source_references
+        )
+    ]
+    codes = {item.code for item in _validate(analysis).errors}
+    assert {"MANDATORY_BEAT_WITHOUT_EVIDENCE", "CAUSE_AFTER_EFFECT"} <= codes
+
+
+def test_missing_dependency_endpoint_is_rejected() -> None:
+    analysis = _golden().model_copy(deep=True)
+    analysis.beat_dependencies = [
+        BeatDependency(
+            cause_beat_id=uuid4(),
+            effect_beat_id=uuid4(),
+            source_references=analysis.source_references,
+        )
+    ]
+    assert "UNKNOWN_BEAT_DEPENDENCY" in {item.code for item in _validate(analysis).errors}
 
 
 def test_strict_openai_schema_requires_every_property_and_closes_objects() -> None:

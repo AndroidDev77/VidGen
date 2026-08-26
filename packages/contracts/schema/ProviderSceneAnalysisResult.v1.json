@@ -1,5 +1,29 @@
 {
   "$defs": {
+    "AliasEvidence": {
+      "additionalProperties": false,
+      "properties": {
+        "alias": {
+          "minLength": 1,
+          "title": "Alias",
+          "type": "string"
+        },
+        "source_references": {
+          "items": {
+            "$ref": "#/$defs/SourceReference"
+          },
+          "minItems": 1,
+          "title": "Source References",
+          "type": "array"
+        }
+      },
+      "required": [
+        "alias",
+        "source_references"
+      ],
+      "title": "AliasEvidence",
+      "type": "object"
+    },
     "AnalysisInference": {
       "additionalProperties": false,
       "properties": {
@@ -100,6 +124,13 @@
     "CharacterCandidate": {
       "additionalProperties": false,
       "properties": {
+        "alias_evidence": {
+          "items": {
+            "$ref": "#/$defs/AliasEvidence"
+          },
+          "title": "Alias Evidence",
+          "type": "array"
+        },
         "aliases": {
           "items": {
             "type": "string"
@@ -155,6 +186,13 @@
     "LocationCandidate": {
       "additionalProperties": false,
       "properties": {
+        "alias_evidence": {
+          "items": {
+            "$ref": "#/$defs/AliasEvidence"
+          },
+          "title": "Alias Evidence",
+          "type": "array"
+        },
         "aliases": {
           "items": {
             "type": "string"
