@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
+from contextvars import copy_context
 from threading import Event, Thread
 
 from temporalio import activity
@@ -10,6 +11,7 @@ from vidgen.contracts.workflow import StageActivityInput, StageActivityResult
 
 StageHandler = Callable[[StageActivityInput], StageActivityResult]
 _handlers: dict[str, StageHandler] = {}
+HEARTBEAT_INTERVAL_SECONDS = 30.0
 
 
 def configure_activity_handlers(handlers: dict[str, StageHandler]) -> None:
@@ -32,11 +34,17 @@ def _activity_heartbeats(stage: str) -> Iterator[None]:
     stopped = Event()
 
     def heartbeat() -> None:
-        while not stopped.wait(30):
+        while not stopped.wait(HEARTBEAT_INTERVAL_SECONDS):
             activity.heartbeat({"stage": stage})
 
     activity.heartbeat({"stage": stage})
-    thread = Thread(target=heartbeat, name=f"heartbeat-{stage}", daemon=True)
+    context = copy_context()
+    thread = Thread(
+        target=context.run,
+        args=(heartbeat,),
+        name=f"heartbeat-{stage}",
+        daemon=True,
+    )
     thread.start()
     try:
         yield

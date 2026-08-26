@@ -26,7 +26,11 @@ from vidgen.contracts.workflow import StageActivityInput, StageActivityResult
 from vidgen.db.models import Asset, AudioAsset, Scene, SourceVideo, asset_dependencies
 from vidgen.db.session import build_engine
 from vidgen.db.subtitle_models import SubtitleCandidateRecord
-from vidgen.db.transcription_models import Transcript, TranscriptSegmentRecord
+from vidgen.db.transcription_models import (
+    SpeakerTurnRecord,
+    Transcript,
+    TranscriptSegmentRecord,
+)
 from vidgen.db.workflow_models import EvidencePackageRecord, SceneEvidenceRecord
 from vidgen.storage.asset_service import AssetService
 from vidgen.storage.blob import FilesystemBlobStore
@@ -115,7 +119,7 @@ def _acquire_transcript(
             password=settings.opensubtitles_password,
         )
         if settings.opensubtitles_api_key
-        else FakeSubtitleProvider()
+        else (FakeSubtitleProvider() if settings.temporal_allow_fake_providers else None)
     )
     transcription_provider = (
         OpenAITranscriptionAdapter(
@@ -124,7 +128,7 @@ def _acquire_transcript(
             diarization_model=settings.diarization_model,
         )
         if settings.openai_api_key
-        else FakeTranscriptionProvider()
+        else (FakeTranscriptionProvider() if settings.temporal_allow_fake_providers else None)
     )
 
     async def acquire() -> StageActivityResult:
@@ -139,7 +143,11 @@ def _acquire_transcript(
                     allow_provider_search=settings.opensubtitles_api_key is not None,
                 ),
             )
-            transcription = TranscriptionPipeline(session, blob_store, transcription_provider)
+            transcription = (
+                TranscriptionPipeline(session, blob_store, transcription_provider)
+                if transcription_provider is not None
+                else None
+            )
             result = await TranscriptAcquisitionService(subtitles, transcription).process(
                 project_id=request.project_id,
                 source_video_id=source.id,
@@ -199,10 +207,13 @@ def _build_evidence(
         )
     )
     if existing is not None:
+        package_asset_id = UUID(str(existing.provenance["package_asset_id"]))
+        if session.get(Asset, package_asset_id) is None:
+            raise ValueError("persisted evidence package asset is missing")
         return StageActivityResult(
             stage=request.stage,
             entity_id=existing.id,
-            asset_id=existing.contact_sheet_asset_id,
+            asset_id=package_asset_id,
             reused=True,
         )
     scene_rows = list(
@@ -217,6 +228,13 @@ def _build_evidence(
             .order_by(TranscriptSegmentRecord.sequence)
         )
     )
+    turn_rows = list(
+        session.scalars(
+            select(SpeakerTurnRecord)
+            .where(SpeakerTurnRecord.transcript_id == transcript.id)
+            .order_by(SpeakerTurnRecord.sequence)
+        )
+    )
     scenes = [
         SceneBoundary(
             sequence=row.sequence,
@@ -227,19 +245,7 @@ def _build_evidence(
         for row in scene_rows
     ]
     frames = [_frame(session, row) for row in scene_rows]
-    segments = [
-        TranscriptSegment(
-            sequence=row.sequence,
-            start_seconds=row.start_seconds,
-            end_seconds=row.end_seconds,
-            text=row.text,
-            speaker_label=row.speaker_label,
-            confidence=row.confidence,
-            source_chunk_ids=[UUID(value) for value in row.source_chunk_ids],
-            words=[TranscriptWord.model_validate(word) for word in row.words],
-        )
-        for row in segment_rows
-    ]
+    segments = _segments_with_speakers(segment_rows, turn_rows)
     audio = _latest_audio(session, request.project_id, source.asset_id)
     subtitle_asset_id = _selected_subtitle_asset(session, transcript)
     origin: Literal["subtitle", "audio_transcription"] = (
@@ -357,4 +363,46 @@ def _selected_subtitle_asset(session: Session, transcript: Transcript) -> UUID |
             SubtitleCandidateRecord.run_id == transcript.subtitle_run_id,
             SubtitleCandidateRecord.selected,
         )
+    )
+
+
+def _segments_with_speakers(
+    segments: list[TranscriptSegmentRecord], turns: list[SpeakerTurnRecord]
+) -> list[TranscriptSegment]:
+    """Split audio segments at diarization turns while preserving overlaps."""
+    result: list[TranscriptSegment] = []
+    for segment in segments:
+        overlapping = [
+            turn
+            for turn in turns
+            if turn.start_seconds < segment.end_seconds and turn.end_seconds > segment.start_seconds
+        ]
+        if segment.speaker_label is not None or not overlapping:
+            result.append(_contract_segment(segment))
+            continue
+        for turn in overlapping:
+            result.append(
+                TranscriptSegment(
+                    sequence=segment.sequence,
+                    start_seconds=max(segment.start_seconds, turn.start_seconds),
+                    end_seconds=min(segment.end_seconds, turn.end_seconds),
+                    text=segment.text,
+                    speaker_label=turn.speaker_label,
+                    confidence=turn.confidence,
+                    source_chunk_ids=[UUID(value) for value in turn.source_chunk_ids],
+                )
+            )
+    return result
+
+
+def _contract_segment(segment: TranscriptSegmentRecord) -> TranscriptSegment:
+    return TranscriptSegment(
+        sequence=segment.sequence,
+        start_seconds=segment.start_seconds,
+        end_seconds=segment.end_seconds,
+        text=segment.text,
+        speaker_label=segment.speaker_label,
+        confidence=segment.confidence,
+        source_chunk_ids=[UUID(value) for value in segment.source_chunk_ids],
+        words=[TranscriptWord.model_validate(word) for word in segment.words],
     )

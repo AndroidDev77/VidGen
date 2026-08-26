@@ -1,5 +1,6 @@
 from collections.abc import Awaitable, Callable
 from pathlib import Path
+from time import sleep
 from uuid import uuid4
 
 import pytest
@@ -13,7 +14,11 @@ from apps.api.settings import APISettings
 from packages.workflows import activities
 from packages.workflows.project import ProjectWorkflow
 from vidgen.contracts.workflow import ProjectWorkflowInput, StageActivityInput, StageActivityResult
-from workers.temporal_worker.production_handlers import build_production_handlers
+from vidgen.db.transcription_models import SpeakerTurnRecord, TranscriptSegmentRecord
+from workers.temporal_worker.production_handlers import (
+    _segments_with_speakers,
+    build_production_handlers,
+)
 
 
 def test_workflow_key_reserves_generated_stage_suffix_space() -> None:
@@ -36,14 +41,8 @@ def test_synchronous_activity_heartbeats_while_handler_runs(
 ) -> None:
     heartbeats: list[object] = []
     monkeypatch.setattr(activity, "heartbeat", heartbeats.append)
-    activities.configure_activity_handlers(
-        {
-            "upload": lambda request: StageActivityResult(
-                stage=request.stage,
-                entity_id=request.source_video_id,
-            )
-        }
-    )
+    monkeypatch.setattr(activities, "HEARTBEAT_INTERVAL_SECONDS", 0.005)
+    activities.configure_activity_handlers({"upload": _slow_result})
     request = StageActivityInput(
         project_id=uuid4(),
         source_video_id=uuid4(),
@@ -51,7 +50,13 @@ def test_synchronous_activity_heartbeats_while_handler_runs(
         idempotency_key="workflow:upload",
     )
     assert activities.run_upload_activity(request).entity_id == request.source_video_id
-    assert heartbeats == [{"stage": "upload"}]
+    assert len(heartbeats) >= 2
+    assert all(item == {"stage": "upload"} for item in heartbeats)
+
+
+def _slow_result(request: StageActivityInput) -> StageActivityResult:
+    sleep(0.02)
+    return StageActivityResult(stage=request.stage, entity_id=request.source_video_id)
 
 
 def test_production_worker_configures_every_workflow_stage(tmp_path: Path) -> None:
@@ -67,6 +72,43 @@ def test_production_worker_configures_every_workflow_stage(tmp_path: Path) -> No
         "transcript_acquisition",
         "evidence",
     }
+
+
+def test_audio_segments_are_split_across_overlapping_speaker_turns() -> None:
+    chunk_id = uuid4()
+    segment = TranscriptSegmentRecord(
+        transcript_id=uuid4(),
+        sequence=0,
+        start_seconds=1,
+        end_seconds=4,
+        text="shared dialogue",
+        speaker_label=None,
+        confidence=None,
+        source_chunk_ids=[str(chunk_id)],
+        words=[],
+        provenance={},
+    )
+    turns = [
+        SpeakerTurnRecord(
+            transcript_id=segment.transcript_id,
+            sequence=sequence,
+            speaker_label=f"speaker_{sequence:03d}",
+            start_seconds=start,
+            end_seconds=end,
+            confidence=0.9,
+            source_chunk_ids=[str(chunk_id)],
+            provider_metadata={},
+            alternate_mappings=[],
+            warnings=[],
+        )
+        for sequence, start, end in ((0, 1.0, 3.0), (1, 2.0, 4.0))
+    ]
+    evidence_segments = _segments_with_speakers([segment], turns)
+    assert [item.speaker_label for item in evidence_segments] == ["speaker_000", "speaker_001"]
+    assert [(item.start_seconds, item.end_seconds) for item in evidence_segments] == [
+        (1, 3),
+        (2, 4),
+    ]
 
 
 @pytest.mark.asyncio
