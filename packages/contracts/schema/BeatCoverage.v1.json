@@ -1,0 +1,74 @@
+{
+  "$defs": {
+    "StructuredNote": {
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "minLength": 1,
+          "title": "Code",
+          "type": "string"
+        },
+        "message": {
+          "minLength": 1,
+          "title": "Message",
+          "type": "string"
+        }
+      },
+      "required": [
+        "code",
+        "message"
+      ],
+      "title": "StructuredNote",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "coverage": {
+      "enum": [
+        "covered",
+        "partial",
+        "missing"
+      ],
+      "title": "Coverage",
+      "type": "string"
+    },
+    "diagnostics": {
+      "items": {
+        "$ref": "#/$defs/StructuredNote"
+      },
+      "title": "Diagnostics",
+      "type": "array"
+    },
+    "mandatory": {
+      "title": "Mandatory",
+      "type": "boolean"
+    },
+    "plot_beat_id": {
+      "format": "uuid",
+      "title": "Plot Beat Id",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "segment_ids": {
+      "items": {
+        "format": "uuid",
+        "type": "string"
+      },
+      "title": "Segment Ids",
+      "type": "array"
+    }
+  },
+  "required": [
+    "plot_beat_id",
+    "coverage",
+    "mandatory"
+  ],
+  "title": "BeatCoverage",
+  "type": "object"
+}

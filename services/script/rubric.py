@@ -10,13 +10,13 @@ from __future__ import annotations
 
 from collections import Counter
 
+from services.script.validator import canonical_word_count
 from vidgen.contracts.script import (
     ApprovalRecommendation,
     ComedyRubric,
     ComedyRubricScores,
     RecapScript,
 )
-from services.script.validator import canonical_word_count
 
 RUBRIC_VERSION = "comedy-v1"
 _WEIGHTS: dict[str, float] = {
@@ -55,7 +55,9 @@ def score_script(script: RecapScript, *, validation_error_count: int) -> ComedyR
     with_punchline = sum(1 for joke in all_jokes if joke.punchline_span is not None)
     punchline_placement = 100.0 if not all_jokes else 100.0 * with_punchline / len(all_jokes)
 
-    long_segments = sum(1 for segment in segments if canonical_word_count(segment.text) > LONG_SEGMENT_WORDS)
+    long_segments = sum(
+        1 for segment in segments if canonical_word_count(segment.text) > LONG_SEGMENT_WORDS
+    )
     spoken_rhythm = max(0.0, 100.0 - 10.0 * long_segments)
 
     if script.target_word_count:
@@ -93,7 +95,19 @@ def score_script(script: RecapScript, *, validation_error_count: int) -> ComedyR
         "narratability": narratability,
     }
     overall = sum(scores[key] * weight for key, weight in _WEIGHTS.items())
-    return ComedyRubricScores(**scores, overall=round(overall, 2))
+    return ComedyRubricScores(
+        plot_fidelity=plot_fidelity,
+        clarity=clarity,
+        joke_density=joke_density,
+        joke_variety=joke_variety,
+        punchline_placement=punchline_placement,
+        spoken_rhythm=spoken_rhythm,
+        pacing=pacing,
+        callback_quality=callback_quality,
+        repetition=repetition,
+        narratability=narratability,
+        overall=round(overall, 2),
+    )
 
 
 def approval_recommendation(

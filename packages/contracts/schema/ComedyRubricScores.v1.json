@@ -1,0 +1,92 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "callback_quality": {
+      "maximum": 100,
+      "minimum": 0,
+      "title": "Callback Quality",
+      "type": "number"
+    },
+    "clarity": {
+      "maximum": 100,
+      "minimum": 0,
+      "title": "Clarity",
+      "type": "number"
+    },
+    "joke_density": {
+      "maximum": 100,
+      "minimum": 0,
+      "title": "Joke Density",
+      "type": "number"
+    },
+    "joke_variety": {
+      "maximum": 100,
+      "minimum": 0,
+      "title": "Joke Variety",
+      "type": "number"
+    },
+    "narratability": {
+      "maximum": 100,
+      "minimum": 0,
+      "title": "Narratability",
+      "type": "number"
+    },
+    "overall": {
+      "maximum": 100,
+      "minimum": 0,
+      "title": "Overall",
+      "type": "number"
+    },
+    "pacing": {
+      "maximum": 100,
+      "minimum": 0,
+      "title": "Pacing",
+      "type": "number"
+    },
+    "plot_fidelity": {
+      "maximum": 100,
+      "minimum": 0,
+      "title": "Plot Fidelity",
+      "type": "number"
+    },
+    "punchline_placement": {
+      "maximum": 100,
+      "minimum": 0,
+      "title": "Punchline Placement",
+      "type": "number"
+    },
+    "repetition": {
+      "maximum": 100,
+      "minimum": 0,
+      "title": "Repetition",
+      "type": "number"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "spoken_rhythm": {
+      "maximum": 100,
+      "minimum": 0,
+      "title": "Spoken Rhythm",
+      "type": "number"
+    }
+  },
+  "required": [
+    "plot_fidelity",
+    "clarity",
+    "joke_density",
+    "joke_variety",
+    "punchline_placement",
+    "spoken_rhythm",
+    "pacing",
+    "callback_quality",
+    "repetition",
+    "narratability",
+    "overall"
+  ],
+  "title": "ComedyRubricScores",
+  "type": "object"
+}

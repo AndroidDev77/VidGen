@@ -1,0 +1,43 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "approval_overall_min": {
+      "default": 85,
+      "maximum": 100,
+      "minimum": 0,
+      "title": "Approval Overall Min",
+      "type": "number"
+    },
+    "approval_plot_fidelity_min": {
+      "default": 92,
+      "maximum": 100,
+      "minimum": 0,
+      "title": "Approval Plot Fidelity Min",
+      "type": "number"
+    },
+    "dimensions": {
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1,
+      "title": "Dimensions",
+      "type": "array"
+    },
+    "rubric_version": {
+      "title": "Rubric Version",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    }
+  },
+  "required": [
+    "rubric_version",
+    "dimensions"
+  ],
+  "title": "ComedyRubric",
+  "type": "object"
+}

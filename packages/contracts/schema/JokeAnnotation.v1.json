@@ -1,0 +1,128 @@
+{
+  "$defs": {
+    "TextSpan": {
+      "additionalProperties": false,
+      "properties": {
+        "end": {
+          "exclusiveMinimum": 0,
+          "title": "End",
+          "type": "integer"
+        },
+        "start": {
+          "minimum": 0,
+          "title": "Start",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "start",
+        "end"
+      ],
+      "title": "TextSpan",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "callback_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Callback Id"
+    },
+    "confidence": {
+      "anyOf": [
+        {
+          "maximum": 1,
+          "minimum": 0,
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Confidence"
+    },
+    "joke_id": {
+      "format": "uuid",
+      "title": "Joke Id",
+      "type": "string"
+    },
+    "joke_type": {
+      "enum": [
+        "commentary",
+        "analogy",
+        "exaggeration",
+        "contrast",
+        "callback",
+        "character_observation",
+        "visual_gag",
+        "wordplay"
+      ],
+      "title": "Joke Type",
+      "type": "string"
+    },
+    "punchline_span": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/TextSpan"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "setup_span": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/TextSpan"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "source_beat_ids": {
+      "items": {
+        "format": "uuid",
+        "type": "string"
+      },
+      "minItems": 1,
+      "title": "Source Beat Ids",
+      "type": "array"
+    },
+    "validation_status": {
+      "default": "pending",
+      "enum": [
+        "pending",
+        "valid",
+        "invalid"
+      ],
+      "title": "Validation Status",
+      "type": "string"
+    }
+  },
+  "required": [
+    "joke_id",
+    "joke_type",
+    "source_beat_ids"
+  ],
+  "title": "JokeAnnotation",
+  "type": "object"
+}

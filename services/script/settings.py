@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from uuid import UUID
 
@@ -36,14 +37,16 @@ class ScriptGenerationSettings:
 
 
 def resolve_script_settings(
-    project: Project, overrides: dict[str, object] | None = None
+    project: Project, overrides: Mapping[str, object] | None = None
 ) -> ScriptGenerationSettings:
     raw = dict(project.settings.get("script", {})) if isinstance(project.settings, dict) else {}
     if not isinstance(raw, dict):
         raise ScriptSettingsError("project.settings.script must be an object")
     raw.update({key: value for key, value in (overrides or {}).items() if value is not None})
 
-    target_duration_ms = int(raw.get("target_duration_ms") or round(project.target_duration_seconds * 1000))
+    target_duration_ms = int(
+        raw.get("target_duration_ms") or round(project.target_duration_seconds * 1000)
+    )
     if not MIN_DURATION_MS <= target_duration_ms <= MAX_DURATION_MS:
         raise ScriptSettingsError(
             f"target duration {target_duration_ms}ms is outside the configured bounds "

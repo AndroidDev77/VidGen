@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Mapping
 from typing import Never
 from uuid import UUID, uuid4
 
@@ -13,8 +14,16 @@ from sqlalchemy.orm import Session
 from services.script.canonicalize import canonicalize_plan, canonicalize_script
 from services.script.provider import GenerationContext, ScriptGenerationProvider
 from services.script.rubric import approval_recommendation, default_rubric
-from services.script.settings import ScriptGenerationSettings, ScriptSettingsError, resolve_script_settings
-from services.script.validator import build_beat_coverage, validate_compressed_plot_plan, validate_recap_script
+from services.script.settings import (
+    ScriptGenerationSettings,
+    ScriptSettingsError,
+    resolve_script_settings,
+)
+from services.script.validator import (
+    build_beat_coverage,
+    validate_compressed_plot_plan,
+    validate_recap_script,
+)
 from vidgen.contracts.episode_analysis import EpisodeAnalysis
 from vidgen.contracts.script import (
     ComedyEditRequest,
@@ -70,7 +79,7 @@ class ScriptGenerationPipeline:
         *,
         project_id: UUID,
         idempotency_key: str,
-        setting_overrides: dict[str, object] | None = None,
+        setting_overrides: Mapping[str, object] | None = None,
     ) -> ScriptGenerationResult:
         project = self.session.get(Project, project_id)
         if project is None:
@@ -157,7 +166,9 @@ class ScriptGenerationPipeline:
         if plan_record is None:
             project.status = run.status = "compressing_plot"
             self.session.commit()
-            plan_record = await self._compress(run, analysis, settings, analysis_asset, idempotency_key)
+            plan_record = await self._compress(
+                run, analysis, settings, analysis_asset, idempotency_key
+            )
             if plan_record is None:
                 run.status = project.status = "script_review_required"
                 run.error_code = "COMPRESSION_VALIDATION_FAILED"
@@ -171,7 +182,9 @@ class ScriptGenerationPipeline:
         if not scripts:
             project.status = run.status = "comedy_writing"
             self.session.commit()
-            draft_record = await self._write_draft(run, plan_record, plan, analysis, settings, idempotency_key)
+            draft_record = await self._write_draft(
+                run, plan_record, plan, analysis, settings, idempotency_key
+            )
             if draft_record is None:
                 run.status = project.status = "script_review_required"
                 run.error_code = "DRAFT_VALIDATION_FAILED"
@@ -247,7 +260,8 @@ class ScriptGenerationPipeline:
                 }
             )
             result = await self.provider.compress_plot(
-                attempted, GenerationContext(attempt_number=attempt, validation_errors_json=feedback)
+                attempted,
+                GenerationContext(attempt_number=attempt, validation_errors_json=feedback),
             )
             plan = canonicalize_plan(result.output.model_copy(update={"plan_id": plan_id}))
             report = validate_compressed_plot_plan(plan, analysis=analysis, request=request)
@@ -333,13 +347,19 @@ class ScriptGenerationPipeline:
                 }
             )
             result = await self.provider.write_script(
-                attempted, GenerationContext(attempt_number=attempt, validation_errors_json=feedback)
+                attempted,
+                GenerationContext(attempt_number=attempt, validation_errors_json=feedback),
             )
             candidate = result.output.model_copy(update={"script_id": script_id, "version": 1})
             coverage = build_beat_coverage(candidate, plan)
-            candidate = canonicalize_script(candidate.model_copy(update={"beat_coverage": coverage}))
+            candidate = canonicalize_script(
+                candidate.model_copy(update={"beat_coverage": coverage})
+            )
             report = validate_recap_script(
-                candidate, analysis=analysis, plan=plan, prohibited_patterns=settings.prohibited_patterns
+                candidate,
+                analysis=analysis,
+                plan=plan,
+                prohibited_patterns=settings.prohibited_patterns,
             )
             run.attempt_count = max(run.attempt_count, attempt)
             provider_request_id = result.metadata.provider_request_id
@@ -399,13 +419,17 @@ class ScriptGenerationPipeline:
                     rubric=self.rubric,
                     attempt_number=evaluation,
                     input_hash=run.input_hash,
-                    idempotency_key=_derived_key(idempotency_key, "edit", f"{candidate_record.id}:{evaluation}"),
+                    idempotency_key=_derived_key(
+                        idempotency_key, "edit", f"{candidate_record.id}:{evaluation}"
+                    ),
                     contract_version=CONTRACT_VERSION,
                     prompt_version=PROMPT_VERSION,
                     rubric_version=self.rubric.rubric_version,
                     provider_configuration_version=self.configuration_version,
                 )
-                result = await self.provider.edit_script(request, GenerationContext(attempt_number=evaluation))
+                result = await self.provider.edit_script(
+                    request, GenerationContext(attempt_number=evaluation)
+                )
                 revised = result.output.revised_script.model_copy(
                     update={
                         "script_id": uuid4(),
@@ -414,8 +438,12 @@ class ScriptGenerationPipeline:
                     }
                 )
                 coverage = build_beat_coverage(revised, plan)
-                revised = canonicalize_script(revised.model_copy(update={"beat_coverage": coverage}))
-                previous_coverage = {item.plot_beat_id: item.coverage for item in candidate.beat_coverage}
+                revised = canonicalize_script(
+                    revised.model_copy(update={"beat_coverage": coverage})
+                )
+                previous_coverage = {
+                    item.plot_beat_id: item.coverage for item in candidate.beat_coverage
+                }
                 report = validate_recap_script(
                     revised,
                     analysis=analysis,
@@ -428,7 +456,9 @@ class ScriptGenerationPipeline:
                 mandatory_covered = sum(
                     1 for item in coverage if item.mandatory and item.coverage == "covered"
                 )
-                mandatory_ratio = 1.0 if mandatory_total == 0 else mandatory_covered / mandatory_total
+                mandatory_ratio = (
+                    1.0 if mandatory_total == 0 else mandatory_covered / mandatory_total
+                )
                 within_target = (
                     revised.target_word_count == 0
                     or abs(revised.actual_word_count - revised.target_word_count)
@@ -480,7 +510,8 @@ class ScriptGenerationPipeline:
                     )
                     for edit in result.output.edits
                 )
-                run.revision_count += 1
+                if evaluation > 1:
+                    run.revision_count += 1
                 self.session.commit()
             if recommendation == "approve":
                 return revised_record
@@ -491,7 +522,9 @@ class ScriptGenerationPipeline:
 
     def _existing_review(self, script_id: UUID) -> ScriptReview | None:
         return self.session.scalar(
-            select(ScriptReview).where(ScriptReview.script_id == script_id).order_by(ScriptReview.review_sequence)
+            select(ScriptReview)
+            .where(ScriptReview.script_id == script_id)
+            .order_by(ScriptReview.review_sequence)
         )
 
     def _persist_script_version(
@@ -563,7 +596,9 @@ class ScriptGenerationPipeline:
                 content_hash=segment.content_hash,
                 plot_beat_ids=[str(item) for item in segment.plot_beat_ids],
                 source_scene_ids=[str(item) for item in segment.source_scene_ids],
-                joke_annotations=[item.model_dump(mode="json") for item in segment.joke_annotations],
+                joke_annotations=[
+                    item.model_dump(mode="json") for item in segment.joke_annotations
+                ],
                 visual_gag=segment.visual_gag,
                 estimated_duration_ms=segment.estimated_duration_ms,
                 voice_direction=segment.voice_direction,
@@ -584,7 +619,9 @@ class ScriptGenerationPipeline:
         assert asset is not None
         return RecapScript.model_validate_json(self.blob_store.read(asset.storage_key))
 
-    def _result(self, run: ScriptGenerationRun, script_record: Script | None) -> ScriptGenerationResult:
+    def _result(
+        self, run: ScriptGenerationRun, script_record: Script | None
+    ) -> ScriptGenerationResult:
         plan_record = self.repository.selected_plan(run.id)
         review_scores = None
         if script_record is not None and script_record.review_scores:
@@ -601,11 +638,17 @@ class ScriptGenerationPipeline:
 
 
 def _hash(value: object) -> str:
-    payload = value if isinstance(value, str) else json.dumps(value, sort_keys=True, separators=(",", ":"))
+    payload = (
+        value
+        if isinstance(value, str)
+        else json.dumps(value, sort_keys=True, separators=(",", ":"))
+    )
     return hashlib.sha256(payload.encode()).hexdigest()
 
 
-def _settings_hash(analysis_record: EpisodeAnalysisRecord, settings: ScriptGenerationSettings) -> str:
+def _settings_hash(
+    analysis_record: EpisodeAnalysisRecord, settings: ScriptGenerationSettings
+) -> str:
     payload = {
         "analysis_id": str(analysis_record.id),
         "analysis_input_hash": analysis_record.input_hash,
@@ -626,5 +669,3 @@ def _settings_hash(analysis_record: EpisodeAnalysisRecord, settings: ScriptGener
 def _derived_key(base: str, stage: str, extra: str = "") -> str:
     digest = hashlib.sha256(f"{base}:{stage}:{extra}".encode()).hexdigest()
     return f"script-{stage}:{digest}"
-
-

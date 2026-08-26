@@ -1,0 +1,43 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "description": {
+      "minLength": 1,
+      "title": "Description",
+      "type": "string"
+    },
+    "rubric_dimension": {
+      "title": "Rubric Dimension",
+      "type": "string"
+    },
+    "segment_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Segment Id"
+    },
+    "severity": {
+      "default": "minor",
+      "enum": [
+        "minor",
+        "major",
+        "blocking"
+      ],
+      "title": "Severity",
+      "type": "string"
+    }
+  },
+  "required": [
+    "description",
+    "rubric_dimension"
+  ],
+  "title": "ComedyIssue",
+  "type": "object"
+}

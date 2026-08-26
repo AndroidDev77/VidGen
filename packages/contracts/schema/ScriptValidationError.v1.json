@@ -1,0 +1,46 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "code": {
+      "title": "Code",
+      "type": "string"
+    },
+    "entity_path": {
+      "title": "Entity Path",
+      "type": "string"
+    },
+    "explanation": {
+      "minLength": 1,
+      "title": "Explanation",
+      "type": "string"
+    },
+    "invalid_value": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "integer"
+        },
+        {
+          "type": "number"
+        },
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Invalid Value"
+    }
+  },
+  "required": [
+    "code",
+    "entity_path",
+    "explanation"
+  ],
+  "title": "ScriptValidationError",
+  "type": "object"
+}

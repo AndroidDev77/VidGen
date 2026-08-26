@@ -1,0 +1,572 @@
+{
+  "$defs": {
+    "BeatWordAllocation": {
+      "additionalProperties": false,
+      "properties": {
+        "estimated_duration_ms": {
+          "exclusiveMinimum": 0,
+          "title": "Estimated Duration Ms",
+          "type": "integer"
+        },
+        "plot_beat_id": {
+          "format": "uuid",
+          "title": "Plot Beat Id",
+          "type": "string"
+        },
+        "words": {
+          "exclusiveMinimum": 0,
+          "title": "Words",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "plot_beat_id",
+        "words",
+        "estimated_duration_ms"
+      ],
+      "title": "BeatWordAllocation",
+      "type": "object"
+    },
+    "CompressedPlotBeat": {
+      "additionalProperties": false,
+      "properties": {
+        "character_ids": {
+          "items": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "title": "Character Ids",
+          "type": "array"
+        },
+        "mandatory": {
+          "title": "Mandatory",
+          "type": "boolean"
+        },
+        "payoff_score": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Payoff Score",
+          "type": "number"
+        },
+        "plot_beat_id": {
+          "format": "uuid",
+          "title": "Plot Beat Id",
+          "type": "string"
+        },
+        "scene_ids": {
+          "items": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "title": "Scene Ids",
+          "type": "array"
+        },
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "sequence": {
+          "minimum": 1,
+          "title": "Sequence",
+          "type": "integer"
+        },
+        "source_references": {
+          "items": {
+            "$ref": "#/$defs/SourceReference"
+          },
+          "minItems": 1,
+          "title": "Source References",
+          "type": "array"
+        },
+        "structural_role": {
+          "default": "supporting",
+          "enum": [
+            "setup",
+            "inciting_incident",
+            "escalation",
+            "climax",
+            "resolution",
+            "supporting"
+          ],
+          "title": "Structural Role",
+          "type": "string"
+        },
+        "summary": {
+          "minLength": 1,
+          "title": "Summary",
+          "type": "string"
+        }
+      },
+      "required": [
+        "plot_beat_id",
+        "sequence",
+        "summary",
+        "mandatory",
+        "payoff_score",
+        "source_references"
+      ],
+      "title": "CompressedPlotBeat",
+      "type": "object"
+    },
+    "CompressedPlotPlan": {
+      "additionalProperties": false,
+      "properties": {
+        "assumptions": {
+          "items": {
+            "$ref": "#/$defs/StructuredNote"
+          },
+          "title": "Assumptions",
+          "type": "array"
+        },
+        "connective_explanations": {
+          "items": {
+            "$ref": "#/$defs/ConnectiveExplanation"
+          },
+          "title": "Connective Explanations",
+          "type": "array"
+        },
+        "episode_analysis_id": {
+          "format": "uuid",
+          "title": "Episode Analysis Id",
+          "type": "string"
+        },
+        "logline": {
+          "minLength": 1,
+          "title": "Logline",
+          "type": "string"
+        },
+        "omitted_beats": {
+          "items": {
+            "$ref": "#/$defs/OmittedPlotBeat"
+          },
+          "title": "Omitted Beats",
+          "type": "array"
+        },
+        "pacing_plan": {
+          "items": {
+            "$ref": "#/$defs/PacingAllocation"
+          },
+          "minItems": 1,
+          "title": "Pacing Plan",
+          "type": "array"
+        },
+        "plan_id": {
+          "format": "uuid",
+          "title": "Plan Id",
+          "type": "string"
+        },
+        "project_id": {
+          "format": "uuid",
+          "title": "Project Id",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "selected_beats": {
+          "items": {
+            "$ref": "#/$defs/CompressedPlotBeat"
+          },
+          "minItems": 1,
+          "title": "Selected Beats",
+          "type": "array"
+        },
+        "source_refs": {
+          "items": {
+            "$ref": "#/$defs/SourceReference"
+          },
+          "title": "Source Refs",
+          "type": "array"
+        },
+        "warnings": {
+          "items": {
+            "$ref": "#/$defs/StructuredNote"
+          },
+          "title": "Warnings",
+          "type": "array"
+        },
+        "word_budget": {
+          "$ref": "#/$defs/WordBudget"
+        }
+      },
+      "required": [
+        "plan_id",
+        "project_id",
+        "episode_analysis_id",
+        "logline",
+        "selected_beats",
+        "pacing_plan",
+        "word_budget"
+      ],
+      "title": "CompressedPlotPlan",
+      "type": "object"
+    },
+    "ConnectiveExplanation": {
+      "additionalProperties": false,
+      "properties": {
+        "cause_beat_id": {
+          "format": "uuid",
+          "title": "Cause Beat Id",
+          "type": "string"
+        },
+        "effect_beat_id": {
+          "format": "uuid",
+          "title": "Effect Beat Id",
+          "type": "string"
+        },
+        "explanation": {
+          "minLength": 1,
+          "title": "Explanation",
+          "type": "string"
+        }
+      },
+      "required": [
+        "cause_beat_id",
+        "effect_beat_id",
+        "explanation"
+      ],
+      "title": "ConnectiveExplanation",
+      "type": "object"
+    },
+    "OmittedPlotBeat": {
+      "additionalProperties": false,
+      "properties": {
+        "confusion_explanation": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Confusion Explanation"
+        },
+        "may_cause_confusion": {
+          "default": false,
+          "title": "May Cause Confusion",
+          "type": "boolean"
+        },
+        "plot_beat_id": {
+          "format": "uuid",
+          "title": "Plot Beat Id",
+          "type": "string"
+        },
+        "reason": {
+          "minLength": 1,
+          "title": "Reason",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        }
+      },
+      "required": [
+        "plot_beat_id",
+        "reason"
+      ],
+      "title": "OmittedPlotBeat",
+      "type": "object"
+    },
+    "PacingAllocation": {
+      "additionalProperties": false,
+      "properties": {
+        "estimated_duration_ms": {
+          "exclusiveMinimum": 0,
+          "title": "Estimated Duration Ms",
+          "type": "integer"
+        },
+        "plot_beat_id": {
+          "format": "uuid",
+          "title": "Plot Beat Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "plot_beat_id",
+        "estimated_duration_ms"
+      ],
+      "title": "PacingAllocation",
+      "type": "object"
+    },
+    "ScriptProviderMetadata": {
+      "additionalProperties": false,
+      "properties": {
+        "attempt_number": {
+          "minimum": 1,
+          "title": "Attempt Number",
+          "type": "integer"
+        },
+        "contract_version": {
+          "title": "Contract Version",
+          "type": "string"
+        },
+        "input_hash": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Input Hash",
+          "type": "string"
+        },
+        "input_tokens": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Input Tokens"
+        },
+        "model": {
+          "title": "Model",
+          "type": "string"
+        },
+        "operation": {
+          "enum": [
+            "compress_plot",
+            "write_script",
+            "edit_script"
+          ],
+          "title": "Operation",
+          "type": "string"
+        },
+        "output_tokens": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Output Tokens"
+        },
+        "prompt_version": {
+          "title": "Prompt Version",
+          "type": "string"
+        },
+        "provider": {
+          "title": "Provider",
+          "type": "string"
+        },
+        "provider_request_id": {
+          "title": "Provider Request Id",
+          "type": "string"
+        },
+        "redacted_response_metadata": {
+          "additionalProperties": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "integer"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              }
+            ]
+          },
+          "title": "Redacted Response Metadata",
+          "type": "object"
+        },
+        "rubric_version": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Rubric Version"
+        },
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "validation_status": {
+          "default": "pending",
+          "enum": [
+            "pending",
+            "valid",
+            "invalid"
+          ],
+          "title": "Validation Status",
+          "type": "string"
+        },
+        "warnings": {
+          "items": {
+            "$ref": "#/$defs/StructuredNote"
+          },
+          "title": "Warnings",
+          "type": "array"
+        }
+      },
+      "required": [
+        "provider",
+        "model",
+        "provider_request_id",
+        "operation",
+        "attempt_number",
+        "input_hash",
+        "prompt_version",
+        "contract_version"
+      ],
+      "title": "ScriptProviderMetadata",
+      "type": "object"
+    },
+    "SourceReference": {
+      "additionalProperties": false,
+      "properties": {
+        "end_ms": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "End Ms"
+        },
+        "reference_id": {
+          "format": "uuid",
+          "title": "Reference Id",
+          "type": "string"
+        },
+        "reference_type": {
+          "enum": [
+            "transcript_segment",
+            "speaker_turn",
+            "source_scene",
+            "frame",
+            "contact_sheet",
+            "project"
+          ],
+          "title": "Reference Type",
+          "type": "string"
+        },
+        "scene_id": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Scene Id"
+        },
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "start_ms": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Start Ms"
+        }
+      },
+      "required": [
+        "reference_type",
+        "reference_id"
+      ],
+      "title": "SourceReference",
+      "type": "object"
+    },
+    "StructuredNote": {
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "minLength": 1,
+          "title": "Code",
+          "type": "string"
+        },
+        "message": {
+          "minLength": 1,
+          "title": "Message",
+          "type": "string"
+        }
+      },
+      "required": [
+        "code",
+        "message"
+      ],
+      "title": "StructuredNote",
+      "type": "object"
+    },
+    "WordBudget": {
+      "additionalProperties": false,
+      "properties": {
+        "allocations": {
+          "items": {
+            "$ref": "#/$defs/BeatWordAllocation"
+          },
+          "minItems": 1,
+          "title": "Allocations",
+          "type": "array"
+        },
+        "total_target_words": {
+          "exclusiveMinimum": 0,
+          "title": "Total Target Words",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "total_target_words",
+        "allocations"
+      ],
+      "title": "WordBudget",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "metadata": {
+      "$ref": "#/$defs/ScriptProviderMetadata"
+    },
+    "output": {
+      "$ref": "#/$defs/CompressedPlotPlan"
+    }
+  },
+  "required": [
+    "output",
+    "metadata"
+  ],
+  "title": "ProviderCompressedPlotResult",
+  "type": "object"
+}

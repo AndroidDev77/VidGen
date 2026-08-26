@@ -1,0 +1,27 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "estimated_duration_ms": {
+      "exclusiveMinimum": 0,
+      "title": "Estimated Duration Ms",
+      "type": "integer"
+    },
+    "plot_beat_id": {
+      "format": "uuid",
+      "title": "Plot Beat Id",
+      "type": "string"
+    },
+    "words": {
+      "exclusiveMinimum": 0,
+      "title": "Words",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "plot_beat_id",
+    "words",
+    "estimated_duration_ms"
+  ],
+  "title": "BeatWordAllocation",
+  "type": "object"
+}

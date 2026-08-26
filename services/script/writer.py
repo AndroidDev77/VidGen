@@ -10,6 +10,8 @@ from __future__ import annotations
 
 from uuid import UUID, uuid5
 
+from services.script.canonicalize import compute_segment_content_hash
+from services.script.validator import build_beat_coverage, canonical_word_count
 from vidgen.contracts.script import (
     Callback,
     ComedyWritingRequest,
@@ -20,8 +22,6 @@ from vidgen.contracts.script import (
     ScriptSegment,
     TextSpan,
 )
-from services.script.canonicalize import compute_segment_content_hash
-from services.script.validator import build_beat_coverage, canonical_word_count
 
 WRITER_NAMESPACE = UUID("7a1b5e40-6b1e-4f7b-9a1a-3c2f2f3f9a11")
 
@@ -85,9 +85,7 @@ def write_script(
     if not plan.selected_beats:
         raise ValueError("compressed plot plan has no selected beats to write from")
     locked_by_beat = {
-        beat_id: segment
-        for segment in request.locked_segments
-        for beat_id in segment.plot_beat_ids
+        beat_id: segment for segment in request.locked_segments for beat_id in segment.plot_beat_ids
     }
     words_by_beat = {item.plot_beat_id: item.words for item in plan.word_budget.allocations}
     duration_by_beat = {item.plot_beat_id: item.estimated_duration_ms for item in plan.pacing_plan}
@@ -110,7 +108,9 @@ def write_script(
             JokeAnnotation(
                 joke_id=joke_id,
                 joke_type=mechanism,
-                setup_span=TextSpan(start=0, end=max(1, joke_start - 1)) if joke_start > 0 else None,
+                setup_span=TextSpan(start=0, end=max(1, joke_start - 1))
+                if joke_start > 0
+                else None,
                 punchline_span=TextSpan(start=joke_start, end=joke_end),
                 source_beat_ids=[beat.plot_beat_id],
                 confidence=1.0,
@@ -150,19 +150,23 @@ def write_script(
         )
 
     callbacks: list[Callback] = []
-    setup_span = segments[0].joke_annotations[0].punchline_span if segments and segments[0].joke_annotations else None
+    setup_span = (
+        segments[0].joke_annotations[0].punchline_span
+        if segments and segments[0].joke_annotations
+        else None
+    )
     if len(segments) >= 2 and setup_span is not None:
         setup_segment = segments[0]
         payoff_segment = segments[-1]
         callback_id = uuid5(WRITER_NAMESPACE, f"{plan.plan_id}:callback:0")
-        callback_clause = f" And speaking of that: {setup_segment.text[setup_span.start:setup_span.end]}"
+        callback_clause = (
+            f" And speaking of that: {setup_segment.text[setup_span.start : setup_span.end]}"
+        )
         new_text = payoff_segment.text + callback_clause
         callback_joke = JokeAnnotation(
             joke_id=uuid5(WRITER_NAMESPACE, f"{payoff_segment.segment_id}:joke:callback"),
             joke_type="callback",
-            punchline_span=TextSpan(
-                start=len(payoff_segment.text) + 1, end=len(new_text)
-            ),
+            punchline_span=TextSpan(start=len(payoff_segment.text) + 1, end=len(new_text)),
             callback_id=callback_id,
             source_beat_ids=payoff_segment.plot_beat_ids,
             confidence=1.0,

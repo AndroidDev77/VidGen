@@ -7,11 +7,11 @@ touches unlocked segments and never introduces new plot facts.
 
 from __future__ import annotations
 
-from vidgen.contracts.script import JokeAnnotation, RecapScript, ScriptEdit, TextSpan
 from services.script.canonicalize import compute_segment_content_hash
 from services.script.rubric import LONG_SEGMENT_WORDS
 from services.script.validator import canonical_word_count
 from services.script.writer import _FILLER_BANK
+from vidgen.contracts.script import JokeAnnotation, RecapScript, ScriptEdit, TextSpan
 
 _FILLER_WORDS = frozenset(_FILLER_BANK)
 

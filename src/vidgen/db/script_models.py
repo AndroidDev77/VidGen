@@ -173,7 +173,9 @@ class ScriptSegment(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     content_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     plot_beat_ids: Mapped[list[str]] = mapped_column(JSON, default=list, nullable=False)
     source_scene_ids: Mapped[list[str]] = mapped_column(JSON, default=list, nullable=False)
-    joke_annotations: Mapped[list[dict[str, Any]]] = mapped_column(JSON, default=list, nullable=False)
+    joke_annotations: Mapped[list[dict[str, Any]]] = mapped_column(
+        JSON, default=list, nullable=False
+    )
     visual_gag: Mapped[str | None] = mapped_column(Text)
     estimated_duration_ms: Mapped[int] = mapped_column(Integer, nullable=False)
     voice_direction: Mapped[str] = mapped_column(Text, default="", nullable=False)

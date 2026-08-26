@@ -47,7 +47,9 @@ async def main() -> None:
 
     with Session(build_engine(settings.database_url), expire_on_commit=False) as session:
         blob_store = FilesystemBlobStore(settings.blob_root, settings.signing_secret.encode())
-        result = await generate_script(session, blob_store, project_id=args.project_id, options=options)
+        result = await generate_script(
+            session, blob_store, project_id=args.project_id, options=options
+        )
 
         script_record = session.get(Script, result.script_id) if result.script_id else None
         mandatory_coverage = "n/a"
@@ -55,13 +57,13 @@ async def main() -> None:
             script_contract = None
             asset = session.get(Asset, script_record.canonical_script_asset_id)
             if asset is not None:
-                script_contract = RecapScript.model_validate_json(blob_store.read(asset.storage_key))
+                script_contract = RecapScript.model_validate_json(
+                    blob_store.read(asset.storage_key)
+                )
             if script_contract is not None:
                 mandatory = [item for item in script_contract.beat_coverage if item.mandatory]
                 covered = [item for item in mandatory if item.coverage == "covered"]
-                mandatory_coverage = (
-                    f"{len(covered)}/{len(mandatory)}" if mandatory else "0/0"
-                )
+                mandatory_coverage = f"{len(covered)}/{len(mandatory)}" if mandatory else "0/0"
 
         scores = result.review_scores
         print(

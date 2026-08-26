@@ -1,0 +1,39 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "callback_id": {
+      "format": "uuid",
+      "title": "Callback Id",
+      "type": "string"
+    },
+    "description": {
+      "minLength": 1,
+      "title": "Description",
+      "type": "string"
+    },
+    "payoff_segment_id": {
+      "format": "uuid",
+      "title": "Payoff Segment Id",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "setup_segment_id": {
+      "format": "uuid",
+      "title": "Setup Segment Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "callback_id",
+    "setup_segment_id",
+    "payoff_segment_id",
+    "description"
+  ],
+  "title": "Callback",
+  "type": "object"
+}

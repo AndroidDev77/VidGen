@@ -1,0 +1,858 @@
+{
+  "$defs": {
+    "AliasEvidence": {
+      "additionalProperties": false,
+      "properties": {
+        "alias": {
+          "minLength": 1,
+          "title": "Alias",
+          "type": "string"
+        },
+        "source_references": {
+          "items": {
+            "$ref": "#/$defs/SourceReference"
+          },
+          "minItems": 1,
+          "title": "Source References",
+          "type": "array"
+        }
+      },
+      "required": [
+        "alias",
+        "source_references"
+      ],
+      "title": "AliasEvidence",
+      "type": "object"
+    },
+    "BeatDependency": {
+      "additionalProperties": false,
+      "properties": {
+        "cause_beat_id": {
+          "format": "uuid",
+          "title": "Cause Beat Id",
+          "type": "string"
+        },
+        "effect_beat_id": {
+          "format": "uuid",
+          "title": "Effect Beat Id",
+          "type": "string"
+        },
+        "source_references": {
+          "items": {
+            "$ref": "#/$defs/SourceReference"
+          },
+          "minItems": 1,
+          "title": "Source References",
+          "type": "array"
+        }
+      },
+      "required": [
+        "cause_beat_id",
+        "effect_beat_id",
+        "source_references"
+      ],
+      "title": "BeatDependency",
+      "type": "object"
+    },
+    "CanonicalScene": {
+      "additionalProperties": false,
+      "properties": {
+        "character_ids": {
+          "items": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "title": "Character Ids",
+          "type": "array"
+        },
+        "confidence": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Confidence",
+          "type": "number"
+        },
+        "dramatic_purpose": {
+          "minLength": 1,
+          "title": "Dramatic Purpose",
+          "type": "string"
+        },
+        "location_id": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Location Id"
+        },
+        "scene_id": {
+          "format": "uuid",
+          "title": "Scene Id",
+          "type": "string"
+        },
+        "sequence": {
+          "minimum": 1,
+          "title": "Sequence",
+          "type": "integer"
+        },
+        "source_end_ms": {
+          "minimum": 1,
+          "title": "Source End Ms",
+          "type": "integer"
+        },
+        "source_references": {
+          "items": {
+            "$ref": "#/$defs/SourceReference"
+          },
+          "minItems": 1,
+          "title": "Source References",
+          "type": "array"
+        },
+        "source_start_ms": {
+          "minimum": 0,
+          "title": "Source Start Ms",
+          "type": "integer"
+        },
+        "summary": {
+          "minLength": 1,
+          "title": "Summary",
+          "type": "string"
+        }
+      },
+      "required": [
+        "scene_id",
+        "sequence",
+        "source_start_ms",
+        "source_end_ms",
+        "summary",
+        "dramatic_purpose",
+        "confidence",
+        "source_references"
+      ],
+      "title": "CanonicalScene",
+      "type": "object"
+    },
+    "CharacterCandidate": {
+      "additionalProperties": false,
+      "properties": {
+        "alias_evidence": {
+          "items": {
+            "$ref": "#/$defs/AliasEvidence"
+          },
+          "title": "Alias Evidence",
+          "type": "array"
+        },
+        "aliases": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Aliases",
+          "type": "array"
+        },
+        "anonymous": {
+          "default": false,
+          "title": "Anonymous",
+          "type": "boolean"
+        },
+        "canonical_name": {
+          "minLength": 1,
+          "title": "Canonical Name",
+          "type": "string"
+        },
+        "character_id": {
+          "format": "uuid",
+          "title": "Character Id",
+          "type": "string"
+        },
+        "confidence": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Confidence",
+          "type": "number"
+        },
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "source_references": {
+          "items": {
+            "$ref": "#/$defs/SourceReference"
+          },
+          "minItems": 1,
+          "title": "Source References",
+          "type": "array"
+        }
+      },
+      "required": [
+        "character_id",
+        "canonical_name",
+        "confidence",
+        "source_references"
+      ],
+      "title": "CharacterCandidate",
+      "type": "object"
+    },
+    "EpisodeAnalysis": {
+      "additionalProperties": false,
+      "properties": {
+        "assumptions": {
+          "items": {
+            "$ref": "#/$defs/StructuredNote"
+          },
+          "title": "Assumptions",
+          "type": "array"
+        },
+        "beat_dependencies": {
+          "items": {
+            "$ref": "#/$defs/BeatDependency"
+          },
+          "title": "Beat Dependencies",
+          "type": "array"
+        },
+        "characters": {
+          "items": {
+            "$ref": "#/$defs/CharacterCandidate"
+          },
+          "title": "Characters",
+          "type": "array"
+        },
+        "duration_ms": {
+          "minimum": 1,
+          "title": "Duration Ms",
+          "type": "integer"
+        },
+        "episode_id": {
+          "format": "uuid",
+          "title": "Episode Id",
+          "type": "string"
+        },
+        "evidence_package_id": {
+          "format": "uuid",
+          "title": "Evidence Package Id",
+          "type": "string"
+        },
+        "genre": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Genre",
+          "type": "array"
+        },
+        "locations": {
+          "items": {
+            "$ref": "#/$defs/LocationCandidate"
+          },
+          "title": "Locations",
+          "type": "array"
+        },
+        "logline": {
+          "default": "",
+          "title": "Logline",
+          "type": "string"
+        },
+        "plot_beats": {
+          "items": {
+            "$ref": "#/$defs/PlotBeat"
+          },
+          "title": "Plot Beats",
+          "type": "array"
+        },
+        "project_id": {
+          "format": "uuid",
+          "title": "Project Id",
+          "type": "string"
+        },
+        "relationships": {
+          "items": {
+            "$ref": "#/$defs/Relationship"
+          },
+          "title": "Relationships",
+          "type": "array"
+        },
+        "scenes": {
+          "items": {
+            "$ref": "#/$defs/CanonicalScene"
+          },
+          "minItems": 1,
+          "title": "Scenes",
+          "type": "array"
+        },
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "source_references": {
+          "items": {
+            "$ref": "#/$defs/SourceReference"
+          },
+          "minItems": 1,
+          "title": "Source References",
+          "type": "array"
+        },
+        "source_video_id": {
+          "format": "uuid",
+          "title": "Source Video Id",
+          "type": "string"
+        },
+        "state_events": {
+          "items": {
+            "$ref": "#/$defs/StateEvent"
+          },
+          "title": "State Events",
+          "type": "array"
+        },
+        "title": {
+          "default": "",
+          "title": "Title",
+          "type": "string"
+        },
+        "tone": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Tone",
+          "type": "array"
+        },
+        "unresolved_ambiguities": {
+          "items": {
+            "$ref": "#/$defs/UnresolvedAmbiguity"
+          },
+          "title": "Unresolved Ambiguities",
+          "type": "array"
+        },
+        "warnings": {
+          "items": {
+            "$ref": "#/$defs/StructuredNote"
+          },
+          "title": "Warnings",
+          "type": "array"
+        }
+      },
+      "required": [
+        "episode_id",
+        "project_id",
+        "source_video_id",
+        "evidence_package_id",
+        "duration_ms",
+        "scenes",
+        "source_references"
+      ],
+      "title": "EpisodeAnalysis",
+      "type": "object"
+    },
+    "LocationCandidate": {
+      "additionalProperties": false,
+      "properties": {
+        "alias_evidence": {
+          "items": {
+            "$ref": "#/$defs/AliasEvidence"
+          },
+          "title": "Alias Evidence",
+          "type": "array"
+        },
+        "aliases": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Aliases",
+          "type": "array"
+        },
+        "canonical_name": {
+          "minLength": 1,
+          "title": "Canonical Name",
+          "type": "string"
+        },
+        "confidence": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Confidence",
+          "type": "number"
+        },
+        "location_id": {
+          "format": "uuid",
+          "title": "Location Id",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "source_references": {
+          "items": {
+            "$ref": "#/$defs/SourceReference"
+          },
+          "minItems": 1,
+          "title": "Source References",
+          "type": "array"
+        }
+      },
+      "required": [
+        "location_id",
+        "canonical_name",
+        "confidence",
+        "source_references"
+      ],
+      "title": "LocationCandidate",
+      "type": "object"
+    },
+    "PlotBeat": {
+      "additionalProperties": false,
+      "properties": {
+        "character_ids": {
+          "items": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "title": "Character Ids",
+          "type": "array"
+        },
+        "importance": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Importance",
+          "type": "number"
+        },
+        "mandatory": {
+          "title": "Mandatory",
+          "type": "boolean"
+        },
+        "payoff_score": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Payoff Score",
+          "type": "number"
+        },
+        "plot_beat_id": {
+          "format": "uuid",
+          "title": "Plot Beat Id",
+          "type": "string"
+        },
+        "scene_ids": {
+          "items": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Scene Ids",
+          "type": "array"
+        },
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "sequence": {
+          "minimum": 1,
+          "title": "Sequence",
+          "type": "integer"
+        },
+        "source_references": {
+          "items": {
+            "$ref": "#/$defs/SourceReference"
+          },
+          "title": "Source References",
+          "type": "array"
+        },
+        "summary": {
+          "minLength": 1,
+          "title": "Summary",
+          "type": "string"
+        }
+      },
+      "required": [
+        "plot_beat_id",
+        "sequence",
+        "scene_ids",
+        "summary",
+        "importance",
+        "payoff_score",
+        "mandatory"
+      ],
+      "title": "PlotBeat",
+      "type": "object"
+    },
+    "Relationship": {
+      "additionalProperties": false,
+      "properties": {
+        "confidence": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Confidence",
+          "type": "number"
+        },
+        "description": {
+          "minLength": 1,
+          "title": "Description",
+          "type": "string"
+        },
+        "relationship_id": {
+          "format": "uuid",
+          "title": "Relationship Id",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "source_character_id": {
+          "format": "uuid",
+          "title": "Source Character Id",
+          "type": "string"
+        },
+        "source_references": {
+          "items": {
+            "$ref": "#/$defs/SourceReference"
+          },
+          "minItems": 1,
+          "title": "Source References",
+          "type": "array"
+        },
+        "target_character_id": {
+          "format": "uuid",
+          "title": "Target Character Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "relationship_id",
+        "source_character_id",
+        "target_character_id",
+        "description",
+        "confidence",
+        "source_references"
+      ],
+      "title": "Relationship",
+      "type": "object"
+    },
+    "SourceReference": {
+      "additionalProperties": false,
+      "properties": {
+        "end_ms": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "End Ms"
+        },
+        "reference_id": {
+          "format": "uuid",
+          "title": "Reference Id",
+          "type": "string"
+        },
+        "reference_type": {
+          "enum": [
+            "transcript_segment",
+            "speaker_turn",
+            "source_scene",
+            "frame",
+            "contact_sheet",
+            "project"
+          ],
+          "title": "Reference Type",
+          "type": "string"
+        },
+        "scene_id": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Scene Id"
+        },
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "start_ms": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Start Ms"
+        }
+      },
+      "required": [
+        "reference_type",
+        "reference_id"
+      ],
+      "title": "SourceReference",
+      "type": "object"
+    },
+    "StateEvent": {
+      "additionalProperties": false,
+      "properties": {
+        "confidence": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Confidence",
+          "type": "number"
+        },
+        "description": {
+          "minLength": 1,
+          "title": "Description",
+          "type": "string"
+        },
+        "entity_id": {
+          "format": "uuid",
+          "title": "Entity Id",
+          "type": "string"
+        },
+        "scene_id": {
+          "format": "uuid",
+          "title": "Scene Id",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "sequence": {
+          "minimum": 1,
+          "title": "Sequence",
+          "type": "integer"
+        },
+        "source_references": {
+          "items": {
+            "$ref": "#/$defs/SourceReference"
+          },
+          "minItems": 1,
+          "title": "Source References",
+          "type": "array"
+        },
+        "state_event_id": {
+          "format": "uuid",
+          "title": "State Event Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "state_event_id",
+        "entity_id",
+        "scene_id",
+        "sequence",
+        "description",
+        "confidence",
+        "source_references"
+      ],
+      "title": "StateEvent",
+      "type": "object"
+    },
+    "StructuredNote": {
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "minLength": 1,
+          "title": "Code",
+          "type": "string"
+        },
+        "message": {
+          "minLength": 1,
+          "title": "Message",
+          "type": "string"
+        }
+      },
+      "required": [
+        "code",
+        "message"
+      ],
+      "title": "StructuredNote",
+      "type": "object"
+    },
+    "UnresolvedAmbiguity": {
+      "additionalProperties": false,
+      "properties": {
+        "ambiguity_id": {
+          "format": "uuid",
+          "title": "Ambiguity Id",
+          "type": "string"
+        },
+        "candidate_ids": {
+          "items": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "title": "Candidate Ids",
+          "type": "array"
+        },
+        "description": {
+          "minLength": 1,
+          "title": "Description",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "source_references": {
+          "items": {
+            "$ref": "#/$defs/SourceReference"
+          },
+          "minItems": 1,
+          "title": "Source References",
+          "type": "array"
+        }
+      },
+      "required": [
+        "ambiguity_id",
+        "description",
+        "source_references"
+      ],
+      "title": "UnresolvedAmbiguity",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "contract_version": {
+      "title": "Contract Version",
+      "type": "string"
+    },
+    "episode_analysis": {
+      "$ref": "#/$defs/EpisodeAnalysis"
+    },
+    "episode_analysis_id": {
+      "format": "uuid",
+      "title": "Episode Analysis Id",
+      "type": "string"
+    },
+    "excluded_topics": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Excluded Topics",
+      "type": "array"
+    },
+    "idempotency_key": {
+      "minLength": 1,
+      "title": "Idempotency Key",
+      "type": "string"
+    },
+    "input_hash": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Input Hash",
+      "type": "string"
+    },
+    "project_id": {
+      "format": "uuid",
+      "title": "Project Id",
+      "type": "string"
+    },
+    "prompt_version": {
+      "title": "Prompt Version",
+      "type": "string"
+    },
+    "provider_configuration_version": {
+      "title": "Provider Configuration Version",
+      "type": "string"
+    },
+    "provider_options": {
+      "additionalProperties": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "integer"
+          },
+          {
+            "type": "number"
+          },
+          {
+            "type": "boolean"
+          }
+        ]
+      },
+      "title": "Provider Options",
+      "type": "object"
+    },
+    "recap_mode": {
+      "default": "full_recap",
+      "enum": [
+        "full_recap",
+        "highlight_reel"
+      ],
+      "title": "Recap Mode",
+      "type": "string"
+    },
+    "required_beat_ids": {
+      "items": {
+        "format": "uuid",
+        "type": "string"
+      },
+      "title": "Required Beat Ids",
+      "type": "array"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "target_duration_ms": {
+      "exclusiveMinimum": 0,
+      "title": "Target Duration Ms",
+      "type": "integer"
+    },
+    "target_words": {
+      "exclusiveMinimum": 0,
+      "title": "Target Words",
+      "type": "integer"
+    },
+    "target_words_per_minute": {
+      "exclusiveMinimum": 0,
+      "title": "Target Words Per Minute",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "project_id",
+    "episode_analysis_id",
+    "episode_analysis",
+    "input_hash",
+    "idempotency_key",
+    "contract_version",
+    "prompt_version",
+    "provider_configuration_version",
+    "target_duration_ms",
+    "target_words",
+    "target_words_per_minute"
+  ],
+  "title": "PlotCompressionRequest",
+  "type": "object"
+}

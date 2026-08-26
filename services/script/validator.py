@@ -8,8 +8,10 @@ and the ``CompressedPlotPlan`` the script was written from; no LLM call is invol
 from __future__ import annotations
 
 import re
+from collections.abc import Mapping
 from uuid import UUID
 
+from services.script.compressor import structural_roles
 from vidgen.contracts.episode_analysis import EpisodeAnalysis
 from vidgen.contracts.script import (
     BeatCoverage,
@@ -20,7 +22,6 @@ from vidgen.contracts.script import (
     ScriptValidationError,
     ScriptValidationReport,
 )
-from services.script.compressor import structural_roles
 
 WORD_COUNT_TOLERANCE = 0.05
 WORD_BUDGET_TOLERANCE = 0.02
@@ -85,7 +86,9 @@ def validate_compressed_plot_plan(
     omitted_ids = [beat.plot_beat_id for beat in plan.omitted_beats]
 
     if len(selected_ids) != len(set(selected_ids)):
-        _error(errors, "DUPLICATE_ID", "selected_beats", selected_ids, "Selected beats must be unique")
+        _error(
+            errors, "DUPLICATE_ID", "selected_beats", selected_ids, "Selected beats must be unique"
+        )
     if len(omitted_ids) != len(set(omitted_ids)):
         _error(errors, "DUPLICATE_ID", "omitted_beats", omitted_ids, "Omitted beats must be unique")
 
@@ -112,12 +115,20 @@ def validate_compressed_plot_plan(
     missing_mandatory = mandatory_ids - set(selected_ids)
     for beat_id in missing_mandatory:
         _error(
-            errors, "MANDATORY_BEAT_OMITTED", "selected_beats", beat_id, "A mandatory beat was omitted"
+            errors,
+            "MANDATORY_BEAT_OMITTED",
+            "selected_beats",
+            beat_id,
+            "A mandatory beat was omitted",
         )
     missing_required = set(request.required_beat_ids) - set(selected_ids)
     for beat_id in missing_required:
         _error(
-            errors, "REQUIRED_BEAT_OMITTED", "selected_beats", beat_id, "A required beat was omitted"
+            errors,
+            "REQUIRED_BEAT_OMITTED",
+            "selected_beats",
+            beat_id,
+            "A required beat was omitted",
         )
 
     roles = structural_roles(analysis.plot_beats)
@@ -142,9 +153,15 @@ def validate_compressed_plot_plan(
                 "Compression must not alter or embellish the source beat summary",
             )
 
-    for index, beat in enumerate(plan.omitted_beats):
-        if not beat.reason.strip():
-            _error(errors, "OMISSION_WITHOUT_REASON", f"omitted_beats.{index}", beat.plot_beat_id, "Every omission needs a reason")
+    for index, omitted in enumerate(plan.omitted_beats):
+        if not omitted.reason.strip():
+            _error(
+                errors,
+                "OMISSION_WITHOUT_REASON",
+                f"omitted_beats.{index}",
+                omitted.plot_beat_id,
+                "Every omission needs a reason",
+            )
 
     valid_reference_ids = _all_reference_ids(analysis)
     for index, beat in enumerate(plan.selected_beats):
@@ -175,7 +192,10 @@ def validate_compressed_plot_plan(
                     dependency.effect_beat_id,
                     "A selected cause must precede its selected effect",
                 )
-        elif dependency.effect_beat_id in selected_set and dependency.cause_beat_id not in selected_set:
+        elif (
+            dependency.effect_beat_id in selected_set
+            and dependency.cause_beat_id not in selected_set
+        ):
             if (dependency.cause_beat_id, dependency.effect_beat_id) not in connective_pairs:
                 _error(
                     errors,
@@ -200,7 +220,13 @@ def validate_compressed_plot_plan(
         return cycle
 
     if any(visit(node) for node in graph if node not in visited):
-        _error(errors, "CYCLIC_BEAT_DEPENDENCY", "selected_beats", "cycle", "Selected beats must form a DAG")
+        _error(
+            errors,
+            "CYCLIC_BEAT_DEPENDENCY",
+            "selected_beats",
+            "cycle",
+            "Selected beats must form a DAG",
+        )
 
     total_words = sum(item.words for item in plan.word_budget.allocations)
     target = plan.word_budget.total_target_words
@@ -238,7 +264,7 @@ def validate_recap_script(
     transcript_texts: list[str] | None = None,
     similarity_threshold: float = DEFAULT_SIMILARITY_THRESHOLD,
     previous_script: RecapScript | None = None,
-    previous_coverage: dict[UUID, str] | None = None,
+    previous_coverage: Mapping[UUID, str] | None = None,
     allow_anonymous_speakers: bool = True,
 ) -> ScriptValidationReport:
     errors: list[ScriptValidationError] = []
@@ -292,7 +318,10 @@ def validate_recap_script(
                     scene_id,
                     "Segment references a scene outside the episode analysis",
                 )
-        if segment.speaker_kind == "character" and segment.speaker_character_id not in character_ids:
+        if (
+            segment.speaker_kind == "character"
+            and segment.speaker_character_id not in character_ids
+        ):
             _error(
                 errors,
                 "UNKNOWN_SPEAKER",
@@ -309,7 +338,10 @@ def validate_recap_script(
                 "Anonymous speakers are not permitted by configuration",
             )
         for annotation in segment.joke_annotations:
-            for span_name, span in (("setup_span", annotation.setup_span), ("punchline_span", annotation.punchline_span)):
+            for span_name, span in (
+                ("setup_span", annotation.setup_span),
+                ("punchline_span", annotation.punchline_span),
+            ):
                 if span is not None and span.end > len(segment.text):
                     _error(
                         errors,
@@ -345,22 +377,56 @@ def validate_recap_script(
 
     for beat_id in plan_beat_ids:
         if not covered_by_beat.get(beat_id):
-            code = "MANDATORY_BEAT_NOT_COVERED" if beat_id in mandatory_beat_ids else "BEAT_NOT_COVERED"
-            _error(errors, code, "beat_coverage", beat_id, "Every selected beat must be covered by a segment")
+            code = (
+                "MANDATORY_BEAT_NOT_COVERED"
+                if beat_id in mandatory_beat_ids
+                else "BEAT_NOT_COVERED"
+            )
+            _error(
+                errors,
+                code,
+                "beat_coverage",
+                beat_id,
+                "Every selected beat must be covered by a segment",
+            )
 
     for callback in script.callbacks:
         setup = segments_by_id.get(callback.setup_segment_id)
         payoff = segments_by_id.get(callback.payoff_segment_id)
         if setup is None:
-            _error(errors, "UNKNOWN_CALLBACK_SEGMENT", "callbacks", callback.setup_segment_id, "Callback setup segment must resolve")
+            _error(
+                errors,
+                "UNKNOWN_CALLBACK_SEGMENT",
+                "callbacks",
+                callback.setup_segment_id,
+                "Callback setup segment must resolve",
+            )
         if payoff is None:
-            _error(errors, "UNKNOWN_CALLBACK_SEGMENT", "callbacks", callback.payoff_segment_id, "Callback payoff segment must resolve")
+            _error(
+                errors,
+                "UNKNOWN_CALLBACK_SEGMENT",
+                "callbacks",
+                callback.payoff_segment_id,
+                "Callback payoff segment must resolve",
+            )
         if setup is not None and payoff is not None and payoff.sequence <= setup.sequence:
-            _error(errors, "CALLBACK_PAYOFF_BEFORE_SETUP", "callbacks", callback.callback_id, "Callback payoff must occur after its setup")
+            _error(
+                errors,
+                "CALLBACK_PAYOFF_BEFORE_SETUP",
+                "callbacks",
+                callback.callback_id,
+                "Callback payoff must occur after its setup",
+            )
 
     for reference in script.source_refs:
         if reference.reference_id not in valid_reference_ids:
-            _error(errors, "UNKNOWN_SOURCE_REFERENCE", "source_refs", reference.reference_id, "Source reference must resolve to the selected episode analysis")
+            _error(
+                errors,
+                "UNKNOWN_SOURCE_REFERENCE",
+                "source_refs",
+                reference.reference_id,
+                "Source reference must resolve to the selected episode analysis",
+            )
 
     ordered = sorted(script.segments, key=lambda segment: segment.sequence)
     streak = 0
@@ -369,9 +435,22 @@ def validate_recap_script(
         if script.humor_intensity >= HIGH_HUMOR_THRESHOLD:
             streak = streak + 1 if exposition_only else 0
             if streak > MAX_CONSECUTIVE_EXPOSITION:
-                _error(errors, "TOO_MUCH_EXPOSITION", f"segments.{segment.segment_id}", streak, "No more than two consecutive exposition-only segments are allowed at high humor intensity")
+                _error(
+                    errors,
+                    "TOO_MUCH_EXPOSITION",
+                    f"segments.{segment.segment_id}",
+                    streak,
+                    "No more than two consecutive exposition-only segments are allowed "
+                    "at high humor intensity",
+                )
             if exposition_only and segment.estimated_duration_ms > MAX_EXPOSITION_INTERVAL_MS:
-                _error(errors, "LONG_EXPOSITION_WITHOUT_JOKE", f"segments.{segment.segment_id}", segment.estimated_duration_ms, "No interval over 18s may lack a joke or visual gag at high humor intensity")
+                _error(
+                    errors,
+                    "LONG_EXPOSITION_WITHOUT_JOKE",
+                    f"segments.{segment.segment_id}",
+                    segment.estimated_duration_ms,
+                    "No interval over 18s may lack a joke or visual gag at high humor intensity",
+                )
 
     if previous_script is not None:
         previous_by_id = {segment.segment_id: segment for segment in previous_script.segments}
@@ -380,13 +459,29 @@ def validate_recap_script(
                 continue
             current = segments_by_id.get(segment_id)
             if current is None or current.content_hash != previous.content_hash:
-                _error(errors, "LOCKED_SEGMENT_CHANGED", f"segments.{segment_id}", segment_id, "A locked segment must not change between revisions")
+                _error(
+                    errors,
+                    "LOCKED_SEGMENT_CHANGED",
+                    f"segments.{segment_id}",
+                    segment_id,
+                    "A locked segment must not change between revisions",
+                )
 
     if previous_coverage is not None:
         current_coverage = {item.plot_beat_id: item.coverage for item in script.beat_coverage}
         for beat_id, coverage in previous_coverage.items():
-            if coverage == "covered" and current_coverage.get(beat_id) != "covered" and beat_id in mandatory_beat_ids:
-                _error(errors, "COVERAGE_REGRESSED", "beat_coverage", beat_id, "A revision must not reduce mandatory beat coverage")
+            if (
+                coverage == "covered"
+                and current_coverage.get(beat_id) != "covered"
+                and beat_id in mandatory_beat_ids
+            ):
+                _error(
+                    errors,
+                    "COVERAGE_REGRESSED",
+                    "beat_coverage",
+                    beat_id,
+                    "A revision must not reduce mandatory beat coverage",
+                )
 
     return ScriptValidationReport(valid=not errors, errors=errors)
 
@@ -395,7 +490,9 @@ def build_beat_coverage(script: RecapScript, plan: CompressedPlotPlan) -> list[B
     coverage: list[BeatCoverage] = []
     for beat in plan.selected_beats:
         segment_ids = [
-            segment.segment_id for segment in script.segments if beat.plot_beat_id in segment.plot_beat_ids
+            segment.segment_id
+            for segment in script.segments
+            if beat.plot_beat_id in segment.plot_beat_ids
         ]
         coverage.append(
             BeatCoverage(

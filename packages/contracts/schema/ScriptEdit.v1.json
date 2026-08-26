@@ -1,0 +1,56 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "changes_word_count": {
+      "title": "Changes Word Count",
+      "type": "boolean"
+    },
+    "new_text": {
+      "title": "New Text",
+      "type": "string"
+    },
+    "old_text": {
+      "title": "Old Text",
+      "type": "string"
+    },
+    "plot_beat_ids": {
+      "items": {
+        "format": "uuid",
+        "type": "string"
+      },
+      "title": "Plot Beat Ids",
+      "type": "array"
+    },
+    "reason": {
+      "minLength": 1,
+      "title": "Reason",
+      "type": "string"
+    },
+    "rubric_dimensions": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Rubric Dimensions",
+      "type": "array"
+    },
+    "segment_id": {
+      "format": "uuid",
+      "title": "Segment Id",
+      "type": "string"
+    },
+    "was_locked": {
+      "title": "Was Locked",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "segment_id",
+    "old_text",
+    "new_text",
+    "reason",
+    "changes_word_count",
+    "was_locked"
+  ],
+  "title": "ScriptEdit",
+  "type": "object"
+}

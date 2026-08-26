@@ -2,10 +2,9 @@
 
 from __future__ import annotations
 
-from uuid import UUID, uuid4, uuid5
+from uuid import UUID, uuid5
 
 from services.script.compressor import compress_plot
-from services.script.diff import build_script_diff
 from services.script.editor import propose_revision
 from services.script.provider import GenerationContext
 from services.script.rubric import approval_recommendation, score_script
@@ -68,7 +67,9 @@ class FakeScriptGenerationProvider:
         self, request: ComedyWritingRequest, context: GenerationContext
     ) -> ProviderRecapScriptResult:
         script_id = uuid5(FAKE_NAMESPACE, f"script:{request.input_hash}:{request.idempotency_key}")
-        script = write_script(plan=request.compressed_plot, request=request, script_id=script_id, version=1)
+        script = write_script(
+            plan=request.compressed_plot, request=request, script_id=script_id, version=1
+        )
         return ProviderRecapScriptResult(
             output=script, metadata=self._metadata(request, context, "write_script")
         )
@@ -80,11 +81,14 @@ class FakeScriptGenerationProvider:
         coverage = build_beat_coverage(revised, request.compressed_plot)
         revised = revised.model_copy(update={"beat_coverage": coverage})
         mandatory_total = sum(1 for item in coverage if item.mandatory)
-        mandatory_covered = sum(1 for item in coverage if item.mandatory and item.coverage == "covered")
+        mandatory_covered = sum(
+            1 for item in coverage if item.mandatory and item.coverage == "covered"
+        )
         mandatory_ratio = 1.0 if mandatory_total == 0 else mandatory_covered / mandatory_total
         within_target = (
             revised.target_word_count == 0
-            or abs(revised.actual_word_count - revised.target_word_count) / revised.target_word_count
+            or abs(revised.actual_word_count - revised.target_word_count)
+            / revised.target_word_count
             <= 0.05
         )
         # The fake editor only trims filler text, so it cannot itself break a

@@ -178,7 +178,7 @@ def compress_plot(
             OmittedPlotBeat(
                 plot_beat_id=beat.plot_beat_id,
                 reason=(
-                    f"Matches an excluded topic and is not required for causal completeness."
+                    "Matches an excluded topic and is not required for causal completeness."
                     if excluded
                     else "Below the compression payoff/importance threshold for this target; "
                     "omission does not break the causal chain of selected beats."
@@ -195,7 +195,10 @@ def compress_plot(
 
     connective_explanations: list[ConnectiveExplanation] = []
     for dependency in analysis.beat_dependencies:
-        if dependency.cause_beat_id not in selected_ids or dependency.effect_beat_id not in selected_ids:
+        if (
+            dependency.cause_beat_id not in selected_ids
+            or dependency.effect_beat_id not in selected_ids
+        ):
             continue
         cause = beats_by_id[dependency.cause_beat_id]
         effect = beats_by_id[dependency.effect_beat_id]
@@ -227,8 +230,8 @@ def compress_plot(
     ]
 
     seen_refs: dict[str, SourceReference] = {}
-    for beat in selected_beats:
-        for reference in beat.source_references:
+    for compressed_beat in selected_beats:
+        for reference in compressed_beat.source_references:
             seen_refs[reference.model_dump_json()] = reference
     source_refs = list(seen_refs.values())
 

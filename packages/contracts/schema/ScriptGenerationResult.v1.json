@@ -1,0 +1,288 @@
+{
+  "$defs": {
+    "ComedyRubricScores": {
+      "additionalProperties": false,
+      "properties": {
+        "callback_quality": {
+          "maximum": 100,
+          "minimum": 0,
+          "title": "Callback Quality",
+          "type": "number"
+        },
+        "clarity": {
+          "maximum": 100,
+          "minimum": 0,
+          "title": "Clarity",
+          "type": "number"
+        },
+        "joke_density": {
+          "maximum": 100,
+          "minimum": 0,
+          "title": "Joke Density",
+          "type": "number"
+        },
+        "joke_variety": {
+          "maximum": 100,
+          "minimum": 0,
+          "title": "Joke Variety",
+          "type": "number"
+        },
+        "narratability": {
+          "maximum": 100,
+          "minimum": 0,
+          "title": "Narratability",
+          "type": "number"
+        },
+        "overall": {
+          "maximum": 100,
+          "minimum": 0,
+          "title": "Overall",
+          "type": "number"
+        },
+        "pacing": {
+          "maximum": 100,
+          "minimum": 0,
+          "title": "Pacing",
+          "type": "number"
+        },
+        "plot_fidelity": {
+          "maximum": 100,
+          "minimum": 0,
+          "title": "Plot Fidelity",
+          "type": "number"
+        },
+        "punchline_placement": {
+          "maximum": 100,
+          "minimum": 0,
+          "title": "Punchline Placement",
+          "type": "number"
+        },
+        "repetition": {
+          "maximum": 100,
+          "minimum": 0,
+          "title": "Repetition",
+          "type": "number"
+        },
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "spoken_rhythm": {
+          "maximum": 100,
+          "minimum": 0,
+          "title": "Spoken Rhythm",
+          "type": "number"
+        }
+      },
+      "required": [
+        "plot_fidelity",
+        "clarity",
+        "joke_density",
+        "joke_variety",
+        "punchline_placement",
+        "spoken_rhythm",
+        "pacing",
+        "callback_quality",
+        "repetition",
+        "narratability",
+        "overall"
+      ],
+      "title": "ComedyRubricScores",
+      "type": "object"
+    },
+    "ScriptValidationError": {
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "title": "Code",
+          "type": "string"
+        },
+        "entity_path": {
+          "title": "Entity Path",
+          "type": "string"
+        },
+        "explanation": {
+          "minLength": 1,
+          "title": "Explanation",
+          "type": "string"
+        },
+        "invalid_value": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "integer"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Invalid Value"
+        }
+      },
+      "required": [
+        "code",
+        "entity_path",
+        "explanation"
+      ],
+      "title": "ScriptValidationError",
+      "type": "object"
+    },
+    "ScriptValidationReport": {
+      "additionalProperties": false,
+      "properties": {
+        "errors": {
+          "items": {
+            "$ref": "#/$defs/ScriptValidationError"
+          },
+          "title": "Errors",
+          "type": "array"
+        },
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "valid": {
+          "title": "Valid",
+          "type": "boolean"
+        },
+        "warnings": {
+          "items": {
+            "$ref": "#/$defs/StructuredNote"
+          },
+          "title": "Warnings",
+          "type": "array"
+        }
+      },
+      "required": [
+        "valid"
+      ],
+      "title": "ScriptValidationReport",
+      "type": "object"
+    },
+    "StructuredNote": {
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "minLength": 1,
+          "title": "Code",
+          "type": "string"
+        },
+        "message": {
+          "minLength": 1,
+          "title": "Message",
+          "type": "string"
+        }
+      },
+      "required": [
+        "code",
+        "message"
+      ],
+      "title": "StructuredNote",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "compressed_plot_plan_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Compressed Plot Plan Id"
+    },
+    "generation_run_id": {
+      "format": "uuid",
+      "title": "Generation Run Id",
+      "type": "string"
+    },
+    "review_scores": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ComedyRubricScores"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "revision_count": {
+      "default": 0,
+      "minimum": 0,
+      "title": "Revision Count",
+      "type": "integer"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "script_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Script Id"
+    },
+    "script_version": {
+      "anyOf": [
+        {
+          "minimum": 1,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Script Version"
+    },
+    "status": {
+      "title": "Status",
+      "type": "string"
+    },
+    "validation_report": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ScriptValidationReport"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    }
+  },
+  "required": [
+    "generation_run_id",
+    "status"
+  ],
+  "title": "ScriptGenerationResult",
+  "type": "object"
+}

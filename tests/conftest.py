@@ -11,7 +11,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
 import vidgen.db.models
-import vidgen.db.script_models  # noqa: F401
+import vidgen.db.script_models
 import vidgen.db.upload_models  # noqa: F401
 from apps.api.dependencies import get_blob_store, get_session
 from apps.api.main import create_app

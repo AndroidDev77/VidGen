@@ -1,0 +1,44 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "confusion_explanation": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Confusion Explanation"
+    },
+    "may_cause_confusion": {
+      "default": false,
+      "title": "May Cause Confusion",
+      "type": "boolean"
+    },
+    "plot_beat_id": {
+      "format": "uuid",
+      "title": "Plot Beat Id",
+      "type": "string"
+    },
+    "reason": {
+      "minLength": 1,
+      "title": "Reason",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    }
+  },
+  "required": [
+    "plot_beat_id",
+    "reason"
+  ],
+  "title": "OmittedPlotBeat",
+  "type": "object"
+}

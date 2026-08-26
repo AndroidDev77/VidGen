@@ -5,6 +5,7 @@ import pytest
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
+import vidgen.db.workflow_models  # noqa: F401
 from services.script.fake_provider import FakeScriptGenerationProvider
 from services.script.pipeline import ScriptGenerationPipeline
 from vidgen.contracts.episode_analysis import (
@@ -19,7 +20,6 @@ from vidgen.db.base import Base
 from vidgen.db.episode_analysis_models import EpisodeAnalysisRecord, EpisodeAnalysisRun
 from vidgen.db.models import Project
 from vidgen.db.script_models import Script, ScriptGenerationRun, ScriptSegment
-import vidgen.db.workflow_models  # noqa: F401
 from vidgen.storage.asset_service import AssetService
 from vidgen.storage.blob import FilesystemBlobStore
 
@@ -33,7 +33,10 @@ def _make_analysis(project_id, beat_count: int = 15) -> EpisodeAnalysis:
     ref = SourceReference(reference_type="project", reference_id=project_id)
     characters = [
         CharacterCandidate(
-            character_id=cid, canonical_name=f"Character {i}", confidence=1.0, source_references=[ref]
+            character_id=cid,
+            canonical_name=f"Character {i}",
+            confidence=1.0,
+            source_references=[ref],
         )
         for i, cid in enumerate(char_ids)
     ]
@@ -66,7 +69,9 @@ def _make_analysis(project_id, beat_count: int = 15) -> EpisodeAnalysis:
         for i, bid in enumerate(beat_ids)
     ]
     deps = [
-        BeatDependency(cause_beat_id=beat_ids[i], effect_beat_id=beat_ids[i + 1], source_references=[ref])
+        BeatDependency(
+            cause_beat_id=beat_ids[i], effect_beat_id=beat_ids[i + 1], source_references=[ref]
+        )
         for i in range(len(beat_ids) - 1)
     ]
     return EpisodeAnalysis(
@@ -146,7 +151,7 @@ def _database(
 
 @pytest.mark.asyncio
 async def test_pipeline_produces_an_approved_script(tmp_path: Path) -> None:
-    session, blobs, project, record = _database(tmp_path)
+    session, blobs, project, _record = _database(tmp_path)
     provider = FakeScriptGenerationProvider()
     result = await ScriptGenerationPipeline(session, blobs, provider).process(
         project_id=project.id, idempotency_key="run-1"
@@ -161,9 +166,15 @@ async def test_pipeline_produces_an_approved_script(tmp_path: Path) -> None:
     script_record = session.get(Script, result.script_id)
     assert script_record is not None
     assert script_record.selected is True
-    assert abs(script_record.actual_word_count - script_record.target_word_count) / script_record.target_word_count <= 0.05
+    assert (
+        abs(script_record.actual_word_count - script_record.target_word_count)
+        / script_record.target_word_count
+        <= 0.05
+    )
 
-    segments = session.scalars(select(ScriptSegment).where(ScriptSegment.script_id == script_record.id)).all()
+    segments = session.scalars(
+        select(ScriptSegment).where(ScriptSegment.script_id == script_record.id)
+    ).all()
     assert len(segments) > 0
 
     project_row = session.get(Project, project.id)
@@ -172,7 +183,7 @@ async def test_pipeline_produces_an_approved_script(tmp_path: Path) -> None:
 
 @pytest.mark.asyncio
 async def test_completed_run_is_idempotent(tmp_path: Path) -> None:
-    session, blobs, project, record = _database(tmp_path)
+    session, blobs, project, _record = _database(tmp_path)
     provider = FakeScriptGenerationProvider()
     pipeline = ScriptGenerationPipeline(session, blobs, provider)
     first = await pipeline.process(project_id=project.id, idempotency_key="run-1")
@@ -223,7 +234,7 @@ def _asset_key(session: Session, record: EpisodeAnalysisRecord) -> str:
 
 @pytest.mark.asyncio
 async def test_unresolvable_required_beat_id_is_rejected(tmp_path: Path) -> None:
-    session, blobs, project, record = _database(
+    session, blobs, project, _record = _database(
         tmp_path, project_settings={"script": {"required_beat_ids": [str(uuid4())]}}
     )
     provider = FakeScriptGenerationProvider()
@@ -235,7 +246,7 @@ async def test_unresolvable_required_beat_id_is_rejected(tmp_path: Path) -> None
 
 @pytest.mark.asyncio
 async def test_target_words_outside_bounds_is_rejected(tmp_path: Path) -> None:
-    session, blobs, project, record = _database(
+    session, blobs, project, _record = _database(
         tmp_path, project_settings={"script": {"target_words": 10}}
     )
     provider = FakeScriptGenerationProvider()
@@ -305,6 +316,73 @@ async def test_reusing_key_with_changed_analysis_requires_new_key(tmp_path: Path
     second_result = await pipeline.process(project_id=project.id, idempotency_key="run-2")
     assert second_result.status == "script_approved"
     session.expire_all()
-    selected_scripts = session.scalars(select(Script).where(Script.project_id == project.id, Script.selected)).all()
+    selected_scripts = session.scalars(
+        select(Script).where(Script.project_id == project.id, Script.selected)
+    ).all()
     assert len(selected_scripts) == 1
     assert selected_scripts[0].id == second_result.script_id
+
+
+class _NeverApprovingProvider(FakeScriptGenerationProvider):
+    """Delegates compression/writing to the real fake logic but never approves edits."""
+
+    async def edit_script(self, request, context):  # type: ignore[override]
+        result = await super().edit_script(request, context)
+        revised = result.output.revised_script.model_copy(
+            update={
+                "script_id": result.output.revised_script.script_id,
+                "actual_word_count": result.output.revised_script.actual_word_count,
+            }
+        )
+        scores = result.output.scores.model_copy(update={"overall": 40, "plot_fidelity": 40})
+        from vidgen.contracts.script import ComedyEditResult
+
+        forced = ComedyEditResult(
+            scores=scores,
+            issues=result.output.issues,
+            edits=result.output.edits,
+            revised_script=revised,
+            approval_recommendation="revise",
+        )
+        return result.model_copy(update={"output": forced})
+
+
+@pytest.mark.asyncio
+async def test_revision_exhaustion_sets_script_review_required(tmp_path: Path) -> None:
+    session, blobs, project, _record = _database(tmp_path)
+    provider = _NeverApprovingProvider()
+    result = await ScriptGenerationPipeline(session, blobs, provider).process(
+        project_id=project.id, idempotency_key="run-1"
+    )
+    assert result.status == "script_review_required"
+    session.expire_all()
+    run = session.scalars(select(ScriptGenerationRun)).one()
+    assert run.error_code == "REVISION_EXHAUSTED"
+    assert run.revision_count == 2
+    script_versions = session.scalars(
+        select(Script).where(Script.generation_run_id == run.id)
+    ).all()
+    # draft (v1) plus one revised candidate per evaluation (3 evaluations total)
+    assert len(script_versions) == 4
+    assert session.get(Project, project.id).status == "script_review_required"
+
+
+@pytest.mark.asyncio
+async def test_failed_replacement_preserves_prior_selected_script(tmp_path: Path) -> None:
+    session, blobs, project, _record = _database(tmp_path)
+    first = await ScriptGenerationPipeline(session, blobs, FakeScriptGenerationProvider()).process(
+        project_id=project.id, idempotency_key="run-1"
+    )
+    assert first.status == "script_approved"
+
+    second = await ScriptGenerationPipeline(session, blobs, _NeverApprovingProvider()).process(
+        project_id=project.id, idempotency_key="run-2"
+    )
+    assert second.status == "script_review_required"
+
+    session.expire_all()
+    selected = session.scalars(
+        select(Script).where(Script.project_id == project.id, Script.selected)
+    ).all()
+    assert len(selected) == 1
+    assert selected[0].id == first.script_id

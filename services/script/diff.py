@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from vidgen.contracts.script import RecapScript, ScriptDiff, ScriptEdit
 from services.script.validator import canonical_word_count
+from vidgen.contracts.script import RecapScript, ScriptDiff, ScriptEdit
 
 
 def build_script_diff(
@@ -22,12 +22,14 @@ def build_script_diff(
     unchanged = [
         sid
         for sid in current_by_id
-        if sid in previous_by_id and current_by_id[sid].content_hash == previous_by_id[sid].content_hash
+        if sid in previous_by_id
+        and current_by_id[sid].content_hash == previous_by_id[sid].content_hash
     ]
     changed_ids = [
         sid
         for sid in current_by_id
-        if sid in previous_by_id and current_by_id[sid].content_hash != previous_by_id[sid].content_hash
+        if sid in previous_by_id
+        and current_by_id[sid].content_hash != previous_by_id[sid].content_hash
     ]
     edits_by_segment = {edit.segment_id: edit for edit in edits or []}
     changed_segments: list[ScriptEdit] = []

@@ -1,0 +1,21 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "estimated_duration_ms": {
+      "exclusiveMinimum": 0,
+      "title": "Estimated Duration Ms",
+      "type": "integer"
+    },
+    "plot_beat_id": {
+      "format": "uuid",
+      "title": "Plot Beat Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "plot_beat_id",
+    "estimated_duration_ms"
+  ],
+  "title": "PacingAllocation",
+  "type": "object"
+}

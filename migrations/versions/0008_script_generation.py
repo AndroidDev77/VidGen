@@ -1,7 +1,7 @@
 """T11 compression and comedy script pipeline persistence.
 
-Revision ID: 0007_script_generation
-Revises: 0006_episode_analysis
+Revision ID: 0008_script_generation
+Revises: 0007_observability_costs
 """
 
 from __future__ import annotations
@@ -11,8 +11,8 @@ from collections.abc import Sequence
 import sqlalchemy as sa
 from alembic import op
 
-revision: str = "0007_script_generation"
-down_revision: str | None = "0006_episode_analysis"
+revision: str = "0008_script_generation"
+down_revision: str | None = "0007_observability_costs"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
@@ -45,17 +45,20 @@ def upgrade() -> None:
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
         sa.CheckConstraint(
-            "attempt_count >= 0", name=op.f("ck_script_generation_runs_script_run_attempt_nonnegative")
+            "attempt_count >= 0",
+            name=op.f("ck_script_generation_runs_script_run_attempt_nonnegative"),
         ),
         sa.CheckConstraint(
             "revision_count >= 0",
             name=op.f("ck_script_generation_runs_script_run_revision_nonnegative"),
         ),
         sa.CheckConstraint(
-            "target_duration_ms > 0", name=op.f("ck_script_generation_runs_script_run_positive_duration")
+            "target_duration_ms > 0",
+            name=op.f("ck_script_generation_runs_script_run_positive_duration"),
         ),
         sa.CheckConstraint(
-            "target_word_count > 0", name=op.f("ck_script_generation_runs_script_run_positive_words")
+            "target_word_count > 0",
+            name=op.f("ck_script_generation_runs_script_run_positive_words"),
         ),
         sa.CheckConstraint(
             "target_words_per_minute > 0",
@@ -97,18 +100,23 @@ def upgrade() -> None:
         sa.Column("id", sa.Uuid(), primary_key=True),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
-        sa.CheckConstraint("version > 0", name=op.f("ck_compressed_plot_plans_plot_plan_positive_version")),
         sa.CheckConstraint(
-            "selected_beat_count > 0", name=op.f("ck_compressed_plot_plans_plot_plan_positive_selected")
+            "version > 0", name=op.f("ck_compressed_plot_plans_plot_plan_positive_version")
         ),
         sa.CheckConstraint(
-            "omitted_beat_count >= 0", name=op.f("ck_compressed_plot_plans_plot_plan_nonnegative_omitted")
+            "selected_beat_count > 0",
+            name=op.f("ck_compressed_plot_plans_plot_plan_positive_selected"),
+        ),
+        sa.CheckConstraint(
+            "omitted_beat_count >= 0",
+            name=op.f("ck_compressed_plot_plans_plot_plan_nonnegative_omitted"),
         ),
         sa.CheckConstraint(
             "target_word_count > 0", name=op.f("ck_compressed_plot_plans_plot_plan_positive_words")
         ),
         sa.CheckConstraint(
-            "length(input_hash) = 64", name=op.f("ck_compressed_plot_plans_plot_plan_input_hash_length")
+            "length(input_hash) = 64",
+            name=op.f("ck_compressed_plot_plans_plot_plan_input_hash_length"),
         ),
         sa.ForeignKeyConstraint(["project_id"], ["projects.id"], ondelete="CASCADE"),
         sa.ForeignKeyConstraint(
@@ -155,7 +163,9 @@ def upgrade() -> None:
         batch.add_column(sa.Column("prompt_version", sa.String(32), nullable=False))
         batch.add_column(sa.Column("rubric_version", sa.String(32), nullable=True))
         batch.add_column(sa.Column("review_scores", sa.JSON(), nullable=True))
-        batch.add_column(sa.Column("selected", sa.Boolean(), nullable=False, server_default=sa.false()))
+        batch.add_column(
+            sa.Column("selected", sa.Boolean(), nullable=False, server_default=sa.false())
+        )
         batch.create_check_constraint(op.f("ck_scripts_positive_version"), "version > 0")
         batch.create_check_constraint(
             op.f("ck_scripts_positive_target_words"), "target_word_count > 0"
@@ -163,8 +173,12 @@ def upgrade() -> None:
         batch.create_check_constraint(
             op.f("ck_scripts_nonnegative_actual_words"), "actual_word_count >= 0"
         )
-        batch.create_check_constraint(op.f("ck_scripts_positive_duration"), "target_duration_ms > 0")
-        batch.create_check_constraint(op.f("ck_scripts_humor_range"), "humor_intensity BETWEEN 0 AND 1")
+        batch.create_check_constraint(
+            op.f("ck_scripts_positive_duration"), "target_duration_ms > 0"
+        )
+        batch.create_check_constraint(
+            op.f("ck_scripts_humor_range"), "humor_intensity BETWEEN 0 AND 1"
+        )
         batch.create_foreign_key(
             op.f("fk_scripts_generation_run_id_script_generation_runs"),
             "script_generation_runs",
@@ -227,9 +241,7 @@ def upgrade() -> None:
         batch.add_column(sa.Column("joke_annotations", sa.JSON(), nullable=False))
         batch.add_column(sa.Column("visual_gag", sa.Text(), nullable=True))
         batch.add_column(sa.Column("estimated_duration_ms", sa.Integer(), nullable=False))
-        batch.add_column(
-            sa.Column("voice_direction", sa.Text(), nullable=False, server_default="")
-        )
+        batch.add_column(sa.Column("voice_direction", sa.Text(), nullable=False, server_default=""))
         batch.add_column(
             sa.Column("locked", sa.Boolean(), nullable=False, server_default=sa.false())
         )
@@ -275,7 +287,10 @@ def upgrade() -> None:
         sa.ForeignKeyConstraint(["script_id"], ["scripts.id"], ondelete="CASCADE"),
     )
     op.create_index(
-        "uq_script_reviews_sequence", "script_reviews", ["script_id", "review_sequence"], unique=True
+        "uq_script_reviews_sequence",
+        "script_reviews",
+        ["script_id", "review_sequence"],
+        unique=True,
     )
     op.create_index(
         "uq_script_reviews_provider_request",
@@ -301,10 +316,12 @@ def upgrade() -> None:
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
         sa.CheckConstraint(
-            "length(old_content_hash) = 64", name=op.f("ck_script_edits_script_edit_old_hash_length")
+            "length(old_content_hash) = 64",
+            name=op.f("ck_script_edits_script_edit_old_hash_length"),
         ),
         sa.CheckConstraint(
-            "length(new_content_hash) = 64", name=op.f("ck_script_edits_script_edit_new_hash_length")
+            "length(new_content_hash) = 64",
+            name=op.f("ck_script_edits_script_edit_new_hash_length"),
         ),
         sa.ForeignKeyConstraint(["review_id"], ["script_reviews.id"], ondelete="CASCADE"),
     )

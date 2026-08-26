@@ -12,8 +12,12 @@ from vidgen.contracts.script import CompressedPlotPlan, RecapScript
 SCRIPT_NAMESPACE = UUID("2f6f9e5f-8a2b-4a34-9a2a-3d6a2f0a9d41")
 
 
-def stable_id(*, input_hash: str, kind: str, key: str, contract_version: str, prompt_version: str) -> UUID:
-    canonical_key = ":".join((input_hash, contract_version, prompt_version, kind, key.strip().casefold()))
+def stable_id(
+    *, input_hash: str, kind: str, key: str, contract_version: str, prompt_version: str
+) -> UUID:
+    canonical_key = ":".join(
+        (input_hash, contract_version, prompt_version, kind, key.strip().casefold())
+    )
     return uuid5(SCRIPT_NAMESPACE, canonical_key)
 
 
@@ -49,7 +53,9 @@ def canonicalize_plan(plan: CompressedPlotPlan) -> CompressedPlotPlan:
     data = plan.model_copy(deep=True)
     data.selected_beats.sort(key=lambda beat: (beat.sequence, str(beat.plot_beat_id)))
     data.omitted_beats.sort(key=lambda beat: str(beat.plot_beat_id))
-    data.connective_explanations.sort(key=lambda item: (str(item.cause_beat_id), str(item.effect_beat_id)))
+    data.connective_explanations.sort(
+        key=lambda item: (str(item.cause_beat_id), str(item.effect_beat_id))
+    )
     data.pacing_plan.sort(key=lambda item: str(item.plot_beat_id))
     data.word_budget.allocations.sort(key=lambda item: str(item.plot_beat_id))
     return data

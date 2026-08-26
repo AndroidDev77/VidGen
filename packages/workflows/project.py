@@ -38,7 +38,11 @@ class ProjectWorkflow:
             ),
             ("evidence", "run_evidence_activity", default_activity_retry_policy()),
             ("episode_analysis", "run_episode_analysis_activity", provider_activity_retry_policy()),
-            ("script_generation", "run_script_generation_activity", provider_activity_retry_policy()),
+            (
+                "script_generation",
+                "run_script_generation_activity",
+                provider_activity_retry_policy(),
+            ),
         )
         for stage, activity_name, retry_policy in stages:
             if self._cancelled:

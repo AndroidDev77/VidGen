@@ -1,0 +1,264 @@
+{
+  "$defs": {
+    "JokeAnnotation": {
+      "additionalProperties": false,
+      "properties": {
+        "callback_id": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Callback Id"
+        },
+        "confidence": {
+          "anyOf": [
+            {
+              "maximum": 1,
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Confidence"
+        },
+        "joke_id": {
+          "format": "uuid",
+          "title": "Joke Id",
+          "type": "string"
+        },
+        "joke_type": {
+          "enum": [
+            "commentary",
+            "analogy",
+            "exaggeration",
+            "contrast",
+            "callback",
+            "character_observation",
+            "visual_gag",
+            "wordplay"
+          ],
+          "title": "Joke Type",
+          "type": "string"
+        },
+        "punchline_span": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TextSpan"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "setup_span": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TextSpan"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "source_beat_ids": {
+          "items": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Source Beat Ids",
+          "type": "array"
+        },
+        "validation_status": {
+          "default": "pending",
+          "enum": [
+            "pending",
+            "valid",
+            "invalid"
+          ],
+          "title": "Validation Status",
+          "type": "string"
+        }
+      },
+      "required": [
+        "joke_id",
+        "joke_type",
+        "source_beat_ids"
+      ],
+      "title": "JokeAnnotation",
+      "type": "object"
+    },
+    "TextSpan": {
+      "additionalProperties": false,
+      "properties": {
+        "end": {
+          "exclusiveMinimum": 0,
+          "title": "End",
+          "type": "integer"
+        },
+        "start": {
+          "minimum": 0,
+          "title": "Start",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "start",
+        "end"
+      ],
+      "title": "TextSpan",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "anonymous_speaker_label": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Anonymous Speaker Label"
+    },
+    "content_hash": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Content Hash",
+      "type": "string"
+    },
+    "estimated_duration_ms": {
+      "exclusiveMinimum": 0,
+      "title": "Estimated Duration Ms",
+      "type": "integer"
+    },
+    "joke_annotations": {
+      "items": {
+        "$ref": "#/$defs/JokeAnnotation"
+      },
+      "title": "Joke Annotations",
+      "type": "array"
+    },
+    "locked": {
+      "default": false,
+      "title": "Locked",
+      "type": "boolean"
+    },
+    "plot_beat_ids": {
+      "items": {
+        "format": "uuid",
+        "type": "string"
+      },
+      "minItems": 1,
+      "title": "Plot Beat Ids",
+      "type": "array"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "segment_id": {
+      "format": "uuid",
+      "title": "Segment Id",
+      "type": "string"
+    },
+    "sequence": {
+      "minimum": 0,
+      "title": "Sequence",
+      "type": "integer"
+    },
+    "source_scene_ids": {
+      "items": {
+        "format": "uuid",
+        "type": "string"
+      },
+      "title": "Source Scene Ids",
+      "type": "array"
+    },
+    "speaker_character_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Speaker Character Id"
+    },
+    "speaker_kind": {
+      "enum": [
+        "narrator",
+        "character",
+        "anonymous"
+      ],
+      "title": "Speaker Kind",
+      "type": "string"
+    },
+    "text": {
+      "title": "Text",
+      "type": "string"
+    },
+    "type": {
+      "enum": [
+        "NARRATION",
+        "DIALOGUE",
+        "PAUSE"
+      ],
+      "title": "Type",
+      "type": "string"
+    },
+    "visual_gag": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Visual Gag"
+    },
+    "voice_direction": {
+      "default": "",
+      "title": "Voice Direction",
+      "type": "string"
+    }
+  },
+  "required": [
+    "segment_id",
+    "sequence",
+    "type",
+    "speaker_kind",
+    "text",
+    "plot_beat_ids",
+    "estimated_duration_ms",
+    "content_hash"
+  ],
+  "title": "ScriptSegment",
+  "type": "object"
+}
