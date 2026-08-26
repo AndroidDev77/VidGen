@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+from typing import Never
 from uuid import UUID
 
 from sqlalchemy import select
@@ -32,6 +33,7 @@ from vidgen.db.episode_analysis_models import (
 )
 from vidgen.db.episode_analysis_repository import EpisodeAnalysisRepository
 from vidgen.db.models import (
+    Asset,
     Character,
     Location,
     Project,
@@ -63,19 +65,35 @@ class EpisodeAnalysisPipeline:
         self.session, self.blob_store, self.provider = session, blob_store, provider
         self.concurrency, self.max_attempts = concurrency, max_attempts
         self.repository = EpisodeAnalysisRepository(session)
+        self.configuration_version = getattr(provider, "configuration_version", CONFIG_VERSION)
 
     async def process(
         self, *, project_id: UUID, evidence_package_id: UUID, idempotency_key: str
     ) -> EpisodeAnalysisResult:
         project = self.session.get(Project, project_id)
         evidence = self.session.get(EvidencePackageRecord, evidence_package_id)
-        if project is None or evidence is None or evidence.project_id != project_id:
+        if project is None:
             raise ValueError("selected evidence package does not exist")
+
+        def reject(message: str) -> Never:
+            project.status = "episode_analysis_failed"
+            self.session.commit()
+            raise ValueError(message)
+
+        if evidence is None or evidence.project_id != project_id:
+            reject("selected evidence package does not exist")
         if not evidence.selected or evidence.provenance.get("package_asset_id") is None:
-            raise ValueError("evidence package is incomplete or unselected")
+            reject("evidence package is incomplete or unselected")
+        package_asset = self.session.get(Asset, UUID(str(evidence.provenance["package_asset_id"])))
+        if (
+            package_asset is None
+            or package_asset.project_id != project_id
+            or not self.blob_store.exists(package_asset.storage_key)
+        ):
+            reject("evidence package asset is missing or stale")
         source = self.session.get(SourceVideo, evidence.source_video_id)
         if source is None or source.duration_seconds is None:
-            raise ValueError("evidence source is stale or has no duration")
+            reject("evidence source is stale or has no duration")
         rows = list(
             self.session.scalars(
                 select(SceneEvidenceRecord)
@@ -86,7 +104,7 @@ class EpisodeAnalysisPipeline:
         if not rows or any(
             item.get("severity") == "error" for item in evidence.provenance.get("diagnostics", [])
         ):
-            raise ValueError("evidence package is incomplete")
+            reject("evidence package is incomplete")
         existing = self.repository.run_by_key(project_id, idempotency_key)
         if existing and existing.evidence_package_id != evidence.id:
             raise ValueError("idempotency key belongs to different evidence")
@@ -98,7 +116,7 @@ class EpisodeAnalysisPipeline:
             input_hash=evidence.input_hash,
             contract_version=CONTRACT_VERSION,
             prompt_version=PROMPT_VERSION,
-            provider_configuration_version=CONFIG_VERSION,
+            provider_configuration_version=self.configuration_version,
             provider=getattr(self.provider, "provider", type(self.provider).__name__),
             model=getattr(self.provider, "model", "configured"),
             status="episode_analysis_pending",
@@ -138,7 +156,7 @@ class EpisodeAnalysisPipeline:
                 idempotency_key=f"{idempotency_key}:scene:{row.id}",
                 contract_version=CONTRACT_VERSION,
                 prompt_version=PROMPT_VERSION,
-                provider_configuration_version=CONFIG_VERSION,
+                provider_configuration_version=self.configuration_version,
                 evidence_references=references,
                 evidence_excerpts=_excerpts(row),
             )
@@ -201,6 +219,7 @@ class EpisodeAnalysisPipeline:
                     "attempts": attempts,
                 }
                 checkpoint.attempt_count = attempt
+                run.attempt_count = max(run.attempt_count, attempt)
                 checkpoint.validation_report = report.model_dump(mode="json")
                 checkpoint.status = "succeeded" if report.valid else "invalid"
                 self.session.commit()
@@ -227,7 +246,7 @@ class EpisodeAnalysisPipeline:
             idempotency_key=f"{idempotency_key}:reduce",
             contract_version=CONTRACT_VERSION,
             prompt_version=PROMPT_VERSION,
-            provider_configuration_version=CONFIG_VERSION,
+            provider_configuration_version=self.configuration_version,
             scene_result_ids=[item.scene_id for item in scenes],
             scene_results=scenes,
         )
@@ -271,15 +290,12 @@ class EpisodeAnalysisPipeline:
         run.validation_report = report.model_dump(mode="json")
         if not report.valid:
             run.status = project.status = "episode_analysis_failed"
+            run.error_code = "EPISODE_VALIDATION_FAILED"
             self.session.commit()
             raise ValueError("episode analysis failed deterministic validation")
         if reduced is None:
             raise RuntimeError("episode reduction produced no result")
-        parent_ids = (
-            tuple(UUID(str(value)) for value in evidence.provenance["parent_asset_ids"])
-            if "parent_asset_ids" in evidence.provenance
-            else (UUID(str(evidence.provenance["package_asset_id"])),)
-        )
+        parent_ids = (package_asset.id, *(item.id for item in package_asset.parents))
         asset = AssetService(self.session, self.blob_store).store(
             content=analysis.model_dump_json().encode(),
             kind="json",
@@ -294,8 +310,20 @@ class EpisodeAnalysisPipeline:
                 "input_hash": evidence.input_hash,
                 "prompt_version": PROMPT_VERSION,
                 "contract_version": CONTRACT_VERSION,
-                "provider_configuration_version": CONFIG_VERSION,
+                "provider_configuration_version": self.configuration_version,
                 "model": reduced.metadata.model,
+                "provider_request_ids": [
+                    checkpoint.provider_request_id
+                    for checkpoint in self.repository.checkpoints(run.id).values()
+                    if checkpoint.provider_request_id
+                ]
+                + [reduced.metadata.provider_request_id],
+            },
+            metadata={
+                "source_video_id": str(source.id),
+                "evidence_package_id": str(evidence.id),
+                "provider_metadata": reduced.metadata.model_dump(mode="json"),
+                "validation_report": report.model_dump(mode="json"),
             },
         )
         self.session.query(EpisodeAnalysisRecord).filter_by(
@@ -435,6 +463,9 @@ def _references(package: EvidencePackageRecord, row: SceneEvidenceRecord) -> lis
             end_ms=round(row.source_end_seconds * 1000),
         )
     ]
+    result.append(
+        SourceReference(reference_type="project", reference_id=package.project_id, scene_id=row.id)
+    )
     for value in row.frame_asset_ids:
         result.append(
             SourceReference(reference_type="frame", reference_id=UUID(value), scene_id=row.id)

@@ -25,6 +25,7 @@ class FakeEpisodeAnalysisProvider:
 
     provider = "fake"
     model = "deterministic-episode-v1"
+    configuration_version = "fake-episode-v1"
 
     def __init__(self) -> None:
         self.scene_results: dict[UUID, SceneAnalysisResult] = {}

@@ -155,3 +155,64 @@ async def test_interrupted_reduce_reuses_scene_checkpoints(tmp_path: Path) -> No
     )
     assert result.validation_report.valid
     assert resumed_provider.submissions == ["resume-key:reduce"]
+
+
+@pytest.mark.asyncio
+async def test_failed_replacement_preserves_selected_analysis(tmp_path: Path) -> None:
+    session, blobs, project, evidence = _database(tmp_path)
+    first = await EpisodeAnalysisPipeline(session, blobs, FakeEpisodeAnalysisProvider()).process(
+        project_id=project.id, evidence_package_id=evidence.id, idempotency_key="first"
+    )
+    evidence.selected = False
+    replacement_asset = AssetService(session, blobs).store(
+        content=b"replacement", kind="json", media_type="application/json", project_id=project.id
+    )
+    replacement = EvidencePackageRecord(
+        project_id=project.id,
+        version=2,
+        selected=True,
+        input_hash="b" * 64,
+        schema_version="1.0",
+        source_video_id=evidence.source_video_id,
+        source_video_asset_id=evidence.source_video_asset_id,
+        transcript_id=uuid4(),
+        transcript_asset_id=evidence.transcript_asset_id,
+        transcript_origin="subtitle",
+        provenance={"package_asset_id": str(replacement_asset.id)},
+    )
+    session.add(replacement)
+    session.flush()
+    original_scenes = list(
+        session.scalars(
+            select(SceneEvidenceRecord).where(
+                SceneEvidenceRecord.evidence_package_id == evidence.id
+            )
+        )
+    )
+    session.add_all(
+        SceneEvidenceRecord(
+            evidence_package_id=replacement.id,
+            scene_sequence=item.scene_sequence,
+            source_start_seconds=item.source_start_seconds,
+            source_end_seconds=item.source_end_seconds,
+            frame_asset_ids=item.frame_asset_ids,
+            evidence=item.evidence,
+        )
+        for item in original_scenes
+    )
+    session.commit()
+
+    class FailingReduce(FakeEpisodeAnalysisProvider):
+        async def synthesize_episode(self, request, context):  # type: ignore[no-untyped-def]
+            raise TimeoutError("replacement failed")
+
+    with pytest.raises(TimeoutError):
+        await EpisodeAnalysisPipeline(session, blobs, FailingReduce()).process(
+            project_id=project.id, evidence_package_id=replacement.id, idempotency_key="replacement"
+        )
+    selected = session.scalar(
+        select(EpisodeAnalysisRecord).where(
+            EpisodeAnalysisRecord.project_id == project.id, EpisodeAnalysisRecord.selected
+        )
+    )
+    assert selected is not None and selected.id == first.episode_analysis_id

@@ -43,6 +43,10 @@ class OpenAIEpisodeAnalysisProvider:
             base_url=config.base_url, timeout=config.timeout_seconds
         )
 
+    @property
+    def configuration_version(self) -> str:
+        return self.config.configuration_version
+
     async def _request(
         self,
         *,
