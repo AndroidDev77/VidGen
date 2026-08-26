@@ -1,4 +1,9 @@
 export type UUID = string;
+export interface VoiceProfile { schema_version: "1.0"; voice_profile_id: UUID; project_id?: UUID | null; account_scope?: string | null; provider: string; provider_voice_id: string; model: string; language: string; default_speaking_instructions: string; default_pace: number; pronunciation_dictionary: Record<string,string>; output_format: string; sample_rate_hz: number; channels: 1 | 2; profile_version: number; configuration_hash: string; created_at: string; updated_at: string }
+export interface NarrationWordTiming { schema_version: "1.0"; word_index: number; word: string; comparison_token: string; punctuation: string; start_seconds: number; end_seconds: number; confidence: number }
+export interface NarrationAlignment { schema_version: "1.0"; timings: NarrationWordTiming[]; coverage: number; insertions: string[]; omissions: string[]; substitutions: string[]; diagnostics: string[] }
+export interface NarrationQualityDiagnostic { schema_version: "1.0"; code: string; severity: "warning" | "error"; message: string; measured_value?: number | null; threshold?: number | null }
+export interface NarrationQualityReport { schema_version: "1.0"; valid: boolean; diagnostics: NarrationQualityDiagnostic[]; clipping_ratio: number; leading_silence_seconds: number; trailing_silence_seconds: number; speaking_rate_wpm: number; alignment_coverage: number }
 
 export type FailureClass =
   | "transient"

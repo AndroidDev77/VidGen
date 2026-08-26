@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any
 from uuid import UUID
 
@@ -141,7 +142,7 @@ class NarrationAttemptRecord(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     quality_result: Mapped[dict[str, Any] | None] = mapped_column(JSON)
     failure_classification: Mapped[str | None] = mapped_column(String(64))
     error_code: Mapped[str | None] = mapped_column(String(128))
-    completed_at: Mapped[str | None] = mapped_column(String(64))
+    completed_at: Mapped[datetime | None]
     __table_args__ = (
         UniqueConstraint(
             "narration_segment_id", "attempt_number", name="uq_narration_attempt_number"
