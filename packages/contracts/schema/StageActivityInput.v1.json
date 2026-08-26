@@ -1,0 +1,39 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "idempotency_key": {
+      "maxLength": 255,
+      "minLength": 1,
+      "title": "Idempotency Key",
+      "type": "string"
+    },
+    "project_id": {
+      "format": "uuid",
+      "title": "Project Id",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "source_video_id": {
+      "format": "uuid",
+      "title": "Source Video Id",
+      "type": "string"
+    },
+    "stage": {
+      "title": "Stage",
+      "type": "string"
+    }
+  },
+  "required": [
+    "project_id",
+    "source_video_id",
+    "stage",
+    "idempotency_key"
+  ],
+  "title": "StageActivityInput",
+  "type": "object"
+}

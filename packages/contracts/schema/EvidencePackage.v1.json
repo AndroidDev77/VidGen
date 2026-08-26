@@ -1,0 +1,328 @@
+{
+  "$defs": {
+    "EvidenceDiagnostic": {
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "title": "Code",
+          "type": "string"
+        },
+        "message": {
+          "title": "Message",
+          "type": "string"
+        },
+        "scene_sequence": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Scene Sequence"
+        },
+        "severity": {
+          "enum": [
+            "warning",
+            "error"
+          ],
+          "title": "Severity",
+          "type": "string"
+        }
+      },
+      "required": [
+        "code",
+        "severity",
+        "message"
+      ],
+      "title": "EvidenceDiagnostic",
+      "type": "object"
+    },
+    "EvidenceProvenance": {
+      "additionalProperties": false,
+      "properties": {
+        "builder_version": {
+          "title": "Builder Version",
+          "type": "string"
+        },
+        "generation_parameters": {
+          "additionalProperties": true,
+          "title": "Generation Parameters",
+          "type": "object"
+        },
+        "input_hash": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Input Hash",
+          "type": "string"
+        },
+        "subtitle_asset_id": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Subtitle Asset Id"
+        },
+        "transcript_asset_id": {
+          "format": "uuid",
+          "title": "Transcript Asset Id",
+          "type": "string"
+        },
+        "transcript_id": {
+          "format": "uuid",
+          "title": "Transcript Id",
+          "type": "string"
+        },
+        "transcript_origin": {
+          "enum": [
+            "subtitle",
+            "audio_transcription"
+          ],
+          "title": "Transcript Origin",
+          "type": "string"
+        }
+      },
+      "required": [
+        "transcript_origin",
+        "transcript_id",
+        "transcript_asset_id",
+        "input_hash",
+        "builder_version"
+      ],
+      "title": "EvidenceProvenance",
+      "type": "object"
+    },
+    "EvidenceTranscriptItem": {
+      "additionalProperties": false,
+      "properties": {
+        "confidence": {
+          "anyOf": [
+            {
+              "maximum": 1,
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Confidence"
+        },
+        "segment_sequence": {
+          "minimum": 0,
+          "title": "Segment Sequence",
+          "type": "integer"
+        },
+        "source_asset_id": {
+          "format": "uuid",
+          "title": "Source Asset Id",
+          "type": "string"
+        },
+        "source_range": {
+          "$ref": "#/$defs/SourceTimeRange"
+        },
+        "speaker_label": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Speaker Label"
+        },
+        "text": {
+          "minLength": 1,
+          "title": "Text",
+          "type": "string"
+        }
+      },
+      "required": [
+        "source_range",
+        "source_asset_id",
+        "text",
+        "segment_sequence"
+      ],
+      "title": "EvidenceTranscriptItem",
+      "type": "object"
+    },
+    "SceneEvidence": {
+      "additionalProperties": false,
+      "properties": {
+        "representative_frame_asset_ids": {
+          "items": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Representative Frame Asset Ids",
+          "type": "array"
+        },
+        "representative_frame_timestamps": {
+          "items": {
+            "minimum": 0,
+            "type": "number"
+          },
+          "minItems": 1,
+          "title": "Representative Frame Timestamps",
+          "type": "array"
+        },
+        "scene_sequence": {
+          "minimum": 0,
+          "title": "Scene Sequence",
+          "type": "integer"
+        },
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "source_audio_asset_id": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Source Audio Asset Id"
+        },
+        "source_range": {
+          "$ref": "#/$defs/SourceTimeRange"
+        },
+        "source_video_asset_id": {
+          "format": "uuid",
+          "title": "Source Video Asset Id",
+          "type": "string"
+        },
+        "transcript_items": {
+          "items": {
+            "$ref": "#/$defs/EvidenceTranscriptItem"
+          },
+          "title": "Transcript Items",
+          "type": "array"
+        }
+      },
+      "required": [
+        "scene_sequence",
+        "source_range",
+        "source_video_asset_id",
+        "representative_frame_asset_ids",
+        "representative_frame_timestamps"
+      ],
+      "title": "SceneEvidence",
+      "type": "object"
+    },
+    "SourceTimeRange": {
+      "additionalProperties": false,
+      "properties": {
+        "end_seconds": {
+          "exclusiveMinimum": 0,
+          "title": "End Seconds",
+          "type": "number"
+        },
+        "start_seconds": {
+          "minimum": 0,
+          "title": "Start Seconds",
+          "type": "number"
+        }
+      },
+      "required": [
+        "start_seconds",
+        "end_seconds"
+      ],
+      "title": "SourceTimeRange",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "contact_sheet_asset_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Contact Sheet Asset Id"
+    },
+    "diagnostics": {
+      "items": {
+        "$ref": "#/$defs/EvidenceDiagnostic"
+      },
+      "title": "Diagnostics",
+      "type": "array"
+    },
+    "package_id": {
+      "format": "uuid",
+      "title": "Package Id",
+      "type": "string"
+    },
+    "project_id": {
+      "format": "uuid",
+      "title": "Project Id",
+      "type": "string"
+    },
+    "provenance": {
+      "$ref": "#/$defs/EvidenceProvenance"
+    },
+    "scenes": {
+      "items": {
+        "$ref": "#/$defs/SceneEvidence"
+      },
+      "title": "Scenes",
+      "type": "array"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "source_video_asset_id": {
+      "format": "uuid",
+      "title": "Source Video Asset Id",
+      "type": "string"
+    },
+    "source_video_id": {
+      "format": "uuid",
+      "title": "Source Video Id",
+      "type": "string"
+    },
+    "version": {
+      "minimum": 1,
+      "title": "Version",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "package_id",
+    "project_id",
+    "version",
+    "source_video_id",
+    "source_video_asset_id",
+    "scenes",
+    "provenance"
+  ],
+  "title": "EvidencePackage",
+  "type": "object"
+}

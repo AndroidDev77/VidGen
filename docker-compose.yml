@@ -33,7 +33,18 @@ services:
     volumes:
       - azurite-data:/data
 
+  temporal:
+    image: temporalio/temporal:1.29.1
+    command: server start-dev --ip 0.0.0.0
+    ports:
+      - "7233:7233"
+      - "8233:8233"
+    healthcheck:
+      test: ["CMD", "temporal", "operator", "cluster", "health"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+
 volumes:
   postgres-data:
   azurite-data:
-

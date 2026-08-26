@@ -1,5 +1,86 @@
 export type UUID = string;
 
+export type FailureClass =
+  | "transient"
+  | "permanent"
+  | "validation"
+  | "quota"
+  | "provider"
+  | "cancelled";
+
+export interface WorkflowFailure {
+  schema_version: "1.0";
+  error_class: FailureClass;
+  code: string;
+  message: string;
+  retryable: boolean;
+  details: Record<string, unknown>;
+}
+
+export interface ProjectWorkflowInput {
+  schema_version: "1.0";
+  project_id: UUID;
+  source_video_id: UUID;
+  idempotency_key: string;
+}
+
+export interface ProjectWorkflowState {
+  schema_version: "1.0";
+  project_id: UUID;
+  status: string;
+  completed_stages: string[];
+  cancelled: boolean;
+  failure: WorkflowFailure | null;
+  updated_at: string | null;
+}
+
+export interface SourceTimeRange { start_seconds: number; end_seconds: number }
+export interface EvidenceTranscriptItem {
+  source_range: SourceTimeRange;
+  source_asset_id: UUID;
+  text: string;
+  speaker_label: string | null;
+  confidence: number | null;
+  segment_sequence: number;
+}
+export interface SceneEvidence {
+  schema_version: "1.0";
+  scene_sequence: number;
+  source_range: SourceTimeRange;
+  source_video_asset_id: UUID;
+  source_audio_asset_id: UUID | null;
+  representative_frame_asset_ids: UUID[];
+  representative_frame_timestamps: number[];
+  transcript_items: EvidenceTranscriptItem[];
+}
+export interface EvidenceProvenance {
+  transcript_origin: "subtitle" | "audio_transcription";
+  transcript_id: UUID;
+  transcript_asset_id: UUID;
+  subtitle_asset_id: UUID | null;
+  input_hash: string;
+  builder_version: string;
+  generation_parameters: Record<string, unknown>;
+}
+export interface EvidenceDiagnostic {
+  code: string;
+  severity: "warning" | "error";
+  message: string;
+  scene_sequence: number | null;
+}
+export interface EvidencePackage {
+  schema_version: "1.0";
+  package_id: UUID;
+  project_id: UUID;
+  version: number;
+  source_video_id: UUID;
+  source_video_asset_id: UUID;
+  contact_sheet_asset_id: UUID | null;
+  scenes: SceneEvidence[];
+  provenance: EvidenceProvenance;
+  diagnostics: EvidenceDiagnostic[];
+}
+
 export type AssetKind =
   | "source_video"
   | "frame"

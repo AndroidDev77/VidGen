@@ -1,0 +1,53 @@
+{
+  "$defs": {
+    "FailureClass": {
+      "enum": [
+        "transient",
+        "permanent",
+        "validation",
+        "quota",
+        "provider",
+        "cancelled"
+      ],
+      "title": "FailureClass",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "code": {
+      "title": "Code",
+      "type": "string"
+    },
+    "details": {
+      "additionalProperties": true,
+      "title": "Details",
+      "type": "object"
+    },
+    "error_class": {
+      "$ref": "#/$defs/FailureClass"
+    },
+    "message": {
+      "title": "Message",
+      "type": "string"
+    },
+    "retryable": {
+      "title": "Retryable",
+      "type": "boolean"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    }
+  },
+  "required": [
+    "error_class",
+    "code",
+    "message",
+    "retryable"
+  ],
+  "title": "WorkflowFailure",
+  "type": "object"
+}

@@ -24,7 +24,7 @@ schemas:
 verify: lint typecheck test schemas
 
 infra-up:
-	docker compose up -d postgres redis azurite
+	docker compose up -d postgres redis azurite temporal
 
 infra-down:
 	docker compose down
