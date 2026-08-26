@@ -1,0 +1,167 @@
+{
+  "$defs": {
+    "UsageQuantity": {
+      "additionalProperties": false,
+      "properties": {
+        "estimation_method": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Estimation Method"
+        },
+        "provider_reported": {
+          "default": false,
+          "title": "Provider Reported",
+          "type": "boolean"
+        },
+        "quantity": {
+          "anyOf": [
+            {
+              "minimum": 0.0,
+              "type": "number"
+            },
+            {
+              "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+              "type": "string"
+            }
+          ],
+          "title": "Quantity"
+        },
+        "schema_version": {
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "source_field": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Source Field"
+        },
+        "unit": {
+          "$ref": "#/$defs/UsageUnit"
+        },
+        "warnings": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Warnings",
+          "type": "array"
+        }
+      },
+      "required": [
+        "unit",
+        "quantity"
+      ],
+      "title": "UsageQuantity",
+      "type": "object"
+    },
+    "UsageUnit": {
+      "enum": [
+        "INPUT_TOKEN",
+        "OUTPUT_TOKEN",
+        "CACHED_INPUT_TOKEN",
+        "AUDIO_INPUT_SECOND",
+        "AUDIO_OUTPUT_SECOND",
+        "IMAGE_INPUT",
+        "IMAGE_OUTPUT",
+        "VIDEO_OUTPUT_SECOND",
+        "REQUEST",
+        "STORAGE_BYTE",
+        "COMPUTE_SECOND"
+      ],
+      "title": "UsageUnit",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "actual_cost": {
+      "anyOf": [
+        {
+          "minimum": 0.0,
+          "type": "number"
+        },
+        {
+          "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+          "type": "string"
+        }
+      ],
+      "default": "0",
+      "title": "Actual Cost"
+    },
+    "attempt_id": {
+      "format": "uuid",
+      "title": "Attempt Id",
+      "type": "string"
+    },
+    "completed_at": {
+      "format": "date-time",
+      "title": "Completed At",
+      "type": "string"
+    },
+    "currency": {
+      "default": "USD",
+      "title": "Currency",
+      "type": "string"
+    },
+    "latency_ms": {
+      "minimum": 0,
+      "title": "Latency Ms",
+      "type": "integer"
+    },
+    "provider_request_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Provider Request Id"
+    },
+    "schema_version": {
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "usage": {
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/UsageQuantity"
+      },
+      "title": "Usage",
+      "type": "array"
+    },
+    "warnings": {
+      "default": [],
+      "items": {
+        "type": "string"
+      },
+      "title": "Warnings",
+      "type": "array"
+    }
+  },
+  "required": [
+    "attempt_id",
+    "completed_at",
+    "latency_ms"
+  ],
+  "title": "ProviderAttemptCompleted",
+  "type": "object"
+}

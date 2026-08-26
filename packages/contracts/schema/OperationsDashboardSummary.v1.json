@@ -1,0 +1,26 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "active_provider_attempts": {
+      "minimum": 0,
+      "title": "Active Provider Attempts",
+      "type": "integer"
+    },
+    "failed_work": {
+      "minimum": 0,
+      "title": "Failed Work",
+      "type": "integer"
+    },
+    "schema_version": {
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    }
+  },
+  "required": [
+    "failed_work",
+    "active_provider_attempts"
+  ],
+  "title": "OperationsDashboardSummary",
+  "type": "object"
+}
