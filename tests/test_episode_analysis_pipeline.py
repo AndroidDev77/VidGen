@@ -6,7 +6,7 @@ from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
 from services.analysis.fake_provider import FakeEpisodeAnalysisProvider
-from services.analysis.pipeline import EpisodeAnalysisPipeline
+from services.analysis.pipeline import EpisodeAnalysisPipeline, _excerpts
 from vidgen.db.base import Base
 from vidgen.db.episode_analysis_models import (
     EpisodeAnalysisRecord,
@@ -92,6 +92,28 @@ def _database(
     )
     session.commit()
     return session, blobs, project, evidence
+
+
+def test_long_transcript_evidence_is_split_into_bounded_excerpts() -> None:
+    row = SceneEvidenceRecord(
+        evidence_package_id=uuid4(),
+        scene_sequence=0,
+        source_start_seconds=0,
+        source_end_seconds=1,
+        frame_asset_ids=[str(uuid4())],
+        evidence={
+            "transcript_items": [
+                {
+                    "text": "x" * 4001,
+                    "speaker_label": "speaker_001",
+                    "source_asset_id": str(uuid4()),
+                    "source_range": {"start_seconds": 0, "end_seconds": 1},
+                }
+            ]
+        },
+    )
+    excerpts = _excerpts(row)
+    assert [len(item.text) for item in excerpts] == [4000, 1]
 
 
 @pytest.mark.asyncio

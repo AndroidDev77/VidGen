@@ -504,17 +504,22 @@ def _references(package: EvidencePackageRecord, row: SceneEvidenceRecord) -> lis
 def _excerpts(row: SceneEvidenceRecord) -> list[SceneEvidenceExcerpt]:
     result: list[SceneEvidenceExcerpt] = []
     for item in row.evidence.get("transcript_items", []):
-        result.append(
-            SceneEvidenceExcerpt(
-                text=item["text"],
-                speaker_label=item.get("speaker_label"),
-                source_reference=SourceReference(
-                    reference_type="transcript_segment",
-                    reference_id=UUID(str(item["source_asset_id"])),
-                    scene_id=row.id,
-                    start_ms=round(item["source_range"]["start_seconds"] * 1000),
-                    end_ms=round(item["source_range"]["end_seconds"] * 1000),
-                ),
-            )
+        reference = SourceReference(
+            reference_type="transcript_segment",
+            reference_id=UUID(str(item["source_asset_id"])),
+            scene_id=row.id,
+            start_ms=round(item["source_range"]["start_seconds"] * 1000),
+            end_ms=round(item["source_range"]["end_seconds"] * 1000),
         )
+        text = item["text"]
+        for offset in range(0, len(text), 4000):
+            if len(result) == 100:
+                return result
+            result.append(
+                SceneEvidenceExcerpt(
+                    text=text[offset : offset + 4000],
+                    speaker_label=item.get("speaker_label"),
+                    source_reference=reference,
+                )
+            )
     return result
