@@ -2,5 +2,7 @@
 
 from vidgen.db.base import Base
 
-__all__ = ["Base"]
 from . import narration_models as narration_models
+from . import storyboard_models as storyboard_models
+
+__all__ = ["Base"]

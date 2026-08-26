@@ -1,0 +1,72 @@
+{
+  "additionalProperties": false,
+  "description": "Every deviation from the Director's proposal to canonical timing.",
+  "properties": {
+    "canonical_duration_us": {
+      "title": "Canonical Duration Us",
+      "type": "integer"
+    },
+    "delta_us": {
+      "title": "Delta Us",
+      "type": "integer"
+    },
+    "kind": {
+      "enum": [
+        "boundary_snap",
+        "split",
+        "merge",
+        "clamp_min",
+        "clamp_max",
+        "residual_allocation",
+        "final_end_snap",
+        "generation_round_up",
+        "trim"
+      ],
+      "title": "Kind",
+      "type": "string"
+    },
+    "proposal_sequence": {
+      "minimum": -1,
+      "title": "Proposal Sequence",
+      "type": "integer"
+    },
+    "proposed_duration_us": {
+      "title": "Proposed Duration Us",
+      "type": "integer"
+    },
+    "reason": {
+      "maxLength": 512,
+      "minLength": 1,
+      "title": "Reason",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "segment_sequence": {
+      "minimum": 0,
+      "title": "Segment Sequence",
+      "type": "integer"
+    },
+    "shot_sequence": {
+      "minimum": -1,
+      "title": "Shot Sequence",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "segment_sequence",
+    "proposal_sequence",
+    "shot_sequence",
+    "kind",
+    "proposed_duration_us",
+    "canonical_duration_us",
+    "delta_us",
+    "reason"
+  ],
+  "title": "TimingAdjustment",
+  "type": "object"
+}

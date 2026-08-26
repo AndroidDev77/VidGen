@@ -1,0 +1,45 @@
+{
+  "additionalProperties": false,
+  "description": "An approved split point inside one narration segment.",
+  "properties": {
+    "kind": {
+      "enum": [
+        "sentence",
+        "clause",
+        "beat",
+        "word"
+      ],
+      "title": "Kind",
+      "type": "string"
+    },
+    "label": {
+      "default": "",
+      "maxLength": 255,
+      "title": "Label",
+      "type": "string"
+    },
+    "offset_us": {
+      "minimum": 0,
+      "title": "Offset Us",
+      "type": "integer"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "word_index": {
+      "minimum": 0,
+      "title": "Word Index",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "word_index",
+    "offset_us",
+    "kind"
+  ],
+  "title": "NarrationBoundary",
+  "type": "object"
+}

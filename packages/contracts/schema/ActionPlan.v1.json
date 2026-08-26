@@ -1,0 +1,55 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "beat_intent": {
+      "enum": [
+        "establish",
+        "react",
+        "reveal",
+        "punchline",
+        "continue",
+        "insert"
+      ],
+      "title": "Beat Intent",
+      "type": "string"
+    },
+    "prop_references": {
+      "items": {
+        "type": "string"
+      },
+      "maxItems": 16,
+      "title": "Prop References",
+      "type": "array"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "secondary_action": {
+      "default": "",
+      "maxLength": 1024,
+      "title": "Secondary Action",
+      "type": "string"
+    },
+    "staging_note": {
+      "default": "",
+      "maxLength": 1024,
+      "title": "Staging Note",
+      "type": "string"
+    },
+    "subject_action": {
+      "maxLength": 1024,
+      "minLength": 1,
+      "title": "Subject Action",
+      "type": "string"
+    }
+  },
+  "required": [
+    "subject_action",
+    "beat_intent"
+  ],
+  "title": "ActionPlan",
+  "type": "object"
+}

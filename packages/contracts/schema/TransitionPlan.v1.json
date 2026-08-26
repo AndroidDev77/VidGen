@@ -1,0 +1,48 @@
+{
+  "additionalProperties": false,
+  "description": "A transition between two canonical shots.\n\n``handle_us`` is extra *generated* material requested from the visual\nprovider so the transition has something to work with. It is never narration\ncoverage: usable shot intervals stay contiguous and non-overlapping, and the\nhandle is accounted for separately in the timing manifest.",
+  "properties": {
+    "duration_us": {
+      "default": 0,
+      "minimum": 0,
+      "title": "Duration Us",
+      "type": "integer"
+    },
+    "handle_us": {
+      "default": 0,
+      "minimum": 0,
+      "title": "Handle Us",
+      "type": "integer"
+    },
+    "kind": {
+      "enum": [
+        "cut",
+        "dissolve",
+        "fade_in",
+        "fade_out",
+        "wipe",
+        "match_cut",
+        "whip_pan"
+      ],
+      "title": "Kind",
+      "type": "string"
+    },
+    "note": {
+      "default": "",
+      "maxLength": 512,
+      "title": "Note",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    }
+  },
+  "required": [
+    "kind"
+  ],
+  "title": "TransitionPlan",
+  "type": "object"
+}

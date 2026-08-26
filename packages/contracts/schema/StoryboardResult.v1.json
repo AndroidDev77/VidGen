@@ -1,0 +1,191 @@
+{
+  "$defs": {
+    "StructuredNote": {
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "minLength": 1,
+          "title": "Code",
+          "type": "string"
+        },
+        "message": {
+          "minLength": 1,
+          "title": "Message",
+          "type": "string"
+        }
+      },
+      "required": [
+        "code",
+        "message"
+      ],
+      "title": "StructuredNote",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "actual_cost": {
+      "default": "0",
+      "title": "Actual Cost",
+      "type": "string"
+    },
+    "currency": {
+      "default": "USD",
+      "maxLength": 3,
+      "minLength": 3,
+      "title": "Currency",
+      "type": "string"
+    },
+    "error_code": {
+      "anyOf": [
+        {
+          "maxLength": 128,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Error Code"
+    },
+    "estimated_cost": {
+      "default": "0",
+      "title": "Estimated Cost",
+      "type": "string"
+    },
+    "model": {
+      "maxLength": 128,
+      "minLength": 1,
+      "title": "Model",
+      "type": "string"
+    },
+    "project_id": {
+      "format": "uuid",
+      "title": "Project Id",
+      "type": "string"
+    },
+    "provider": {
+      "maxLength": 64,
+      "minLength": 1,
+      "title": "Provider",
+      "type": "string"
+    },
+    "repair_attempt_count": {
+      "default": 0,
+      "minimum": 0,
+      "title": "Repair Attempt Count",
+      "type": "integer"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "segment_count": {
+      "minimum": 0,
+      "title": "Segment Count",
+      "type": "integer"
+    },
+    "selected": {
+      "default": false,
+      "title": "Selected",
+      "type": "boolean"
+    },
+    "shot_count": {
+      "minimum": 0,
+      "title": "Shot Count",
+      "type": "integer"
+    },
+    "status": {
+      "enum": [
+        "storyboard_complete",
+        "storyboard_failed"
+      ],
+      "title": "Status",
+      "type": "string"
+    },
+    "storyboard_asset_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Storyboard Asset Id"
+    },
+    "storyboard_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Storyboard Id"
+    },
+    "storyboard_run_id": {
+      "format": "uuid",
+      "title": "Storyboard Run Id",
+      "type": "string"
+    },
+    "timing_manifest_asset_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Timing Manifest Asset Id"
+    },
+    "total_duration_us": {
+      "default": 0,
+      "minimum": 0,
+      "title": "Total Duration Us",
+      "type": "integer"
+    },
+    "validation_report_asset_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Validation Report Asset Id"
+    },
+    "warnings": {
+      "items": {
+        "$ref": "#/$defs/StructuredNote"
+      },
+      "title": "Warnings",
+      "type": "array"
+    }
+  },
+  "required": [
+    "storyboard_run_id",
+    "project_id",
+    "status",
+    "segment_count",
+    "shot_count",
+    "provider",
+    "model"
+  ],
+  "title": "StoryboardResult",
+  "type": "object"
+}

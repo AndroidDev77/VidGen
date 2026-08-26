@@ -1,0 +1,80 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "angle": {
+      "enum": [
+        "eye_level",
+        "low_angle",
+        "high_angle",
+        "overhead",
+        "dutch",
+        "over_the_shoulder",
+        "point_of_view"
+      ],
+      "title": "Angle",
+      "type": "string"
+    },
+    "framing": {
+      "enum": [
+        "extreme_wide",
+        "wide",
+        "medium_wide",
+        "medium",
+        "medium_close",
+        "close_up",
+        "extreme_close_up",
+        "insert"
+      ],
+      "title": "Framing",
+      "type": "string"
+    },
+    "lens_note": {
+      "default": "",
+      "maxLength": 512,
+      "title": "Lens Note",
+      "type": "string"
+    },
+    "movement": {
+      "enum": [
+        "static",
+        "pan_left",
+        "pan_right",
+        "tilt_up",
+        "tilt_down",
+        "dolly_in",
+        "dolly_out",
+        "tracking",
+        "crane",
+        "handheld",
+        "zoom_in",
+        "zoom_out"
+      ],
+      "title": "Movement",
+      "type": "string"
+    },
+    "movement_intensity": {
+      "default": "subtle",
+      "enum": [
+        "none",
+        "subtle",
+        "moderate",
+        "strong"
+      ],
+      "title": "Movement Intensity",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    }
+  },
+  "required": [
+    "framing",
+    "angle",
+    "movement"
+  ],
+  "title": "CameraPlan",
+  "type": "object"
+}

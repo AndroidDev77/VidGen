@@ -1,0 +1,876 @@
+{
+  "$defs": {
+    "CharacterAppearanceState": {
+      "additionalProperties": false,
+      "properties": {
+        "appearance_state_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "Appearance State Id",
+          "type": "string"
+        },
+        "character_id": {
+          "format": "uuid",
+          "title": "Character Id",
+          "type": "string"
+        },
+        "emotional_state": {
+          "default": "neutral",
+          "maxLength": 255,
+          "title": "Emotional State",
+          "type": "string"
+        },
+        "injury_state": {
+          "default": "none",
+          "maxLength": 255,
+          "title": "Injury State",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "wardrobe_state": {
+          "default": "default",
+          "maxLength": 255,
+          "title": "Wardrobe State",
+          "type": "string"
+        }
+      },
+      "required": [
+        "character_id",
+        "appearance_state_id"
+      ],
+      "title": "CharacterAppearanceState",
+      "type": "object"
+    },
+    "ContinuityState": {
+      "additionalProperties": false,
+      "description": "Structured continuity, never prose alone.",
+      "properties": {
+        "character_appearance_states": {
+          "items": {
+            "$ref": "#/$defs/CharacterAppearanceState"
+          },
+          "title": "Character Appearance States",
+          "type": "array"
+        },
+        "emotional_state": {
+          "default": "neutral",
+          "maxLength": 255,
+          "title": "Emotional State",
+          "type": "string"
+        },
+        "environment_conditions": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 16,
+          "title": "Environment Conditions",
+          "type": "array"
+        },
+        "location_id": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Location Id"
+        },
+        "present_character_ids": {
+          "items": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "title": "Present Character Ids",
+          "type": "array"
+        },
+        "previous_shot_id": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Previous Shot Id"
+        },
+        "props": {
+          "items": {
+            "$ref": "#/$defs/PropState"
+          },
+          "title": "Props",
+          "type": "array"
+        },
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "screen_direction": {
+          "default": "neutral",
+          "enum": [
+            "neutral",
+            "left_to_right",
+            "right_to_left"
+          ],
+          "title": "Screen Direction",
+          "type": "string"
+        },
+        "sub_location": {
+          "default": "",
+          "maxLength": 255,
+          "title": "Sub Location",
+          "type": "string"
+        },
+        "subject_positions": {
+          "items": {
+            "$ref": "#/$defs/SubjectPosition"
+          },
+          "title": "Subject Positions",
+          "type": "array"
+        },
+        "time_of_day": {
+          "default": "unspecified",
+          "enum": [
+            "dawn",
+            "morning",
+            "midday",
+            "afternoon",
+            "dusk",
+            "night",
+            "unspecified"
+          ],
+          "title": "Time Of Day",
+          "type": "string"
+        },
+        "unresolved_warnings": {
+          "items": {
+            "$ref": "#/$defs/StructuredNote"
+          },
+          "title": "Unresolved Warnings",
+          "type": "array"
+        }
+      },
+      "title": "ContinuityState",
+      "type": "object"
+    },
+    "NarrationBoundary": {
+      "additionalProperties": false,
+      "description": "An approved split point inside one narration segment.",
+      "properties": {
+        "kind": {
+          "enum": [
+            "sentence",
+            "clause",
+            "beat",
+            "word"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "label": {
+          "default": "",
+          "maxLength": 255,
+          "title": "Label",
+          "type": "string"
+        },
+        "offset_us": {
+          "minimum": 0,
+          "title": "Offset Us",
+          "type": "integer"
+        },
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "word_index": {
+          "minimum": 0,
+          "title": "Word Index",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "word_index",
+        "offset_us",
+        "kind"
+      ],
+      "title": "NarrationBoundary",
+      "type": "object"
+    },
+    "PropState": {
+      "additionalProperties": false,
+      "properties": {
+        "note": {
+          "default": "",
+          "maxLength": 512,
+          "title": "Note",
+          "type": "string"
+        },
+        "owner_character_id": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Owner Character Id"
+        },
+        "prop_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "Prop Id",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        }
+      },
+      "required": [
+        "prop_id"
+      ],
+      "title": "PropState",
+      "type": "object"
+    },
+    "StoryboardSourceReference": {
+      "additionalProperties": false,
+      "properties": {
+        "end_us": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "End Us"
+        },
+        "note": {
+          "default": "",
+          "maxLength": 512,
+          "title": "Note",
+          "type": "string"
+        },
+        "reference_id": {
+          "format": "uuid",
+          "title": "Reference Id",
+          "type": "string"
+        },
+        "reference_type": {
+          "enum": [
+            "evidence_package",
+            "scene_evidence",
+            "script_segment",
+            "narration_segment",
+            "narration_asset",
+            "plot_beat",
+            "character",
+            "location",
+            "episode_model"
+          ],
+          "title": "Reference Type",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "start_us": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Start Us"
+        }
+      },
+      "required": [
+        "reference_type",
+        "reference_id"
+      ],
+      "title": "StoryboardSourceReference",
+      "type": "object"
+    },
+    "StoryboardValidationDiagnostic": {
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "enum": [
+            "narration_coverage_gap",
+            "invalid_overlap",
+            "impossible_duration_allocation",
+            "unsupported_provider_duration",
+            "excessive_character_count",
+            "too_many_references",
+            "missing_continuity_state",
+            "invalid_character_reference",
+            "invalid_location_reference",
+            "missing_evidence_reference",
+            "provider_schema_failure",
+            "continuity_contradiction",
+            "unsupported_camera_movement",
+            "unsupported_transition",
+            "nonpositive_duration",
+            "word_range_gap"
+          ],
+          "title": "Code",
+          "type": "string"
+        },
+        "entity_path": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Entity Path",
+          "type": "string"
+        },
+        "expected_us": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Expected Us"
+        },
+        "measured_us": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Measured Us"
+        },
+        "message": {
+          "maxLength": 1024,
+          "minLength": 1,
+          "title": "Message",
+          "type": "string"
+        },
+        "repairable": {
+          "title": "Repairable",
+          "type": "boolean"
+        },
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "segment_sequence": {
+          "default": -1,
+          "minimum": -1,
+          "title": "Segment Sequence",
+          "type": "integer"
+        },
+        "severity": {
+          "enum": [
+            "error",
+            "warning"
+          ],
+          "title": "Severity",
+          "type": "string"
+        },
+        "shot_sequence": {
+          "default": -1,
+          "minimum": -1,
+          "title": "Shot Sequence",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "code",
+        "severity",
+        "repairable",
+        "message",
+        "entity_path"
+      ],
+      "title": "StoryboardValidationDiagnostic",
+      "type": "object"
+    },
+    "StructuredNote": {
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "minLength": 1,
+          "title": "Code",
+          "type": "string"
+        },
+        "message": {
+          "minLength": 1,
+          "title": "Message",
+          "type": "string"
+        }
+      },
+      "required": [
+        "code",
+        "message"
+      ],
+      "title": "StructuredNote",
+      "type": "object"
+    },
+    "SubjectPosition": {
+      "additionalProperties": false,
+      "properties": {
+        "character_id": {
+          "format": "uuid",
+          "title": "Character Id",
+          "type": "string"
+        },
+        "facing": {
+          "default": "neutral",
+          "enum": [
+            "neutral",
+            "left_to_right",
+            "right_to_left"
+          ],
+          "title": "Facing",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "screen_position": {
+          "enum": [
+            "left",
+            "center_left",
+            "center",
+            "center_right",
+            "right",
+            "offscreen"
+          ],
+          "title": "Screen Position",
+          "type": "string"
+        }
+      },
+      "required": [
+        "character_id",
+        "screen_position"
+      ],
+      "title": "SubjectPosition",
+      "type": "object"
+    },
+    "VisualProviderCapability": {
+      "additionalProperties": false,
+      "description": "What a downstream T14/T15 visual provider can actually generate.\n\nT13 plans against this profile without ever calling the visual provider. The\ntiming solver reads only this contract, so no single provider's limitations\nare hardcoded into the solver.",
+      "properties": {
+        "capability_hash": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Capability Hash",
+          "type": "string"
+        },
+        "capability_profile_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "Capability Profile Id",
+          "type": "string"
+        },
+        "duration_increment_us": {
+          "exclusiveMinimum": 0,
+          "title": "Duration Increment Us",
+          "type": "integer"
+        },
+        "max_characters_per_shot": {
+          "minimum": 0,
+          "title": "Max Characters Per Shot",
+          "type": "integer"
+        },
+        "max_generation_duration_us": {
+          "exclusiveMinimum": 0,
+          "title": "Max Generation Duration Us",
+          "type": "integer"
+        },
+        "max_reference_images": {
+          "minimum": 0,
+          "title": "Max Reference Images",
+          "type": "integer"
+        },
+        "min_generation_duration_us": {
+          "exclusiveMinimum": 0,
+          "title": "Min Generation Duration Us",
+          "type": "integer"
+        },
+        "model_family": {
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "Model Family",
+          "type": "string"
+        },
+        "profile_version": {
+          "exclusiveMinimum": 0,
+          "title": "Profile Version",
+          "type": "integer"
+        },
+        "provider": {
+          "maxLength": 64,
+          "minLength": 1,
+          "title": "Provider",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "supported_aspect_ratios": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Supported Aspect Ratios",
+          "type": "array"
+        },
+        "supported_camera_movements": {
+          "items": {
+            "enum": [
+              "static",
+              "pan_left",
+              "pan_right",
+              "tilt_up",
+              "tilt_down",
+              "dolly_in",
+              "dolly_out",
+              "tracking",
+              "crane",
+              "handheld",
+              "zoom_in",
+              "zoom_out"
+            ],
+            "type": "string"
+          },
+          "title": "Supported Camera Movements",
+          "type": "array"
+        },
+        "supported_generation_durations_us": {
+          "items": {
+            "exclusiveMinimum": 0,
+            "type": "integer"
+          },
+          "title": "Supported Generation Durations Us",
+          "type": "array"
+        },
+        "supported_resolutions": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Supported Resolutions",
+          "type": "array"
+        },
+        "supported_transitions": {
+          "items": {
+            "enum": [
+              "cut",
+              "dissolve",
+              "fade_in",
+              "fade_out",
+              "wipe",
+              "match_cut",
+              "whip_pan"
+            ],
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Supported Transitions",
+          "type": "array"
+        },
+        "supports_camera_motion": {
+          "title": "Supports Camera Motion",
+          "type": "boolean"
+        },
+        "supports_continuity_seed": {
+          "title": "Supports Continuity Seed",
+          "type": "boolean"
+        },
+        "supports_image_to_video": {
+          "title": "Supports Image To Video",
+          "type": "boolean"
+        },
+        "supports_text_to_video": {
+          "title": "Supports Text To Video",
+          "type": "boolean"
+        },
+        "trimming_policy": {
+          "enum": [
+            "trim_end",
+            "trim_start",
+            "trim_center",
+            "none"
+          ],
+          "title": "Trimming Policy",
+          "type": "string"
+        }
+      },
+      "required": [
+        "capability_profile_id",
+        "profile_version",
+        "provider",
+        "model_family",
+        "min_generation_duration_us",
+        "max_generation_duration_us",
+        "duration_increment_us",
+        "supported_aspect_ratios",
+        "supported_resolutions",
+        "max_characters_per_shot",
+        "max_reference_images",
+        "supports_camera_motion",
+        "supported_transitions",
+        "supports_image_to_video",
+        "supports_text_to_video",
+        "supports_continuity_seed",
+        "trimming_policy",
+        "capability_hash"
+      ],
+      "title": "VisualProviderCapability",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "The immutable envelope handed to a Storyboard Director.\n\nIt carries IDs, measured timing, and structured references. It never carries\ncredentials and never carries raw provider payloads.",
+  "properties": {
+    "anonymous_speaker_label": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Anonymous Speaker Label"
+    },
+    "approved_boundaries": {
+      "items": {
+        "$ref": "#/$defs/NarrationBoundary"
+      },
+      "title": "Approved Boundaries",
+      "type": "array"
+    },
+    "attempt_number": {
+      "maximum": 8,
+      "minimum": 1,
+      "title": "Attempt Number",
+      "type": "integer"
+    },
+    "available_character_ids": {
+      "items": {
+        "format": "uuid",
+        "type": "string"
+      },
+      "title": "Available Character Ids",
+      "type": "array"
+    },
+    "available_location_ids": {
+      "items": {
+        "format": "uuid",
+        "type": "string"
+      },
+      "title": "Available Location Ids",
+      "type": "array"
+    },
+    "capability": {
+      "$ref": "#/$defs/VisualProviderCapability"
+    },
+    "contract_version": {
+      "maxLength": 32,
+      "minLength": 1,
+      "title": "Contract Version",
+      "type": "string"
+    },
+    "episode_model_hash": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Episode Model Hash",
+      "type": "string"
+    },
+    "episode_model_id": {
+      "format": "uuid",
+      "title": "Episode Model Id",
+      "type": "string"
+    },
+    "evidence_references": {
+      "items": {
+        "$ref": "#/$defs/StoryboardSourceReference"
+      },
+      "maxItems": 64,
+      "title": "Evidence References",
+      "type": "array"
+    },
+    "idempotency_key": {
+      "maxLength": 255,
+      "minLength": 1,
+      "title": "Idempotency Key",
+      "type": "string"
+    },
+    "incoming_continuity": {
+      "$ref": "#/$defs/ContinuityState"
+    },
+    "measured_duration_us": {
+      "exclusiveMinimum": 0,
+      "title": "Measured Duration Us",
+      "type": "integer"
+    },
+    "narration_asset_id": {
+      "format": "uuid",
+      "title": "Narration Asset Id",
+      "type": "string"
+    },
+    "narration_run_id": {
+      "format": "uuid",
+      "title": "Narration Run Id",
+      "type": "string"
+    },
+    "narration_segment_id": {
+      "format": "uuid",
+      "title": "Narration Segment Id",
+      "type": "string"
+    },
+    "narration_text": {
+      "maxLength": 8000,
+      "minLength": 1,
+      "title": "Narration Text",
+      "type": "string"
+    },
+    "project_id": {
+      "format": "uuid",
+      "title": "Project Id",
+      "type": "string"
+    },
+    "prompt_version": {
+      "maxLength": 32,
+      "minLength": 1,
+      "title": "Prompt Version",
+      "type": "string"
+    },
+    "provider_options": {
+      "additionalProperties": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "integer"
+          },
+          {
+            "type": "number"
+          },
+          {
+            "type": "boolean"
+          }
+        ]
+      },
+      "title": "Provider Options",
+      "type": "object"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "script_id": {
+      "format": "uuid",
+      "title": "Script Id",
+      "type": "string"
+    },
+    "script_segment_id": {
+      "format": "uuid",
+      "title": "Script Segment Id",
+      "type": "string"
+    },
+    "script_version": {
+      "exclusiveMinimum": 0,
+      "title": "Script Version",
+      "type": "integer"
+    },
+    "segment_sequence": {
+      "minimum": 0,
+      "title": "Segment Sequence",
+      "type": "integer"
+    },
+    "trace_context": {
+      "additionalProperties": {
+        "type": "string"
+      },
+      "title": "Trace Context",
+      "type": "object"
+    },
+    "validation_diagnostics": {
+      "items": {
+        "$ref": "#/$defs/StoryboardValidationDiagnostic"
+      },
+      "title": "Validation Diagnostics",
+      "type": "array"
+    },
+    "word_timings": {
+      "items": {
+        "$ref": "#/$defs/NarrationBoundary"
+      },
+      "minItems": 1,
+      "title": "Word Timings",
+      "type": "array"
+    }
+  },
+  "required": [
+    "idempotency_key",
+    "project_id",
+    "episode_model_id",
+    "episode_model_hash",
+    "script_id",
+    "script_version",
+    "script_segment_id",
+    "segment_sequence",
+    "narration_run_id",
+    "narration_segment_id",
+    "narration_asset_id",
+    "measured_duration_us",
+    "narration_text",
+    "word_timings",
+    "incoming_continuity",
+    "capability",
+    "contract_version",
+    "prompt_version",
+    "attempt_number"
+  ],
+  "title": "StoryboardProviderRequest",
+  "type": "object"
+}

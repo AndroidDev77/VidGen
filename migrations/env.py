@@ -10,6 +10,7 @@ import vidgen.db.episode_analysis_models
 import vidgen.db.models
 import vidgen.db.narration_models
 import vidgen.db.script_models
+import vidgen.db.storyboard_models
 import vidgen.db.subtitle_models
 import vidgen.db.transcription_models
 import vidgen.db.upload_models

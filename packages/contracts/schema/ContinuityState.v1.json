@@ -1,0 +1,274 @@
+{
+  "$defs": {
+    "CharacterAppearanceState": {
+      "additionalProperties": false,
+      "properties": {
+        "appearance_state_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "Appearance State Id",
+          "type": "string"
+        },
+        "character_id": {
+          "format": "uuid",
+          "title": "Character Id",
+          "type": "string"
+        },
+        "emotional_state": {
+          "default": "neutral",
+          "maxLength": 255,
+          "title": "Emotional State",
+          "type": "string"
+        },
+        "injury_state": {
+          "default": "none",
+          "maxLength": 255,
+          "title": "Injury State",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "wardrobe_state": {
+          "default": "default",
+          "maxLength": 255,
+          "title": "Wardrobe State",
+          "type": "string"
+        }
+      },
+      "required": [
+        "character_id",
+        "appearance_state_id"
+      ],
+      "title": "CharacterAppearanceState",
+      "type": "object"
+    },
+    "PropState": {
+      "additionalProperties": false,
+      "properties": {
+        "note": {
+          "default": "",
+          "maxLength": 512,
+          "title": "Note",
+          "type": "string"
+        },
+        "owner_character_id": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Owner Character Id"
+        },
+        "prop_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "Prop Id",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        }
+      },
+      "required": [
+        "prop_id"
+      ],
+      "title": "PropState",
+      "type": "object"
+    },
+    "StructuredNote": {
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "minLength": 1,
+          "title": "Code",
+          "type": "string"
+        },
+        "message": {
+          "minLength": 1,
+          "title": "Message",
+          "type": "string"
+        }
+      },
+      "required": [
+        "code",
+        "message"
+      ],
+      "title": "StructuredNote",
+      "type": "object"
+    },
+    "SubjectPosition": {
+      "additionalProperties": false,
+      "properties": {
+        "character_id": {
+          "format": "uuid",
+          "title": "Character Id",
+          "type": "string"
+        },
+        "facing": {
+          "default": "neutral",
+          "enum": [
+            "neutral",
+            "left_to_right",
+            "right_to_left"
+          ],
+          "title": "Facing",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "screen_position": {
+          "enum": [
+            "left",
+            "center_left",
+            "center",
+            "center_right",
+            "right",
+            "offscreen"
+          ],
+          "title": "Screen Position",
+          "type": "string"
+        }
+      },
+      "required": [
+        "character_id",
+        "screen_position"
+      ],
+      "title": "SubjectPosition",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Structured continuity, never prose alone.",
+  "properties": {
+    "character_appearance_states": {
+      "items": {
+        "$ref": "#/$defs/CharacterAppearanceState"
+      },
+      "title": "Character Appearance States",
+      "type": "array"
+    },
+    "emotional_state": {
+      "default": "neutral",
+      "maxLength": 255,
+      "title": "Emotional State",
+      "type": "string"
+    },
+    "environment_conditions": {
+      "items": {
+        "type": "string"
+      },
+      "maxItems": 16,
+      "title": "Environment Conditions",
+      "type": "array"
+    },
+    "location_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Location Id"
+    },
+    "present_character_ids": {
+      "items": {
+        "format": "uuid",
+        "type": "string"
+      },
+      "title": "Present Character Ids",
+      "type": "array"
+    },
+    "previous_shot_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Previous Shot Id"
+    },
+    "props": {
+      "items": {
+        "$ref": "#/$defs/PropState"
+      },
+      "title": "Props",
+      "type": "array"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "screen_direction": {
+      "default": "neutral",
+      "enum": [
+        "neutral",
+        "left_to_right",
+        "right_to_left"
+      ],
+      "title": "Screen Direction",
+      "type": "string"
+    },
+    "sub_location": {
+      "default": "",
+      "maxLength": 255,
+      "title": "Sub Location",
+      "type": "string"
+    },
+    "subject_positions": {
+      "items": {
+        "$ref": "#/$defs/SubjectPosition"
+      },
+      "title": "Subject Positions",
+      "type": "array"
+    },
+    "time_of_day": {
+      "default": "unspecified",
+      "enum": [
+        "dawn",
+        "morning",
+        "midday",
+        "afternoon",
+        "dusk",
+        "night",
+        "unspecified"
+      ],
+      "title": "Time Of Day",
+      "type": "string"
+    },
+    "unresolved_warnings": {
+      "items": {
+        "$ref": "#/$defs/StructuredNote"
+      },
+      "title": "Unresolved Warnings",
+      "type": "array"
+    }
+  },
+  "title": "ContinuityState",
+  "type": "object"
+}

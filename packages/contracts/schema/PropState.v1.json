@@ -1,0 +1,41 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "note": {
+      "default": "",
+      "maxLength": 512,
+      "title": "Note",
+      "type": "string"
+    },
+    "owner_character_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Owner Character Id"
+    },
+    "prop_id": {
+      "maxLength": 128,
+      "minLength": 1,
+      "title": "Prop Id",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    }
+  },
+  "required": [
+    "prop_id"
+  ],
+  "title": "PropState",
+  "type": "object"
+}

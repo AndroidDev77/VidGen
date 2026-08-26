@@ -1,0 +1,175 @@
+{
+  "additionalProperties": false,
+  "description": "What a downstream T14/T15 visual provider can actually generate.\n\nT13 plans against this profile without ever calling the visual provider. The\ntiming solver reads only this contract, so no single provider's limitations\nare hardcoded into the solver.",
+  "properties": {
+    "capability_hash": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Capability Hash",
+      "type": "string"
+    },
+    "capability_profile_id": {
+      "maxLength": 128,
+      "minLength": 1,
+      "title": "Capability Profile Id",
+      "type": "string"
+    },
+    "duration_increment_us": {
+      "exclusiveMinimum": 0,
+      "title": "Duration Increment Us",
+      "type": "integer"
+    },
+    "max_characters_per_shot": {
+      "minimum": 0,
+      "title": "Max Characters Per Shot",
+      "type": "integer"
+    },
+    "max_generation_duration_us": {
+      "exclusiveMinimum": 0,
+      "title": "Max Generation Duration Us",
+      "type": "integer"
+    },
+    "max_reference_images": {
+      "minimum": 0,
+      "title": "Max Reference Images",
+      "type": "integer"
+    },
+    "min_generation_duration_us": {
+      "exclusiveMinimum": 0,
+      "title": "Min Generation Duration Us",
+      "type": "integer"
+    },
+    "model_family": {
+      "maxLength": 128,
+      "minLength": 1,
+      "title": "Model Family",
+      "type": "string"
+    },
+    "profile_version": {
+      "exclusiveMinimum": 0,
+      "title": "Profile Version",
+      "type": "integer"
+    },
+    "provider": {
+      "maxLength": 64,
+      "minLength": 1,
+      "title": "Provider",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "supported_aspect_ratios": {
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1,
+      "title": "Supported Aspect Ratios",
+      "type": "array"
+    },
+    "supported_camera_movements": {
+      "items": {
+        "enum": [
+          "static",
+          "pan_left",
+          "pan_right",
+          "tilt_up",
+          "tilt_down",
+          "dolly_in",
+          "dolly_out",
+          "tracking",
+          "crane",
+          "handheld",
+          "zoom_in",
+          "zoom_out"
+        ],
+        "type": "string"
+      },
+      "title": "Supported Camera Movements",
+      "type": "array"
+    },
+    "supported_generation_durations_us": {
+      "items": {
+        "exclusiveMinimum": 0,
+        "type": "integer"
+      },
+      "title": "Supported Generation Durations Us",
+      "type": "array"
+    },
+    "supported_resolutions": {
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1,
+      "title": "Supported Resolutions",
+      "type": "array"
+    },
+    "supported_transitions": {
+      "items": {
+        "enum": [
+          "cut",
+          "dissolve",
+          "fade_in",
+          "fade_out",
+          "wipe",
+          "match_cut",
+          "whip_pan"
+        ],
+        "type": "string"
+      },
+      "minItems": 1,
+      "title": "Supported Transitions",
+      "type": "array"
+    },
+    "supports_camera_motion": {
+      "title": "Supports Camera Motion",
+      "type": "boolean"
+    },
+    "supports_continuity_seed": {
+      "title": "Supports Continuity Seed",
+      "type": "boolean"
+    },
+    "supports_image_to_video": {
+      "title": "Supports Image To Video",
+      "type": "boolean"
+    },
+    "supports_text_to_video": {
+      "title": "Supports Text To Video",
+      "type": "boolean"
+    },
+    "trimming_policy": {
+      "enum": [
+        "trim_end",
+        "trim_start",
+        "trim_center",
+        "none"
+      ],
+      "title": "Trimming Policy",
+      "type": "string"
+    }
+  },
+  "required": [
+    "capability_profile_id",
+    "profile_version",
+    "provider",
+    "model_family",
+    "min_generation_duration_us",
+    "max_generation_duration_us",
+    "duration_increment_us",
+    "supported_aspect_ratios",
+    "supported_resolutions",
+    "max_characters_per_shot",
+    "max_reference_images",
+    "supports_camera_motion",
+    "supported_transitions",
+    "supports_image_to_video",
+    "supports_text_to_video",
+    "supports_continuity_seed",
+    "trimming_policy",
+    "capability_hash"
+  ],
+  "title": "VisualProviderCapability",
+  "type": "object"
+}
