@@ -328,6 +328,19 @@ def test_locked_segment_spanning_multiple_beats_is_not_duplicated() -> None:
     assert report.valid, report.errors
 
 
+def test_write_script_honors_small_per_beat_word_allocations() -> None:
+    # Regression for a Copilot review finding: write_script() used to clamp
+    # every segment's target_words to a floor of 4, which drifted the actual
+    # word count far above the plan's per-beat budget whenever many beats
+    # (as here, with a small overall target) were allocated only 1-2 words
+    # each. The writer must honor the plan's allocation directly.
+    analysis = _make_analysis(uuid4(), beat_count=15)
+    _request, plan = _plan(analysis, target_words=20)
+    assert any(item.words < 4 for item in plan.word_budget.allocations)
+    script = _script(analysis, plan, target_words=plan.word_budget.total_target_words)
+    assert script.actual_word_count <= plan.word_budget.total_target_words * 1.5
+
+
 def test_fit_segment_text_never_exceeds_target_words_when_joke_clause_is_long() -> None:
     # Regression for a Copilot review finding: a joke clause longer than (or equal
     # to) the target word allocation must itself be truncated, not just the

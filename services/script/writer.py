@@ -57,15 +57,16 @@ _FILLER_BANK = (
 
 
 def _fit_segment_text(summary: str, joke_clause: str, target_words: int) -> tuple[str, int, int]:
+    target_words = max(1, target_words)
     summary_words = summary.split()
     joke_words = joke_clause.split()
-    # Reserve at least one word for the summary: a joke clause longer than the
-    # allocation must be truncated too, or the assembled text can exceed
-    # target_words outright (the summary-only cap below can't fix that alone).
-    max_joke_words = max(1, target_words - 1)
-    if len(joke_words) > max_joke_words:
-        joke_words = joke_words[:max_joke_words]
-    budget_for_summary = max(1, target_words - len(joke_words))
+    # Truncate the joke clause to the target first so it can never alone exceed
+    # the budget, then give whatever remains (possibly nothing) to the summary;
+    # a fixed reservation for either side can force the combined total past
+    # target_words when the other side is already at its cap.
+    if len(joke_words) > target_words:
+        joke_words = joke_words[:target_words]
+    budget_for_summary = target_words - len(joke_words)
     if len(summary_words) > budget_for_summary:
         summary_words = summary_words[:budget_for_summary]
     words = [*summary_words, *joke_words]
@@ -110,7 +111,7 @@ def write_script(
             segments.append(reused.model_copy(update={"sequence": index}))
             continue
         mechanism = _JOKE_MECHANISMS[index % len(_JOKE_MECHANISMS)]
-        target_words = max(4, words_by_beat.get(beat.plot_beat_id, 20))
+        target_words = words_by_beat.get(beat.plot_beat_id, 20)
         text, joke_start, joke_end = _fit_segment_text(
             beat.summary, _JOKE_CLAUSES[mechanism], target_words
         )
