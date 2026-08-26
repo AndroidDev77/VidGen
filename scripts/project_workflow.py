@@ -8,6 +8,7 @@ import os
 from uuid import UUID
 
 from temporalio.client import Client
+from temporalio.contrib.pydantic import pydantic_data_converter
 
 from packages.workflows.project import ProjectWorkflow
 from vidgen.contracts.workflow import ProjectWorkflowInput
@@ -20,7 +21,10 @@ async def main() -> None:
     parser.add_argument("--source-video-id", type=UUID)
     parser.add_argument("--idempotency-key")
     args = parser.parse_args()
-    client = await Client.connect(os.getenv("TEMPORAL_ADDRESS", "localhost:7233"))
+    client = await Client.connect(
+        os.getenv("TEMPORAL_ADDRESS", "localhost:7233"),
+        data_converter=pydantic_data_converter,
+    )
     workflow_id = f"vidgen-project-{args.project_id}"
     if args.action == "start":
         if args.source_video_id is None or args.idempotency_key is None:

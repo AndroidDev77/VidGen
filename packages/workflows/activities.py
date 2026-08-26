@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
+from threading import Event, Thread
 
 from temporalio import activity
 
@@ -20,7 +22,27 @@ def _execute(request: StageActivityInput) -> StageActivityResult:
     handler = _handlers.get(request.stage)
     if handler is None:
         raise RuntimeError(f"no activity handler configured for {request.stage}")
-    return handler(request)
+    with _activity_heartbeats(request.stage):
+        return handler(request)
+
+
+@contextmanager
+def _activity_heartbeats(stage: str) -> Iterator[None]:
+    """Heartbeat blocking activity handlers until completion or cancellation."""
+    stopped = Event()
+
+    def heartbeat() -> None:
+        while not stopped.wait(30):
+            activity.heartbeat({"stage": stage})
+
+    activity.heartbeat({"stage": stage})
+    thread = Thread(target=heartbeat, name=f"heartbeat-{stage}", daemon=True)
+    thread.start()
+    try:
+        yield
+    finally:
+        stopped.set()
+        thread.join(timeout=1)
 
 
 @activity.defn(name="run_upload_activity")

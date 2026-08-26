@@ -58,6 +58,10 @@ class ProjectWorkflow:
                 result_type=StageActivityResult,
             )
             self._state.completed_stages.append(result.stage)
+            if self._cancelled:
+                self._state.cancelled = True
+                self._state.status = "cancelled"
+                return self._state
         self._state.status = "evidence_ready"
         return self._state
 

@@ -2,7 +2,7 @@
   "additionalProperties": false,
   "properties": {
     "idempotency_key": {
-      "maxLength": 255,
+      "maxLength": 220,
       "minLength": 1,
       "title": "Idempotency Key",
       "type": "string"

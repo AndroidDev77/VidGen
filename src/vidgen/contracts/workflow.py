@@ -32,7 +32,8 @@ class ProjectWorkflowInput(StrictContract):
     schema_version: Literal["1.0"] = "1.0"
     project_id: UUID
     source_video_id: UUID
-    idempotency_key: str = Field(min_length=1, max_length=255)
+    # Leave room for the longest generated ``:<stage>`` suffix.
+    idempotency_key: str = Field(min_length=1, max_length=220)
 
 
 class StageActivityInput(StrictContract):

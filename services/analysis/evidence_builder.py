@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 from collections.abc import Sequence
+from typing import Literal
 from uuid import UUID, uuid5
 
 from services.analysis.transcript_scene_joiner import join_transcript_to_scene
@@ -28,7 +29,7 @@ def build_evidence_package(
     source_audio_asset_id: UUID | None,
     transcript_id: UUID,
     transcript_asset_id: UUID,
-    transcript_origin: str,
+    transcript_origin: Literal["subtitle", "audio_transcription"],
     subtitle_asset_id: UUID | None,
     scenes: Sequence[SceneBoundary],
     frames: Sequence[ExtractedFrame],
@@ -90,7 +91,7 @@ def build_evidence_package(
         contact_sheet_asset_id=contact_sheet_asset_id,
         scenes=evidence_scenes,
         provenance=EvidenceProvenance(
-            transcript_origin=transcript_origin,  # type: ignore[arg-type]
+            transcript_origin=transcript_origin,
             transcript_id=transcript_id,
             transcript_asset_id=transcript_asset_id,
             subtitle_asset_id=subtitle_asset_id,
