@@ -216,3 +216,32 @@ async def test_failed_replacement_preserves_selected_analysis(tmp_path: Path) ->
         )
     )
     assert selected is not None and selected.id == first.episode_analysis_id
+
+
+@pytest.mark.asyncio
+async def test_failed_scene_retry_does_not_rerun_successful_scene(tmp_path: Path) -> None:
+    session, blobs, project, evidence = _database(tmp_path)
+
+    class InvalidSecondScene(FakeEpisodeAnalysisProvider):
+        async def analyze_scene(self, request, context):  # type: ignore[no-untyped-def]
+            result = await super().analyze_scene(request, context)
+            if request.sequence == 2:
+                result.output.source_end_ms += 1
+            return result
+
+    with pytest.raises(RuntimeError, match="scene attempts exhausted"):
+        await EpisodeAnalysisPipeline(session, blobs, InvalidSecondScene()).process(
+            project_id=project.id,
+            evidence_package_id=evidence.id,
+            idempotency_key="scene-recovery",
+        )
+    checkpoints = list(session.scalars(select(SceneAnalysisCheckpoint)))
+    assert {item.sequence: item.status for item in checkpoints} == {1: "succeeded", 2: "invalid"}
+    resumed = FakeEpisodeAnalysisProvider()
+    result = await EpisodeAnalysisPipeline(session, blobs, resumed).process(
+        project_id=project.id,
+        evidence_package_id=evidence.id,
+        idempotency_key="scene-recovery",
+    )
+    assert result.validation_report.valid
+    assert len([key for key in resumed.submissions if ":scene:" in key]) == 1
