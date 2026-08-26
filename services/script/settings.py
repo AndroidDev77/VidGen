@@ -83,7 +83,7 @@ def resolve_script_settings(
         "narrator_persona": "Wry, affectionate narrator"
     }
     channel_voice = ChannelVoiceConfig.model_validate(channel_voice_raw)
-    prohibited_patterns = [str(pattern) for pattern in raw.get("prohibited_comedy_patterns", [])]
+    prohibited_patterns = [str(pattern) for pattern in raw.get("prohibited_patterns", [])]
 
     return ScriptGenerationSettings(
         target_duration_ms=target_duration_ms,

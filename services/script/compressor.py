@@ -109,13 +109,16 @@ def compress_plot(
     }
 
     def close(ids: set[UUID]) -> set[UUID]:
+        """Causal completeness always wins: pull in every causal ancestor of
+        every id, even one that matches an excluded topic. Excluded topics only
+        gate which *optional* extra beats get considered below."""
         closed = set(ids)
         frontier = set(ids)
         while frontier:
             growth: set[UUID] = set()
             for beat_id in frontier:
                 for cause in effect_to_causes.get(beat_id, ()):
-                    if cause not in closed and cause not in excludable:
+                    if cause not in closed:
                         growth.add(cause)
             closed |= growth
             frontier = growth

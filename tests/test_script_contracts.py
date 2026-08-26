@@ -4,6 +4,7 @@ import pytest
 from pydantic import ValidationError
 
 from services.script.compressor import compress_plot, structural_roles
+from services.script.settings import resolve_script_settings
 from services.script.validator import validate_compressed_plot_plan
 from tests.test_script_pipeline import _make_analysis
 from vidgen.contracts.script import (
@@ -216,6 +217,47 @@ def test_unsupported_beat_id_is_rejected_by_validator() -> None:
     report = validate_compressed_plot_plan(tampered, analysis=analysis, request=request)
     assert not report.valid
     assert any(error.code == "UNKNOWN_BEAT" for error in report.errors)
+
+
+def test_resolve_script_settings_honors_prohibited_patterns_key() -> None:
+    # Regression for a Copilot review finding: settings must read the same
+    # "prohibited_patterns" key the pipeline/contracts/docs use, not a
+    # differently-named key that would silently disable enforcement.
+    from vidgen.db.models import Project
+
+    project = Project(
+        name="test",
+        visual_style="flat",
+        target_duration_seconds=240,
+        humor_intensity=5,
+        settings={"script": {"prohibited_patterns": ["banned phrase"]}},
+    )
+    settings = resolve_script_settings(project)
+    assert settings.prohibited_patterns == ["banned phrase"]
+
+
+def test_excluded_topic_causal_ancestor_is_still_selected_for_completeness() -> None:
+    # A beat matching an excluded topic must still be pulled in via causal closure
+    # when a required/mandatory beat causally depends on it; causal completeness
+    # takes precedence over topic exclusion (regression for a Copilot review finding).
+    analysis = _make_analysis(uuid4(), beat_count=15)
+    excluded_beat = analysis.plot_beats[5]
+    tampered_beat = excluded_beat.model_copy(update={"summary": excluded_beat.summary + " wombat"})
+    beats = [
+        tampered_beat if b.plot_beat_id == excluded_beat.plot_beat_id else b
+        for b in analysis.plot_beats
+    ]
+    analysis = analysis.model_copy(update={"plot_beats": beats})
+
+    request = _request(analysis, excluded_topics=["wombat"])
+    plan = compress_plot(analysis=analysis, request=request, plan_id=uuid4())
+
+    selected_ids = {beat.plot_beat_id for beat in plan.selected_beats}
+    assert excluded_beat.plot_beat_id in selected_ids
+    assert not any(beat.plot_beat_id == excluded_beat.plot_beat_id for beat in plan.omitted_beats)
+    report = validate_compressed_plot_plan(plan, analysis=analysis, request=request)
+    assert report.valid, report.errors
+    assert not any(error.code == "MISSING_CAUSAL_BRIDGE" for error in report.errors)
 
 
 def test_stable_plan_hash_is_deterministic_across_reruns() -> None:
