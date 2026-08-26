@@ -9,6 +9,7 @@ from sqlalchemy import select
 from apps.api.auth import Principal
 from apps.api.routes.costs import costs
 from vidgen.db.cost_models import ProviderAttempt
+from vidgen.db.models import Project
 from vidgen.db.session import build_engine, session_factory
 
 
@@ -23,12 +24,7 @@ def main() -> None:
             session,
             Principal(
                 subject=session.execute(
-                    select(
-                        __import__("vidgen.db.models", fromlist=["Project"]).Project.owner_subject
-                    ).where(
-                        __import__("vidgen.db.models", fromlist=["Project"]).Project.id
-                        == args.project_id
-                    )
+                    select(Project.owner_subject).where(Project.id == args.project_id)
                 ).scalar_one()
             ),
         )

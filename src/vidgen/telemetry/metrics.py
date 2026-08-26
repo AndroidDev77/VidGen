@@ -57,6 +57,21 @@ class Metrics:
         self.render_factor = Histogram("recap_render_realtime_factor", "Render factor", registry=r)
         self.av_drift = Histogram("recap_av_drift_ms", "A/V drift", registry=r)
         self.human_wait = Histogram("recap_human_wait_seconds", "Human wait", ("gate",), registry=r)
+        self.project_cost = Gauge(
+            "recap_project_cost_usd", "Current project cost projection", registry=r
+        )
+        self.project_warning_budget = Gauge(
+            "recap_project_warning_budget_usd", "Project warning budget", registry=r
+        )
+        self.duplicate_provider_task = Counter(
+            "recap_duplicate_provider_task_id", "Duplicate provider task identities", registry=r
+        )
+        self.duplicate_selected_asset = Counter(
+            "recap_duplicate_selected_asset", "Duplicate selected asset violations", registry=r
+        )
+        self.render_verification = Counter(
+            "recap_render_verification", "Render verification results", ("status",), registry=r
+        )
 
 
 METRIC_LABELS = {

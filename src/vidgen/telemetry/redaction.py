@@ -57,7 +57,9 @@ def redact(value: Any, *, key: str = "") -> Any:
             str(k): redact(v, key=str(k))
             for k, v in sorted(value.items(), key=lambda item: str(item[0]))
         }
-    if isinstance(value, (list, tuple, set, frozenset)):
+    if isinstance(value, (set, frozenset)):
+        return sorted((redact(item) for item in value), key=lambda item: repr(item))
+    if isinstance(value, (list, tuple)):
         return [redact(item) for item in value]
     if isinstance(value, bytes):
         return REDACTED

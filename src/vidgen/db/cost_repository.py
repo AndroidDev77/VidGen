@@ -31,9 +31,19 @@ class CostRepository:
             )
         )
         if existing:
+            budget = self.session.scalar(
+                select(ProjectBudget).where(ProjectBudget.project_id == request.project_id)
+            )
+            if budget is None:
+                raise LookupError("project budget not configured")
+            decision = (
+                BudgetDecision.ALLOW_WITH_WARNING
+                if budget.committed_amount + budget.reserved_amount >= budget.warning_cap
+                else BudgetDecision.ALLOW
+            )
             return CostReservationResult(
                 reservation_id=existing.id,
-                decision=BudgetDecision.ALLOW,
+                decision=decision,
                 reserved_amount=existing.reserved_amount,
                 reused=True,
             )

@@ -47,6 +47,7 @@ def test_recursive_redaction_never_exposes_secrets() -> None:
     assert "secret" not in rendered
     assert value["Authorization"] == REDACTED
     assert "x=ok" in rendered
+    assert redact({"values": {"z", "a"}}) == {"values": ["a", "z"]}
 
 
 def test_decimal_pricing_and_budget_decisions_are_deterministic() -> None:
@@ -93,3 +94,11 @@ def test_failure_taxonomy_and_bounded_metrics() -> None:
     output = generate_latest(registry).decode()
     assert "recap_provider_requests_total" in output
     assert "project_id" not in output
+    for metric in (
+        "recap_project_cost_usd",
+        "recap_project_warning_budget_usd",
+        "recap_duplicate_provider_task_id_total",
+        "recap_duplicate_selected_asset_total",
+        "recap_render_verification_total",
+    ):
+        assert metric in output

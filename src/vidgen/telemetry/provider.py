@@ -53,6 +53,7 @@ async def instrument_provider_attempt(
     attempt_number: int = 1,
     estimated_cost: Decimal = Decimal("0"),
     pricing_version_id: UUID | None = None,
+    currency: str = "USD",
 ) -> AsyncIterator[ProviderAttemptContext]:
     row = session.scalar(
         select(ProviderAttempt).where(
@@ -80,7 +81,7 @@ async def instrument_provider_attempt(
             estimated_cost=estimated_cost,
             actual_cost=0,
             pricing_version_id=pricing_version_id,
-            currency="USD",
+            currency=currency,
             started_at=datetime.now(UTC),
             redacted_metadata={},
         )
