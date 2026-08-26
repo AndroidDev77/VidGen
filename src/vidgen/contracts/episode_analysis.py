@@ -180,7 +180,14 @@ class SceneAnalysisRequest(StrictContract):
     prompt_version: str
     provider_configuration_version: str
     evidence_references: list[SourceReference] = Field(min_length=1, max_length=100)
+    evidence_excerpts: list[SceneEvidenceExcerpt] = Field(default_factory=list, max_length=100)
     provider_options: dict[str, str | int | float | bool] = Field(default_factory=dict)
+
+
+class SceneEvidenceExcerpt(StrictContract):
+    text: str = Field(min_length=1, max_length=4000)
+    speaker_label: str | None = None
+    source_reference: SourceReference
 
 
 class EpisodeSynthesisRequest(StrictContract):

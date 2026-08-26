@@ -1,5 +1,37 @@
 {
   "$defs": {
+    "SceneEvidenceExcerpt": {
+      "additionalProperties": false,
+      "properties": {
+        "source_reference": {
+          "$ref": "#/$defs/SourceReference"
+        },
+        "speaker_label": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Speaker Label"
+        },
+        "text": {
+          "maxLength": 4000,
+          "minLength": 1,
+          "title": "Text",
+          "type": "string"
+        }
+      },
+      "required": [
+        "text",
+        "source_reference"
+      ],
+      "title": "SceneEvidenceExcerpt",
+      "type": "object"
+    },
     "SourceReference": {
       "additionalProperties": false,
       "properties": {
@@ -79,6 +111,14 @@
     "contract_version": {
       "title": "Contract Version",
       "type": "string"
+    },
+    "evidence_excerpts": {
+      "items": {
+        "$ref": "#/$defs/SceneEvidenceExcerpt"
+      },
+      "maxItems": 100,
+      "title": "Evidence Excerpts",
+      "type": "array"
     },
     "evidence_package_id": {
       "format": "uuid",

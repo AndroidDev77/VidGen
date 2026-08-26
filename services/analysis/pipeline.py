@@ -19,6 +19,7 @@ from vidgen.contracts.episode_analysis import (
     EpisodeSynthesisRequest,
     SceneAnalysisRequest,
     SceneAnalysisResult,
+    SceneEvidenceExcerpt,
     SourceReference,
 )
 from vidgen.db.episode_analysis_models import (
@@ -139,6 +140,7 @@ class EpisodeAnalysisPipeline:
                 prompt_version=PROMPT_VERSION,
                 provider_configuration_version=CONFIG_VERSION,
                 evidence_references=references,
+                evidence_excerpts=_excerpts(row),
             )
             checkpoint = checkpoint or SceneAnalysisCheckpoint(
                 analysis_run_id=run.id,
@@ -208,7 +210,7 @@ class EpisodeAnalysisPipeline:
             raise RuntimeError("scene attempts exhausted")
 
         try:
-            scenes = [await map_scene(row) for row in rows]
+            scenes = list(await asyncio.gather(*(map_scene(row) for row in rows)))
         except Exception:
             run.status = project.status = "episode_analysis_failed"
             run.error_code = "SCENE_ANALYSIS_FAILED"
@@ -256,7 +258,12 @@ class EpisodeAnalysisPipeline:
             project.status = run.status = "episode_analysis_validating"
             self.session.commit()
             report = validate_episode_analysis(
-                analysis, valid_scene_ids={row.id for row in rows}, valid_reference_ids=valid_refs
+                analysis,
+                valid_scene_ids={row.id for row in rows},
+                valid_reference_ids=valid_refs,
+                required_anonymous_labels={
+                    label for scene in scenes for label in scene.anonymous_speaker_references
+                },
             )
             if report.valid:
                 break
@@ -448,6 +455,25 @@ def _references(package: EvidencePackageRecord, row: SceneEvidenceRecord) -> lis
                 reference_type="contact_sheet",
                 reference_id=package.contact_sheet_asset_id,
                 scene_id=row.id,
+            )
+        )
+    return result
+
+
+def _excerpts(row: SceneEvidenceRecord) -> list[SceneEvidenceExcerpt]:
+    result: list[SceneEvidenceExcerpt] = []
+    for item in row.evidence.get("transcript_items", []):
+        result.append(
+            SceneEvidenceExcerpt(
+                text=item["text"],
+                speaker_label=item.get("speaker_label"),
+                source_reference=SourceReference(
+                    reference_type="transcript_segment",
+                    reference_id=UUID(str(item["source_asset_id"])),
+                    scene_id=row.id,
+                    start_ms=round(item["source_range"]["start_seconds"] * 1000),
+                    end_ms=round(item["source_range"]["end_seconds"] * 1000),
+                ),
             )
         )
     return result

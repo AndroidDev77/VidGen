@@ -137,9 +137,9 @@ def test_new_upload_becomes_latest_without_breaking_prior_completion(
     assert first_retry.json() == completed[0]
     with factory() as session:
         source_count = session.scalar(
-            select(func.count()).select_from(SourceVideo).where(
-                SourceVideo.project_id == UUID(project["id"])
-            )
+            select(func.count())
+            .select_from(SourceVideo)
+            .where(SourceVideo.project_id == UUID(project["id"]))
         )
         assert source_count == 2
 

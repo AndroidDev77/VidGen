@@ -50,6 +50,8 @@ def validate_scene_analysis(
     ):
         for entity in entities:
             referenced.extend(entity.source_references)
+    for dependency in result.candidate_causal_links:
+        referenced.extend(dependency.source_references)
     for index, reference in enumerate(referenced):
         if reference.reference_id not in valid_reference_ids:
             errors.append(
@@ -69,6 +71,7 @@ def validate_episode_analysis(
     *,
     valid_scene_ids: set[UUID],
     valid_reference_ids: set[UUID],
+    required_anonymous_labels: set[str] | None = None,
 ) -> AnalysisValidationReport:
     errors: list[AnalysisValidationError] = []
 
@@ -275,4 +278,15 @@ def validate_episode_analysis(
                     f"{collection_name}.{index}.alias_evidence.{alias_index}",
                     claim.source_references,
                 )
+    ambiguity_text = " ".join(
+        item.description.casefold() for item in analysis.unresolved_ambiguities
+    )
+    for label in required_anonymous_labels or set():
+        if label.casefold() not in ambiguity_text:
+            error(
+                "AMBIGUOUS_IDENTITY_RESOLVED_WITHOUT_EVIDENCE",
+                "unresolved_ambiguities",
+                label,
+                "Anonymous speakers must remain explicitly unresolved",
+            )
     return AnalysisValidationReport(valid=not errors, errors=errors)

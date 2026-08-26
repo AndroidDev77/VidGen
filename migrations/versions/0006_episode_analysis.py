@@ -125,7 +125,7 @@ def upgrade() -> None:
         sqlite_where=sa.text("selected = 1"),
         postgresql_where=sa.text("selected"),
     )
-    for table, columns, checks, index_name, index_columns in (
+    for table, columns, checks, foreign_keys, index_name, index_columns in (
         (
             "analysis_state_events",
             [
@@ -145,6 +145,7 @@ def upgrade() -> None:
                     name=op.f("ck_analysis_state_events_analysis_state_confidence"),
                 ),
             ],
+            [sa.ForeignKeyConstraint(["scene_id"], ["scene_evidence.id"], ondelete="RESTRICT")],
             "uq_analysis_state_stable",
             ["analysis_id", "stable_id"],
         ),
@@ -163,6 +164,14 @@ def upgrade() -> None:
                     name=op.f("ck_analysis_relationships_analysis_relationship_confidence"),
                 )
             ],
+            [
+                sa.ForeignKeyConstraint(
+                    ["source_character_id"], ["characters.id"], ondelete="RESTRICT"
+                ),
+                sa.ForeignKeyConstraint(
+                    ["target_character_id"], ["characters.id"], ondelete="RESTRICT"
+                ),
+            ],
             "uq_analysis_relationship_stable",
             ["analysis_id", "stable_id"],
         ),
@@ -178,6 +187,10 @@ def upgrade() -> None:
                     name=op.f("ck_analysis_beat_dependencies_analysis_dependency_not_self"),
                 )
             ],
+            [
+                sa.ForeignKeyConstraint(["cause_beat_id"], ["plot_beats.id"], ondelete="RESTRICT"),
+                sa.ForeignKeyConstraint(["effect_beat_id"], ["plot_beats.id"], ondelete="RESTRICT"),
+            ],
             "uq_analysis_beat_dependency",
             ["analysis_id", "cause_beat_id", "effect_beat_id"],
         ),
@@ -191,6 +204,7 @@ def upgrade() -> None:
             sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
             sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
             *checks,
+            *foreign_keys,
             sa.ForeignKeyConstraint(["analysis_id"], ["episode_analyses.id"], ondelete="CASCADE"),
             sa.PrimaryKeyConstraint("id", name=op.f(f"pk_{table}")),
         )

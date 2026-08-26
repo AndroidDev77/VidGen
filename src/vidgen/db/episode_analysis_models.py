@@ -106,7 +106,7 @@ class AnalysisStateEvent(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     analysis_id: Mapped[UUID] = mapped_column(ForeignKey("episode_analyses.id", ondelete="CASCADE"))
     stable_id: Mapped[UUID]
     entity_id: Mapped[UUID]
-    scene_id: Mapped[UUID]
+    scene_id: Mapped[UUID] = mapped_column(ForeignKey("scene_evidence.id", ondelete="RESTRICT"))
     sequence: Mapped[int] = mapped_column(Integer)
     confidence: Mapped[float] = mapped_column(Float)
     contract: Mapped[dict[str, Any]] = mapped_column(JSON)
@@ -121,8 +121,12 @@ class AnalysisRelationship(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "analysis_relationships"
     analysis_id: Mapped[UUID] = mapped_column(ForeignKey("episode_analyses.id", ondelete="CASCADE"))
     stable_id: Mapped[UUID]
-    source_character_id: Mapped[UUID]
-    target_character_id: Mapped[UUID]
+    source_character_id: Mapped[UUID] = mapped_column(
+        ForeignKey("characters.id", ondelete="RESTRICT")
+    )
+    target_character_id: Mapped[UUID] = mapped_column(
+        ForeignKey("characters.id", ondelete="RESTRICT")
+    )
     confidence: Mapped[float] = mapped_column(Float)
     description: Mapped[str] = mapped_column(Text)
     contract: Mapped[dict[str, Any]] = mapped_column(JSON)
@@ -135,8 +139,8 @@ class AnalysisRelationship(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 class AnalysisBeatDependency(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "analysis_beat_dependencies"
     analysis_id: Mapped[UUID] = mapped_column(ForeignKey("episode_analyses.id", ondelete="CASCADE"))
-    cause_beat_id: Mapped[UUID]
-    effect_beat_id: Mapped[UUID]
+    cause_beat_id: Mapped[UUID] = mapped_column(ForeignKey("plot_beats.id", ondelete="RESTRICT"))
+    effect_beat_id: Mapped[UUID] = mapped_column(ForeignKey("plot_beats.id", ondelete="RESTRICT"))
     contract: Mapped[dict[str, Any]] = mapped_column(JSON)
     __table_args__ = (
         Index(

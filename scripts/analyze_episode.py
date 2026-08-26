@@ -42,7 +42,9 @@ async def main() -> None:
         else:
             key = os.getenv("OPENAI_API_KEY") or settings.openai_api_key
             if not key:
-                parser.error("OPENAI_API_KEY is required for --provider openai")
+                parser.error(
+                    "VIDGEN_OPENAI_API_KEY or OPENAI_API_KEY is required for --provider openai"
+                )
             provider = OpenAIEpisodeAnalysisProvider(
                 OpenAIAnalysisConfig(api_key=key, model=settings.analysis_model)
             )

@@ -101,6 +101,18 @@ def test_missing_dependency_endpoint_is_rejected() -> None:
     assert "UNKNOWN_BEAT_DEPENDENCY" in {item.code for item in _validate(analysis).errors}
 
 
+def test_anonymous_speaker_must_remain_unresolved() -> None:
+    analysis = _golden()
+    scene = analysis.scenes[0]
+    report = validate_episode_analysis(
+        analysis,
+        valid_scene_ids={scene.scene_id},
+        valid_reference_ids={scene.scene_id},
+        required_anonymous_labels={"speaker_001"},
+    )
+    assert "AMBIGUOUS_IDENTITY_RESOLVED_WITHOUT_EVIDENCE" in {item.code for item in report.errors}
+
+
 def test_strict_openai_schema_requires_every_property_and_closes_objects() -> None:
     schema = _strict_schema(EpisodeAnalysis.model_json_schema())
     assert schema["additionalProperties"] is False

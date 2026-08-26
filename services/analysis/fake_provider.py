@@ -14,6 +14,7 @@ from vidgen.contracts.episode_analysis import (
     ProviderSceneAnalysisResult,
     SceneAnalysisRequest,
     SceneAnalysisResult,
+    UnresolvedAmbiguity,
 )
 
 FAKE_NAMESPACE = UUID("89fb52d2-b9ad-4825-af84-919d13c80ccc")
@@ -51,15 +52,27 @@ class FakeEpisodeAnalysisProvider:
         reference = next(
             item for item in request.evidence_references if item.scene_id == request.scene_id
         )
+        anonymous = sorted(
+            {
+                item.speaker_label
+                for item in request.evidence_excerpts
+                if item.speaker_label and item.speaker_label.startswith("speaker_")
+            }
+        )
+        summary = (
+            " ".join(item.text for item in request.evidence_excerpts)
+            or f"Evidence scene {request.sequence}"
+        )
         output = SceneAnalysisResult(
             scene_id=request.scene_id,
             sequence=request.sequence,
             source_start_ms=request.source_start_ms,
             source_end_ms=request.source_end_ms,
-            summary=f"Evidence scene {request.sequence}",
+            summary=summary,
             dramatic_purpose="Source chronology",
             confidence=1,
             source_references=[reference],
+            anonymous_speaker_references=anonymous,
         )
         self.scene_results[request.scene_id] = output
         return ProviderSceneAnalysisResult(output=output, metadata=self._metadata(request, context))
@@ -88,6 +101,21 @@ class FakeEpisodeAnalysisProvider:
                 for item in scenes
             ],
             source_references=[ref for item in scenes for ref in item.source_references],
+            unresolved_ambiguities=[
+                UnresolvedAmbiguity(
+                    ambiguity_id=uuid5(FAKE_NAMESPACE, f"anonymous:{label}:{request.input_hash}"),
+                    description=f"Anonymous speaker {label} remains unresolved",
+                    source_references=[
+                        ref
+                        for item in scenes
+                        if label in item.anonymous_speaker_references
+                        for ref in item.source_references
+                    ],
+                )
+                for label in sorted(
+                    {label for item in scenes for label in item.anonymous_speaker_references}
+                )
+            ],
         )
         return ProviderEpisodeAnalysisResult(
             output=output, metadata=self._metadata(request, context)
