@@ -10,7 +10,7 @@ import pytest
 from services.narration.alignment import FakeAligner, RecognizedWord, reconcile_alignment
 from services.narration.fake_provider import FakeNarrationProvider
 from services.narration.normalization import normalize_audio, probe_audio
-from services.narration.pipeline import canonical_hash
+from services.narration.pipeline import NarrationPipeline, canonical_hash
 from services.narration.quality import validate_quality
 from vidgen.contracts.narration import NarrationProviderRequest
 
@@ -66,6 +66,25 @@ def test_alignment_repeated_words_is_stable() -> None:
     first = reconcile_alignment("Go, go now!", recognized, 0.6)
     assert first == reconcile_alignment("Go, go now!", recognized, 0.6)
     assert [word.word_index for word in first.timings] == [0, 1, 2]
+    assert [word.punctuation for word in first.timings] == [",", "", "!"]
+
+
+def test_retry_guidance_is_targeted() -> None:
+    from types import SimpleNamespace
+
+    previous = SimpleNamespace(
+        quality_result={
+            "diagnostics": [
+                {"code": "alignment_coverage"},
+                {"code": "speaking_rate"},
+                {"code": "clipping"},
+            ]
+        }
+    )
+    guidance = NarrationPipeline._retry_instructions([previous])  # type: ignore[list-item]
+    assert "Pronounce every approved word" in guidance
+    assert "150 words per minute" in guidance
+    assert "Avoid clipping" in guidance
 
 
 def test_alignment_rejects_invalid_timestamps() -> None:

@@ -18,6 +18,7 @@ from services.analysis.openai_adapter import OpenAIAnalysisConfig, OpenAIEpisode
 from services.analysis.pipeline import EpisodeAnalysisPipeline
 from services.media_worker.pipeline import MediaPipeline
 from services.narration.fake_provider import FakeNarrationProvider
+from services.narration.alignment import OpenAIWhisperAligner
 from services.narration.openai_adapter import OpenAINarrationProvider
 from services.narration.pipeline import NarrationPipeline
 from services.script.fake_provider import FakeScriptGenerationProvider
@@ -438,7 +439,14 @@ def _generate_narration(
     else:
         raise ValueError("narration provider is not configured")
     result = asyncio.run(
-        NarrationPipeline(session, blob_store, provider).process(
+        NarrationPipeline(
+            session,
+            blob_store,
+            provider,
+            aligner=OpenAIWhisperAligner(settings.openai_api_key)
+            if settings.openai_api_key
+            else None,
+        ).process(
             project_id=request.project_id,
             voice_profile_id=voice_profile_id,
             idempotency_key=request.idempotency_key,

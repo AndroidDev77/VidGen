@@ -6,24 +6,31 @@ import hashlib
 import json
 import tempfile
 from datetime import UTC, datetime
+from decimal import Decimal
 from pathlib import Path
 from typing import Any, Literal
 from uuid import UUID
 
+from opentelemetry import trace
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from services.narration.alignment import FakeAligner
+from services.narration.alignment import FakeAligner, NarrationAligner
 from services.narration.normalization import normalize_audio, probe_audio
 from services.narration.preview import concatenate_preview
 from services.narration.providers import NarrationProvider
 from services.narration.quality import QualityThresholds, validate_quality
+from vidgen.contracts.costs import BudgetDecision, CostReservationRequest
 from vidgen.contracts.narration import (
     NarrationAlignment,
+    NarrationPreviewManifest,
     NarrationProviderRequest,
     NarrationQualityReport,
     NarrationResult,
     NarrationSegmentResult,
 )
+from vidgen.db.cost_models import ProjectBudget, ProviderPriceRate
+from vidgen.db.cost_repository import BudgetExceededError, CostRepository
 from vidgen.db.models import Asset, Project
 from vidgen.db.narration_models import (
     NarrationAttemptRecord,
@@ -35,6 +42,8 @@ from vidgen.db.narration_repository import NarrationRepository
 from vidgen.db.script_models import Script, ScriptSegment
 from vidgen.storage.asset_service import AssetService
 from vidgen.storage.blob import BlobStore
+from vidgen.telemetry.metrics import Metrics
+from vidgen.telemetry.provider import instrument_provider_attempt
 
 PIPELINE_VERSION = "narration/1.0.0"
 DEFAULT_QUALITY_THRESHOLDS = QualityThresholds()
@@ -54,11 +63,18 @@ class NarrationPipeline:
         provider: NarrationProvider,
         *,
         thresholds: QualityThresholds = DEFAULT_QUALITY_THRESHOLDS,
+        metrics: Metrics | None = None,
+        aligner: NarrationAligner | None = None,
     ) -> None:
         self.session = session
         self.blob_store = blob_store
         self.provider = provider
         self.thresholds = thresholds
+        self.metrics = metrics or Metrics()
+        self.tracer = trace.NoOpTracerProvider().get_tracer("vidgen.narration")
+        if aligner is None and provider.name != "fake":
+            raise ValueError("production narration requires a configured timestamp aligner")
+        self.aligner = aligner or FakeAligner()
         self.repo = NarrationRepository(session)
         self.assets = AssetService(session, blob_store)
 
@@ -122,15 +138,23 @@ class NarrationPipeline:
                         "format": cfg.get("output_format", "wav"),
                     }
                 )
-                row = self.repo.segment_by_identity(identity)
+                row = self.repo.segment_by_identity(run.id, identity)
                 if row is None:
+                    reusable = self.repo.reusable_segment(identity)
                     row = NarrationSegment(
                         narration_run_id=run.id,
                         script_segment_id=source.id,
                         sequence=source.sequence,
                         text_hash=text_hash,
                         generation_identity=identity,
-                        status="pending",
+                        status="complete" if reusable is not None else "pending",
+                        selected_attempt_id=reusable.selected_attempt_id if reusable else None,
+                        original_asset_id=reusable.original_asset_id if reusable else None,
+                        normalized_asset_id=reusable.normalized_asset_id if reusable else None,
+                        duration_seconds=reusable.duration_seconds if reusable else None,
+                        alignment=reusable.alignment if reusable else None,
+                        quality_report=reusable.quality_report if reusable else None,
+                        word_timings=reusable.word_timings if reusable else None,
                     )
                     self.session.add(row)
                     self.session.flush()
@@ -160,26 +184,27 @@ class NarrationPipeline:
                 idempotency_key=f"{run.id}:preview",
                 generation_parameters={"concat": "copy", "order": "sequence"},
             )
-            manifest = {
-                "schema_version": "1.0",
-                "run_id": str(run.id),
-                "script_id": str(script.id),
-                "script_version": script.version,
-                "segments": [
-                    {
-                        "id": str(r.script_segment_id),
-                        "asset_id": str(r.normalized_asset_id),
-                        "duration": r.duration_seconds,
-                    }
-                    for r in selected
+            manifest = NarrationPreviewManifest(
+                script_id=script.id,
+                script_version=script.version,
+                narration_run_id=run.id,
+                voice_profile_id=profile.id,
+                voice_profile_version=profile.version,
+                segment_ids=[row.script_segment_id for row in selected],
+                narration_asset_ids=[asset_id for asset_id in parent_ids],
+                segment_durations_seconds=[
+                    row.duration_seconds for row in selected if row.duration_seconds is not None
                 ],
-                "preview_asset_id": str(preview.id),
-                "duration": preview_probe.duration_seconds,
-                "input_hash": canonical_hash([str(x) for x in parent_ids]),
-                "output_hash": preview.sha256,
-            }
+                word_timing_references=[row.id for row in selected],
+                concatenation_parameters={"codec": "copy", "order": "canonical_sequence"},
+                preview_duration_seconds=preview_probe.duration_seconds,
+                preview_asset_id=preview.id,
+                input_hash=canonical_hash([str(x) for x in parent_ids]),
+                output_hash=preview.sha256,
+                provenance={"pipeline_version": PIPELINE_VERSION},
+            )
             manifest_asset = self.assets.store(
-                content=json.dumps(manifest, sort_keys=True, separators=(",", ":")).encode(),
+                content=manifest.model_dump_json().encode(),
                 kind="json",
                 media_type="application/json",
                 project_id=project_id,
@@ -205,21 +230,28 @@ class NarrationPipeline:
         project: Project,
     ) -> None:
         text = str(source.text)
-        attempt_no = len(self.repo.attempts(row.id)) + 1
+        previous_attempts = self.repo.attempts(row.id)
+        interrupted = next((item for item in previous_attempts if item.completed_at is None), None)
+        attempt_no = interrupted.attempt_number if interrupted else len(previous_attempts) + 1
         if attempt_no > 3:
             raise RuntimeError("narration segment exhausted three attempts")
         key = f"{row.generation_identity}:{attempt_no}"
-        attempt = NarrationAttemptRecord(
-            narration_segment_id=row.id,
-            attempt_number=attempt_no,
-            provider=self.provider.name,
-            model=str(profile.model),
-            provider_idempotency_key=key,
-            voice_settings=cfg,
-            instructions=str(source.voice_direction),
-        )
-        self.session.add(attempt)
-        self.session.commit()  # durable pre-provider checkpoint
+        attempt = interrupted
+        if attempt is None:
+            retry_instructions = self._retry_instructions(previous_attempts)
+            attempt = NarrationAttemptRecord(
+                narration_segment_id=row.id,
+                attempt_number=attempt_no,
+                provider=self.provider.name,
+                model=str(profile.model),
+                provider_idempotency_key=key,
+                voice_settings=cfg,
+                instructions=" ".join(
+                    filter(None, (str(source.voice_direction), retry_instructions))
+                ),
+            )
+            self.session.add(attempt)
+            self.session.commit()  # durable pre-provider checkpoint
         original = root / f"{row.id}-{attempt_no}.provider"
         normalized = root / f"{row.id}-{attempt_no}.wav"
         request = NarrationProviderRequest(
@@ -234,15 +266,71 @@ class NarrationPipeline:
             voice_profile_version=profile.version,
             voice_id=str(profile.provider_voice_id),
             model=str(profile.model),
-            speaking_instructions=str(
-                source.voice_direction or cfg.get("default_speaking_instructions", "")
-            ),
+            speaking_instructions=attempt.instructions
+            or str(cfg.get("default_speaking_instructions", "")),
             speed=float(cfg.get("default_pace", 1)),
             output_format=str(cfg.get("output_format", "wav")),
             language=str(profile.language),
             attempt_number=attempt_no,
         )
-        result = await self.provider.generate(request, original)
+        rate = self.session.scalar(
+            select(ProviderPriceRate)
+            .where(
+                ProviderPriceRate.provider == self.provider.name,
+                ProviderPriceRate.model == str(profile.model),
+                ProviderPriceRate.operation == "narration.generate",
+                ProviderPriceRate.usage_unit == "AUDIO_OUTPUT_SECOND",
+                ProviderPriceRate.active,
+            )
+            .order_by(ProviderPriceRate.effective_start.desc())
+        )
+        estimated_cost = (
+            Decimal(str(source.estimated_duration_ms / 1000)) / rate.unit_size * rate.unit_price
+            if rate is not None
+            else Decimal("0")
+        )
+        async with instrument_provider_attempt(
+            session=self.session,
+            tracer=self.tracer,
+            metrics=self.metrics,
+            project_id=project.id,
+            provider=self.provider.name,
+            model=str(profile.model),
+            operation="narration.generate",
+            input_hash=row.generation_identity,
+            idempotency_key=key,
+            related_entity_id=row.id,
+            attempt_number=attempt_no,
+            estimated_cost=estimated_cost,
+            pricing_version_id=rate.pricing_version_id if rate else None,
+        ) as telemetry_attempt:
+            reservation = None
+            if self.session.scalar(
+                select(ProjectBudget).where(ProjectBudget.project_id == project.id)
+            ):
+                reservation = CostRepository(self.session).reserve(
+                    CostReservationRequest(
+                        project_id=project.id,
+                        provider_attempt_id=telemetry_attempt.row.id,
+                        idempotency_key=f"{key}:reservation",
+                        estimated_amount=estimated_cost,
+                        currency="USD",
+                    )
+                )
+                if reservation.decision in (
+                    BudgetDecision.DENY_HARD_CAP,
+                    BudgetDecision.DENY_ENTITY_CAP,
+                ):
+                    raise BudgetExceededError("narration request denied by project budget")
+            result = await self.provider.generate(request, original)
+            telemetry_attempt.set_result(
+                provider_request_id=result.provider_request_id,
+                usage=[
+                    {"unit": unit, "quantity": quantity} for unit, quantity in result.usage.items()
+                ],
+                metadata=dict(result.response_metadata),
+                actual_cost=estimated_cost,
+            )
         attempt.provider_request_id = result.provider_request_id
         attempt.usage = result.usage
         original_asset = self.assets.store_file(
@@ -256,8 +344,23 @@ class NarrationPipeline:
         )
         normalize_audio(original, normalized)
         probe = probe_audio(normalized)
+        actual_cost = (
+            Decimal(str(probe.duration_seconds)) / rate.unit_size * rate.unit_price
+            if rate is not None
+            else Decimal("0")
+        )
+        telemetry_attempt.row.actual_cost = actual_cost
+        telemetry_attempt.row.usage = [
+            {"unit": "AUDIO_OUTPUT_SECOND", "quantity": probe.duration_seconds}
+        ]
+        if reservation and reservation.reservation_id:
+            CostRepository(self.session).reconcile(
+                reservation.reservation_id,
+                f"{key}:reconciliation",
+                actual_cost,
+            )
         project.status = "narration_aligning"
-        alignment = FakeAligner().align(text, probe.duration_seconds)
+        alignment = self.aligner.align(text, probe.duration_seconds, normalized)
         project.status = "narration_validating"
         quality = validate_quality(
             normalized, text, probe.duration_seconds, alignment, self.thresholds
@@ -291,6 +394,20 @@ class NarrationPipeline:
         row.quality_report = quality.model_dump(mode="json")
         row.word_timings = [x.model_dump(mode="json") for x in alignment.timings]
         self.session.commit()
+
+    @staticmethod
+    def _retry_instructions(previous: list[NarrationAttemptRecord]) -> str:
+        if not previous or not previous[-1].quality_result:
+            return ""
+        codes = {item.get("code") for item in previous[-1].quality_result.get("diagnostics", [])}
+        guidance: list[str] = []
+        if "alignment_coverage" in codes:
+            guidance.append("Pronounce every approved word exactly and clearly.")
+        if "speaking_rate" in codes:
+            guidance.append("Adjust delivery pace toward a natural 150 words per minute.")
+        if codes & {"clipping", "leading_silence", "trailing_silence"}:
+            guidance.append("Avoid clipping and begin and end promptly without silence.")
+        return " ".join(guidance)
 
     def _result(self, run: NarrationRun, project_id: UUID) -> NarrationResult:
         rows = list(

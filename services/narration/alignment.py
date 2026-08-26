@@ -5,6 +5,10 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from itertools import pairwise
+from pathlib import Path
+from typing import Protocol
+
+import httpx
 
 from vidgen.contracts.narration import NarrationAlignment, NarrationWordTiming
 
@@ -32,9 +36,12 @@ def reconcile_alignment(
     if any(b.start_seconds < a.end_seconds for a, b in pairwise(recognized)):
         raise ValueError("recognized timestamp reversal")
     approved = re.findall(
-        r"\w+(?:['\N{RIGHT SINGLE QUOTATION MARK}]\w+)*|[^\w\s]", approved_text, re.UNICODE
+        r"(\w+(?:['\N{RIGHT SINGLE QUOTATION MARK}]\w+)*)([^\w\s]*)",
+        approved_text,
+        re.UNICODE,
     )
-    words = [x for x in approved if _token(x)]
+    words = [word for word, _punctuation in approved]
+    punctuation = [suffix for _word, suffix in approved]
     rec = [_token(x.word) for x in recognized]
     # Bounded Wagner-Fischer alignment with deterministic diagonal/delete/insert tie order.
     if len(words) * max(1, len(rec)) > 100_000:
@@ -73,6 +80,7 @@ def reconcile_alignment(
             word_index=ai,
             word=words[ai],
             comparison_token=a[ai],
+            punctuation=punctuation[ai],
             start_seconds=recognized[rj].start_seconds,
             end_seconds=recognized[rj].end_seconds,
             confidence=recognized[rj].confidence,
@@ -90,7 +98,9 @@ def reconcile_alignment(
 
 
 class FakeAligner:
-    def align(self, text: str, duration: float) -> NarrationAlignment:
+    def align(
+        self, text: str, duration: float, audio_path: Path | None = None
+    ) -> NarrationAlignment:
         words = re.findall(r"\w+(?:['\N{RIGHT SINGLE QUOTATION MARK}]\w+)*", text)
         step = duration / max(1, len(words))
         return reconcile_alignment(
@@ -101,3 +111,50 @@ class FakeAligner:
             ],
             duration,
         )
+
+
+class NarrationAligner(Protocol):
+    def align(
+        self, text: str, duration: float, audio_path: Path | None = None
+    ) -> NarrationAlignment: ...
+
+
+class OpenAIWhisperAligner:
+    """Whisper timestamp adapter; deterministic reconciliation remains local."""
+
+    def __init__(self, api_key: str, model: str = "whisper-1") -> None:
+        if not api_key:
+            raise ValueError("OpenAI API key is required for alignment")
+        self.api_key, self.model = api_key, model
+
+    def align(
+        self, text: str, duration: float, audio_path: Path | None = None
+    ) -> NarrationAlignment:
+        if audio_path is None:
+            raise ValueError("production alignment requires an audio path")
+        with audio_path.open("rb") as audio, httpx.Client(timeout=120) as client:
+            response = client.post(
+                "https://api.openai.com/v1/audio/transcriptions",
+                headers={"Authorization": f"Bearer {self.api_key}"},
+                data={
+                    "model": self.model,
+                    "response_format": "verbose_json",
+                    "prompt": text,
+                    "timestamp_granularities[]": "word",
+                },
+                files={"file": (audio_path.name, audio, "audio/wav")},
+            )
+            response.raise_for_status()
+        payload = response.json()
+        words = [
+            RecognizedWord(
+                word=str(item["word"]),
+                start_seconds=float(item["start"]),
+                end_seconds=float(item["end"]),
+                confidence=float(item.get("confidence", 1)),
+            )
+            for item in payload.get("words", [])
+        ]
+        if not words:
+            raise ValueError("alignment provider returned no timestamped words")
+        return reconcile_alignment(text, words, duration)

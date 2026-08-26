@@ -7,6 +7,7 @@ from uuid import UUID, uuid4
 
 from sqlalchemy.orm import Session
 
+from services.narration.alignment import OpenAIWhisperAligner
 from services.narration.elevenlabs_adapter import ElevenLabsNarrationProvider
 from services.narration.fake_provider import FakeNarrationProvider
 from services.narration.openai_adapter import OpenAINarrationProvider
@@ -49,9 +50,13 @@ async def generate_narration(
 ) -> NarrationResult:
     if options.voice_profile_id is None:
         raise ValueError("a voice profile ID is required")
-    return await NarrationPipeline(
-        session, blob_store, provider or build_provider(options)
-    ).process(
+    resolved_provider = provider or build_provider(options)
+    aligner = None
+    if resolved_provider.name != "fake":
+        if not options.openai_api_key:
+            raise ValueError("OpenAI API key is required for production forced alignment")
+        aligner = OpenAIWhisperAligner(options.openai_api_key)
+    return await NarrationPipeline(session, blob_store, resolved_provider, aligner=aligner).process(
         project_id=project_id,
         voice_profile_id=options.voice_profile_id,
         idempotency_key=options.idempotency_key or f"narration:{uuid4()}",

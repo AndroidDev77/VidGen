@@ -54,9 +54,22 @@ class NarrationRepository:
             )
         )
 
-    def segment_by_identity(self, identity: str) -> NarrationSegment | None:
+    def segment_by_identity(self, run_id: UUID, identity: str) -> NarrationSegment | None:
         return self.session.scalar(
-            select(NarrationSegment).where(NarrationSegment.generation_identity == identity)
+            select(NarrationSegment).where(
+                NarrationSegment.narration_run_id == run_id,
+                NarrationSegment.generation_identity == identity,
+            )
+        )
+
+    def reusable_segment(self, identity: str) -> NarrationSegment | None:
+        return self.session.scalar(
+            select(NarrationSegment)
+            .where(
+                NarrationSegment.generation_identity == identity,
+                NarrationSegment.status == "complete",
+            )
+            .order_by(NarrationSegment.created_at.desc())
         )
 
     def attempts(self, segment_id: UUID) -> list[NarrationAttemptRecord]:

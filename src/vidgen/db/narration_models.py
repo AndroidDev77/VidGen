@@ -95,7 +95,7 @@ class NarrationSegment(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     )
     sequence: Mapped[int] = mapped_column(Integer)
     text_hash: Mapped[str] = mapped_column(String(64))
-    generation_identity: Mapped[str] = mapped_column(String(64), unique=True)
+    generation_identity: Mapped[str] = mapped_column(String(64))
     status: Mapped[str] = mapped_column(String(64))
     selected_attempt_id: Mapped[UUID | None] = mapped_column(nullable=True)
     original_asset_id: Mapped[UUID | None] = mapped_column(
@@ -110,6 +110,9 @@ class NarrationSegment(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     word_timings: Mapped[list[dict[str, Any]] | None] = mapped_column(JSON)
     __table_args__ = (
         UniqueConstraint("narration_run_id", "sequence", name="uq_narration_segment_sequence"),
+        UniqueConstraint(
+            "narration_run_id", "generation_identity", name="uq_narration_segment_identity"
+        ),
         UniqueConstraint(
             "narration_run_id", "script_segment_id", name="uq_narration_segment_script"
         ),
