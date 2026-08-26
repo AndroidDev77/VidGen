@@ -44,7 +44,9 @@ def main() -> int:
         with args.video.open("rb") as stream:
             part_number = 0
             while chunk := stream.read(args.part_size):
-                response = client.put(f"/uploads/{upload['id']}/parts/{part_number}", content=chunk)
+                response = client.put(
+                    f"/uploads/{upload['id']}/parts/{part_number}", content=chunk
+                )
                 response.raise_for_status()
                 part_number += 1
         complete = client.post(f"/uploads/{upload['id']}/complete")

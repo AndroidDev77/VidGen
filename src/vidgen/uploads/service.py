@@ -156,7 +156,9 @@ class UploadService:
             self.session.refresh(upload)
             return self._finalize_locked(upload, directory)
 
-    def _finalize_locked(self, upload: UploadSession, directory: Path) -> FinalizedUpload:
+    def _finalize_locked(
+        self, upload: UploadSession, directory: Path
+    ) -> FinalizedUpload:
         if upload.status == "complete" and upload.completed_asset_id is not None:
             source = self.session.scalar(
                 select(SourceVideo).where(SourceVideo.asset_id == upload.completed_asset_id)
