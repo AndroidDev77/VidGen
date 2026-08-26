@@ -44,6 +44,7 @@ class EpisodeAnalysisRun(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __table_args__ = (
         Index("uq_analysis_run_project_idempotency", "project_id", "idempotency_key", unique=True),
         CheckConstraint("attempt_count >= 0", name="analysis_attempt_nonnegative"),
+        CheckConstraint("length(input_hash) = 64", name="analysis_run_input_hash_length"),
     )
 
 
@@ -66,6 +67,7 @@ class SceneAnalysisCheckpoint(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         Index("uq_checkpoint_run_scene", "analysis_run_id", "source_scene_id", unique=True),
         CheckConstraint("sequence > 0", name="checkpoint_positive_sequence"),
         CheckConstraint("attempt_count >= 0", name="checkpoint_attempt_nonnegative"),
+        CheckConstraint("length(input_hash) = 64", name="checkpoint_input_hash_length"),
     )
 
 
@@ -98,6 +100,12 @@ class EpisodeAnalysisRecord(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         ),
         CheckConstraint("version > 0", name="analysis_positive_version"),
         CheckConstraint("duration_ms > 0", name="analysis_positive_duration"),
+        CheckConstraint("length(input_hash) = 64", name="analysis_input_hash_length"),
+        CheckConstraint(
+            "character_count >= 0 AND location_count >= 0 "
+            "AND scene_count > 0 AND plot_beat_count >= 0",
+            name="analysis_valid_counts",
+        ),
     )
 
 

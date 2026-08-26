@@ -35,6 +35,10 @@ def upgrade() -> None:
         sa.CheckConstraint(
             "attempt_count >= 0", name=op.f("ck_episode_analysis_runs_analysis_attempt_nonnegative")
         ),
+        sa.CheckConstraint(
+            "length(input_hash) = 64",
+            name=op.f("ck_episode_analysis_runs_analysis_run_input_hash_length"),
+        ),
         sa.ForeignKeyConstraint(["project_id"], ["projects.id"], ondelete="CASCADE"),
         sa.ForeignKeyConstraint(["source_video_id"], ["source_videos.id"], ondelete="RESTRICT"),
         sa.ForeignKeyConstraint(
@@ -70,6 +74,10 @@ def upgrade() -> None:
             "attempt_count >= 0",
             name=op.f("ck_scene_analysis_checkpoints_checkpoint_attempt_nonnegative"),
         ),
+        sa.CheckConstraint(
+            "length(input_hash) = 64",
+            name=op.f("ck_scene_analysis_checkpoints_checkpoint_input_hash_length"),
+        ),
         sa.ForeignKeyConstraint(
             ["analysis_run_id"], ["episode_analysis_runs.id"], ondelete="CASCADE"
         ),
@@ -102,6 +110,14 @@ def upgrade() -> None:
         ),
         sa.CheckConstraint(
             "duration_ms > 0", name=op.f("ck_episode_analyses_analysis_positive_duration")
+        ),
+        sa.CheckConstraint(
+            "length(input_hash) = 64", name=op.f("ck_episode_analyses_analysis_input_hash_length")
+        ),
+        sa.CheckConstraint(
+            "character_count >= 0 AND location_count >= 0 "
+            "AND scene_count > 0 AND plot_beat_count >= 0",
+            name=op.f("ck_episode_analyses_analysis_valid_counts"),
         ),
         sa.ForeignKeyConstraint(["project_id"], ["projects.id"], ondelete="CASCADE"),
         sa.ForeignKeyConstraint(

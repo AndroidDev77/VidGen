@@ -4,8 +4,10 @@ from vidgen.contracts.episode import (
     CharacterDefinition,
     CharacterState,
     LocationDefinition,
-    PlotBeat,
     SceneDefinition,
+)
+from vidgen.contracts.episode import (
+    PlotBeat as LegacyPlotBeat,
 )
 from vidgen.contracts.episode_analysis import (
     AliasEvidence,
@@ -20,6 +22,7 @@ from vidgen.contracts.episode_analysis import (
     EpisodeAnalysisResult,
     EpisodeSynthesisRequest,
     LocationCandidate,
+    PlotBeat,
     ProviderEpisodeAnalysisResult,
     ProviderMetadata,
     ProviderSceneAnalysisResult,
@@ -108,6 +111,7 @@ __all__ = [
     "EvidenceProvenance",
     "EvidenceTranscriptItem",
     "ExtractedFrame",
+    "LegacyPlotBeat",
     "LocationCandidate",
     "LocationDefinition",
     "MediaProbeResult",
