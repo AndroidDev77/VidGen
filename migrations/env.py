@@ -8,7 +8,8 @@ from sqlalchemy import engine_from_config, pool
 import vidgen.db.models
 import vidgen.db.subtitle_models
 import vidgen.db.transcription_models
-import vidgen.db.upload_models  # noqa: F401
+import vidgen.db.upload_models
+import vidgen.db.workflow_models  # noqa: F401
 from vidgen.db.base import Base
 from vidgen.db.session import database_url
 

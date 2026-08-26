@@ -24,6 +24,7 @@ class APISettings(BaseSettings):
     opensubtitles_password: str | None = None
     subtitle_languages: tuple[str, ...] = ("en",)
     subtitle_sync_enabled: bool = False
+    temporal_allow_fake_providers: bool = False
 
     @field_validator("allowed_video_types", mode="before")
     @classmethod

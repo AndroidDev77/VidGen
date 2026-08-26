@@ -6,7 +6,7 @@ The complete system architecture and T01-T26 implementation roadmap are maintain
 [`docs/TECHNICAL_DESIGN.md`](docs/TECHNICAL_DESIGN.md). Contributors and coding agents should
 read it together with `AGENTS.md` before planning the next roadmap task.
 
-This repository implements roadmap tasks T01 through T07 plus subtitle-first transcript acquisition:
+This repository implements roadmap tasks T01 through T09, including subtitle-first transcript acquisition:
 
 - Python monorepo, CI, and local infrastructure
 - Versioned Pydantic contracts plus exported JSON Schema
@@ -29,7 +29,7 @@ make verify
 With Docker installed:
 
 ```bash
-docker compose up -d postgres redis azurite
+docker compose up -d postgres redis azurite temporal
 uv run alembic upgrade head
 make verify-stack
 ```
@@ -119,3 +119,18 @@ uv run python scripts/acquire_transcript.py PROJECT_UUID \
 Set `VIDGEN_SUBTITLE_SYNC_ENABLED=true` when the optional `ffsubsync` command is installed to
 audio-align downloaded provider subtitles and include its offset and correlation in candidate
 ranking. Embedded extraction stays FFmpeg-only; MKVToolNix is not required.
+
+## Temporal orchestration and scene evidence (T08-T09)
+
+`ProjectWorkflow` now owns the upload, deterministic media-processing, subtitle-first transcript
+acquisition, and evidence stages. Workflow history carries only UUID-based versioned contracts;
+all database, storage, FFmpeg, network, and provider work is delegated to idempotent activities.
+Start the local Temporal development server with `make infra-up`, then run the worker with:
+
+```bash
+uv run python -m workers.temporal_worker.main
+```
+
+Scene evidence remains provider-neutral. It clips overlapping transcript segments to source scene
+boundaries, retains anonymous speaker labels and subtitle/audio provenance, references frames and
+contact-sheet assets by UUID, and derives package identity from canonical input hashes.

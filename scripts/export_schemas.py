@@ -15,9 +15,12 @@ from vidgen.contracts import (
     ChunkTranscriptionResult,
     DiarizationResult,
     EpisodeAnalysis,
+    EvidencePackage,
     ExtractedFrame,
     MediaProbeResult,
     MediaProcessingResult,
+    ProjectWorkflowInput,
+    ProjectWorkflowState,
     ProviderSubtitleDownload,
     QAResult,
     RecapScript,
@@ -25,6 +28,8 @@ from vidgen.contracts import (
     SceneDetectionResult,
     ShotDefinition,
     SpeakerTurn,
+    StageActivityInput,
+    StageActivityResult,
     Storyboard,
     SubtitleCandidate,
     SubtitleCue,
@@ -35,12 +40,19 @@ from vidgen.contracts import (
     TranscriptionResult,
     TranscriptSegment,
     TranscriptWord,
+    WorkflowFailure,
 )
 
 ROOT = Path(__file__).resolve().parents[1]
 OUTPUT = ROOT / "packages" / "contracts" / "schema"
 CONTRACTS = (
     EpisodeAnalysis,
+    EvidencePackage,
+    ProjectWorkflowInput,
+    ProjectWorkflowState,
+    StageActivityInput,
+    StageActivityResult,
+    WorkflowFailure,
     CharacterDefinition,
     SceneDefinition,
     RecapScript,

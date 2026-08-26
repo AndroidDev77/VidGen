@@ -8,6 +8,14 @@ from vidgen.contracts.episode import (
     PlotBeat,
     SceneDefinition,
 )
+from vidgen.contracts.evidence import (
+    EvidenceDiagnostic,
+    EvidencePackage,
+    EvidenceProvenance,
+    EvidenceTranscriptItem,
+    SceneEvidence,
+    SourceTimeRange,
+)
 from vidgen.contracts.media import (
     AudioExtractionResult,
     ExtractedFrame,
@@ -42,6 +50,13 @@ from vidgen.contracts.transcription import (
     TranscriptSegment,
     TranscriptWord,
 )
+from vidgen.contracts.workflow import (
+    ProjectWorkflowInput,
+    ProjectWorkflowState,
+    StageActivityInput,
+    StageActivityResult,
+    WorkflowFailure,
+)
 
 __all__ = [
     "AudioChunk",
@@ -54,19 +69,29 @@ __all__ = [
     "DiarizationRequest",
     "DiarizationResult",
     "EpisodeAnalysis",
+    "EvidenceDiagnostic",
+    "EvidencePackage",
+    "EvidenceProvenance",
+    "EvidenceTranscriptItem",
     "ExtractedFrame",
     "LocationDefinition",
     "MediaProbeResult",
     "MediaProcessingResult",
     "PlotBeat",
+    "ProjectWorkflowInput",
+    "ProjectWorkflowState",
     "ProviderSubtitleDownload",
     "QAResult",
     "RecapScript",
     "SceneDefinition",
     "SceneDetectionResult",
+    "SceneEvidence",
     "ScriptSegment",
     "ShotDefinition",
+    "SourceTimeRange",
     "SpeakerTurn",
+    "StageActivityInput",
+    "StageActivityResult",
     "Storyboard",
     "SubtitleCandidate",
     "SubtitleCue",
@@ -80,4 +105,5 @@ __all__ = [
     "TranscriptionRequest",
     "TranscriptionResult",
     "TranscriptionWarning",
+    "WorkflowFailure",
 ]

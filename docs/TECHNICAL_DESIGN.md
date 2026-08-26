@@ -15,7 +15,7 @@ example conflicts with an implemented interface.
 | --- | --- | --- |
 | T01-T07 | Complete | Monorepo, contracts, database, asset storage, ingestion API, deterministic media processing, and restartable transcription are merged. |
 | T07B | Complete extension | Embedded, sidecar, and OpenSubtitles acquisition now precedes T07 audio transcription fallback and writes the same canonical transcript model. |
-| T08-T09 | Next | Temporal project orchestration and deterministic scene evidence packages are the next bounded implementation. Evidence must consume the selected canonical transcript regardless of subtitle or audio origin. |
+| T08-T09 | Complete | Temporal project orchestration and deterministic scene evidence packages consume the selected canonical transcript regardless of subtitle or audio origin. |
 | T10-T26 | Planned | Do not begin a later task until its dependencies and the current implementation are reconciled. |
 
 When a roadmap task is completed, update this table, `README.md`, and any affected design section in
