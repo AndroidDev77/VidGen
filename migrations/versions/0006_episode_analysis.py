@@ -125,9 +125,82 @@ def upgrade() -> None:
         sqlite_where=sa.text("selected = 1"),
         postgresql_where=sa.text("selected"),
     )
+    for table, columns, checks, index_name, index_columns in (
+        (
+            "analysis_state_events",
+            [
+                sa.Column("stable_id", sa.Uuid(), nullable=False),
+                sa.Column("entity_id", sa.Uuid(), nullable=False),
+                sa.Column("scene_id", sa.Uuid(), nullable=False),
+                sa.Column("sequence", sa.Integer(), nullable=False),
+                sa.Column("confidence", sa.Float(), nullable=False),
+            ],
+            [
+                sa.CheckConstraint(
+                    "sequence > 0",
+                    name=op.f("ck_analysis_state_events_analysis_state_positive_sequence"),
+                ),
+                sa.CheckConstraint(
+                    "confidence BETWEEN 0 AND 1",
+                    name=op.f("ck_analysis_state_events_analysis_state_confidence"),
+                ),
+            ],
+            "uq_analysis_state_stable",
+            ["analysis_id", "stable_id"],
+        ),
+        (
+            "analysis_relationships",
+            [
+                sa.Column("stable_id", sa.Uuid(), nullable=False),
+                sa.Column("source_character_id", sa.Uuid(), nullable=False),
+                sa.Column("target_character_id", sa.Uuid(), nullable=False),
+                sa.Column("confidence", sa.Float(), nullable=False),
+                sa.Column("description", sa.Text(), nullable=False),
+            ],
+            [
+                sa.CheckConstraint(
+                    "confidence BETWEEN 0 AND 1",
+                    name=op.f("ck_analysis_relationships_analysis_relationship_confidence"),
+                )
+            ],
+            "uq_analysis_relationship_stable",
+            ["analysis_id", "stable_id"],
+        ),
+        (
+            "analysis_beat_dependencies",
+            [
+                sa.Column("cause_beat_id", sa.Uuid(), nullable=False),
+                sa.Column("effect_beat_id", sa.Uuid(), nullable=False),
+            ],
+            [
+                sa.CheckConstraint(
+                    "cause_beat_id <> effect_beat_id",
+                    name=op.f("ck_analysis_beat_dependencies_analysis_dependency_not_self"),
+                )
+            ],
+            "uq_analysis_beat_dependency",
+            ["analysis_id", "cause_beat_id", "effect_beat_id"],
+        ),
+    ):
+        op.create_table(
+            table,
+            sa.Column("analysis_id", sa.Uuid(), nullable=False),
+            *columns,
+            sa.Column("contract", sa.JSON(), nullable=False),
+            sa.Column("id", sa.Uuid(), nullable=False),
+            sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
+            sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
+            *checks,
+            sa.ForeignKeyConstraint(["analysis_id"], ["episode_analyses.id"], ondelete="CASCADE"),
+            sa.PrimaryKeyConstraint("id", name=op.f(f"pk_{table}")),
+        )
+        op.create_index(index_name, table, index_columns, unique=True)
 
 
 def downgrade() -> None:
+    op.drop_table("analysis_beat_dependencies")
+    op.drop_table("analysis_relationships")
+    op.drop_table("analysis_state_events")
     op.drop_table("episode_analyses")
     op.drop_table("scene_analysis_checkpoints")
     op.drop_table("episode_analysis_runs")

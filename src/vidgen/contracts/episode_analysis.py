@@ -165,6 +165,8 @@ class SceneAnalysisRequest(StrictContract):
     evidence_package_id: UUID
     scene_id: UUID
     sequence: int = Field(ge=1)
+    source_start_ms: int = Field(ge=0)
+    source_end_ms: int = Field(ge=1)
     input_hash: str = Field(pattern=r"^[a-f0-9]{64}$")
     idempotency_key: str = Field(min_length=1)
     contract_version: str
@@ -178,6 +180,8 @@ class EpisodeSynthesisRequest(StrictContract):
     schema_version: Version = "1.0"
     project_id: UUID
     evidence_package_id: UUID
+    source_video_id: UUID
+    duration_ms: int = Field(ge=1)
     input_hash: str = Field(pattern=r"^[a-f0-9]{64}$")
     idempotency_key: str
     contract_version: str

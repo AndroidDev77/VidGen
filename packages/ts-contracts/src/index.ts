@@ -435,3 +435,21 @@ export interface SubtitleImportResult {
   quality: SubtitleQuality;
   warnings: TranscriptionWarning[];
 }
+
+export interface StructuredNote { code: string; message: string }
+export type SourceReferenceType = "transcript_segment" | "speaker_turn" | "source_scene" | "frame" | "contact_sheet" | "project";
+export interface SourceReference { schema_version: "1.0"; reference_type: SourceReferenceType; reference_id: UUID; scene_id: UUID | null; start_ms: number | null; end_ms: number | null }
+export interface AnalysisObservation { schema_version: "1.0"; claim: string; source_references: SourceReference[] }
+export interface AnalysisInference extends AnalysisObservation { confidence: number }
+export interface CharacterCandidate { schema_version: "1.0"; character_id: UUID; canonical_name: string; aliases: string[]; anonymous: boolean; confidence: number; source_references: SourceReference[] }
+export interface LocationCandidate { schema_version: "1.0"; location_id: UUID; canonical_name: string; aliases: string[]; confidence: number; source_references: SourceReference[] }
+export interface StateEvent { schema_version: "1.0"; state_event_id: UUID; entity_id: UUID; scene_id: UUID; sequence: number; description: string; confidence: number; source_references: SourceReference[] }
+export interface Relationship { schema_version: "1.0"; relationship_id: UUID; source_character_id: UUID; target_character_id: UUID; description: string; confidence: number; source_references: SourceReference[] }
+export interface AnalysisPlotBeat { schema_version: "1.0"; plot_beat_id: UUID; sequence: number; scene_ids: UUID[]; character_ids: UUID[]; summary: string; importance: number; payoff_score: number; mandatory: boolean; source_references: SourceReference[] }
+export interface BeatDependency { cause_beat_id: UUID; effect_beat_id: UUID; source_references: SourceReference[] }
+export interface UnresolvedAmbiguity { schema_version: "1.0"; ambiguity_id: UUID; description: string; candidate_ids: UUID[]; source_references: SourceReference[] }
+export interface CanonicalScene { scene_id: UUID; sequence: number; source_start_ms: number; source_end_ms: number; summary: string; dramatic_purpose: string; character_ids: UUID[]; location_id: UUID | null; confidence: number; source_references: SourceReference[] }
+export interface EpisodeAnalysis { schema_version: "1.0"; episode_id: UUID; project_id: UUID; source_video_id: UUID; evidence_package_id: UUID; title: string; duration_ms: number; logline: string; genre: string[]; tone: string[]; characters: CharacterCandidate[]; locations: LocationCandidate[]; scenes: CanonicalScene[]; state_events: StateEvent[]; relationships: Relationship[]; plot_beats: AnalysisPlotBeat[]; beat_dependencies: BeatDependency[]; unresolved_ambiguities: UnresolvedAmbiguity[]; source_references: SourceReference[]; assumptions: StructuredNote[]; warnings: StructuredNote[] }
+export interface AnalysisValidationError { code: string; entity_path: string; invalid_value: string | number | boolean | null; source_reference: SourceReference | null; explanation: string }
+export interface AnalysisValidationReport { schema_version: "1.0"; valid: boolean; errors: AnalysisValidationError[]; warnings: StructuredNote[] }
+export interface EpisodeAnalysisResult { schema_version: "1.0"; analysis_run_id: UUID; episode_analysis_id: UUID | null; analysis_asset_id: UUID | null; version: number | null; validation_report: AnalysisValidationReport }

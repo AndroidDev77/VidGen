@@ -9,8 +9,59 @@ from vidgen.contracts.episode_analysis import (
     AnalysisValidationError,
     AnalysisValidationReport,
     EpisodeAnalysis,
+    SceneAnalysisResult,
     SourceReference,
 )
+
+
+def validate_scene_analysis(
+    result: SceneAnalysisResult,
+    *,
+    scene_id: UUID,
+    sequence: int,
+    start_ms: int,
+    end_ms: int,
+    valid_reference_ids: set[UUID],
+) -> AnalysisValidationReport:
+    errors: list[AnalysisValidationError] = []
+    if (result.scene_id, result.sequence, result.source_start_ms, result.source_end_ms) != (
+        scene_id,
+        sequence,
+        start_ms,
+        end_ms,
+    ):
+        errors.append(
+            AnalysisValidationError(
+                code="SCENE_BOUNDARY_CHANGED",
+                entity_path="scene",
+                invalid_value=str(result.scene_id),
+                explanation="Provider must preserve the T09 scene identity, sequence, and boundary",
+            )
+        )
+    referenced = [*result.source_references]
+    for collection in (result.direct_observations, result.inferences, result.important_actions):
+        for claim in collection:
+            referenced.extend(claim.source_references)
+    for entities in (
+        result.observed_characters,
+        result.location_candidates,
+        result.state_changes,
+        result.candidate_plot_beats,
+    ):
+        for entity in entities:
+            referenced.extend(entity.source_references)
+    for index, reference in enumerate(referenced):
+        if reference.reference_id not in valid_reference_ids:
+            errors.append(
+                AnalysisValidationError(
+                    code="UNKNOWN_SOURCE_REFERENCE",
+                    entity_path=f"source_references.{index}",
+                    invalid_value=str(reference.reference_id),
+                    source_reference=reference,
+                    explanation="Reference must belong to this selected T09 scene evidence",
+                )
+            )
+    return AnalysisValidationReport(valid=not errors, errors=errors)
 
 
 def validate_episode_analysis(

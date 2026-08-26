@@ -3,7 +3,18 @@ from __future__ import annotations
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import JSON, Boolean, CheckConstraint, ForeignKey, Index, Integer, String, text
+from sqlalchemy import (
+    JSON,
+    Boolean,
+    CheckConstraint,
+    Float,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Text,
+    text,
+)
 from sqlalchemy.orm import Mapped, mapped_column
 
 from vidgen.db.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
@@ -87,4 +98,53 @@ class EpisodeAnalysisRecord(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         ),
         CheckConstraint("version > 0", name="analysis_positive_version"),
         CheckConstraint("duration_ms > 0", name="analysis_positive_duration"),
+    )
+
+
+class AnalysisStateEvent(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    __tablename__ = "analysis_state_events"
+    analysis_id: Mapped[UUID] = mapped_column(ForeignKey("episode_analyses.id", ondelete="CASCADE"))
+    stable_id: Mapped[UUID]
+    entity_id: Mapped[UUID]
+    scene_id: Mapped[UUID]
+    sequence: Mapped[int] = mapped_column(Integer)
+    confidence: Mapped[float] = mapped_column(Float)
+    contract: Mapped[dict[str, Any]] = mapped_column(JSON)
+    __table_args__ = (
+        Index("uq_analysis_state_stable", "analysis_id", "stable_id", unique=True),
+        CheckConstraint("sequence > 0", name="analysis_state_positive_sequence"),
+        CheckConstraint("confidence BETWEEN 0 AND 1", name="analysis_state_confidence"),
+    )
+
+
+class AnalysisRelationship(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    __tablename__ = "analysis_relationships"
+    analysis_id: Mapped[UUID] = mapped_column(ForeignKey("episode_analyses.id", ondelete="CASCADE"))
+    stable_id: Mapped[UUID]
+    source_character_id: Mapped[UUID]
+    target_character_id: Mapped[UUID]
+    confidence: Mapped[float] = mapped_column(Float)
+    description: Mapped[str] = mapped_column(Text)
+    contract: Mapped[dict[str, Any]] = mapped_column(JSON)
+    __table_args__ = (
+        Index("uq_analysis_relationship_stable", "analysis_id", "stable_id", unique=True),
+        CheckConstraint("confidence BETWEEN 0 AND 1", name="analysis_relationship_confidence"),
+    )
+
+
+class AnalysisBeatDependency(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    __tablename__ = "analysis_beat_dependencies"
+    analysis_id: Mapped[UUID] = mapped_column(ForeignKey("episode_analyses.id", ondelete="CASCADE"))
+    cause_beat_id: Mapped[UUID]
+    effect_beat_id: Mapped[UUID]
+    contract: Mapped[dict[str, Any]] = mapped_column(JSON)
+    __table_args__ = (
+        Index(
+            "uq_analysis_beat_dependency",
+            "analysis_id",
+            "cause_beat_id",
+            "effect_beat_id",
+            unique=True,
+        ),
+        CheckConstraint("cause_beat_id <> effect_beat_id", name="analysis_dependency_not_self"),
     )

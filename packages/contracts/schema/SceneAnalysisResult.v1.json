@@ -1,5 +1,72 @@
 {
   "$defs": {
+    "AnalysisInference": {
+      "additionalProperties": false,
+      "properties": {
+        "claim": {
+          "minLength": 1,
+          "title": "Claim",
+          "type": "string"
+        },
+        "confidence": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Confidence",
+          "type": "number"
+        },
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "source_references": {
+          "items": {
+            "$ref": "#/$defs/SourceReference"
+          },
+          "minItems": 1,
+          "title": "Source References",
+          "type": "array"
+        }
+      },
+      "required": [
+        "claim",
+        "source_references",
+        "confidence"
+      ],
+      "title": "AnalysisInference",
+      "type": "object"
+    },
+    "AnalysisObservation": {
+      "additionalProperties": false,
+      "properties": {
+        "claim": {
+          "minLength": 1,
+          "title": "Claim",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "source_references": {
+          "items": {
+            "$ref": "#/$defs/SourceReference"
+          },
+          "minItems": 1,
+          "title": "Source References",
+          "type": "array"
+        }
+      },
+      "required": [
+        "claim",
+        "source_references"
+      ],
+      "title": "AnalysisObservation",
+      "type": "object"
+    },
     "BeatDependency": {
       "additionalProperties": false,
       "properties": {
@@ -28,88 +95,6 @@
         "source_references"
       ],
       "title": "BeatDependency",
-      "type": "object"
-    },
-    "CanonicalScene": {
-      "additionalProperties": false,
-      "properties": {
-        "character_ids": {
-          "items": {
-            "format": "uuid",
-            "type": "string"
-          },
-          "title": "Character Ids",
-          "type": "array"
-        },
-        "confidence": {
-          "maximum": 1,
-          "minimum": 0,
-          "title": "Confidence",
-          "type": "number"
-        },
-        "dramatic_purpose": {
-          "minLength": 1,
-          "title": "Dramatic Purpose",
-          "type": "string"
-        },
-        "location_id": {
-          "anyOf": [
-            {
-              "format": "uuid",
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Location Id"
-        },
-        "scene_id": {
-          "format": "uuid",
-          "title": "Scene Id",
-          "type": "string"
-        },
-        "sequence": {
-          "minimum": 1,
-          "title": "Sequence",
-          "type": "integer"
-        },
-        "source_end_ms": {
-          "minimum": 1,
-          "title": "Source End Ms",
-          "type": "integer"
-        },
-        "source_references": {
-          "items": {
-            "$ref": "#/$defs/SourceReference"
-          },
-          "minItems": 1,
-          "title": "Source References",
-          "type": "array"
-        },
-        "source_start_ms": {
-          "minimum": 0,
-          "title": "Source Start Ms",
-          "type": "integer"
-        },
-        "summary": {
-          "minLength": 1,
-          "title": "Summary",
-          "type": "string"
-        }
-      },
-      "required": [
-        "scene_id",
-        "sequence",
-        "source_start_ms",
-        "source_end_ms",
-        "summary",
-        "dramatic_purpose",
-        "confidence",
-        "source_references"
-      ],
-      "title": "CanonicalScene",
       "type": "object"
     },
     "CharacterCandidate": {
@@ -294,61 +279,6 @@
       "title": "PlotBeat",
       "type": "object"
     },
-    "Relationship": {
-      "additionalProperties": false,
-      "properties": {
-        "confidence": {
-          "maximum": 1,
-          "minimum": 0,
-          "title": "Confidence",
-          "type": "number"
-        },
-        "description": {
-          "minLength": 1,
-          "title": "Description",
-          "type": "string"
-        },
-        "relationship_id": {
-          "format": "uuid",
-          "title": "Relationship Id",
-          "type": "string"
-        },
-        "schema_version": {
-          "const": "1.0",
-          "default": "1.0",
-          "title": "Schema Version",
-          "type": "string"
-        },
-        "source_character_id": {
-          "format": "uuid",
-          "title": "Source Character Id",
-          "type": "string"
-        },
-        "source_references": {
-          "items": {
-            "$ref": "#/$defs/SourceReference"
-          },
-          "minItems": 1,
-          "title": "Source References",
-          "type": "array"
-        },
-        "target_character_id": {
-          "format": "uuid",
-          "title": "Target Character Id",
-          "type": "string"
-        }
-      },
-      "required": [
-        "relationship_id",
-        "source_character_id",
-        "target_character_id",
-        "description",
-        "confidence",
-        "source_references"
-      ],
-      "title": "Relationship",
-      "type": "object"
-    },
     "SourceReference": {
       "additionalProperties": false,
       "properties": {
@@ -503,54 +433,17 @@
       ],
       "title": "StructuredNote",
       "type": "object"
-    },
-    "UnresolvedAmbiguity": {
-      "additionalProperties": false,
-      "properties": {
-        "ambiguity_id": {
-          "format": "uuid",
-          "title": "Ambiguity Id",
-          "type": "string"
-        },
-        "candidate_ids": {
-          "items": {
-            "format": "uuid",
-            "type": "string"
-          },
-          "title": "Candidate Ids",
-          "type": "array"
-        },
-        "description": {
-          "minLength": 1,
-          "title": "Description",
-          "type": "string"
-        },
-        "schema_version": {
-          "const": "1.0",
-          "default": "1.0",
-          "title": "Schema Version",
-          "type": "string"
-        },
-        "source_references": {
-          "items": {
-            "$ref": "#/$defs/SourceReference"
-          },
-          "minItems": 1,
-          "title": "Source References",
-          "type": "array"
-        }
-      },
-      "required": [
-        "ambiguity_id",
-        "description",
-        "source_references"
-      ],
-      "title": "UnresolvedAmbiguity",
-      "type": "object"
     }
   },
   "additionalProperties": false,
   "properties": {
+    "anonymous_speaker_references": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Anonymous Speaker References",
+      "type": "array"
+    },
     "assumptions": {
       "items": {
         "$ref": "#/$defs/StructuredNote"
@@ -558,86 +451,96 @@
       "title": "Assumptions",
       "type": "array"
     },
-    "beat_dependencies": {
+    "candidate_causal_links": {
       "items": {
         "$ref": "#/$defs/BeatDependency"
       },
-      "title": "Beat Dependencies",
+      "title": "Candidate Causal Links",
       "type": "array"
     },
-    "characters": {
-      "items": {
-        "$ref": "#/$defs/CharacterCandidate"
-      },
-      "title": "Characters",
-      "type": "array"
-    },
-    "duration_ms": {
-      "minimum": 1,
-      "title": "Duration Ms",
-      "type": "integer"
-    },
-    "episode_id": {
-      "format": "uuid",
-      "title": "Episode Id",
-      "type": "string"
-    },
-    "evidence_package_id": {
-      "format": "uuid",
-      "title": "Evidence Package Id",
-      "type": "string"
-    },
-    "genre": {
-      "items": {
-        "type": "string"
-      },
-      "title": "Genre",
-      "type": "array"
-    },
-    "locations": {
-      "items": {
-        "$ref": "#/$defs/LocationCandidate"
-      },
-      "title": "Locations",
-      "type": "array"
-    },
-    "logline": {
-      "default": "",
-      "title": "Logline",
-      "type": "string"
-    },
-    "plot_beats": {
+    "candidate_plot_beats": {
       "items": {
         "$ref": "#/$defs/PlotBeat"
       },
-      "title": "Plot Beats",
+      "title": "Candidate Plot Beats",
       "type": "array"
     },
-    "project_id": {
-      "format": "uuid",
-      "title": "Project Id",
+    "character_aliases": {
+      "additionalProperties": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      },
+      "title": "Character Aliases",
+      "type": "object"
+    },
+    "confidence": {
+      "maximum": 1,
+      "minimum": 0,
+      "title": "Confidence",
+      "type": "number"
+    },
+    "direct_observations": {
+      "items": {
+        "$ref": "#/$defs/AnalysisObservation"
+      },
+      "title": "Direct Observations",
+      "type": "array"
+    },
+    "dramatic_purpose": {
+      "minLength": 1,
+      "title": "Dramatic Purpose",
       "type": "string"
     },
-    "relationships": {
+    "important_actions": {
       "items": {
-        "$ref": "#/$defs/Relationship"
+        "$ref": "#/$defs/AnalysisObservation"
       },
-      "title": "Relationships",
+      "title": "Important Actions",
       "type": "array"
     },
-    "scenes": {
+    "inferences": {
       "items": {
-        "$ref": "#/$defs/CanonicalScene"
+        "$ref": "#/$defs/AnalysisInference"
       },
-      "minItems": 1,
-      "title": "Scenes",
+      "title": "Inferences",
       "type": "array"
+    },
+    "location_candidates": {
+      "items": {
+        "$ref": "#/$defs/LocationCandidate"
+      },
+      "title": "Location Candidates",
+      "type": "array"
+    },
+    "observed_characters": {
+      "items": {
+        "$ref": "#/$defs/CharacterCandidate"
+      },
+      "title": "Observed Characters",
+      "type": "array"
+    },
+    "scene_id": {
+      "format": "uuid",
+      "title": "Scene Id",
+      "type": "string"
     },
     "schema_version": {
       "const": "1.0",
       "default": "1.0",
       "title": "Schema Version",
       "type": "string"
+    },
+    "sequence": {
+      "minimum": 1,
+      "title": "Sequence",
+      "type": "integer"
+    },
+    "source_end_ms": {
+      "minimum": 1,
+      "title": "Source End Ms",
+      "type": "integer"
     },
     "source_references": {
       "items": {
@@ -647,35 +550,35 @@
       "title": "Source References",
       "type": "array"
     },
-    "source_video_id": {
-      "format": "uuid",
-      "title": "Source Video Id",
-      "type": "string"
+    "source_start_ms": {
+      "minimum": 0,
+      "title": "Source Start Ms",
+      "type": "integer"
     },
-    "state_events": {
+    "state_changes": {
       "items": {
         "$ref": "#/$defs/StateEvent"
       },
-      "title": "State Events",
+      "title": "State Changes",
       "type": "array"
     },
-    "title": {
-      "default": "",
-      "title": "Title",
+    "summary": {
+      "minLength": 1,
+      "title": "Summary",
       "type": "string"
     },
-    "tone": {
+    "unresolved_questions": {
       "items": {
         "type": "string"
       },
-      "title": "Tone",
+      "title": "Unresolved Questions",
       "type": "array"
     },
-    "unresolved_ambiguities": {
+    "visual_motifs": {
       "items": {
-        "$ref": "#/$defs/UnresolvedAmbiguity"
+        "type": "string"
       },
-      "title": "Unresolved Ambiguities",
+      "title": "Visual Motifs",
       "type": "array"
     },
     "warnings": {
@@ -687,14 +590,15 @@
     }
   },
   "required": [
-    "episode_id",
-    "project_id",
-    "source_video_id",
-    "evidence_package_id",
-    "duration_ms",
-    "scenes",
+    "scene_id",
+    "sequence",
+    "source_start_ms",
+    "source_end_ms",
+    "summary",
+    "dramatic_purpose",
+    "confidence",
     "source_references"
   ],
-  "title": "EpisodeAnalysis",
+  "title": "SceneAnalysisResult",
   "type": "object"
 }

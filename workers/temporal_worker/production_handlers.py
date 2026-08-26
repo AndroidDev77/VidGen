@@ -13,6 +13,9 @@ from packages.providers import FakeSubtitleProvider
 from packages.workflows.activities import StageHandler
 from services.analysis.contact_sheet import contact_sheet_manifest
 from services.analysis.evidence_builder import build_evidence_package
+from services.analysis.fake_provider import FakeEpisodeAnalysisProvider
+from services.analysis.openai_adapter import OpenAIAnalysisConfig, OpenAIEpisodeAnalysisProvider
+from services.analysis.pipeline import EpisodeAnalysisPipeline
 from services.media_worker.pipeline import MediaPipeline
 from services.subtitles.acquisition import TranscriptAcquisitionService
 from services.subtitles.opensubtitles import OpenSubtitlesAdapter
@@ -46,6 +49,7 @@ def build_production_handlers(
         "media_processing": _with_session(configured, _process_media),
         "transcript_acquisition": _with_session(configured, _acquire_transcript),
         "evidence": _with_session(configured, _build_evidence),
+        "episode_analysis": _with_session(configured, _analyze_episode),
     }
 
 
@@ -334,6 +338,43 @@ def _build_evidence(
     )
     session.commit()
     return StageActivityResult(stage=request.stage, entity_id=record.id, asset_id=package_asset.id)
+
+
+def _analyze_episode(
+    session: Session,
+    blob_store: FilesystemBlobStore,
+    settings: APISettings,
+    request: StageActivityInput,
+) -> StageActivityResult:
+    evidence = session.scalar(
+        select(EvidencePackageRecord).where(
+            EvidencePackageRecord.project_id == request.project_id, EvidencePackageRecord.selected
+        )
+    )
+    if evidence is None:
+        raise ValueError("project has no selected evidence package")
+    provider = (
+        OpenAIEpisodeAnalysisProvider(
+            OpenAIAnalysisConfig(api_key=settings.openai_api_key, model=settings.analysis_model)
+        )
+        if settings.openai_api_key
+        else FakeEpisodeAnalysisProvider()
+    )
+    if not settings.openai_api_key and not settings.temporal_allow_fake_providers:
+        raise ValueError("episode analysis provider is not configured")
+    result = asyncio.run(
+        EpisodeAnalysisPipeline(session, blob_store, provider).process(
+            project_id=request.project_id,
+            evidence_package_id=evidence.id,
+            idempotency_key=request.idempotency_key,
+        )
+    )
+    return StageActivityResult(
+        stage=request.stage,
+        entity_id=result.episode_analysis_id,
+        asset_id=result.analysis_asset_id,
+        reused=False,
+    )
 
 
 def _frame(session: Session, scene: Scene) -> ExtractedFrame:

@@ -37,6 +37,7 @@ class ProjectWorkflow:
                 provider_activity_retry_policy(),
             ),
             ("evidence", "run_evidence_activity", default_activity_retry_policy()),
+            ("episode_analysis", "run_episode_analysis_activity", provider_activity_retry_policy()),
         )
         for stage, activity_name, retry_policy in stages:
             if self._cancelled:
@@ -62,7 +63,7 @@ class ProjectWorkflow:
                 self._state.cancelled = True
                 self._state.status = "cancelled"
                 return self._state
-        self._state.status = "evidence_ready"
+        self._state.status = "episode_analyzed"
         return self._state
 
     @workflow.signal
