@@ -1,0 +1,119 @@
+{
+  "$defs": {
+    "NarrationQualityDiagnostic": {
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "title": "Code",
+          "type": "string"
+        },
+        "measured_value": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Measured Value"
+        },
+        "message": {
+          "title": "Message",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "severity": {
+          "enum": [
+            "warning",
+            "error"
+          ],
+          "title": "Severity",
+          "type": "string"
+        },
+        "threshold": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Threshold"
+        }
+      },
+      "required": [
+        "code",
+        "severity",
+        "message"
+      ],
+      "title": "NarrationQualityDiagnostic",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "alignment_coverage": {
+      "maximum": 1,
+      "minimum": 0,
+      "title": "Alignment Coverage",
+      "type": "number"
+    },
+    "clipping_ratio": {
+      "maximum": 1,
+      "minimum": 0,
+      "title": "Clipping Ratio",
+      "type": "number"
+    },
+    "diagnostics": {
+      "items": {
+        "$ref": "#/$defs/NarrationQualityDiagnostic"
+      },
+      "title": "Diagnostics",
+      "type": "array"
+    },
+    "leading_silence_seconds": {
+      "minimum": 0,
+      "title": "Leading Silence Seconds",
+      "type": "number"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "speaking_rate_wpm": {
+      "minimum": 0,
+      "title": "Speaking Rate Wpm",
+      "type": "number"
+    },
+    "trailing_silence_seconds": {
+      "minimum": 0,
+      "title": "Trailing Silence Seconds",
+      "type": "number"
+    },
+    "valid": {
+      "title": "Valid",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "valid",
+    "clipping_ratio",
+    "leading_silence_seconds",
+    "trailing_silence_seconds",
+    "speaking_rate_wpm",
+    "alignment_coverage"
+  ],
+  "title": "NarrationQualityReport",
+  "type": "object"
+}

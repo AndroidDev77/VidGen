@@ -1,0 +1,297 @@
+{
+  "$defs": {
+    "NarrationAlignment": {
+      "additionalProperties": false,
+      "properties": {
+        "coverage": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Coverage",
+          "type": "number"
+        },
+        "diagnostics": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Diagnostics",
+          "type": "array"
+        },
+        "insertions": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Insertions",
+          "type": "array"
+        },
+        "omissions": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Omissions",
+          "type": "array"
+        },
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "substitutions": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Substitutions",
+          "type": "array"
+        },
+        "timings": {
+          "items": {
+            "$ref": "#/$defs/NarrationWordTiming"
+          },
+          "title": "Timings",
+          "type": "array"
+        }
+      },
+      "required": [
+        "timings",
+        "coverage"
+      ],
+      "title": "NarrationAlignment",
+      "type": "object"
+    },
+    "NarrationQualityDiagnostic": {
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "title": "Code",
+          "type": "string"
+        },
+        "measured_value": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Measured Value"
+        },
+        "message": {
+          "title": "Message",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "severity": {
+          "enum": [
+            "warning",
+            "error"
+          ],
+          "title": "Severity",
+          "type": "string"
+        },
+        "threshold": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Threshold"
+        }
+      },
+      "required": [
+        "code",
+        "severity",
+        "message"
+      ],
+      "title": "NarrationQualityDiagnostic",
+      "type": "object"
+    },
+    "NarrationQualityReport": {
+      "additionalProperties": false,
+      "properties": {
+        "alignment_coverage": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Alignment Coverage",
+          "type": "number"
+        },
+        "clipping_ratio": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Clipping Ratio",
+          "type": "number"
+        },
+        "diagnostics": {
+          "items": {
+            "$ref": "#/$defs/NarrationQualityDiagnostic"
+          },
+          "title": "Diagnostics",
+          "type": "array"
+        },
+        "leading_silence_seconds": {
+          "minimum": 0,
+          "title": "Leading Silence Seconds",
+          "type": "number"
+        },
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "speaking_rate_wpm": {
+          "minimum": 0,
+          "title": "Speaking Rate Wpm",
+          "type": "number"
+        },
+        "trailing_silence_seconds": {
+          "minimum": 0,
+          "title": "Trailing Silence Seconds",
+          "type": "number"
+        },
+        "valid": {
+          "title": "Valid",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "valid",
+        "clipping_ratio",
+        "leading_silence_seconds",
+        "trailing_silence_seconds",
+        "speaking_rate_wpm",
+        "alignment_coverage"
+      ],
+      "title": "NarrationQualityReport",
+      "type": "object"
+    },
+    "NarrationWordTiming": {
+      "additionalProperties": false,
+      "properties": {
+        "comparison_token": {
+          "title": "Comparison Token",
+          "type": "string"
+        },
+        "confidence": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Confidence",
+          "type": "number"
+        },
+        "end_seconds": {
+          "exclusiveMinimum": 0,
+          "title": "End Seconds",
+          "type": "number"
+        },
+        "punctuation": {
+          "default": "",
+          "title": "Punctuation",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "start_seconds": {
+          "minimum": 0,
+          "title": "Start Seconds",
+          "type": "number"
+        },
+        "word": {
+          "title": "Word",
+          "type": "string"
+        },
+        "word_index": {
+          "minimum": 0,
+          "title": "Word Index",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "word_index",
+        "word",
+        "comparison_token",
+        "start_seconds",
+        "end_seconds",
+        "confidence"
+      ],
+      "title": "NarrationWordTiming",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "alignment": {
+      "$ref": "#/$defs/NarrationAlignment"
+    },
+    "audio_sha256": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Audio Sha256",
+      "type": "string"
+    },
+    "duration_seconds": {
+      "exclusiveMinimum": 0,
+      "title": "Duration Seconds",
+      "type": "number"
+    },
+    "generation_identity": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Generation Identity",
+      "type": "string"
+    },
+    "normalized_asset_id": {
+      "format": "uuid",
+      "title": "Normalized Asset Id",
+      "type": "string"
+    },
+    "quality_report": {
+      "$ref": "#/$defs/NarrationQualityReport"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "script_segment_id": {
+      "format": "uuid",
+      "title": "Script Segment Id",
+      "type": "string"
+    },
+    "selected_attempt_id": {
+      "format": "uuid",
+      "title": "Selected Attempt Id",
+      "type": "string"
+    },
+    "sequence": {
+      "minimum": 0,
+      "title": "Sequence",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "script_segment_id",
+    "sequence",
+    "generation_identity",
+    "normalized_asset_id",
+    "duration_seconds",
+    "audio_sha256",
+    "alignment",
+    "quality_report",
+    "selected_attempt_id"
+  ],
+  "title": "NarrationSegmentResult",
+  "type": "object"
+}

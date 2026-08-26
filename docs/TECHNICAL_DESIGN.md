@@ -19,7 +19,8 @@ example conflicts with an implemented interface.
 | T10 | Complete | Restartable scene-map/global-reduce Episode Analyst, strict evidence-linked contracts, deterministic validation, provider abstraction, checkpoints, and canonical asset persistence are implemented. |
 | T11 | Complete | Restartable Plot Compressor, Comedy Writer, and Comedy Editor with a deterministic validator, provider abstraction (fake + OpenAI Responses), versioned/diffable revisions, and canonical asset persistence produce an approved, selected `RecapScript` from the selected T10 `EpisodeAnalysis`. |
 | T23 | Complete | Structured/redacted telemetry, W3C tracing, bounded metrics, provider-attempt persistence, versioned Decimal pricing, transactional budgets, append-only cost ledger, operations APIs/CLI, and a local observability stack are implemented. |
-| T12-T22, T24-T26 | Planned | Do not begin a later task until its dependencies and the current implementation are reconciled. |
+| T12 | Complete | Provider-neutral segmented narration, lossless normalization, forced alignment, deterministic quality gates, preview contracts, and restartable persistence are implemented. |
+| T13-T22, T24-T26 | Planned | Do not begin a later task until its dependencies and the current implementation are reconciled. |
 
 When a roadmap task is completed, update this table, `README.md`, and any affected design section in
 the same pull request.

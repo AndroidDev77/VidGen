@@ -1,0 +1,115 @@
+{
+  "$defs": {
+    "NarrationWordTiming": {
+      "additionalProperties": false,
+      "properties": {
+        "comparison_token": {
+          "title": "Comparison Token",
+          "type": "string"
+        },
+        "confidence": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Confidence",
+          "type": "number"
+        },
+        "end_seconds": {
+          "exclusiveMinimum": 0,
+          "title": "End Seconds",
+          "type": "number"
+        },
+        "punctuation": {
+          "default": "",
+          "title": "Punctuation",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "start_seconds": {
+          "minimum": 0,
+          "title": "Start Seconds",
+          "type": "number"
+        },
+        "word": {
+          "title": "Word",
+          "type": "string"
+        },
+        "word_index": {
+          "minimum": 0,
+          "title": "Word Index",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "word_index",
+        "word",
+        "comparison_token",
+        "start_seconds",
+        "end_seconds",
+        "confidence"
+      ],
+      "title": "NarrationWordTiming",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "coverage": {
+      "maximum": 1,
+      "minimum": 0,
+      "title": "Coverage",
+      "type": "number"
+    },
+    "diagnostics": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Diagnostics",
+      "type": "array"
+    },
+    "insertions": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Insertions",
+      "type": "array"
+    },
+    "omissions": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Omissions",
+      "type": "array"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "substitutions": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Substitutions",
+      "type": "array"
+    },
+    "timings": {
+      "items": {
+        "$ref": "#/$defs/NarrationWordTiming"
+      },
+      "title": "Timings",
+      "type": "array"
+    }
+  },
+  "required": [
+    "timings",
+    "coverage"
+  ],
+  "title": "NarrationAlignment",
+  "type": "object"
+}
