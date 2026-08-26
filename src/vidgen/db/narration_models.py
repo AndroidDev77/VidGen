@@ -98,6 +98,9 @@ class NarrationSegment(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     generation_identity: Mapped[str] = mapped_column(String(64))
     status: Mapped[str] = mapped_column(String(64))
     selected_attempt_id: Mapped[UUID | None] = mapped_column(nullable=True)
+    reused_from_segment_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("narration_segments.id", ondelete="RESTRICT")
+    )
     original_asset_id: Mapped[UUID | None] = mapped_column(
         ForeignKey("assets.id", ondelete="RESTRICT")
     )

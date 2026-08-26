@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import tempfile
+from collections.abc import Callable
 from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
@@ -25,6 +26,7 @@ from vidgen.contracts.narration import (
     NarrationAlignment,
     NarrationPreviewManifest,
     NarrationProviderRequest,
+    NarrationProviderResult,
     NarrationQualityReport,
     NarrationResult,
     NarrationSegmentResult,
@@ -65,6 +67,7 @@ class NarrationPipeline:
         thresholds: QualityThresholds = DEFAULT_QUALITY_THRESHOLDS,
         metrics: Metrics | None = None,
         aligner: NarrationAligner | None = None,
+        cancellation_check: Callable[[], bool] | None = None,
     ) -> None:
         self.session = session
         self.blob_store = blob_store
@@ -75,10 +78,31 @@ class NarrationPipeline:
         if aligner is None and provider.name != "fake":
             raise ValueError("production narration requires a configured timestamp aligner")
         self.aligner = aligner or FakeAligner()
+        self.cancellation_check = cancellation_check or (lambda: False)
         self.repo = NarrationRepository(session)
         self.assets = AssetService(session, blob_store)
 
     async def process(
+        self, *, project_id: UUID, voice_profile_id: UUID, idempotency_key: str
+    ) -> NarrationResult:
+        try:
+            return await self._process(
+                project_id=project_id,
+                voice_profile_id=voice_profile_id,
+                idempotency_key=idempotency_key,
+            )
+        except BaseException as error:
+            run = self.repo.run_by_key(project_id, idempotency_key)
+            project = self.session.get(Project, project_id)
+            if run is not None:
+                run.status = "narration_failed"
+                run.error_code = type(error).__name__[:128]
+            if project is not None:
+                project.status = "narration_failed"
+            self.session.commit()
+            raise
+
+    async def _process(
         self, *, project_id: UUID, voice_profile_id: UUID, idempotency_key: str
     ) -> NarrationResult:
         project = self.session.get(Project, project_id)
@@ -126,6 +150,8 @@ class NarrationPipeline:
             root = Path(temporary)
             selected = []
             for source in source_segments:
+                if self.cancellation_check():
+                    raise RuntimeError("narration activity cancelled")
                 text_hash = hashlib.sha256(" ".join(source.text.split()).encode()).hexdigest()
                 identity = canonical_hash(
                     {
@@ -148,7 +174,8 @@ class NarrationPipeline:
                         text_hash=text_hash,
                         generation_identity=identity,
                         status="complete" if reusable is not None else "pending",
-                        selected_attempt_id=reusable.selected_attempt_id if reusable else None,
+                        selected_attempt_id=None,
+                        reused_from_segment_id=reusable.id if reusable else None,
                         original_asset_id=reusable.original_asset_id if reusable else None,
                         normalized_asset_id=reusable.normalized_asset_id if reusable else None,
                         duration_seconds=reusable.duration_seconds if reusable else None,
@@ -214,6 +241,13 @@ class NarrationPipeline:
             run.preview_asset_id = preview.id
             run.total_duration_seconds = preview_probe.duration_seconds
             run.parameters = {**material, "manifest_asset_id": str(manifest_asset.id)}
+            self.session.query(NarrationRun).filter(
+                NarrationRun.project_id == project_id,
+                NarrationRun.script_id == script.id,
+                NarrationRun.script_version == script.version,
+                NarrationRun.id != run.id,
+                NarrationRun.selected,
+            ).update({"selected": False}, synchronize_session=False)
             run.status = project.status = "narration_complete"
             run.selected = True
             self.session.commit()
@@ -230,6 +264,8 @@ class NarrationPipeline:
         project: Project,
     ) -> None:
         text = str(source.text)
+        if self.cancellation_check():
+            raise RuntimeError("narration activity cancelled")
         previous_attempts = self.repo.attempts(row.id)
         interrupted = next((item for item in previous_attempts if item.completed_at is None), None)
         attempt_no = interrupted.attempt_number if interrupted else len(previous_attempts) + 1
@@ -273,6 +309,11 @@ class NarrationPipeline:
             language=str(profile.language),
             attempt_number=attempt_no,
         )
+        recovered_asset = (
+            self.session.get(Asset, attempt.provider_output_asset_id)
+            if attempt.provider_output_asset_id
+            else None
+        )
         rate = self.session.scalar(
             select(ProviderPriceRate)
             .where(
@@ -289,6 +330,102 @@ class NarrationPipeline:
             if rate is not None
             else Decimal("0")
         )
+        if recovered_asset is not None:
+            self.blob_store.copy_to(recovered_asset.storage_key, original)
+            result = NarrationProviderResult(
+                provider=attempt.provider,
+                model=attempt.model,
+                provider_request_id=attempt.provider_request_id or key,
+                attempt_number=attempt_no,
+                content_type=recovered_asset.media_type,
+                audio_format=str(cfg.get("output_format", "wav")),
+                byte_size=recovered_asset.byte_size,
+                usage=attempt.usage,
+                provider_duration_seconds=0,
+                idempotency_key=key,
+                warnings=["recovered durable provider output"],
+            )
+        else:
+            result = await self._call_narration_provider(
+                request=request,
+                row=row,
+                project=project,
+                profile=profile,
+                key=key,
+                attempt_no=attempt_no,
+                estimated_cost=estimated_cost,
+                rate=rate,
+                destination=original,
+            )
+        attempt.provider_request_id = result.provider_request_id
+        attempt.usage = result.usage
+        original_asset = self.assets.store_file(
+            path=original,
+            kind="audio",
+            media_type=result.content_type,
+            project_id=project.id,
+            provider=result.provider,
+            provider_request_id=result.provider_request_id,
+            idempotency_key=f"{key}:original",
+        )
+        attempt.provider_output_asset_id = original_asset.id
+        self.session.commit()  # provider response recovery checkpoint
+        normalize_audio(original, normalized)
+        probe = probe_audio(normalized)
+        alignment = await self._align_instrumented(
+            row=row,
+            project=project,
+            profile=profile,
+            text=text,
+            duration=probe.duration_seconds,
+            path=normalized,
+        )
+        project.status = "narration_validating"
+        quality = validate_quality(
+            normalized, text, probe.duration_seconds, alignment, self.thresholds
+        )
+        normalized_asset = self.assets.store_file(
+            path=normalized,
+            kind="audio",
+            media_type="audio/wav",
+            project_id=project.id,
+            parent_asset_ids=(original_asset.id,),
+            provider=result.provider,
+            provider_request_id=result.provider_request_id,
+            idempotency_key=f"{key}:normalized",
+            generation_parameters={"sample_rate": 48000, "channels": 1, "codec": "pcm_s16le"},
+            metadata={"ffprobe": probe.raw},
+        )
+        attempt.normalized_asset_id = normalized_asset.id
+        attempt.quality_result = quality.model_dump(mode="json")
+        attempt.completed_at = datetime.now(UTC)
+        if not quality.valid:
+            attempt.failure_classification = "QUALITY"
+            self.session.commit()
+            return await self._generate(row, source, script, profile, cfg, root, project)
+        row.status = "complete"
+        row.selected_attempt_id = attempt.id
+        row.original_asset_id = original_asset.id
+        row.normalized_asset_id = normalized_asset.id
+        row.duration_seconds = probe.duration_seconds
+        row.alignment = alignment.model_dump(mode="json")
+        row.quality_report = quality.model_dump(mode="json")
+        row.word_timings = [x.model_dump(mode="json") for x in alignment.timings]
+        self.session.commit()
+
+    async def _call_narration_provider(
+        self,
+        *,
+        request: NarrationProviderRequest,
+        row: NarrationSegment,
+        project: Project,
+        profile: VoiceProfileRecord,
+        key: str,
+        attempt_no: int,
+        estimated_cost: Decimal,
+        rate: ProviderPriceRate | None,
+        destination: Path,
+    ) -> NarrationProviderResult:
         async with instrument_provider_attempt(
             session=self.session,
             tracer=self.tracer,
@@ -322,78 +459,96 @@ class NarrationPipeline:
                     BudgetDecision.DENY_ENTITY_CAP,
                 ):
                     raise BudgetExceededError("narration request denied by project budget")
-            result = await self.provider.generate(request, original)
+            result = await self.provider.generate(request, destination)
+            provider_probe = probe_audio(destination)
+            actual_cost = (
+                Decimal(str(provider_probe.duration_seconds)) / rate.unit_size * rate.unit_price
+                if rate
+                else Decimal("0")
+            )
             telemetry_attempt.set_result(
                 provider_request_id=result.provider_request_id,
                 usage=[
                     {"unit": unit, "quantity": quantity} for unit, quantity in result.usage.items()
                 ],
                 metadata=dict(result.response_metadata),
-                actual_cost=estimated_cost,
+                actual_cost=actual_cost,
             )
-        attempt.provider_request_id = result.provider_request_id
-        attempt.usage = result.usage
-        original_asset = self.assets.store_file(
-            path=original,
-            kind="audio",
-            media_type=result.content_type,
-            project_id=project.id,
-            provider=result.provider,
-            provider_request_id=result.provider_request_id,
-            idempotency_key=f"{key}:original",
-        )
-        normalize_audio(original, normalized)
-        probe = probe_audio(normalized)
-        actual_cost = (
-            Decimal(str(probe.duration_seconds)) / rate.unit_size * rate.unit_price
-            if rate is not None
-            else Decimal("0")
-        )
-        telemetry_attempt.row.actual_cost = actual_cost
-        telemetry_attempt.row.usage = [
-            {"unit": "AUDIO_OUTPUT_SECOND", "quantity": probe.duration_seconds}
-        ]
-        if reservation and reservation.reservation_id:
-            CostRepository(self.session).reconcile(
-                reservation.reservation_id,
-                f"{key}:reconciliation",
-                actual_cost,
-            )
+            if reservation and reservation.reservation_id:
+                CostRepository(self.session).reconcile(
+                    reservation.reservation_id, f"{key}:reconciliation", actual_cost
+                )
+        return result
+
+    async def _align_instrumented(
+        self,
+        *,
+        row: NarrationSegment,
+        project: Project,
+        profile: VoiceProfileRecord,
+        text: str,
+        duration: float,
+        path: Path,
+    ) -> NarrationAlignment:
         project.status = "narration_aligning"
-        alignment = self.aligner.align(text, probe.duration_seconds, normalized)
-        project.status = "narration_validating"
-        quality = validate_quality(
-            normalized, text, probe.duration_seconds, alignment, self.thresholds
+        key = f"{row.generation_identity}:alignment"
+        provider = "openai" if self.provider.name != "fake" else "fake"
+        model = "whisper-1" if self.provider.name != "fake" else "fake-aligner"
+        rate = self.session.scalar(
+            select(ProviderPriceRate)
+            .where(
+                ProviderPriceRate.provider == provider,
+                ProviderPriceRate.model == model,
+                ProviderPriceRate.operation == "narration.align",
+                ProviderPriceRate.usage_unit == "AUDIO_INPUT_SECOND",
+                ProviderPriceRate.active,
+            )
+            .order_by(ProviderPriceRate.effective_start.desc())
         )
-        normalized_asset = self.assets.store_file(
-            path=normalized,
-            kind="audio",
-            media_type="audio/wav",
+        cost = Decimal(str(duration)) / rate.unit_size * rate.unit_price if rate else Decimal("0")
+        async with instrument_provider_attempt(
+            session=self.session,
+            tracer=self.tracer,
+            metrics=self.metrics,
             project_id=project.id,
-            parent_asset_ids=(original_asset.id,),
-            provider=result.provider,
-            provider_request_id=result.provider_request_id,
-            idempotency_key=f"{key}:normalized",
-            generation_parameters={"sample_rate": 48000, "channels": 1, "codec": "pcm_s16le"},
-            metadata={"ffprobe": probe.raw},
-        )
-        attempt.provider_output_asset_id = original_asset.id
-        attempt.normalized_asset_id = normalized_asset.id
-        attempt.quality_result = quality.model_dump(mode="json")
-        attempt.completed_at = datetime.now(UTC)
-        if not quality.valid:
-            attempt.failure_classification = "QUALITY"
-            self.session.commit()
-            return await self._generate(row, source, script, profile, cfg, root, project)
-        row.status = "complete"
-        row.selected_attempt_id = attempt.id
-        row.original_asset_id = original_asset.id
-        row.normalized_asset_id = normalized_asset.id
-        row.duration_seconds = probe.duration_seconds
-        row.alignment = alignment.model_dump(mode="json")
-        row.quality_report = quality.model_dump(mode="json")
-        row.word_timings = [x.model_dump(mode="json") for x in alignment.timings]
-        self.session.commit()
+            provider=provider,
+            model=model,
+            operation="narration.align",
+            input_hash=row.generation_identity,
+            idempotency_key=key,
+            related_entity_id=row.id,
+            estimated_cost=cost,
+            pricing_version_id=rate.pricing_version_id if rate else None,
+        ) as telemetry_attempt:
+            reservation = None
+            if self.session.scalar(
+                select(ProjectBudget).where(ProjectBudget.project_id == project.id)
+            ):
+                reservation = CostRepository(self.session).reserve(
+                    CostReservationRequest(
+                        project_id=project.id,
+                        provider_attempt_id=telemetry_attempt.row.id,
+                        idempotency_key=f"{key}:reservation",
+                        estimated_amount=cost,
+                        currency="USD",
+                    )
+                )
+                if reservation.decision in (
+                    BudgetDecision.DENY_HARD_CAP,
+                    BudgetDecision.DENY_ENTITY_CAP,
+                ):
+                    raise BudgetExceededError("alignment request denied by project budget")
+            alignment = self.aligner.align(text, duration, path)
+            telemetry_attempt.set_result(
+                usage=[{"unit": "AUDIO_INPUT_SECOND", "quantity": duration}],
+                metadata={"coverage": alignment.coverage},
+                actual_cost=cost,
+            )
+            if reservation and reservation.reservation_id:
+                CostRepository(self.session).reconcile(
+                    reservation.reservation_id, f"{key}:reconciliation", cost
+                )
+        return alignment
 
     @staticmethod
     def _retry_instructions(previous: list[NarrationAttemptRecord]) -> str:
@@ -422,14 +577,12 @@ class NarrationPipeline:
                 r.duration_seconds,
                 r.alignment,
                 r.quality_report,
-                r.selected_attempt_id,
             ):
                 continue
             assert r.normalized_asset_id is not None
             assert r.duration_seconds is not None
             assert r.alignment is not None
             assert r.quality_report is not None
-            assert r.selected_attempt_id is not None
             asset = self.session.get(Asset, r.normalized_asset_id)
             if asset is None:
                 raise ValueError("completed narration segment asset is missing")
@@ -444,6 +597,7 @@ class NarrationPipeline:
                     alignment=NarrationAlignment.model_validate(r.alignment),
                     quality_report=NarrationQualityReport.model_validate(r.quality_report),
                     selected_attempt_id=r.selected_attempt_id,
+                    reused_from_segment_id=r.reused_from_segment_id,
                 )
             )
         if run.status not in ("narration_complete", "narration_failed"):

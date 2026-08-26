@@ -34,11 +34,20 @@ def upgrade() -> None:
 def downgrade() -> None:
     bind = op.get_bind()
     names = set(inspect(bind).get_table_names())
-    if (
-        "narration_runs" in names
-        and bind.execute(NarrationRun.__table__.select().limit(1)).first() is not None
-    ):
-        raise RuntimeError("unsafe T12 downgrade: delete or export narration runs and assets first")
+    populated = [
+        table.name
+        for table in (
+            VoiceProfileRecord.__table__,
+            NarrationRun.__table__,
+            NarrationSegment.__table__,
+            NarrationAttemptRecord.__table__,
+        )
+        if table.name in names and bind.execute(table.select().limit(1)).first() is not None
+    ]
+    if populated:
+        raise RuntimeError(
+            "unsafe T12 downgrade: export or delete data from " + ", ".join(populated)
+        )
     for table in (
         NarrationAttemptRecord.__table__,
         NarrationSegment.__table__,

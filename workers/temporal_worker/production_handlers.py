@@ -7,6 +7,7 @@ from uuid import UUID
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
+from temporalio import activity
 
 from apps.api.settings import APISettings, get_settings
 from packages.providers import FakeSubtitleProvider
@@ -446,6 +447,7 @@ def _generate_narration(
             aligner=OpenAIWhisperAligner(settings.openai_api_key)
             if settings.openai_api_key
             else None,
+            cancellation_check=activity.is_cancelled,
         ).process(
             project_id=request.project_id,
             voice_profile_id=voice_profile_id,

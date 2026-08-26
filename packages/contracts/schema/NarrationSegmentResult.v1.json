@@ -259,6 +259,19 @@
     "quality_report": {
       "$ref": "#/$defs/NarrationQualityReport"
     },
+    "reused_from_segment_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Reused From Segment Id"
+    },
     "schema_version": {
       "const": "1.0",
       "default": "1.0",
@@ -271,9 +284,17 @@
       "type": "string"
     },
     "selected_attempt_id": {
-      "format": "uuid",
-      "title": "Selected Attempt Id",
-      "type": "string"
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Selected Attempt Id"
     },
     "sequence": {
       "minimum": 0,
@@ -289,8 +310,7 @@
     "duration_seconds",
     "audio_sha256",
     "alignment",
-    "quality_report",
-    "selected_attempt_id"
+    "quality_report"
   ],
   "title": "NarrationSegmentResult",
   "type": "object"

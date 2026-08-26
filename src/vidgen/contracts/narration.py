@@ -139,7 +139,8 @@ class NarrationSegmentResult(StrictContract):
     audio_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
     alignment: NarrationAlignment
     quality_report: NarrationQualityReport
-    selected_attempt_id: UUID
+    selected_attempt_id: UUID | None = None
+    reused_from_segment_id: UUID | None = None
 
 
 class NarrationPreviewManifest(StrictContract):
