@@ -138,11 +138,25 @@ class EpisodeAnalysisPipeline:
         project.status = run.status = "episode_scene_mapping"
         self.session.commit()
         checkpoints = self.repository.checkpoints(run.id)
+        for row in rows:
+            if row.id not in checkpoints:
+                checkpoint = SceneAnalysisCheckpoint(
+                    analysis_run_id=run.id,
+                    source_scene_id=row.id,
+                    sequence=row.scene_sequence + 1,
+                    input_hash=_hash(row.evidence),
+                    idempotency_key=_derived_key(idempotency_key, "scene", row.id),
+                    status="pending",
+                    attempt_count=0,
+                )
+                self.session.add(checkpoint)
+                checkpoints[row.id] = checkpoint
+        self.session.commit()
         semaphore = asyncio.Semaphore(self.concurrency)
 
         async def map_scene(row: SceneEvidenceRecord) -> SceneAnalysisResult:
-            checkpoint = checkpoints.get(row.id)
-            if checkpoint and checkpoint.status == "succeeded" and checkpoint.provider_result:
+            checkpoint = checkpoints[row.id]
+            if checkpoint.status == "succeeded" and checkpoint.provider_result:
                 return SceneAnalysisResult.model_validate(checkpoint.provider_result["output"])
             references = _references(evidence, row)
             request = SceneAnalysisRequest(
@@ -160,17 +174,6 @@ class EpisodeAnalysisPipeline:
                 evidence_references=references,
                 evidence_excerpts=_excerpts(row),
             )
-            checkpoint = checkpoint or SceneAnalysisCheckpoint(
-                analysis_run_id=run.id,
-                source_scene_id=row.id,
-                sequence=request.sequence,
-                input_hash=request.input_hash,
-                idempotency_key=request.idempotency_key,
-                status="pending",
-                attempt_count=0,
-            )
-            if checkpoint not in self.session:
-                self.session.add(checkpoint)
             attempts: list[dict[str, object]] = []
             feedback: str | None = None
             for attempt in range(1, self.max_attempts + 1):
