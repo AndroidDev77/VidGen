@@ -47,20 +47,29 @@ def resolve_script_settings(
     raw = dict(script_settings)
     raw.update({key: value for key, value in (overrides or {}).items() if value is not None})
 
-    target_duration_ms = int(
-        raw.get("target_duration_ms") or round(project.target_duration_seconds * 1000)
-    )
+    try:
+        target_duration_ms = int(
+            raw.get("target_duration_ms") or round(project.target_duration_seconds * 1000)
+        )
+    except (TypeError, ValueError) as error:
+        raise ScriptSettingsError(f"invalid target_duration_ms: {error}") from error
     if not MIN_DURATION_MS <= target_duration_ms <= MAX_DURATION_MS:
         raise ScriptSettingsError(
             f"target duration {target_duration_ms}ms is outside the configured bounds "
             f"[{MIN_DURATION_MS}, {MAX_DURATION_MS}]"
         )
 
-    wpm = int(raw.get("target_words_per_minute", DEFAULT_WORDS_PER_MINUTE))
+    try:
+        wpm = int(raw.get("target_words_per_minute", DEFAULT_WORDS_PER_MINUTE))
+    except (TypeError, ValueError) as error:
+        raise ScriptSettingsError(f"invalid target_words_per_minute: {error}") from error
     if wpm <= 0:
         raise ScriptSettingsError("target narration rate must be positive")
 
-    target_words = int(raw.get("target_words") or round(target_duration_ms / 60_000 * wpm))
+    try:
+        target_words = int(raw.get("target_words") or round(target_duration_ms / 60_000 * wpm))
+    except (TypeError, ValueError) as error:
+        raise ScriptSettingsError(f"invalid target_words: {error}") from error
     if not MIN_WORDS <= target_words <= MAX_WORDS:
         raise ScriptSettingsError(
             f"target word count {target_words} is outside the configured bounds "
@@ -68,7 +77,12 @@ def resolve_script_settings(
         )
 
     raw_humor = raw.get("humor_intensity")
-    humor_intensity = float(raw_humor) if raw_humor is not None else project.humor_intensity / 10.0
+    try:
+        humor_intensity = (
+            float(raw_humor) if raw_humor is not None else project.humor_intensity / 10.0
+        )
+    except (TypeError, ValueError) as error:
+        raise ScriptSettingsError(f"invalid humor_intensity: {error}") from error
     if not 0.0 <= humor_intensity <= 1.0:
         raise ScriptSettingsError("humor intensity must be between 0 and 1")
 

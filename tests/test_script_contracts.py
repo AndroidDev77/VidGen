@@ -254,6 +254,24 @@ def test_resolve_script_settings_rejects_non_mapping_script_settings() -> None:
         resolve_script_settings(project)
 
 
+def test_resolve_script_settings_rejects_non_numeric_words_per_minute() -> None:
+    # Regression for a Copilot review finding: a malformed numeric override
+    # (e.g. a non-numeric string) must raise ScriptSettingsError, not an
+    # unhandled TypeError/ValueError from int()/float().
+    from services.script.settings import ScriptSettingsError
+    from vidgen.db.models import Project
+
+    project = Project(
+        name="test",
+        visual_style="flat",
+        target_duration_seconds=240,
+        humor_intensity=5,
+        settings={"script": {"target_words_per_minute": "fast"}},
+    )
+    with pytest.raises(ScriptSettingsError):
+        resolve_script_settings(project)
+
+
 def test_excluded_topic_causal_ancestor_is_still_selected_for_completeness() -> None:
     # A beat matching an excluded topic must still be pulled in via causal closure
     # when a required/mandatory beat causally depends on it; causal completeness

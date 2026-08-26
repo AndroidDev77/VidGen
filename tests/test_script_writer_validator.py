@@ -10,7 +10,7 @@ from services.script.validator import (
     ngram_overlap_ratio,
     validate_recap_script,
 )
-from services.script.writer import write_script
+from services.script.writer import _fit_segment_text, write_script
 from tests.test_script_pipeline import _make_analysis
 from vidgen.contracts.script import ChannelVoiceConfig, ComedyWritingRequest, PlotCompressionRequest
 
@@ -326,3 +326,16 @@ def test_locked_segment_spanning_multiple_beats_is_not_duplicated() -> None:
     assert matches[0].sequence == 0
     report = validate_recap_script(script, analysis=analysis, plan=plan)
     assert report.valid, report.errors
+
+
+def test_fit_segment_text_never_exceeds_target_words_when_joke_clause_is_long() -> None:
+    # Regression for a Copilot review finding: a joke clause longer than (or equal
+    # to) the target word allocation must itself be truncated, not just the
+    # summary, or the assembled text overruns target_words and cascades into a
+    # word-count validation failure downstream.
+    long_joke_clause = " ".join(f"joke{i}" for i in range(20))
+    text, joke_start, joke_end = _fit_segment_text(
+        "A short summary.", long_joke_clause, target_words=4
+    )
+    assert len(text.split()) == 4
+    assert 0 <= joke_start <= joke_end <= len(text)

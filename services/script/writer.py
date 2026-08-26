@@ -59,6 +59,12 @@ _FILLER_BANK = (
 def _fit_segment_text(summary: str, joke_clause: str, target_words: int) -> tuple[str, int, int]:
     summary_words = summary.split()
     joke_words = joke_clause.split()
+    # Reserve at least one word for the summary: a joke clause longer than the
+    # allocation must be truncated too, or the assembled text can exceed
+    # target_words outright (the summary-only cap below can't fix that alone).
+    max_joke_words = max(1, target_words - 1)
+    if len(joke_words) > max_joke_words:
+        joke_words = joke_words[:max_joke_words]
     budget_for_summary = max(1, target_words - len(joke_words))
     if len(summary_words) > budget_for_summary:
         summary_words = summary_words[:budget_for_summary]
