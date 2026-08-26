@@ -22,6 +22,7 @@ def validate_scene_analysis(
     start_ms: int,
     end_ms: int,
     valid_reference_ids: set[UUID],
+    valid_references: list[SourceReference] | None = None,
 ) -> AnalysisValidationReport:
     errors: list[AnalysisValidationError] = []
     if (result.scene_id, result.sequence, result.source_start_ms, result.source_end_ms) != (
@@ -63,6 +64,18 @@ def validate_scene_analysis(
                     explanation="Reference must belong to this selected T09 scene evidence",
                 )
             )
+        elif valid_references is not None and reference not in valid_references:
+            errors.append(
+                AnalysisValidationError(
+                    code="SOURCE_REFERENCE_SCOPE_MISMATCH",
+                    entity_path=f"source_references.{index}",
+                    invalid_value=reference.model_dump_json(),
+                    source_reference=reference,
+                    explanation=(
+                        "Reference scene and time range must exactly match selected evidence"
+                    ),
+                )
+            )
     return AnalysisValidationReport(valid=not errors, errors=errors)
 
 
@@ -72,6 +85,7 @@ def validate_episode_analysis(
     valid_scene_ids: set[UUID],
     valid_reference_ids: set[UUID],
     required_anonymous_labels: set[str] | None = None,
+    valid_references: list[SourceReference] | None = None,
 ) -> AnalysisValidationReport:
     errors: list[AnalysisValidationError] = []
 
@@ -91,6 +105,13 @@ def validate_episode_analysis(
                     f"{path}.{index}.reference_id",
                     reference,
                     "Reference must belong to the selected evidence package",
+                )
+            elif valid_references is not None and item not in valid_references:
+                error(
+                    "SOURCE_REFERENCE_SCOPE_MISMATCH",
+                    f"{path}.{index}",
+                    item.model_dump_json(),
+                    "Reference scene and time range must exactly match selected evidence",
                 )
 
     scene_ids = [scene.scene_id for scene in analysis.scenes]

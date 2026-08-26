@@ -154,7 +154,8 @@ async def test_interrupted_reduce_reuses_scene_checkpoints(tmp_path: Path) -> No
         idempotency_key="resume-key",
     )
     assert result.validation_report.valid
-    assert resumed_provider.submissions == ["resume-key:reduce"]
+    assert len(resumed_provider.submissions) == 1
+    assert resumed_provider.submissions[0].startswith("episode-reduce:")
 
 
 @pytest.mark.asyncio
@@ -244,4 +245,4 @@ async def test_failed_scene_retry_does_not_rerun_successful_scene(tmp_path: Path
         idempotency_key="scene-recovery",
     )
     assert result.validation_report.valid
-    assert len([key for key in resumed.submissions if ":scene:" in key]) == 1
+    assert len([key for key in resumed.submissions if key.startswith("episode-scene:")]) == 1

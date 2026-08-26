@@ -153,7 +153,7 @@ class EpisodeAnalysisPipeline:
                 source_start_ms=round(row.source_start_seconds * 1000),
                 source_end_ms=round(row.source_end_seconds * 1000),
                 input_hash=_hash(row.evidence),
-                idempotency_key=f"{idempotency_key}:scene:{row.id}",
+                idempotency_key=_derived_key(idempotency_key, "scene", row.id),
                 contract_version=CONTRACT_VERSION,
                 prompt_version=PROMPT_VERSION,
                 provider_configuration_version=self.configuration_version,
@@ -205,6 +205,7 @@ class EpisodeAnalysisPipeline:
                     start_ms=request.source_start_ms,
                     end_ms=request.source_end_ms,
                     valid_reference_ids={item.reference_id for item in references},
+                    valid_references=references,
                 )
                 attempts.append(
                     {
@@ -243,7 +244,7 @@ class EpisodeAnalysisPipeline:
             source_video_id=source.id,
             duration_ms=round(source.duration_seconds * 1000),
             input_hash=evidence.input_hash,
-            idempotency_key=f"{idempotency_key}:reduce",
+            idempotency_key=_derived_key(idempotency_key, "reduce"),
             contract_version=CONTRACT_VERSION,
             prompt_version=PROMPT_VERSION,
             provider_configuration_version=self.configuration_version,
@@ -280,6 +281,7 @@ class EpisodeAnalysisPipeline:
                 analysis,
                 valid_scene_ids={row.id for row in rows},
                 valid_reference_ids=valid_refs,
+                valid_references=[ref for row in rows for ref in _references(evidence, row)],
                 required_anonymous_labels={
                     label for scene in scenes for label in scene.anonymous_speaker_references
                 },
@@ -304,7 +306,7 @@ class EpisodeAnalysisPipeline:
             parent_asset_ids=parent_ids,
             provider=reduced.metadata.provider,
             provider_request_id=reduced.metadata.provider_request_id,
-            idempotency_key=f"{idempotency_key}:asset",
+            idempotency_key=_derived_key(idempotency_key, "asset"),
             generation_parameters={
                 "evidence_package_id": str(evidence.id),
                 "input_hash": evidence.input_hash,
@@ -451,6 +453,11 @@ def _hash(value: object) -> str:
     return hashlib.sha256(
         json.dumps(value, sort_keys=True, separators=(",", ":")).encode()
     ).hexdigest()
+
+
+def _derived_key(base: str, stage: str, entity_id: UUID | None = None) -> str:
+    digest = hashlib.sha256(f"{base}:{stage}:{entity_id or ''}".encode()).hexdigest()
+    return f"episode-{stage}:{digest}"
 
 
 def _references(package: EvidencePackageRecord, row: SceneEvidenceRecord) -> list[SourceReference]:

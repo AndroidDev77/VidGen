@@ -33,6 +33,20 @@ def test_missing_and_cross_package_reference_is_rejected() -> None:
     assert "UNKNOWN_SOURCE_REFERENCE" in {item.code for item in _validate(analysis).errors}
 
 
+def test_reference_scope_must_match_selected_evidence() -> None:
+    analysis = _golden().model_copy(deep=True)
+    expected = analysis.source_references[0].model_copy(deep=True)
+    analysis.source_references[0].end_ms = 999
+    scene = analysis.scenes[0]
+    report = validate_episode_analysis(
+        analysis,
+        valid_scene_ids={scene.scene_id},
+        valid_reference_ids={scene.scene_id},
+        valid_references=[expected],
+    )
+    assert "SOURCE_REFERENCE_SCOPE_MISMATCH" in {item.code for item in report.errors}
+
+
 def test_unknown_character_and_overlapping_chronology_are_rejected() -> None:
     analysis = _golden().model_copy(deep=True)
     analysis.scenes[0].character_ids = [uuid4()]
