@@ -99,10 +99,38 @@ def build_fixture(
     Base.metadata.create_all(engine)
     session = Session(engine, expire_on_commit=False)
     blobs = FilesystemBlobStore(tmp_path / "blobs", b"storyboard-secret")
-    assets = AssetService(session, blobs)
+    return add_project(
+        session,
+        blobs,
+        texts=texts,
+        seconds_per_word=seconds_per_word,
+        character_count=character_count,
+        anonymous_segments=anonymous_segments,
+        joke_annotations=joke_annotations,
+        project_settings=project_settings,
+    )
 
+
+def add_project(
+    session: Session,
+    blobs: FilesystemBlobStore,
+    *,
+    name: str = "storyboard fixture",
+    texts: tuple[str, ...] = DEFAULT_TEXTS,
+    seconds_per_word: float = 0.5,
+    character_count: int = 2,
+    anonymous_segments: frozenset[int] = frozenset(),
+    joke_annotations: dict[int, list[dict[str, Any]]] | None = None,
+    project_settings: dict[str, Any] | None = None,
+) -> StoryboardFixture:
+    """Build a complete T01-T12 project graph inside an existing database.
+
+    Two projects sharing one database is what makes a cross-project isolation
+    test meaningful: separate SQLite files could never leak into each other.
+    """
+    assets = AssetService(session, blobs)
     project = Project(
-        name="storyboard fixture",
+        name=name,
         visual_style="flat 2d",
         status="narration_complete",
         target_duration_seconds=300,

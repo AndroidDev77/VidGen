@@ -24,7 +24,12 @@ from services.storyboard.providers import (
     CapabilityProfileError,
     load_capability_profile,
 )
-from tests.storyboard_fixtures import build_fixture, reopen_fixture, segment_duration_us
+from tests.storyboard_fixtures import (
+    add_project,
+    build_fixture,
+    reopen_fixture,
+    segment_duration_us,
+)
 from vidgen.contracts.storyboard import (
     Storyboard,
     StoryboardProviderRequest,
@@ -125,16 +130,54 @@ def test_narration_from_a_different_script_version_is_rejected(tmp_path: Path) -
     assert "different approved script version" in error.value.message
 
 
-def test_cross_project_script_is_not_selected(tmp_path: Path) -> None:
+def test_another_projects_selected_inputs_are_never_used(tmp_path: Path) -> None:
+    """Two projects share one database; project A must not borrow project B's rows."""
     fixture = build_fixture(tmp_path)
-    other = build_fixture(tmp_path, database_name="other.db")
-    # The other project's approved script must never satisfy this project.
+    other = add_project(fixture.session, fixture.blobs, name="other project")
+    fixture.session.commit()
+    assert other.project.id != fixture.project.id
+
+    # Project B has a selected, approved script and a complete narration run of its
+    # own. Removing project A's selection must fail rather than fall through to B.
     fixture.script.selected = False
     fixture.session.commit()
     with pytest.raises(StoryboardLineageError) as error:
         run_pipeline(fixture)
     assert error.value.code == "script_unselected"
-    assert other.script.project_id != fixture.project.id
+
+    # With project A restored, its run must bind only to project A's lineage.
+    fixture.script.selected = True
+    fixture.session.commit()
+    result = run_pipeline(fixture)
+    run = fixture.session.get(StoryboardRun, result.storyboard_run_id)
+    assert run.project_id == fixture.project.id
+    assert run.script_id == fixture.script.id
+    assert run.episode_model_id == fixture.episode_model.id
+    assert run.narration_run_id == fixture.narration_run.id
+    assert run.script_id != other.script.id
+    assert run.narration_run_id != other.narration_run.id
+    storyboard = load_storyboard(fixture, result)
+    other_segment_ids = {segment.id for segment in other.script_segments}
+    assert not {shot.script_segment_id for shot in storyboard.shots} & other_segment_ids
+    assert not {shot.narration_segment_id for shot in storyboard.shots} & {
+        segment.id for segment in other.narration_segments
+    }
+    # Characters and locations come from project A's episode model only.
+    referenced = {
+        character_id for shot in storyboard.shots for character_id in shot.character_reference_ids
+    }
+    assert referenced <= set(fixture.character_ids)
+    assert not referenced & set(other.character_ids)
+
+
+def test_another_projects_episode_model_does_not_make_this_one_stale(tmp_path: Path) -> None:
+    """A newer episode-model version in a *different* project is not staleness here."""
+    fixture = build_fixture(tmp_path)
+    other = add_project(fixture.session, fixture.blobs, name="other project")
+    other.episode_model.version = 99
+    fixture.session.commit()
+    result = run_pipeline(fixture)
+    assert result.status == "storyboard_complete"
 
 
 def test_incomplete_narration_run_is_rejected(tmp_path: Path) -> None:
@@ -444,6 +487,109 @@ def test_missing_evidence_reference_is_diagnosed(tmp_path: Path) -> None:
     with pytest.raises(StoryboardValidationFailed) as error:
         run_pipeline(fixture, director=_GhostEvidenceDirector())
     assert "missing_evidence_reference" in str(error.value)
+
+
+class _CountingDirector(FakeStoryboardDirector):
+    """Records every (segment, attempt) the pipeline actually sends to a provider."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.requests: list[tuple[int, int]] = []
+
+    async def propose(self, request: StoryboardProviderRequest) -> StoryboardProviderResult:
+        self.requests.append((request.segment_sequence, request.attempt_number))
+        return await super().propose(request)
+
+
+def test_rebuilt_checkpoint_replays_without_violating_its_attempt_counters(
+    tmp_path: Path,
+) -> None:
+    """A repaired segment invalidates later checkpoints; they must replay cleanly.
+
+    Regression: the rebuilt checkpoints kept their old ``repair_attempt_count``
+    while replaying from attempt one, which violates the checkpoint's own
+    ``repair_attempt_count <= attempt_count`` constraint on the next commit.
+    """
+    fixture = build_fixture(tmp_path)
+    # Segment 1 needs a repair, so it ends the first run with counters above one.
+    first = run_pipeline(fixture, director=_RepairableDirector(failing_sequence=1), key="run-1")
+    assert first.repair_attempt_count == 1
+    checkpoint = fixture.session.scalar(
+        select(StoryboardSegmentCheckpoint)
+        .where(StoryboardSegmentCheckpoint.storyboard_run_id == first.storyboard_run_id)
+        .where(StoryboardSegmentCheckpoint.sequence == 1)
+    )
+    assert (checkpoint.attempt_count, checkpoint.repair_attempt_count) == (2, 1)
+
+    # Force that checkpoint's inputs to differ, and reopen the run the way an
+    # interrupted resume would, so the next pass actually rebuilds the checkpoint.
+    checkpoint.input_hash = "0" * 64
+    fixture.session.get(StoryboardRun, first.storyboard_run_id).status = "storyboard_failed"
+    fixture.session.commit()
+
+    second = run_pipeline(fixture, director=FakeStoryboardDirector(), key="run-1")
+    assert second.status == "storyboard_complete"
+    rebuilt = fixture.session.get(StoryboardSegmentCheckpoint, checkpoint.id)
+    assert rebuilt.status == "complete"
+    assert rebuilt.repair_attempt_count <= rebuilt.attempt_count
+    assert rebuilt.repair_attempt_count == 0
+    # Superseded repair rows do not outlive the plan they described.
+    assert (
+        not fixture.session.query(StoryboardRepairAttempt)
+        .filter_by(segment_checkpoint_id=checkpoint.id)
+        .count()
+    )
+
+
+def test_renumbering_replay_reuses_validated_results_without_new_charges(
+    tmp_path: Path,
+) -> None:
+    """Rebuilding later checkpoints must not re-pay for work already validated.
+
+    Regression: the stored provider result was keyed on the attempt-numbered
+    idempotency key, so a replay starting at attempt one missed a result produced
+    on attempt two and submitted a fresh, billable request.
+    """
+    fixture = build_fixture(tmp_path)
+    _price_the_director(fixture, hard_cap=Decimal("100"), warning_cap=Decimal("90"))
+    # Segment 0 takes two attempts, so its validated result carries attempt 2.
+    run_pipeline(fixture, director=_RepairableDirector(failing_sequence=0), key="run-1")
+    attempts = fixture.session.query(ProviderAttempt).count()
+    committed = fixture.session.scalar(select(ProjectBudget)).committed_amount
+    checkpoints = fixture.session.scalars(
+        select(StoryboardSegmentCheckpoint).order_by(StoryboardSegmentCheckpoint.sequence)
+    ).all()
+    assert checkpoints[0].provider_result["attempt"] == 2
+    assert checkpoints[0].provider_result["validated"] is True
+
+    # Invalidate the *last* segment so the run rebuilds it and replays segment 0's
+    # numbering; segment 0's validated result must be reused, not re-requested.
+    run = fixture.session.scalar(select(StoryboardRun))
+    checkpoints[-1].input_hash = "1" * 64
+    run.status = "storyboard_failed"
+    fixture.session.commit()
+
+    director = _CountingDirector()
+    result = run_pipeline(fixture, director=director, key="run-1")
+    assert result.status == "storyboard_complete"
+    # Only the invalidated segment was re-directed.
+    assert director.requests == [(len(checkpoints) - 1, 1)]
+    # The re-directed segment resolves back to its own durable attempt identity, so
+    # even the request that was re-issued reuses its T23 attempt and reservation
+    # rather than opening a second billable one.
+    assert fixture.session.query(ProviderAttempt).count() == attempts
+    assert fixture.session.scalar(select(ProjectBudget)).committed_amount == committed
+
+
+def test_a_failed_attempt_is_never_reused_as_a_recovered_result(tmp_path: Path) -> None:
+    """The repair loop must re-direct, not replay the result it just rejected."""
+    fixture = build_fixture(tmp_path)
+    director = _RepairableDirector(failing_sequence=0)
+    result = run_pipeline(fixture, director=director)
+    assert result.status == "storyboard_complete"
+    # Attempt 1 failed validation, so attempt 2 was a genuine second request.
+    assert (0, 1) in director.requests
+    assert (0, 2) in director.requests
 
 
 # -- continuity ---------------------------------------------------------------

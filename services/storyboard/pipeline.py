@@ -514,11 +514,19 @@ class StoryboardPipeline:
         incoming: ContinuityState,
     ) -> None:
         # Renumbering is run-wide, so every later segment's canonical shots are
-        # rebuilt too. Their provider results are kept, so no provider is called
-        # again and only the affected segment is actually re-directed.
+        # rebuilt too. Their validated provider results are kept, so no provider is
+        # called again and only the affected segment is actually re-directed.
+        # Each rebuilt checkpoint replays from attempt one, so its attempt counters
+        # and superseded repair rows are cleared with it: leaving a stale
+        # ``repair_attempt_count`` behind would break the checkpoint's own
+        # ``repair_attempt_count <= attempt_count`` constraint on the next commit.
         for later in self.repo.checkpoints_from(checkpoint.storyboard_run_id, checkpoint.sequence):
             for row in self.repo.segment_shots(later.id):
                 self.session.delete(row)
+            for repair in self.repo.repair_attempts(later.id):
+                self.session.delete(repair)
+            later.attempt_count = 0
+            later.repair_attempt_count = 0
             if later.id != checkpoint.id:
                 later.status = "pending"
                 later.outgoing_continuity = None
@@ -582,7 +590,7 @@ class StoryboardPipeline:
         repair: StoryboardRepairAttempt | None,
     ) -> StoryboardProviderResult:
         key = f"{checkpoint.idempotency_key}:{attempt}"
-        recovered = self._recover_provider_result(checkpoint, key)
+        recovered = self._recover_provider_result(checkpoint, attempt)
         if recovered is not None:
             return recovered
         request = StoryboardProviderRequest(
@@ -625,6 +633,9 @@ class StoryboardPipeline:
         checkpoint.provider_request_id = outcome.result.provider_request_id
         checkpoint.provider_result = {
             "idempotency_key": key,
+            "input_hash": checkpoint.input_hash,
+            "attempt": attempt,
+            "validated": False,
             "result": outcome.result.model_dump(mode="json"),
         }
         checkpoint.status = "directed"
@@ -637,10 +648,20 @@ class StoryboardPipeline:
 
     @staticmethod
     def _recover_provider_result(
-        checkpoint: StoryboardSegmentCheckpoint, key: str
+        checkpoint: StoryboardSegmentCheckpoint, attempt: int
     ) -> StoryboardProviderResult | None:
+        """Reuse a durably stored provider result instead of paying for it twice.
+
+        Two cases qualify, and only these two. A run interrupted between the
+        provider response and validation resumes at the same attempt. A checkpoint
+        rebuilt only to renumber shots replays a result that already validated
+        against these exact inputs. A result that failed validation is never
+        reused, because the repair attempt exists precisely to replace it.
+        """
         stored = checkpoint.provider_result
-        if not isinstance(stored, dict) or stored.get("idempotency_key") != key:
+        if not isinstance(stored, dict) or stored.get("input_hash") != checkpoint.input_hash:
+            return None
+        if stored.get("attempt") != attempt and not stored.get("validated"):
             return None
         return StoryboardProviderResult.model_validate(stored["result"])
 
@@ -841,6 +862,8 @@ class StoryboardPipeline:
             )
         checkpoint.status = "complete"
         checkpoint.error_code = None
+        if isinstance(checkpoint.provider_result, dict):
+            checkpoint.provider_result = {**checkpoint.provider_result, "validated": True}
         checkpoint.timing_adjustments = {
             "adjustments": [item.model_dump(mode="json") for item in timing.adjustments],
             "residual_allocation_us": timing.residual_allocation_us,
@@ -1107,7 +1130,7 @@ class StoryboardPipeline:
         report: StoryboardValidationReport,
     ) -> None:
         parents = self._asset_parents(inputs)
-        parameters = {
+        parameters: dict[str, Any] = {
             "capability_profile_id": run.capability_profile_id,
             "capability_hash": run.capability_hash,
             "contract_version": run.contract_version,
@@ -1126,14 +1149,21 @@ class StoryboardPipeline:
                 if checkpoint.provider_request_id
             ),
         }
+        # The artifact key is content-bound, not merely run-bound. An identical
+        # replay reuses the same key and the same asset, while a run whose canonical
+        # output legitimately changed - a targeted repair rebuilt one segment on
+        # resume - writes a new artifact instead of colliding on a stale key.
+        storyboard_payload = canonical_json(storyboard.model_dump(mode="json")).encode()
+        output_hash = canonical_hash(storyboard_payload.decode())
+        parameters["output_hash"] = output_hash
         storyboard_asset = self.assets.store(
-            content=canonical_json(storyboard.model_dump(mode="json")).encode(),
+            content=storyboard_payload,
             kind="json",
             media_type=STORYBOARD_MEDIA_TYPE,
             project_id=run.project_id,
             parent_asset_ids=parents,
             provider=run.provider,
-            idempotency_key=f"{run.id}:storyboard",
+            idempotency_key=f"{run.id}:storyboard:{output_hash}",
             generation_parameters=parameters,
         )
         manifest_asset = self.assets.store(
@@ -1143,7 +1173,7 @@ class StoryboardPipeline:
             project_id=run.project_id,
             parent_asset_ids=(storyboard_asset.id, *parents),
             provider=run.provider,
-            idempotency_key=f"{run.id}:timing-manifest",
+            idempotency_key=f"{run.id}:timing-manifest:{output_hash}",
             generation_parameters=parameters,
         )
         run.storyboard_asset_id = storyboard_asset.id
@@ -1156,7 +1186,7 @@ class StoryboardPipeline:
                 media_type=VALIDATION_REPORT_MEDIA_TYPE,
                 project_id=run.project_id,
                 parent_asset_ids=(storyboard_asset.id,),
-                idempotency_key=f"{run.id}:validation-report",
+                idempotency_key=f"{run.id}:validation-report:{output_hash}",
                 generation_parameters=parameters,
             ).id
 
