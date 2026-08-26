@@ -8,6 +8,7 @@ from sqlalchemy import engine_from_config, pool
 import vidgen.db.cost_models
 import vidgen.db.episode_analysis_models
 import vidgen.db.models
+import vidgen.db.script_models
 import vidgen.db.subtitle_models
 import vidgen.db.transcription_models
 import vidgen.db.upload_models

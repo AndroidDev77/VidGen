@@ -6,7 +6,7 @@ The complete system architecture and T01-T26 implementation roadmap are maintain
 [`docs/TECHNICAL_DESIGN.md`](docs/TECHNICAL_DESIGN.md). Contributors and coding agents should
 read it together with `AGENTS.md` before planning the next roadmap task.
 
-This repository implements roadmap tasks T01 through T10 and T23, including subtitle-first transcript acquisition, restartable episode analysis, and cloud-neutral observability/cost controls:
+This repository implements roadmap tasks T01 through T11 and T23, including subtitle-first transcript acquisition, restartable episode analysis, comedy script generation, and cloud-neutral observability/cost controls:
 
 - Python monorepo, CI, and local infrastructure
 - Versioned Pydantic contracts plus exported JSON Schema
@@ -17,6 +17,7 @@ This repository implements roadmap tasks T01 through T10 and T23, including subt
 - Deterministic FFmpeg media probing, audio extraction, scene detection, and frame extraction
 - Restartable transcription, overlap reconciliation, and anonymous speaker diarization
 - Embedded, sidecar, and OpenSubtitles acquisition with audio-transcription fallback
+- Restartable plot compression and comedy script generation with editorial review and revision
 
 ## Quick start
 
@@ -183,4 +184,31 @@ Run the configured OpenAI Responses adapter (the model remains configuration):
 ```bash
 VIDGEN_OPENAI_API_KEY=... VIDGEN_ANALYSIS_MODEL=... \
   uv run python scripts/analyze_episode.py PROJECT_UUID --provider openai
+```
+
+## Compression and comedy script pipeline (T11)
+
+T11 consumes the selected, validated T10 `EpisodeAnalysis` and produces a causally complete
+`CompressedPlotPlan`, an original comedy `RecapScript` draft, a deterministic validation report, a
+structured Comedy Editor review, up to two targeted revision passes, and a selected, versioned,
+diffable `RecapScript` suitable for T12 narration generation.
+
+The parent Temporal workflow runs script generation after Episode Analyst completes. Compression,
+writing, and editing each run inside their own activity; only project/source IDs and the normal
+versioned stage envelope cross workflow history, never plot plans, script text, or provider
+responses. Deterministic validation (word count, beat coverage, references, structure, joke
+annotations, near-verbatim transcript detection) never relies on an LLM to enforce a hard
+constraint. A failed replacement attempt never deselects a project's prior approved script.
+
+Run the zero-cost deterministic provider locally:
+
+```bash
+uv run python scripts/generate_script.py PROJECT_UUID --provider fake
+```
+
+Run the configured OpenAI Responses adapter (the model remains configuration):
+
+```bash
+VIDGEN_OPENAI_API_KEY=... \
+  uv run python scripts/generate_script.py PROJECT_UUID --provider openai
 ```

@@ -1,0 +1,123 @@
+{
+  "$defs": {
+    "ScriptEdit": {
+      "additionalProperties": false,
+      "properties": {
+        "changes_word_count": {
+          "title": "Changes Word Count",
+          "type": "boolean"
+        },
+        "new_text": {
+          "title": "New Text",
+          "type": "string"
+        },
+        "old_text": {
+          "title": "Old Text",
+          "type": "string"
+        },
+        "plot_beat_ids": {
+          "items": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "title": "Plot Beat Ids",
+          "type": "array"
+        },
+        "reason": {
+          "minLength": 1,
+          "title": "Reason",
+          "type": "string"
+        },
+        "rubric_dimensions": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Rubric Dimensions",
+          "type": "array"
+        },
+        "segment_id": {
+          "format": "uuid",
+          "title": "Segment Id",
+          "type": "string"
+        },
+        "was_locked": {
+          "title": "Was Locked",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "segment_id",
+        "old_text",
+        "new_text",
+        "reason",
+        "changes_word_count",
+        "was_locked"
+      ],
+      "title": "ScriptEdit",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "added_segment_ids": {
+      "items": {
+        "format": "uuid",
+        "type": "string"
+      },
+      "title": "Added Segment Ids",
+      "type": "array"
+    },
+    "changed_segments": {
+      "items": {
+        "$ref": "#/$defs/ScriptEdit"
+      },
+      "title": "Changed Segments",
+      "type": "array"
+    },
+    "from_version": {
+      "anyOf": [
+        {
+          "minimum": 1,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "From Version"
+    },
+    "removed_segment_ids": {
+      "items": {
+        "format": "uuid",
+        "type": "string"
+      },
+      "title": "Removed Segment Ids",
+      "type": "array"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "to_version": {
+      "minimum": 1,
+      "title": "To Version",
+      "type": "integer"
+    },
+    "unchanged_segment_ids": {
+      "items": {
+        "format": "uuid",
+        "type": "string"
+      },
+      "title": "Unchanged Segment Ids",
+      "type": "array"
+    }
+  },
+  "required": [
+    "to_version"
+  ],
+  "title": "ScriptDiff",
+  "type": "object"
+}

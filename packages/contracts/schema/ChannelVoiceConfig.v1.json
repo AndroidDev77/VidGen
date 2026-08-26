@@ -1,0 +1,35 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "catchphrases": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Catchphrases",
+      "type": "array"
+    },
+    "narrator_persona": {
+      "minLength": 1,
+      "title": "Narrator Persona",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "tone_keywords": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Tone Keywords",
+      "type": "array"
+    }
+  },
+  "required": [
+    "narrator_persona"
+  ],
+  "title": "ChannelVoiceConfig",
+  "type": "object"
+}

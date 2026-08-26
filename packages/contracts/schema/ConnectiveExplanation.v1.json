@@ -1,0 +1,27 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "cause_beat_id": {
+      "format": "uuid",
+      "title": "Cause Beat Id",
+      "type": "string"
+    },
+    "effect_beat_id": {
+      "format": "uuid",
+      "title": "Effect Beat Id",
+      "type": "string"
+    },
+    "explanation": {
+      "minLength": 1,
+      "title": "Explanation",
+      "type": "string"
+    }
+  },
+  "required": [
+    "cause_beat_id",
+    "effect_beat_id",
+    "explanation"
+  ],
+  "title": "ConnectiveExplanation",
+  "type": "object"
+}

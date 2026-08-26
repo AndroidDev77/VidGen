@@ -17,6 +17,9 @@ from services.analysis.fake_provider import FakeEpisodeAnalysisProvider
 from services.analysis.openai_adapter import OpenAIAnalysisConfig, OpenAIEpisodeAnalysisProvider
 from services.analysis.pipeline import EpisodeAnalysisPipeline
 from services.media_worker.pipeline import MediaPipeline
+from services.script.fake_provider import FakeScriptGenerationProvider
+from services.script.openai_adapter import OpenAIScriptConfig, OpenAIScriptGenerationProvider
+from services.script.pipeline import ScriptGenerationPipeline
 from services.subtitles.acquisition import TranscriptAcquisitionService
 from services.subtitles.opensubtitles import OpenSubtitlesAdapter
 from services.subtitles.pipeline import SubtitlePipeline, SubtitlePipelineConfig
@@ -50,6 +53,7 @@ def build_production_handlers(
         "transcript_acquisition": _with_session(configured, _acquire_transcript),
         "evidence": _with_session(configured, _build_evidence),
         "episode_analysis": _with_session(configured, _analyze_episode),
+        "script_generation": _with_session(configured, _generate_script),
     }
 
 
@@ -373,6 +377,39 @@ def _analyze_episode(
         stage=request.stage,
         entity_id=result.episode_analysis_id,
         asset_id=result.analysis_asset_id,
+        reused=False,
+    )
+
+
+def _generate_script(
+    session: Session,
+    blob_store: FilesystemBlobStore,
+    settings: APISettings,
+    request: StageActivityInput,
+) -> StageActivityResult:
+    provider = (
+        OpenAIScriptGenerationProvider(
+            OpenAIScriptConfig(
+                api_key=settings.openai_api_key,
+                compressor_model=settings.script_compressor_model,
+                writer_model=settings.script_writer_model,
+                editor_model=settings.script_editor_model,
+            )
+        )
+        if settings.openai_api_key
+        else FakeScriptGenerationProvider()
+    )
+    if not settings.openai_api_key and not settings.temporal_allow_fake_providers:
+        raise ValueError("script generation provider is not configured")
+    result = asyncio.run(
+        ScriptGenerationPipeline(session, blob_store, provider).process(
+            project_id=request.project_id, idempotency_key=request.idempotency_key
+        )
+    )
+    return StageActivityResult(
+        stage=request.stage,
+        entity_id=result.script_id,
+        asset_id=None,
         reused=False,
     )
 

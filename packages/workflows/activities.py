@@ -79,3 +79,8 @@ def run_evidence_activity(request: StageActivityInput) -> StageActivityResult:
 @activity.defn(name="run_episode_analysis_activity")
 def run_episode_analysis_activity(request: StageActivityInput) -> StageActivityResult:
     return _execute(request)
+
+
+@activity.defn(name="run_script_generation_activity")
+def run_script_generation_activity(request: StageActivityInput) -> StageActivityResult:
+    return _execute(request)

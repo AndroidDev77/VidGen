@@ -195,6 +195,288 @@
       "title": "JokeAnnotation",
       "type": "object"
     },
+    "RecapScript": {
+      "additionalProperties": false,
+      "properties": {
+        "actual_word_count": {
+          "minimum": 0,
+          "title": "Actual Word Count",
+          "type": "integer"
+        },
+        "assumptions": {
+          "items": {
+            "$ref": "#/$defs/StructuredNote"
+          },
+          "title": "Assumptions",
+          "type": "array"
+        },
+        "beat_coverage": {
+          "items": {
+            "$ref": "#/$defs/BeatCoverage"
+          },
+          "title": "Beat Coverage",
+          "type": "array"
+        },
+        "callbacks": {
+          "items": {
+            "$ref": "#/$defs/Callback"
+          },
+          "title": "Callbacks",
+          "type": "array"
+        },
+        "cold_open_text": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Cold Open Text"
+        },
+        "compressed_plot_plan_id": {
+          "format": "uuid",
+          "title": "Compressed Plot Plan Id",
+          "type": "string"
+        },
+        "episode_analysis_id": {
+          "format": "uuid",
+          "title": "Episode Analysis Id",
+          "type": "string"
+        },
+        "humor_intensity": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Humor Intensity",
+          "type": "number"
+        },
+        "parent_script_id": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Parent Script Id"
+        },
+        "project_id": {
+          "format": "uuid",
+          "title": "Project Id",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "script_id": {
+          "format": "uuid",
+          "title": "Script Id",
+          "type": "string"
+        },
+        "segments": {
+          "items": {
+            "$ref": "#/$defs/ScriptSegment"
+          },
+          "minItems": 1,
+          "title": "Segments",
+          "type": "array"
+        },
+        "source_refs": {
+          "items": {
+            "$ref": "#/$defs/SourceReference"
+          },
+          "title": "Source Refs",
+          "type": "array"
+        },
+        "target_duration_ms": {
+          "exclusiveMinimum": 0,
+          "title": "Target Duration Ms",
+          "type": "integer"
+        },
+        "target_word_count": {
+          "exclusiveMinimum": 0,
+          "title": "Target Word Count",
+          "type": "integer"
+        },
+        "version": {
+          "minimum": 1,
+          "title": "Version",
+          "type": "integer"
+        },
+        "voice_profile_ref": {
+          "minLength": 1,
+          "title": "Voice Profile Ref",
+          "type": "string"
+        },
+        "warnings": {
+          "items": {
+            "$ref": "#/$defs/StructuredNote"
+          },
+          "title": "Warnings",
+          "type": "array"
+        }
+      },
+      "required": [
+        "script_id",
+        "version",
+        "project_id",
+        "episode_analysis_id",
+        "compressed_plot_plan_id",
+        "target_duration_ms",
+        "target_word_count",
+        "actual_word_count",
+        "voice_profile_ref",
+        "humor_intensity",
+        "segments"
+      ],
+      "title": "RecapScript",
+      "type": "object"
+    },
+    "ScriptProviderMetadata": {
+      "additionalProperties": false,
+      "properties": {
+        "attempt_number": {
+          "minimum": 1,
+          "title": "Attempt Number",
+          "type": "integer"
+        },
+        "contract_version": {
+          "title": "Contract Version",
+          "type": "string"
+        },
+        "input_hash": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Input Hash",
+          "type": "string"
+        },
+        "input_tokens": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Input Tokens"
+        },
+        "model": {
+          "title": "Model",
+          "type": "string"
+        },
+        "operation": {
+          "enum": [
+            "compress_plot",
+            "write_script",
+            "edit_script"
+          ],
+          "title": "Operation",
+          "type": "string"
+        },
+        "output_tokens": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Output Tokens"
+        },
+        "prompt_version": {
+          "title": "Prompt Version",
+          "type": "string"
+        },
+        "provider": {
+          "title": "Provider",
+          "type": "string"
+        },
+        "provider_request_id": {
+          "title": "Provider Request Id",
+          "type": "string"
+        },
+        "redacted_response_metadata": {
+          "additionalProperties": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "integer"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              }
+            ]
+          },
+          "title": "Redacted Response Metadata",
+          "type": "object"
+        },
+        "rubric_version": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Rubric Version"
+        },
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "validation_status": {
+          "default": "pending",
+          "enum": [
+            "pending",
+            "valid",
+            "invalid"
+          ],
+          "title": "Validation Status",
+          "type": "string"
+        },
+        "warnings": {
+          "items": {
+            "$ref": "#/$defs/StructuredNote"
+          },
+          "title": "Warnings",
+          "type": "array"
+        }
+      },
+      "required": [
+        "provider",
+        "model",
+        "provider_request_id",
+        "operation",
+        "attempt_number",
+        "input_hash",
+        "prompt_version",
+        "contract_version"
+      ],
+      "title": "ScriptProviderMetadata",
+      "type": "object"
+    },
     "ScriptSegment": {
       "additionalProperties": false,
       "properties": {
@@ -449,145 +731,17 @@
   },
   "additionalProperties": false,
   "properties": {
-    "actual_word_count": {
-      "minimum": 0,
-      "title": "Actual Word Count",
-      "type": "integer"
+    "metadata": {
+      "$ref": "#/$defs/ScriptProviderMetadata"
     },
-    "assumptions": {
-      "items": {
-        "$ref": "#/$defs/StructuredNote"
-      },
-      "title": "Assumptions",
-      "type": "array"
-    },
-    "beat_coverage": {
-      "items": {
-        "$ref": "#/$defs/BeatCoverage"
-      },
-      "title": "Beat Coverage",
-      "type": "array"
-    },
-    "callbacks": {
-      "items": {
-        "$ref": "#/$defs/Callback"
-      },
-      "title": "Callbacks",
-      "type": "array"
-    },
-    "cold_open_text": {
-      "anyOf": [
-        {
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "default": null,
-      "title": "Cold Open Text"
-    },
-    "compressed_plot_plan_id": {
-      "format": "uuid",
-      "title": "Compressed Plot Plan Id",
-      "type": "string"
-    },
-    "episode_analysis_id": {
-      "format": "uuid",
-      "title": "Episode Analysis Id",
-      "type": "string"
-    },
-    "humor_intensity": {
-      "maximum": 1,
-      "minimum": 0,
-      "title": "Humor Intensity",
-      "type": "number"
-    },
-    "parent_script_id": {
-      "anyOf": [
-        {
-          "format": "uuid",
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "default": null,
-      "title": "Parent Script Id"
-    },
-    "project_id": {
-      "format": "uuid",
-      "title": "Project Id",
-      "type": "string"
-    },
-    "schema_version": {
-      "const": "1.0",
-      "default": "1.0",
-      "title": "Schema Version",
-      "type": "string"
-    },
-    "script_id": {
-      "format": "uuid",
-      "title": "Script Id",
-      "type": "string"
-    },
-    "segments": {
-      "items": {
-        "$ref": "#/$defs/ScriptSegment"
-      },
-      "minItems": 1,
-      "title": "Segments",
-      "type": "array"
-    },
-    "source_refs": {
-      "items": {
-        "$ref": "#/$defs/SourceReference"
-      },
-      "title": "Source Refs",
-      "type": "array"
-    },
-    "target_duration_ms": {
-      "exclusiveMinimum": 0,
-      "title": "Target Duration Ms",
-      "type": "integer"
-    },
-    "target_word_count": {
-      "exclusiveMinimum": 0,
-      "title": "Target Word Count",
-      "type": "integer"
-    },
-    "version": {
-      "minimum": 1,
-      "title": "Version",
-      "type": "integer"
-    },
-    "voice_profile_ref": {
-      "minLength": 1,
-      "title": "Voice Profile Ref",
-      "type": "string"
-    },
-    "warnings": {
-      "items": {
-        "$ref": "#/$defs/StructuredNote"
-      },
-      "title": "Warnings",
-      "type": "array"
+    "output": {
+      "$ref": "#/$defs/RecapScript"
     }
   },
   "required": [
-    "script_id",
-    "version",
-    "project_id",
-    "episode_analysis_id",
-    "compressed_plot_plan_id",
-    "target_duration_ms",
-    "target_word_count",
-    "actual_word_count",
-    "voice_profile_ref",
-    "humor_intensity",
-    "segments"
+    "output",
+    "metadata"
   ],
-  "title": "RecapScript",
+  "title": "ProviderRecapScriptResult",
   "type": "object"
 }
