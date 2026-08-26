@@ -5,6 +5,7 @@ from logging.config import fileConfig
 from alembic import context
 from sqlalchemy import engine_from_config, pool
 
+import vidgen.db.episode_analysis_models
 import vidgen.db.models
 import vidgen.db.subtitle_models
 import vidgen.db.transcription_models

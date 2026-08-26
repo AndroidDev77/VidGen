@@ -1,0 +1,223 @@
+{
+  "$defs": {
+    "SceneEvidenceExcerpt": {
+      "additionalProperties": false,
+      "properties": {
+        "source_reference": {
+          "$ref": "#/$defs/SourceReference"
+        },
+        "speaker_label": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Speaker Label"
+        },
+        "text": {
+          "maxLength": 4000,
+          "minLength": 1,
+          "title": "Text",
+          "type": "string"
+        }
+      },
+      "required": [
+        "text",
+        "source_reference"
+      ],
+      "title": "SceneEvidenceExcerpt",
+      "type": "object"
+    },
+    "SourceReference": {
+      "additionalProperties": false,
+      "properties": {
+        "end_ms": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "End Ms"
+        },
+        "reference_id": {
+          "format": "uuid",
+          "title": "Reference Id",
+          "type": "string"
+        },
+        "reference_type": {
+          "enum": [
+            "transcript_segment",
+            "speaker_turn",
+            "source_scene",
+            "frame",
+            "contact_sheet",
+            "project"
+          ],
+          "title": "Reference Type",
+          "type": "string"
+        },
+        "scene_id": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Scene Id"
+        },
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "start_ms": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Start Ms"
+        }
+      },
+      "required": [
+        "reference_type",
+        "reference_id"
+      ],
+      "title": "SourceReference",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "contract_version": {
+      "title": "Contract Version",
+      "type": "string"
+    },
+    "evidence_excerpts": {
+      "items": {
+        "$ref": "#/$defs/SceneEvidenceExcerpt"
+      },
+      "maxItems": 100,
+      "title": "Evidence Excerpts",
+      "type": "array"
+    },
+    "evidence_package_id": {
+      "format": "uuid",
+      "title": "Evidence Package Id",
+      "type": "string"
+    },
+    "evidence_references": {
+      "items": {
+        "$ref": "#/$defs/SourceReference"
+      },
+      "maxItems": 100,
+      "minItems": 1,
+      "title": "Evidence References",
+      "type": "array"
+    },
+    "idempotency_key": {
+      "minLength": 1,
+      "title": "Idempotency Key",
+      "type": "string"
+    },
+    "input_hash": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Input Hash",
+      "type": "string"
+    },
+    "project_id": {
+      "format": "uuid",
+      "title": "Project Id",
+      "type": "string"
+    },
+    "prompt_version": {
+      "title": "Prompt Version",
+      "type": "string"
+    },
+    "provider_configuration_version": {
+      "title": "Provider Configuration Version",
+      "type": "string"
+    },
+    "provider_options": {
+      "additionalProperties": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "integer"
+          },
+          {
+            "type": "number"
+          },
+          {
+            "type": "boolean"
+          }
+        ]
+      },
+      "title": "Provider Options",
+      "type": "object"
+    },
+    "scene_id": {
+      "format": "uuid",
+      "title": "Scene Id",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "sequence": {
+      "minimum": 1,
+      "title": "Sequence",
+      "type": "integer"
+    },
+    "source_end_ms": {
+      "minimum": 1,
+      "title": "Source End Ms",
+      "type": "integer"
+    },
+    "source_start_ms": {
+      "minimum": 0,
+      "title": "Source Start Ms",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "project_id",
+    "evidence_package_id",
+    "scene_id",
+    "sequence",
+    "source_start_ms",
+    "source_end_ms",
+    "input_hash",
+    "idempotency_key",
+    "contract_version",
+    "prompt_version",
+    "provider_configuration_version",
+    "evidence_references"
+  ],
+  "title": "SceneAnalysisRequest",
+  "type": "object"
+}

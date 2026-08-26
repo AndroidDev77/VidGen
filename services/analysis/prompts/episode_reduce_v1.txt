@@ -1,0 +1,3 @@
+Reduce validated scene-map results in source order. Merge aliases only with explicit supporting
+evidence. Preserve ambiguities, construct only evidenced causal links, and emit EpisodeAnalysis 1.0.
+Do not write recap prose, jokes, or creative embellishment.

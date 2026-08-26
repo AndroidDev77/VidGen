@@ -19,6 +19,7 @@ class APISettings(BaseSettings):
     openai_api_key: str | None = None
     transcription_model: str = "whisper-1"
     diarization_model: str = "gpt-4o-transcribe-diarize"
+    analysis_model: str = "gpt-5.6"
     opensubtitles_api_key: str | None = None
     opensubtitles_username: str | None = None
     opensubtitles_password: str | None = None

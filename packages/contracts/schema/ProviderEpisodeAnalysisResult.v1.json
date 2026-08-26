@@ -198,6 +198,156 @@
       "title": "CharacterCandidate",
       "type": "object"
     },
+    "EpisodeAnalysis": {
+      "additionalProperties": false,
+      "properties": {
+        "assumptions": {
+          "items": {
+            "$ref": "#/$defs/StructuredNote"
+          },
+          "title": "Assumptions",
+          "type": "array"
+        },
+        "beat_dependencies": {
+          "items": {
+            "$ref": "#/$defs/BeatDependency"
+          },
+          "title": "Beat Dependencies",
+          "type": "array"
+        },
+        "characters": {
+          "items": {
+            "$ref": "#/$defs/CharacterCandidate"
+          },
+          "title": "Characters",
+          "type": "array"
+        },
+        "duration_ms": {
+          "minimum": 1,
+          "title": "Duration Ms",
+          "type": "integer"
+        },
+        "episode_id": {
+          "format": "uuid",
+          "title": "Episode Id",
+          "type": "string"
+        },
+        "evidence_package_id": {
+          "format": "uuid",
+          "title": "Evidence Package Id",
+          "type": "string"
+        },
+        "genre": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Genre",
+          "type": "array"
+        },
+        "locations": {
+          "items": {
+            "$ref": "#/$defs/LocationCandidate"
+          },
+          "title": "Locations",
+          "type": "array"
+        },
+        "logline": {
+          "default": "",
+          "title": "Logline",
+          "type": "string"
+        },
+        "plot_beats": {
+          "items": {
+            "$ref": "#/$defs/PlotBeat"
+          },
+          "title": "Plot Beats",
+          "type": "array"
+        },
+        "project_id": {
+          "format": "uuid",
+          "title": "Project Id",
+          "type": "string"
+        },
+        "relationships": {
+          "items": {
+            "$ref": "#/$defs/Relationship"
+          },
+          "title": "Relationships",
+          "type": "array"
+        },
+        "scenes": {
+          "items": {
+            "$ref": "#/$defs/CanonicalScene"
+          },
+          "minItems": 1,
+          "title": "Scenes",
+          "type": "array"
+        },
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "source_references": {
+          "items": {
+            "$ref": "#/$defs/SourceReference"
+          },
+          "minItems": 1,
+          "title": "Source References",
+          "type": "array"
+        },
+        "source_video_id": {
+          "format": "uuid",
+          "title": "Source Video Id",
+          "type": "string"
+        },
+        "state_events": {
+          "items": {
+            "$ref": "#/$defs/StateEvent"
+          },
+          "title": "State Events",
+          "type": "array"
+        },
+        "title": {
+          "default": "",
+          "title": "Title",
+          "type": "string"
+        },
+        "tone": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Tone",
+          "type": "array"
+        },
+        "unresolved_ambiguities": {
+          "items": {
+            "$ref": "#/$defs/UnresolvedAmbiguity"
+          },
+          "title": "Unresolved Ambiguities",
+          "type": "array"
+        },
+        "warnings": {
+          "items": {
+            "$ref": "#/$defs/StructuredNote"
+          },
+          "title": "Warnings",
+          "type": "array"
+        }
+      },
+      "required": [
+        "episode_id",
+        "project_id",
+        "source_video_id",
+        "evidence_package_id",
+        "duration_ms",
+        "scenes",
+        "source_references"
+      ],
+      "title": "EpisodeAnalysis",
+      "type": "object"
+    },
     "LocationCandidate": {
       "additionalProperties": false,
       "properties": {
@@ -330,6 +480,115 @@
         "mandatory"
       ],
       "title": "PlotBeat",
+      "type": "object"
+    },
+    "ProviderMetadata": {
+      "additionalProperties": false,
+      "properties": {
+        "attempt_number": {
+          "minimum": 1,
+          "title": "Attempt Number",
+          "type": "integer"
+        },
+        "contract_version": {
+          "title": "Contract Version",
+          "type": "string"
+        },
+        "input_hash": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Input Hash",
+          "type": "string"
+        },
+        "input_tokens": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Input Tokens"
+        },
+        "model": {
+          "title": "Model",
+          "type": "string"
+        },
+        "output_tokens": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Output Tokens"
+        },
+        "prompt_version": {
+          "title": "Prompt Version",
+          "type": "string"
+        },
+        "provider": {
+          "title": "Provider",
+          "type": "string"
+        },
+        "provider_request_id": {
+          "title": "Provider Request Id",
+          "type": "string"
+        },
+        "redacted_response_metadata": {
+          "additionalProperties": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "integer"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              }
+            ]
+          },
+          "title": "Redacted Response Metadata",
+          "type": "object"
+        },
+        "validation_status": {
+          "default": "pending",
+          "enum": [
+            "pending",
+            "valid",
+            "invalid"
+          ],
+          "title": "Validation Status",
+          "type": "string"
+        },
+        "warnings": {
+          "items": {
+            "$ref": "#/$defs/StructuredNote"
+          },
+          "title": "Warnings",
+          "type": "array"
+        }
+      },
+      "required": [
+        "provider",
+        "model",
+        "provider_request_id",
+        "attempt_number",
+        "prompt_version",
+        "contract_version",
+        "input_hash"
+      ],
+      "title": "ProviderMetadata",
       "type": "object"
     },
     "Relationship": {
@@ -589,150 +848,17 @@
   },
   "additionalProperties": false,
   "properties": {
-    "assumptions": {
-      "items": {
-        "$ref": "#/$defs/StructuredNote"
-      },
-      "title": "Assumptions",
-      "type": "array"
+    "metadata": {
+      "$ref": "#/$defs/ProviderMetadata"
     },
-    "beat_dependencies": {
-      "items": {
-        "$ref": "#/$defs/BeatDependency"
-      },
-      "title": "Beat Dependencies",
-      "type": "array"
-    },
-    "characters": {
-      "items": {
-        "$ref": "#/$defs/CharacterCandidate"
-      },
-      "title": "Characters",
-      "type": "array"
-    },
-    "duration_ms": {
-      "minimum": 1,
-      "title": "Duration Ms",
-      "type": "integer"
-    },
-    "episode_id": {
-      "format": "uuid",
-      "title": "Episode Id",
-      "type": "string"
-    },
-    "evidence_package_id": {
-      "format": "uuid",
-      "title": "Evidence Package Id",
-      "type": "string"
-    },
-    "genre": {
-      "items": {
-        "type": "string"
-      },
-      "title": "Genre",
-      "type": "array"
-    },
-    "locations": {
-      "items": {
-        "$ref": "#/$defs/LocationCandidate"
-      },
-      "title": "Locations",
-      "type": "array"
-    },
-    "logline": {
-      "default": "",
-      "title": "Logline",
-      "type": "string"
-    },
-    "plot_beats": {
-      "items": {
-        "$ref": "#/$defs/PlotBeat"
-      },
-      "title": "Plot Beats",
-      "type": "array"
-    },
-    "project_id": {
-      "format": "uuid",
-      "title": "Project Id",
-      "type": "string"
-    },
-    "relationships": {
-      "items": {
-        "$ref": "#/$defs/Relationship"
-      },
-      "title": "Relationships",
-      "type": "array"
-    },
-    "scenes": {
-      "items": {
-        "$ref": "#/$defs/CanonicalScene"
-      },
-      "minItems": 1,
-      "title": "Scenes",
-      "type": "array"
-    },
-    "schema_version": {
-      "const": "1.0",
-      "default": "1.0",
-      "title": "Schema Version",
-      "type": "string"
-    },
-    "source_references": {
-      "items": {
-        "$ref": "#/$defs/SourceReference"
-      },
-      "minItems": 1,
-      "title": "Source References",
-      "type": "array"
-    },
-    "source_video_id": {
-      "format": "uuid",
-      "title": "Source Video Id",
-      "type": "string"
-    },
-    "state_events": {
-      "items": {
-        "$ref": "#/$defs/StateEvent"
-      },
-      "title": "State Events",
-      "type": "array"
-    },
-    "title": {
-      "default": "",
-      "title": "Title",
-      "type": "string"
-    },
-    "tone": {
-      "items": {
-        "type": "string"
-      },
-      "title": "Tone",
-      "type": "array"
-    },
-    "unresolved_ambiguities": {
-      "items": {
-        "$ref": "#/$defs/UnresolvedAmbiguity"
-      },
-      "title": "Unresolved Ambiguities",
-      "type": "array"
-    },
-    "warnings": {
-      "items": {
-        "$ref": "#/$defs/StructuredNote"
-      },
-      "title": "Warnings",
-      "type": "array"
+    "output": {
+      "$ref": "#/$defs/EpisodeAnalysis"
     }
   },
   "required": [
-    "episode_id",
-    "project_id",
-    "source_video_id",
-    "evidence_package_id",
-    "duration_ms",
-    "scenes",
-    "source_references"
+    "output",
+    "metadata"
   ],
-  "title": "EpisodeAnalysis",
+  "title": "ProviderEpisodeAnalysisResult",
   "type": "object"
 }

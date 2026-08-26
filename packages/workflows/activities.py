@@ -74,3 +74,8 @@ def run_transcript_acquisition_activity(request: StageActivityInput) -> StageAct
 @activity.defn(name="run_evidence_activity")
 def run_evidence_activity(request: StageActivityInput) -> StageActivityResult:
     return _execute(request)
+
+
+@activity.defn(name="run_episode_analysis_activity")
+def run_episode_analysis_activity(request: StageActivityInput) -> StageActivityResult:
+    return _execute(request)

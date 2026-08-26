@@ -15,12 +15,13 @@ jobs:
           version: "0.11.33"
           enable-cache: true
       - run: uv sync --all-groups --frozen
-      - run: docker compose up -d postgres redis azurite
+      - run: docker compose up -d postgres redis azurite temporal
       - name: Verify Compose services and migrations
         run: |
           timeout 90 bash -c 'until docker compose exec -T postgres pg_isready -U vidgen -d vidgen; do sleep 2; done'
           test "$(docker compose exec -T redis redis-cli ping | tr -d '\r')" = "PONG"
           timeout 60 bash -c 'until (echo > /dev/tcp/127.0.0.1/10000) 2>/dev/null; do sleep 2; done'
+          timeout 90 bash -c 'until (echo > /dev/tcp/127.0.0.1/7233) 2>/dev/null; do sleep 2; done'
           VIDGEN_ALLOW_DESTRUCTIVE_MIGRATION_TEST=1 uv run python scripts/verify_stack.py
       - if: always()
         run: docker compose down -v

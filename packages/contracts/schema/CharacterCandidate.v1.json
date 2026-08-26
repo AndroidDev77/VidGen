@@ -1,0 +1,161 @@
+{
+  "$defs": {
+    "AliasEvidence": {
+      "additionalProperties": false,
+      "properties": {
+        "alias": {
+          "minLength": 1,
+          "title": "Alias",
+          "type": "string"
+        },
+        "source_references": {
+          "items": {
+            "$ref": "#/$defs/SourceReference"
+          },
+          "minItems": 1,
+          "title": "Source References",
+          "type": "array"
+        }
+      },
+      "required": [
+        "alias",
+        "source_references"
+      ],
+      "title": "AliasEvidence",
+      "type": "object"
+    },
+    "SourceReference": {
+      "additionalProperties": false,
+      "properties": {
+        "end_ms": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "End Ms"
+        },
+        "reference_id": {
+          "format": "uuid",
+          "title": "Reference Id",
+          "type": "string"
+        },
+        "reference_type": {
+          "enum": [
+            "transcript_segment",
+            "speaker_turn",
+            "source_scene",
+            "frame",
+            "contact_sheet",
+            "project"
+          ],
+          "title": "Reference Type",
+          "type": "string"
+        },
+        "scene_id": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Scene Id"
+        },
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "start_ms": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Start Ms"
+        }
+      },
+      "required": [
+        "reference_type",
+        "reference_id"
+      ],
+      "title": "SourceReference",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "alias_evidence": {
+      "items": {
+        "$ref": "#/$defs/AliasEvidence"
+      },
+      "title": "Alias Evidence",
+      "type": "array"
+    },
+    "aliases": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Aliases",
+      "type": "array"
+    },
+    "anonymous": {
+      "default": false,
+      "title": "Anonymous",
+      "type": "boolean"
+    },
+    "canonical_name": {
+      "minLength": 1,
+      "title": "Canonical Name",
+      "type": "string"
+    },
+    "character_id": {
+      "format": "uuid",
+      "title": "Character Id",
+      "type": "string"
+    },
+    "confidence": {
+      "maximum": 1,
+      "minimum": 0,
+      "title": "Confidence",
+      "type": "number"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "source_references": {
+      "items": {
+        "$ref": "#/$defs/SourceReference"
+      },
+      "minItems": 1,
+      "title": "Source References",
+      "type": "array"
+    }
+  },
+  "required": [
+    "character_id",
+    "canonical_name",
+    "confidence",
+    "source_references"
+  ],
+  "title": "CharacterCandidate",
+  "type": "object"
+}

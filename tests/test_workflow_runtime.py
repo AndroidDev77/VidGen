@@ -71,6 +71,7 @@ def test_production_worker_configures_every_workflow_stage(tmp_path: Path) -> No
         "media_processing",
         "transcript_acquisition",
         "evidence",
+        "episode_analysis",
     }
 
 
@@ -117,7 +118,7 @@ async def test_cancellation_during_final_activity_is_not_reported_as_success() -
     release_evidence = __import__("asyncio").Event()
 
     async def finish(request: StageActivityInput) -> StageActivityResult:
-        if request.stage == "evidence":
+        if request.stage == "episode_analysis":
             evidence_started.set()
             await release_evidence.wait()
         return StageActivityResult(stage=request.stage)
@@ -137,6 +138,7 @@ async def test_cancellation_during_final_activity_is_not_reported_as_success() -
             "run_media_processing_activity",
             "run_transcript_acquisition_activity",
             "run_evidence_activity",
+            "run_episode_analysis_activity",
         )
     ]
 

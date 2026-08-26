@@ -1,78 +1,54 @@
 {
   "schema_version": "1.0",
-  "project_id": "00000000-0000-0000-0000-000000000001",
+  "episode_id": "00000000-0000-0000-0000-000000000001",
+  "project_id": "00000000-0000-0000-0000-000000000002",
+  "source_video_id": "00000000-0000-0000-0000-000000000003",
+  "evidence_package_id": "00000000-0000-0000-0000-000000000004",
   "title": "The Extremely Small Heist",
-  "source_duration_seconds": 600.0,
-  "logline": "A thief steals a sandwich and immediately regrets the paperwork.",
-  "genre": ["comedy"],
-  "themes": ["hubris"],
-  "characters": [
-    {
-      "schema_version": "1.0",
-      "character_id": "00000000-0000-0000-0000-000000000010",
-      "canonical_name": "Mara",
-      "aliases": [],
-      "role": "protagonist",
-      "appearance": "Short athletic woman in a blue jacket",
-      "face": "round face, brown eyes",
-      "hair": "short black bob",
-      "skin_tone": "warm brown",
-      "body_proportions": "compact athletic cartoon proportions",
-      "default_wardrobe_state": "blue_jacket",
-      "wardrobe_states": [
-        {
-          "state_id": "blue_jacket",
-          "description": "blue jacket and dark jeans",
-          "colors": ["blue", "black"],
-          "accessories": ["silver watch"]
-        }
-      ],
-      "signature_accessories": ["silver watch"],
-      "personality": ["overconfident"],
-      "reference_asset_ids": []
-    }
-  ],
-  "locations": [
-    {
-      "schema_version": "1.0",
-      "location_id": "00000000-0000-0000-0000-000000000020",
-      "canonical_name": "Kitchen",
-      "description": "Tiny green-tiled apartment kitchen",
-      "layout": "counter left, fridge rear, door right",
-      "palette": ["mint green", "cream"],
-      "fixed_features": ["crooked wall clock"],
-      "reference_asset_ids": []
-    }
-  ],
+  "duration_ms": 1000,
+  "logline": "",
+  "genre": [],
+  "tone": [],
+  "characters": [],
+  "locations": [],
   "scenes": [
     {
-      "schema_version": "1.0",
-      "scene_id": "00000000-0000-0000-0000-000000000030",
-      "sequence": 0,
-      "source_start_seconds": 0.0,
-      "source_end_seconds": 45.0,
-      "location_id": "00000000-0000-0000-0000-000000000020",
-      "character_ids": ["00000000-0000-0000-0000-000000000010"],
-      "summary": "Mara plans the sandwich heist.",
-      "actions": ["draws plan"],
-      "dialogue_summary": "Mara boasts.",
-      "representative_frame_asset_ids": [],
-      "confidence": 0.98
+      "scene_id": "00000000-0000-0000-0000-000000000005",
+      "sequence": 1,
+      "source_start_ms": 0,
+      "source_end_ms": 1000,
+      "summary": "Observed scene",
+      "dramatic_purpose": "Source chronology",
+      "character_ids": [],
+      "location_id": null,
+      "confidence": 1,
+      "source_references": [
+        {
+          "schema_version": "1.0",
+          "reference_type": "source_scene",
+          "reference_id": "00000000-0000-0000-0000-000000000005",
+          "scene_id": "00000000-0000-0000-0000-000000000005",
+          "start_ms": 0,
+          "end_ms": 1000
+        }
+      ]
     }
   ],
-  "plot_beats": [
+  "state_events": [],
+  "relationships": [],
+  "plot_beats": [],
+  "beat_dependencies": [],
+  "unresolved_ambiguities": [],
+  "source_references": [
     {
       "schema_version": "1.0",
-      "plot_beat_id": "00000000-0000-0000-0000-000000000040",
-      "sequence": 0,
-      "scene_ids": ["00000000-0000-0000-0000-000000000030"],
-      "summary": "Mara creates a needlessly complex plan.",
-      "importance": 0.9,
-      "required_for_coherence": true,
-      "setup_ids": [],
-      "payoff_ids": []
+      "reference_type": "source_scene",
+      "reference_id": "00000000-0000-0000-0000-000000000005",
+      "scene_id": "00000000-0000-0000-0000-000000000005",
+      "start_ms": 0,
+      "end_ms": 1000
     }
   ],
-  "unresolved_ambiguities": []
+  "assumptions": [],
+  "warnings": []
 }
-

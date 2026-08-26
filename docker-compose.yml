@@ -34,7 +34,7 @@ services:
       - azurite-data:/data
 
   temporal:
-    image: temporalio/temporal:1.29.1
+    image: temporalio/temporal:1.8.2
     command: server start-dev --ip 0.0.0.0
     ports:
       - "7233:7233"

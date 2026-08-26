@@ -1,0 +1,236 @@
+"""T10 episode analysis persistence."""
+
+from collections.abc import Sequence
+
+import sqlalchemy as sa
+from alembic import op
+
+revision: str = "0006_episode_analysis"
+down_revision: str | None = "0005_workflow_evidence"
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
+
+
+def upgrade() -> None:
+    op.create_table(
+        "episode_analysis_runs",
+        sa.Column("project_id", sa.Uuid(), nullable=False),
+        sa.Column("source_video_id", sa.Uuid(), nullable=False),
+        sa.Column("evidence_package_id", sa.Uuid(), nullable=False),
+        sa.Column("idempotency_key", sa.String(255), nullable=False),
+        sa.Column("input_hash", sa.String(64), nullable=False),
+        sa.Column("contract_version", sa.String(32), nullable=False),
+        sa.Column("prompt_version", sa.String(32), nullable=False),
+        sa.Column("provider_configuration_version", sa.String(64), nullable=False),
+        sa.Column("provider", sa.String(64), nullable=False),
+        sa.Column("model", sa.String(128), nullable=False),
+        sa.Column("status", sa.String(64), nullable=False),
+        sa.Column("attempt_count", sa.Integer(), nullable=False),
+        sa.Column("validation_report", sa.JSON()),
+        sa.Column("error_code", sa.String(64)),
+        sa.Column("selected", sa.Boolean(), nullable=False),
+        sa.Column("id", sa.Uuid(), primary_key=True),
+        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
+        sa.CheckConstraint(
+            "attempt_count >= 0", name=op.f("ck_episode_analysis_runs_analysis_attempt_nonnegative")
+        ),
+        sa.CheckConstraint(
+            "length(input_hash) = 64",
+            name=op.f("ck_episode_analysis_runs_analysis_run_input_hash_length"),
+        ),
+        sa.ForeignKeyConstraint(["project_id"], ["projects.id"], ondelete="CASCADE"),
+        sa.ForeignKeyConstraint(["source_video_id"], ["source_videos.id"], ondelete="RESTRICT"),
+        sa.ForeignKeyConstraint(
+            ["evidence_package_id"], ["evidence_packages.id"], ondelete="RESTRICT"
+        ),
+    )
+    op.create_index(
+        "uq_analysis_run_project_idempotency",
+        "episode_analysis_runs",
+        ["project_id", "idempotency_key"],
+        unique=True,
+    )
+    op.create_table(
+        "scene_analysis_checkpoints",
+        sa.Column("analysis_run_id", sa.Uuid(), nullable=False),
+        sa.Column("source_scene_id", sa.Uuid(), nullable=False),
+        sa.Column("sequence", sa.Integer(), nullable=False),
+        sa.Column("input_hash", sa.String(64), nullable=False),
+        sa.Column("idempotency_key", sa.String(255), nullable=False, unique=True),
+        sa.Column("status", sa.String(32), nullable=False),
+        sa.Column("provider_request_id", sa.String(255), unique=True),
+        sa.Column("attempt_count", sa.Integer(), nullable=False),
+        sa.Column("provider_result", sa.JSON()),
+        sa.Column("validation_report", sa.JSON()),
+        sa.Column("error_code", sa.String(64)),
+        sa.Column("id", sa.Uuid(), primary_key=True),
+        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
+        sa.CheckConstraint(
+            "sequence > 0", name=op.f("ck_scene_analysis_checkpoints_checkpoint_positive_sequence")
+        ),
+        sa.CheckConstraint(
+            "attempt_count >= 0",
+            name=op.f("ck_scene_analysis_checkpoints_checkpoint_attempt_nonnegative"),
+        ),
+        sa.CheckConstraint(
+            "length(input_hash) = 64",
+            name=op.f("ck_scene_analysis_checkpoints_checkpoint_input_hash_length"),
+        ),
+        sa.ForeignKeyConstraint(
+            ["analysis_run_id"], ["episode_analysis_runs.id"], ondelete="CASCADE"
+        ),
+    )
+    op.create_index(
+        "uq_checkpoint_run_scene",
+        "scene_analysis_checkpoints",
+        ["analysis_run_id", "source_scene_id"],
+        unique=True,
+    )
+    op.create_table(
+        "episode_analyses",
+        sa.Column("project_id", sa.Uuid(), nullable=False),
+        sa.Column("analysis_run_id", sa.Uuid(), nullable=False, unique=True),
+        sa.Column("version", sa.Integer(), nullable=False),
+        sa.Column("canonical_analysis_asset_id", sa.Uuid(), nullable=False),
+        sa.Column("input_hash", sa.String(64), nullable=False),
+        sa.Column("duration_ms", sa.Integer(), nullable=False),
+        sa.Column("character_count", sa.Integer(), nullable=False),
+        sa.Column("location_count", sa.Integer(), nullable=False),
+        sa.Column("scene_count", sa.Integer(), nullable=False),
+        sa.Column("plot_beat_count", sa.Integer(), nullable=False),
+        sa.Column("selected", sa.Boolean(), nullable=False),
+        sa.Column("warnings", sa.JSON(), nullable=False),
+        sa.Column("id", sa.Uuid(), primary_key=True),
+        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
+        sa.CheckConstraint(
+            "version > 0", name=op.f("ck_episode_analyses_analysis_positive_version")
+        ),
+        sa.CheckConstraint(
+            "duration_ms > 0", name=op.f("ck_episode_analyses_analysis_positive_duration")
+        ),
+        sa.CheckConstraint(
+            "length(input_hash) = 64", name=op.f("ck_episode_analyses_analysis_input_hash_length")
+        ),
+        sa.CheckConstraint(
+            "character_count >= 0 AND location_count >= 0 "
+            "AND scene_count > 0 AND plot_beat_count >= 0",
+            name=op.f("ck_episode_analyses_analysis_valid_counts"),
+        ),
+        sa.ForeignKeyConstraint(["project_id"], ["projects.id"], ondelete="CASCADE"),
+        sa.ForeignKeyConstraint(
+            ["analysis_run_id"], ["episode_analysis_runs.id"], ondelete="RESTRICT"
+        ),
+        sa.ForeignKeyConstraint(
+            ["canonical_analysis_asset_id"], ["assets.id"], ondelete="RESTRICT"
+        ),
+    )
+    op.create_index(
+        "uq_episode_analysis_project_version",
+        "episode_analyses",
+        ["project_id", "version"],
+        unique=True,
+    )
+    op.create_index(
+        "uq_episode_analysis_selected",
+        "episode_analyses",
+        ["project_id"],
+        unique=True,
+        sqlite_where=sa.text("selected = 1"),
+        postgresql_where=sa.text("selected"),
+    )
+    for table, columns, checks, foreign_keys, index_name, index_columns in (
+        (
+            "analysis_state_events",
+            [
+                sa.Column("stable_id", sa.Uuid(), nullable=False),
+                sa.Column("entity_id", sa.Uuid(), nullable=False),
+                sa.Column("scene_id", sa.Uuid(), nullable=False),
+                sa.Column("sequence", sa.Integer(), nullable=False),
+                sa.Column("confidence", sa.Float(), nullable=False),
+            ],
+            [
+                sa.CheckConstraint(
+                    "sequence > 0",
+                    name=op.f("ck_analysis_state_events_analysis_state_positive_sequence"),
+                ),
+                sa.CheckConstraint(
+                    "confidence BETWEEN 0 AND 1",
+                    name=op.f("ck_analysis_state_events_analysis_state_confidence"),
+                ),
+            ],
+            [sa.ForeignKeyConstraint(["scene_id"], ["scene_evidence.id"], ondelete="RESTRICT")],
+            "uq_analysis_state_stable",
+            ["analysis_id", "stable_id"],
+        ),
+        (
+            "analysis_relationships",
+            [
+                sa.Column("stable_id", sa.Uuid(), nullable=False),
+                sa.Column("source_character_id", sa.Uuid(), nullable=False),
+                sa.Column("target_character_id", sa.Uuid(), nullable=False),
+                sa.Column("confidence", sa.Float(), nullable=False),
+                sa.Column("description", sa.Text(), nullable=False),
+            ],
+            [
+                sa.CheckConstraint(
+                    "confidence BETWEEN 0 AND 1",
+                    name=op.f("ck_analysis_relationships_analysis_relationship_confidence"),
+                )
+            ],
+            [
+                sa.ForeignKeyConstraint(
+                    ["source_character_id"], ["characters.id"], ondelete="RESTRICT"
+                ),
+                sa.ForeignKeyConstraint(
+                    ["target_character_id"], ["characters.id"], ondelete="RESTRICT"
+                ),
+            ],
+            "uq_analysis_relationship_stable",
+            ["analysis_id", "stable_id"],
+        ),
+        (
+            "analysis_beat_dependencies",
+            [
+                sa.Column("cause_beat_id", sa.Uuid(), nullable=False),
+                sa.Column("effect_beat_id", sa.Uuid(), nullable=False),
+            ],
+            [
+                sa.CheckConstraint(
+                    "cause_beat_id <> effect_beat_id",
+                    name=op.f("ck_analysis_beat_dependencies_analysis_dependency_not_self"),
+                )
+            ],
+            [
+                sa.ForeignKeyConstraint(["cause_beat_id"], ["plot_beats.id"], ondelete="RESTRICT"),
+                sa.ForeignKeyConstraint(["effect_beat_id"], ["plot_beats.id"], ondelete="RESTRICT"),
+            ],
+            "uq_analysis_beat_dependency",
+            ["analysis_id", "cause_beat_id", "effect_beat_id"],
+        ),
+    ):
+        op.create_table(
+            table,
+            sa.Column("analysis_id", sa.Uuid(), nullable=False),
+            *columns,
+            sa.Column("contract", sa.JSON(), nullable=False),
+            sa.Column("id", sa.Uuid(), nullable=False),
+            sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
+            sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
+            *checks,
+            *foreign_keys,
+            sa.ForeignKeyConstraint(["analysis_id"], ["episode_analyses.id"], ondelete="CASCADE"),
+            sa.PrimaryKeyConstraint("id", name=op.f(f"pk_{table}")),
+        )
+        op.create_index(index_name, table, index_columns, unique=True)
+
+
+def downgrade() -> None:
+    op.drop_table("analysis_beat_dependencies")
+    op.drop_table("analysis_relationships")
+    op.drop_table("analysis_state_events")
+    op.drop_table("episode_analyses")
+    op.drop_table("scene_analysis_checkpoints")
+    op.drop_table("episode_analysis_runs")
