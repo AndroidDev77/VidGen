@@ -236,6 +236,24 @@ def test_resolve_script_settings_honors_prohibited_patterns_key() -> None:
     assert settings.prohibited_patterns == ["banned phrase"]
 
 
+def test_resolve_script_settings_rejects_non_mapping_script_settings() -> None:
+    # Regression for a Copilot review finding: a malformed
+    # project.settings["script"] (not an object) must raise the intended
+    # ScriptSettingsError, not an unhandled TypeError/ValueError from dict().
+    from services.script.settings import ScriptSettingsError
+    from vidgen.db.models import Project
+
+    project = Project(
+        name="test",
+        visual_style="flat",
+        target_duration_seconds=240,
+        humor_intensity=5,
+        settings={"script": "not-an-object"},
+    )
+    with pytest.raises(ScriptSettingsError):
+        resolve_script_settings(project)
+
+
 def test_excluded_topic_causal_ancestor_is_still_selected_for_completeness() -> None:
     # A beat matching an excluded topic must still be pulled in via causal closure
     # when a required/mandatory beat causally depends on it; causal completeness
