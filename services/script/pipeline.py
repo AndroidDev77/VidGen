@@ -370,7 +370,7 @@ class ScriptGenerationPipeline:
         self.session.commit()
         if script is None or report is None or not report.valid:
             return None
-        return self._persist_script_version(
+        draft_record = self._persist_script_version(
             run,
             plan_record,
             script,
@@ -380,6 +380,8 @@ class ScriptGenerationPipeline:
             idempotency_suffix="write:asset",
             idempotency_key=idempotency_key,
         )
+        self.session.commit()
+        return draft_record
 
     async def _run_editorial_loop(
         self,
@@ -606,7 +608,13 @@ class ScriptGenerationPipeline:
             )
             for segment in script.segments
         )
-        self.session.commit()
+        # Flush only: callers that persist a review/edit trail alongside this
+        # version (the editorial loop) must commit both together, or a crash
+        # between two separate commits leaves an orphaned child script with no
+        # review row — on resume, restart detection (`_existing_review`) then
+        # can't find it and calls the provider again, creating a second child
+        # of the same parent and making the "next version" ambiguous.
+        self.session.flush()
         return record
 
     def _load_plan(self, record: CompressedPlotPlanRecord) -> CompressedPlotPlan:

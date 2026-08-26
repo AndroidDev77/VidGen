@@ -386,3 +386,49 @@ async def test_failed_replacement_preserves_prior_selected_script(tmp_path: Path
     ).all()
     assert len(selected) == 1
     assert selected[0].id == first.script_id
+
+
+@pytest.mark.asyncio
+async def test_revised_script_and_its_review_commit_atomically(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Regression for a Copilot review finding: _persist_script_version() used
+    # to commit its own transaction, so a crash between persisting a revised
+    # script version and persisting its ScriptReview/ScriptEditRecord rows
+    # left an orphaned child script with no review row. On resume, restart
+    # detection (_existing_review) can't find it, so the pipeline calls the
+    # provider again and creates a second child of the same parent -
+    # duplicate revision branches and an ambiguous "next version". Simulate
+    # the crash by failing right after the script version is persisted but
+    # before the review row is built, and confirm nothing is left committed.
+    from vidgen.db.script_repository import ScriptRepository
+
+    session, blobs, project, _record = _database(tmp_path)
+    provider = _NeverApprovingProvider()
+
+    original = ScriptRepository.next_review_sequence
+    calls = {"count": 0}
+
+    def _fail_once(self, script_id):
+        calls["count"] += 1
+        if calls["count"] == 1:
+            raise RuntimeError("simulated crash before review row is persisted")
+        return original(self, script_id)
+
+    monkeypatch.setattr(ScriptRepository, "next_review_sequence", _fail_once)
+
+    with pytest.raises(RuntimeError, match="simulated crash"):
+        await ScriptGenerationPipeline(session, blobs, provider).process(
+            project_id=project.id, idempotency_key="run-1"
+        )
+    session.rollback()
+
+    draft = session.scalars(select(Script).where(Script.parent_script_id.is_(None))).one()
+    orphans = session.scalars(select(Script).where(Script.parent_script_id == draft.id)).all()
+    assert orphans == []
+
+    monkeypatch.setattr(ScriptRepository, "next_review_sequence", original)
+    result = await ScriptGenerationPipeline(session, blobs, provider).process(
+        project_id=project.id, idempotency_key="run-1"
+    )
+    assert result.status == "script_review_required"
