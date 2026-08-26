@@ -39,9 +39,12 @@ class ScriptGenerationSettings:
 def resolve_script_settings(
     project: Project, overrides: Mapping[str, object] | None = None
 ) -> ScriptGenerationSettings:
-    raw = dict(project.settings.get("script", {})) if isinstance(project.settings, dict) else {}
-    if not isinstance(raw, dict):
+    script_settings = (
+        project.settings.get("script", {}) if isinstance(project.settings, dict) else {}
+    )
+    if not isinstance(script_settings, dict):
         raise ScriptSettingsError("project.settings.script must be an object")
+    raw = dict(script_settings)
     raw.update({key: value for key, value in (overrides or {}).items() if value is not None})
 
     target_duration_ms = int(

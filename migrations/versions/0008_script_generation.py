@@ -354,6 +354,10 @@ def downgrade() -> None:
         batch.drop_column("speaker_kind")
         batch.drop_column("segment_type")
         batch.drop_column("stable_segment_id")
+        # The original T01 shape had "narration"/"target_duration_seconds"/"contract"
+        # NOT NULL, but any row written by T11 never populates them, and there is no
+        # non-fabricated value to backfill; nullable is the honest downgrade here
+        # rather than inventing placeholder data to satisfy a stricter constraint.
         batch.add_column(sa.Column("narration", sa.Text(), nullable=True))
         batch.add_column(sa.Column("target_duration_seconds", sa.Float(), nullable=True))
         batch.add_column(sa.Column("measured_duration_seconds", sa.Float(), nullable=True))

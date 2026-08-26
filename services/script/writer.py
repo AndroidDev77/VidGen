@@ -92,10 +92,16 @@ def write_script(
     voice_direction = "upbeat, wry" if request.humor_intensity >= 0.7 else "measured, dry"
 
     segments: list[ScriptSegment] = []
+    reused_segment_ids: set[UUID] = set()
     for index, beat in enumerate(plan.selected_beats):
         reused = locked_by_beat.get(beat.plot_beat_id)
-        if reused is not None and reused.locked:
-            segments.append(reused)
+        if reused is not None and reused.locked and reused.segment_id not in reused_segment_ids:
+            # A locked segment keeps its content and identity, but is re-sequenced
+            # to its current position; a segment tagged with more than one beat ID
+            # must only be appended once even though every one of its beats maps
+            # to it in ``locked_by_beat``.
+            reused_segment_ids.add(reused.segment_id)
+            segments.append(reused.model_copy(update={"sequence": index}))
             continue
         mechanism = _JOKE_MECHANISMS[index % len(_JOKE_MECHANISMS)]
         target_words = max(4, words_by_beat.get(beat.plot_beat_id, 20))

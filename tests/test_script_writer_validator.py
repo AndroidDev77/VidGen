@@ -279,3 +279,50 @@ def test_diff_against_no_previous_version_marks_everything_added() -> None:
     diff = build_script_diff(None, script, [])
     assert diff.from_version is None
     assert set(diff.added_segment_ids) == {segment.segment_id for segment in script.segments}
+
+
+def test_locked_segment_spanning_multiple_beats_is_not_duplicated() -> None:
+    # Regression for a Copilot review finding: a locked segment tagged with more
+    # than one beat ID must be appended once, not once per beat it covers, and
+    # must be re-sequenced to its new position rather than keeping a stale one.
+    analysis = _make_analysis(uuid4())
+    _request, plan = _plan(analysis)
+    first_two = plan.selected_beats[:2]
+    shared_segment = (
+        _script(analysis, plan)
+        .segments[0]
+        .model_copy(
+            update={
+                "plot_beat_ids": [first_two[0].plot_beat_id, first_two[1].plot_beat_id],
+                "locked": True,
+                "sequence": 99,
+            }
+        )
+    )
+    writing_request = ComedyWritingRequest(
+        project_id=analysis.project_id,
+        episode_analysis_id=analysis.episode_id,
+        compressed_plot_plan_id=plan.plan_id,
+        input_hash="a" * 64,
+        idempotency_key="k",
+        contract_version="1.0",
+        prompt_version="comedy-script-v1",
+        provider_configuration_version="fake-script-v1",
+        compressed_plot=plan,
+        channel_voice=ChannelVoiceConfig(narrator_persona="Wry narrator"),
+        humor_intensity=0.8,
+        target_words=plan.word_budget.total_target_words,
+        recap_mode="full_recap",
+        locked_segments=[shared_segment],
+    )
+    script = write_script(plan=plan, request=writing_request, script_id=uuid4(), version=2)
+
+    segment_ids = [segment.segment_id for segment in script.segments]
+    assert len(segment_ids) == len(set(segment_ids))
+    matches = [
+        segment for segment in script.segments if segment.segment_id == shared_segment.segment_id
+    ]
+    assert len(matches) == 1
+    assert matches[0].sequence == 0
+    report = validate_recap_script(script, analysis=analysis, plan=plan)
+    assert report.valid, report.errors
