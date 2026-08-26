@@ -344,6 +344,62 @@ def _compare_continuity(
     return diagnostics
 
 
+def validate_outgoing_handoff(
+    proposals: list[StoryboardShotProposal],
+    declared_outgoing: ContinuityState,
+    context: SegmentValidationContext,
+) -> list[StoryboardValidationDiagnostic]:
+    """The state handed to the next segment must be the last shot's own outcome.
+
+    The result-level outgoing state becomes the next segment's incoming state and
+    is hashed into its identity. Unlike the shot-to-shot chain, where filling in a
+    previously unset field is a legitimate refinement, any difference here is
+    drift: the segment would hand its successor a state no shot in it produced.
+    So this compares exactly rather than reusing the chain's "unset is fine" rule.
+    """
+    if not proposals:
+        return []
+    final = max(proposals, key=lambda item: item.proposal_sequence)
+    expected = final.expected_outgoing_continuity
+    path = f"segments[{context.segment_sequence}].expected_outgoing_continuity"
+    diagnostics: list[StoryboardValidationDiagnostic] = []
+    for name in (*context.checked_continuity_fields, "present_character_ids"):
+        mine = getattr(expected, name)
+        theirs = getattr(declared_outgoing, name)
+        if mine == theirs:
+            continue
+        diagnostics.append(
+            _diagnostic(
+                "continuity_contradiction",
+                f"the segment hands its successor {name}={theirs!r}, but its final shot "
+                f"expects {mine!r}",
+                entity_path=f"{path}.{name}",
+                segment_sequence=context.segment_sequence,
+                shot_sequence=final.proposal_sequence,
+            )
+        )
+    mine_states = {
+        state.character_id: state.appearance_state_id
+        for state in expected.character_appearance_states
+    }
+    theirs_states = {
+        state.character_id: state.appearance_state_id
+        for state in declared_outgoing.character_appearance_states
+    }
+    if mine_states != theirs_states:
+        diagnostics.append(
+            _diagnostic(
+                "continuity_contradiction",
+                "the segment hands its successor character appearance states its final shot "
+                "does not expect",
+                entity_path=f"{path}.character_appearance_states",
+                segment_sequence=context.segment_sequence,
+                shot_sequence=final.proposal_sequence,
+            )
+        )
+    return diagnostics
+
+
 def validate_segment_timing(
     shots: list[ShotTiming], context: SegmentValidationContext
 ) -> list[StoryboardValidationDiagnostic]:

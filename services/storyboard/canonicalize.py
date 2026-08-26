@@ -16,6 +16,7 @@ from uuid import UUID, uuid5
 
 from vidgen.contracts.storyboard import (
     MICROSECONDS_PER_SECOND,
+    ContinuityState,
     StoryboardProviderResult,
     StoryboardShotProposal,
     VisualProviderCapability,
@@ -73,20 +74,25 @@ def canonicalize_proposal(proposal: StoryboardShotProposal) -> StoryboardShotPro
         data.evidence_references,
         key=lambda ref: (ref.reference_type, str(ref.reference_id), ref.start_us or 0),
     )
-    for state in (data.incoming_continuity, data.expected_outgoing_continuity):
-        state.present_character_ids = sorted(set(state.present_character_ids), key=str)
-        state.character_appearance_states = sorted(
-            state.character_appearance_states, key=lambda item: str(item.character_id)
-        )
-        state.props = sorted(state.props, key=lambda item: item.prop_id)
-        state.subject_positions = sorted(
-            state.subject_positions, key=lambda item: str(item.character_id)
-        )
-        state.environment_conditions = sorted(set(state.environment_conditions))
-        state.unresolved_warnings = sorted(
-            state.unresolved_warnings, key=lambda note: (note.code, note.message)
-        )
+    data.incoming_continuity = canonicalize_continuity(data.incoming_continuity)
+    data.expected_outgoing_continuity = canonicalize_continuity(data.expected_outgoing_continuity)
     data.warnings = sorted(data.warnings, key=lambda note: (note.code, note.message))
+    return data
+
+
+def canonicalize_continuity(state: ContinuityState) -> ContinuityState:
+    """Order every unordered collection inside one continuity state."""
+    data = state.model_copy(deep=True)
+    data.present_character_ids = sorted(set(data.present_character_ids), key=str)
+    data.character_appearance_states = sorted(
+        data.character_appearance_states, key=lambda item: str(item.character_id)
+    )
+    data.props = sorted(data.props, key=lambda item: item.prop_id)
+    data.subject_positions = sorted(data.subject_positions, key=lambda item: str(item.character_id))
+    data.environment_conditions = sorted(set(data.environment_conditions))
+    data.unresolved_warnings = sorted(
+        data.unresolved_warnings, key=lambda note: (note.code, note.message)
+    )
     return data
 
 
@@ -98,6 +104,10 @@ def canonicalize_provider_result(result: StoryboardProviderResult) -> Storyboard
         canonicalize_proposal(proposal).model_copy(update={"proposal_sequence": index})
         for index, proposal in enumerate(ordered)
     ]
+    # The outgoing state is hashed into the next segment's input identity, so a
+    # merely reordered list here would otherwise invalidate every later checkpoint.
+    data.expected_incoming_continuity = canonicalize_continuity(data.expected_incoming_continuity)
+    data.expected_outgoing_continuity = canonicalize_continuity(data.expected_outgoing_continuity)
     data.warnings = sorted(data.warnings, key=lambda note: (note.code, note.message))
     return data
 

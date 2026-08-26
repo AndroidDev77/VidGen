@@ -46,6 +46,7 @@ from services.storyboard.validator import (
     VALIDATOR_VERSION,
     SegmentValidationContext,
     build_report,
+    validate_outgoing_handoff,
     validate_proposals,
     validate_segment_timing,
     validate_storyboard,
@@ -395,9 +396,9 @@ class StoryboardPipeline:
             word_count=len(timings),
             incoming=incoming,
         )
-        diagnostics: list[StoryboardValidationDiagnostic] = []
+        diagnostics, first_attempt = self._resume_point(checkpoint)
         report: StoryboardValidationReport | None = None
-        for attempt in range(1, self.max_repair_attempts + 2):
+        for attempt in range(first_attempt, self.max_repair_attempts + 2):
             self._check_cancelled()
             project.status = "storyboard_repairing" if attempt > 1 else "storyboard_directing"
             checkpoint.attempt_count = attempt
@@ -469,6 +470,37 @@ class StoryboardPipeline:
                 break
         assert report is not None
         raise StoryboardValidationFailed(report)
+
+    @staticmethod
+    def _resume_point(
+        checkpoint: StoryboardSegmentCheckpoint,
+    ) -> tuple[list[StoryboardValidationDiagnostic], int]:
+        """Where a resumed segment should pick the repair loop back up.
+
+        Restarting at attempt one would re-submit - and pay for - a provider call
+        whose result is already known to have failed validation. The stored result
+        names the last attempt that actually *completed*, which is what the resume
+        point keys on: ``attempt_count`` counts attempts *started*, so an attempt
+        interrupted before its provider responded must be retried, not skipped.
+        """
+        stored = checkpoint.provider_result
+        if not isinstance(stored, dict) or stored.get("input_hash") != checkpoint.input_hash:
+            return [], 1
+        completed = int(stored.get("attempt", 0))
+        if completed < 1:
+            return [], 1
+        report = checkpoint.validation_report
+        if not isinstance(report, dict):
+            # The provider responded but validation never ran; redo that attempt,
+            # which recovers the stored result instead of re-requesting it.
+            return [], completed
+        parsed = StoryboardValidationReport.model_validate(report)
+        if parsed.valid:
+            return [], completed
+        errors = [item for item in parsed.diagnostics if item.severity == "error"]
+        if not errors or not all(item.repairable for item in errors):
+            return [], 1
+        return parsed.diagnostics, completed + 1
 
     def _checkpoint(
         self,
@@ -675,6 +707,11 @@ class StoryboardPipeline:
         approved: list[NarrationBoundary],
     ) -> tuple[SegmentTiming, list[StoryboardValidationDiagnostic]]:
         diagnostics = validate_proposals(list(result.proposals), context)
+        diagnostics.extend(
+            validate_outgoing_handoff(
+                list(result.proposals), result.expected_outgoing_continuity, context
+            )
+        )
         if any(item.severity == "error" for item in diagnostics):
             return SegmentTiming(shots=[]), diagnostics
         try:
@@ -885,8 +922,8 @@ class StoryboardPipeline:
         global_start_us: int,
         global_sequence: int,
     ) -> StoryboardShot:
-        first_piece = timing.word_start_index == proposal.word_start_index
-        last_piece = timing.word_end_index == proposal.word_end_index
+        # The retimer decides which piece still owns each of the proposal's edges;
+        # an interior piece created by a split is joined by a plain cut.
         cut = TransitionPlan(kind="cut")
         return StoryboardShot(
             shot_id=stable_id("shot", checkpoint.input_hash, timing.shot_sequence),
@@ -915,8 +952,8 @@ class StoryboardPipeline:
             location_reference_id=proposal.location_reference_id,
             prop_references=list(proposal.action.prop_references),
             evidence_references=list(proposal.evidence_references),
-            transition_in=proposal.transition_in if first_piece else cut,
-            transition_out=proposal.transition_out if last_piece else cut,
+            transition_in=proposal.transition_in if timing.carries_lead_edge else cut,
+            transition_out=proposal.transition_out if timing.carries_tail_edge else cut,
             incoming_continuity=proposal.incoming_continuity,
             expected_outgoing_continuity=proposal.expected_outgoing_continuity,
             capability_profile_id=capability.capability_profile_id,
@@ -953,6 +990,9 @@ class StoryboardPipeline:
                 word_start_index=row.word_start_index,
                 word_end_index=row.word_end_index,
                 clause_label=str(row.contract.get("clause_label", "")),
+                # Edge ownership is a solve-time concept consumed only when shots
+                # are built; a recovered segment is never rebuilt, so it is left at
+                # its default rather than guessed back out of the persisted row.
             )
             for row in self.repo.segment_shots(checkpoint.id)
         ]
@@ -1154,8 +1194,12 @@ class StoryboardPipeline:
         # output legitimately changed - a targeted repair rebuilt one segment on
         # resume - writes a new artifact instead of colliding on a stale key.
         storyboard_payload = canonical_json(storyboard.model_dump(mode="json")).encode()
-        output_hash = canonical_hash(storyboard_payload.decode())
-        parameters["output_hash"] = output_hash
+        manifest_payload = canonical_json(manifest.model_dump(mode="json")).encode()
+        report_payload = canonical_json(report.model_dump(mode="json")).encode()
+        storyboard_hash = canonical_hash(storyboard_payload.decode())
+        manifest_hash = canonical_hash(manifest_payload.decode())
+        report_hash = canonical_hash(report_payload.decode())
+        parameters["output_hash"] = storyboard_hash
         storyboard_asset = self.assets.store(
             content=storyboard_payload,
             kind="json",
@@ -1163,30 +1207,32 @@ class StoryboardPipeline:
             project_id=run.project_id,
             parent_asset_ids=parents,
             provider=run.provider,
-            idempotency_key=f"{run.id}:storyboard:{output_hash}",
+            idempotency_key=f"{run.id}:storyboard:{storyboard_hash}",
             generation_parameters=parameters,
         )
         manifest_asset = self.assets.store(
-            content=canonical_json(manifest.model_dump(mode="json")).encode(),
+            content=manifest_payload,
             kind="json",
             media_type=TIMING_MANIFEST_MEDIA_TYPE,
             project_id=run.project_id,
             parent_asset_ids=(storyboard_asset.id, *parents),
             provider=run.provider,
-            idempotency_key=f"{run.id}:timing-manifest:{output_hash}",
+            idempotency_key=f"{run.id}:timing-manifest:{manifest_hash}",
             generation_parameters=parameters,
         )
         run.storyboard_asset_id = storyboard_asset.id
         run.timing_manifest_asset_id = manifest_asset.id
-        payload = canonical_json(report.model_dump(mode="json")).encode()
-        if len(payload) > LARGE_REPORT_BYTES:
+        # Stored when it is large, and also whenever it carries diagnostics at all:
+        # a run can succeed with warning-severity findings, and those are the whole
+        # value of the report. A clean, empty report adds no provenance worth an asset.
+        if report.diagnostics or len(report_payload) > LARGE_REPORT_BYTES:
             run.validation_report_asset_id = self.assets.store(
-                content=payload,
+                content=report_payload,
                 kind="json",
                 media_type=VALIDATION_REPORT_MEDIA_TYPE,
                 project_id=run.project_id,
                 parent_asset_ids=(storyboard_asset.id,),
-                idempotency_key=f"{run.id}:validation-report:{output_hash}",
+                idempotency_key=f"{run.id}:validation-report:{report_hash}",
                 generation_parameters=parameters,
             ).id
 

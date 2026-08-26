@@ -58,7 +58,7 @@ def approved_boundaries(
     the retimer can prefer cutting on a comedic beat rather than mid-joke.
     """
     approved = [item for item in boundaries if item.kind in ("sentence", "clause")]
-    beats = _beat_word_indices(text, joke_annotations, len(boundaries))
+    beats = _beat_word_indices(text, joke_annotations)
     by_index = {item.word_index: item for item in boundaries}
     for word_index in sorted(beats):
         source = by_index.get(word_index)
@@ -77,9 +77,14 @@ def approved_boundaries(
     return sorted(approved, key=lambda item: item.word_index)
 
 
-def _beat_word_indices(
-    text: str, joke_annotations: list[dict[str, Any]], word_count: int
-) -> set[int]:
+def _beat_word_indices(text: str, joke_annotations: list[dict[str, Any]]) -> set[int]:
+    """Beat boundaries live in approved-script word space, like every boundary here.
+
+    Bounding these by the number of measured timings would silently drop trailing
+    punchline and setup boundaries whenever T12 omitted a word, because it omits
+    fewer words than the script contains. Boundaries whose word was never measured
+    are dropped later, where the offset lookup can see that directly.
+    """
     offsets = _word_character_offsets(text)
     indices: set[int] = set()
     for annotation in joke_annotations:
@@ -91,7 +96,7 @@ def _beat_word_indices(
             if not isinstance(end, int):
                 continue
             index = _word_index_at(offsets, end)
-            if index is not None and 0 <= index < word_count:
+            if index is not None:
                 indices.add(index)
     return indices
 

@@ -81,6 +81,8 @@ class ShotTiming:
     word_start_index: int
     word_end_index: int
     clause_label: str
+    carries_lead_edge: bool = True
+    carries_tail_edge: bool = True
 
 
 @dataclass(slots=True)
@@ -99,6 +101,13 @@ class _Interval:
     word_end_index: int
     proposal_sequence: int
     clause_label: str
+    # Whether this piece still carries the proposal's own opening and closing
+    # edges. A split or a merge removes an edge, and with it that edge's
+    # transition and handle. Inferring this from the word range breaks when a
+    # split cannot subdivide the range - a single over-long word - because every
+    # piece would then claim both edges and duplicate the handle.
+    carries_lead_edge: bool = True
+    carries_tail_edge: bool = True
 
     @property
     def duration_us(self) -> int:
@@ -168,13 +177,31 @@ def _word_end_offsets(word_timings: list[NarrationBoundary], duration_us: int) -
     return offsets
 
 
-def _boundary_kinds(approved: list[NarrationBoundary], word_count: int) -> dict[int, BoundaryKind]:
+def _boundary_kinds(
+    approved: list[NarrationBoundary], word_timings: list[NarrationBoundary]
+) -> dict[int, BoundaryKind]:
+    """Translate approved boundaries from script-word space into measured positions.
+
+    ``NarrationBoundary.word_index`` is an index into the *approved script's*
+    words, while the solver walks the *measured* narration words in order. T12's
+    aligner emits a timing only for a word it matched, and its quality gate
+    accepts up to five percent omissions, so the two spaces genuinely diverge in
+    production. Mapping through the measured sequence keeps every approved
+    boundary attached to the word it actually describes; a boundary whose word
+    was never measured has no offset to cut on and is dropped.
+    """
+    position = {
+        timing.word_index: index
+        for index, timing in enumerate(sorted(word_timings, key=lambda item: item.word_index))
+    }
     kinds: dict[int, BoundaryKind] = {}
     for boundary in approved:
-        if 0 <= boundary.word_index < word_count:
-            current = kinds.get(boundary.word_index, "word")
-            if _BOUNDARY_RANK[boundary.kind] >= _BOUNDARY_RANK[current]:
-                kinds[boundary.word_index] = boundary.kind
+        index = position.get(boundary.word_index)
+        if index is None:
+            continue
+        current = kinds.get(index, "word")
+        if _BOUNDARY_RANK[boundary.kind] >= _BOUNDARY_RANK[current]:
+            kinds[index] = boundary.kind
     return kinds
 
 
@@ -209,7 +236,7 @@ def retime_segment(
         )
     word_ends = _word_end_offsets(word_timings, narration_duration_us)
     word_count = len(word_ends)
-    kinds = _boundary_kinds(approved_boundaries, word_count)
+    kinds = _boundary_kinds(approved_boundaries, word_timings)
     ordered = sorted(proposals, key=lambda item: item.proposal_sequence)
     _require_contiguous_word_ranges(ordered, word_count, segment_sequence)
 
@@ -466,7 +493,7 @@ def _split_interval(
     pieces: list[_Interval] = []
     start_time = interval.start_us
     start_word = interval.word_start_index
-    for word_index, time in chosen:
+    for position, (word_index, time) in enumerate(chosen):
         pieces.append(
             _Interval(
                 start_us=start_time,
@@ -475,6 +502,8 @@ def _split_interval(
                 word_end_index=word_index + 1,
                 proposal_sequence=interval.proposal_sequence,
                 clause_label=interval.clause_label,
+                carries_lead_edge=interval.carries_lead_edge and position == 0,
+                carries_tail_edge=False,
             )
         )
         start_time = time
@@ -487,6 +516,8 @@ def _split_interval(
             word_end_index=interval.word_end_index,
             proposal_sequence=interval.proposal_sequence,
             clause_label=interval.clause_label,
+            carries_lead_edge=interval.carries_lead_edge and not chosen,
+            carries_tail_edge=interval.carries_tail_edge,
         )
     )
     return pieces, 0
@@ -544,7 +575,7 @@ def _split_without_boundaries(
     )
     pieces: list[_Interval] = []
     cursor = interval.start_us
-    for share in shares:
+    for position, share in enumerate(shares):
         pieces.append(
             _Interval(
                 start_us=cursor,
@@ -553,6 +584,8 @@ def _split_without_boundaries(
                 word_end_index=interval.word_end_index,
                 proposal_sequence=interval.proposal_sequence,
                 clause_label=interval.clause_label,
+                carries_lead_edge=interval.carries_lead_edge and position == 0,
+                carries_tail_edge=interval.carries_tail_edge and position == len(shares) - 1,
             )
         )
         cursor += share
@@ -633,6 +666,8 @@ def _merge(left: _Interval, right: _Interval) -> _Interval:
         word_end_index=right.word_end_index,
         proposal_sequence=left.proposal_sequence,
         clause_label=left.clause_label or right.clause_label,
+        carries_lead_edge=left.carries_lead_edge,
+        carries_tail_edge=right.carries_tail_edge,
     )
 
 
@@ -695,12 +730,10 @@ def _finalize(
     shots: list[ShotTiming] = []
     for index, interval in enumerate(intervals):
         proposal = ordered_proposals[interval.proposal_sequence]
-        # A handle belongs to the piece that still carries the proposal's own edge; a
-        # split or merge removes the edge and therefore the handle.
-        first_piece = interval.word_start_index == proposal.word_start_index
-        last_piece = interval.word_end_index == proposal.word_end_index
-        handle_in = proposal.transition_in.handle_us if first_piece else 0
-        handle_out = proposal.transition_out.handle_us if last_piece else 0
+        # A handle belongs only to the piece that still carries the proposal's own
+        # edge; a split or merge removes the edge and therefore the handle.
+        handle_in = proposal.transition_in.handle_us if interval.carries_lead_edge else 0
+        handle_out = proposal.transition_out.handle_us if interval.carries_tail_edge else 0
         usable = interval.duration_us
         handle_in, handle_out, generation = _fit_generation(
             usable, handle_in, handle_out, capability, segment_sequence, index
@@ -755,6 +788,8 @@ def _finalize(
                 word_start_index=interval.word_start_index,
                 word_end_index=interval.word_end_index,
                 clause_label=interval.clause_label,
+                carries_lead_edge=interval.carries_lead_edge,
+                carries_tail_edge=interval.carries_tail_edge,
             )
         )
     return shots

@@ -287,3 +287,123 @@ def test_solver_output_is_stable_for_identical_inputs() -> None:
         ]
 
     assert once() == once()
+
+
+# -- regressions found by review ---------------------------------------------
+
+
+def test_approved_boundaries_survive_omitted_narration_words() -> None:
+    """T12 omits unmatched words, so word_index is not a list position.
+
+    Regression: approved boundaries were keyed by ``word_index`` while the solver
+    indexed a dense list of measured words. With any omission the two spaces
+    diverge, so a clause boundary was read against the wrong word.
+    """
+    # Script words 0..9, but word 2 was never matched by the aligner, so measured
+    # position p holds script word ``measured[p]`` and ends at (p + 1) seconds.
+    measured = [index for index in range(10) if index != 2]
+    timings = [
+        NarrationBoundary(word_index=word, offset_us=(position + 1) * SECOND, kind="word")
+        for position, word in enumerate(measured)
+    ]
+    # Script word 5 is measured position 4, ending at 5 s - inside the snap window
+    # around the 4.5 s even-division point, so its clause rank should win the tie
+    # against the plain word at 4 s.
+    approved = [NarrationBoundary(word_index=5, offset_us=5 * SECOND, kind="clause")]
+    result = retime_segment(
+        segment_sequence=0,
+        narration_duration_us=9 * SECOND,
+        word_timings=timings,
+        approved_boundaries=approved,
+        proposals=[proposal(0, 0, 9, 9 * SECOND)],
+        capability=CONTINUOUS_PROFILE,
+        config=RetimerConfig(max_shot_duration_us=5 * SECOND),
+    )
+    # Reading the boundary positionally would land on script word 5's *position*
+    # (6 s, outside the window) and cut at the plain 4 s word instead.
+    assert [shot.end_us for shot in result.shots] == [5 * SECOND, 9 * SECOND]
+    assert sum(shot.usable_duration_us for shot in result.shots) == 9 * SECOND
+
+
+def test_beat_boundaries_are_not_truncated_by_omitted_words() -> None:
+    """Regression: beat indices were bounded by the count of measured timings.
+
+    Beat boundaries are derived in approved-script word space, so bounding them by
+    the number of measured words silently dropped every beat past that count.
+    """
+    from services.storyboard.boundaries import approved_boundaries as derive_approved
+    from services.storyboard.boundaries import word_boundaries
+
+    text = "Setup line here, and then the punchline lands hard."
+    words = text.split()
+    omitted = {1, 3, 5}
+    timings = [
+        {
+            "word_index": index,
+            "word": word,
+            "comparison_token": word.strip(".,").lower(),
+            "punctuation": word[len(word.rstrip(".,")) :],
+            "start_seconds": index * 0.5,
+            "end_seconds": (index + 1) * 0.5,
+            "confidence": 1.0,
+        }
+        for index, word in enumerate(words)
+        if index not in omitted
+    ]
+    assert len(timings) < len(words)
+    boundaries = word_boundaries(timings, len(words) * 500_000)
+    # "lands" is script word 7 - measured, unpunctuated, and past the timing count.
+    lands_end = text.index("lands") + len("lands")
+    approved = derive_approved(
+        boundaries, text=text, joke_annotations=[{"punchline_span": {"start": 0, "end": lands_end}}]
+    )
+    beats = [item for item in approved if item.kind == "beat"]
+    assert [item.word_index for item in beats] == [7]
+    assert beats[0].word_index >= len(timings)
+
+
+def test_an_over_long_single_word_does_not_duplicate_transition_handles() -> None:
+    """Regression: every even-split piece claimed both of the proposal's edges.
+
+    The pieces share one word range, so inferring edge ownership from that range
+    marked each piece as both first and last: the handle was charged to every
+    piece and a real transition was declared in the middle of one spoken word.
+    """
+    dissolve = TransitionPlan(kind="dissolve", duration_us=200_000, handle_us=200_000)
+    long_word = [NarrationBoundary(word_index=0, offset_us=20 * SECOND, kind="word")]
+    result = retime_segment(
+        segment_sequence=0,
+        narration_duration_us=20 * SECOND,
+        word_timings=long_word,
+        approved_boundaries=[],
+        proposals=[proposal(0, 0, 1, 20 * SECOND, transition_in=dissolve, transition_out=dissolve)],
+        capability=CONTINUOUS_PROFILE,
+        config=RetimerConfig(),
+    )
+    assert len(result.shots) > 2
+    handles = [shot.transition_handle_us for shot in result.shots]
+    # Only the opening piece carries the lead handle and only the closing piece
+    # the tail handle; interior pieces are plain cuts.
+    assert handles[0] == 200_000
+    assert handles[-1] == 200_000
+    assert all(handle == 0 for handle in handles[1:-1])
+    assert sum(shot.usable_duration_us for shot in result.shots) == 20 * SECOND
+
+
+def test_interior_split_pieces_do_not_inherit_the_proposal_edges() -> None:
+    approved = [
+        NarrationBoundary(word_index=index, offset_us=(index + 1) * SECOND, kind="clause")
+        for index in (7, 15)
+    ]
+    dissolve = TransitionPlan(kind="dissolve", duration_us=200_000, handle_us=200_000)
+    result = solve(
+        [proposal(0, 0, 24, 24 * SECOND, transition_in=dissolve, transition_out=dissolve)],
+        24,
+        24 * SECOND,
+        approved=approved,
+        config=RetimerConfig(max_shot_duration_us=8 * SECOND),
+    )
+    assert len(result.shots) >= 3
+    assert result.shots[0].transition_handle_us == 200_000
+    assert result.shots[-1].transition_handle_us == 200_000
+    assert all(shot.transition_handle_us == 0 for shot in result.shots[1:-1])

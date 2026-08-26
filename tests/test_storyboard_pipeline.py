@@ -51,7 +51,7 @@ from vidgen.db.storyboard_models import (
     StoryboardSegmentCheckpoint,
     StoryboardShotRecord,
 )
-from vidgen.db.storyboard_repository import StoryboardLineageError
+from vidgen.db.storyboard_repository import StoryboardLineageError, StoryboardRepository
 
 
 def run_pipeline(fixture, *, key="storyboard-key", director=None, **kwargs):
@@ -696,6 +696,166 @@ def test_an_explained_continuity_change_is_not_a_contradiction(tmp_path: Path) -
     result = run_pipeline(fixture, director=_ExplainedDirector())
     assert result.status == "storyboard_complete"
     assert result.repair_attempt_count == 0
+
+
+class _ReorderingDirector(FakeStoryboardDirector):
+    """Emits the same continuity with every collection reversed."""
+
+    async def propose(self, request: StoryboardProviderRequest) -> StoryboardProviderResult:
+        result = await super().propose(request)
+        state = result.expected_outgoing_continuity
+        return result.model_copy(
+            update={
+                "expected_outgoing_continuity": state.model_copy(
+                    update={
+                        "present_character_ids": list(reversed(state.present_character_ids)),
+                        "character_appearance_states": list(
+                            reversed(state.character_appearance_states)
+                        ),
+                        "subject_positions": list(reversed(state.subject_positions)),
+                    }
+                )
+            }
+        )
+
+
+def test_reordered_result_continuity_does_not_invalidate_later_segments(
+    tmp_path: Path,
+) -> None:
+    """Regression: result-level continuity was hashed but never canonicalized.
+
+    The outgoing state feeds the next segment's input identity, so a merely
+    reordered character list used to change that hash and force a rebuild of every
+    downstream checkpoint.
+    """
+
+    fixture = build_fixture(tmp_path)
+    baseline = run_pipeline(fixture, director=FakeStoryboardDirector())
+    ordered_hashes = [
+        row.input_hash
+        for row in StoryboardRepository(fixture.session).checkpoints(baseline.storyboard_run_id)
+    ]
+
+    # Same database, same inputs, a director that only reorders its outgoing state.
+    session, blobs = reopen_fixture(fixture, tmp_path, tmp_path / "reordered")
+    replay = build_replay(fixture, session, blobs)
+    variant = run_pipeline(replay, director=_ReorderingDirector(), key="reordered")
+    variant_hashes = [
+        row.input_hash
+        for row in StoryboardRepository(session).checkpoints(variant.storyboard_run_id)
+    ]
+    # Segment identity binds incoming continuity, which is now canonical, so
+    # ordering noise from the director cannot shift any downstream checkpoint.
+    assert ordered_hashes == variant_hashes
+
+
+def test_contradictory_result_level_outgoing_continuity_is_caught(tmp_path: Path) -> None:
+    """Regression: the cross-segment handoff was adopted without validation.
+
+    The result-level outgoing state becomes the next segment's incoming state, so
+    letting it drift from the final proposal's own outgoing state allowed a
+    contradiction to cross a segment boundary unchecked.
+    """
+
+    class _DriftingDirector(FakeStoryboardDirector):
+        async def propose(self, request):
+            result = await super().propose(request)
+            return result.model_copy(
+                update={
+                    "expected_outgoing_continuity": (
+                        result.expected_outgoing_continuity.model_copy(
+                            update={"time_of_day": "night", "screen_direction": "right_to_left"}
+                        )
+                    )
+                }
+            )
+
+    with pytest.raises(StoryboardValidationFailed) as error:
+        run_pipeline(fixture := build_fixture(tmp_path), director=_DriftingDirector())
+    assert "continuity_contradiction" in str(error.value)
+    assert fixture.project.status == "storyboard_failed"
+
+
+def test_a_resumed_repair_does_not_re_pay_for_a_rejected_attempt(tmp_path: Path) -> None:
+    """Regression: resuming restarted the repair loop at attempt one.
+
+    That re-submitted a provider call whose result was already known to have
+    failed validation. The stored report carries those diagnostics, so the loop
+    resumes at the attempt the checkpoint actually reached.
+    """
+    fixture = build_fixture(tmp_path)
+    # Interrupt the run *during* the repair of segment 0.
+    interrupting = _RepairThenFailDirector()
+    with pytest.raises(TimeoutError):
+        run_pipeline(fixture, director=interrupting, key="run-1")
+    checkpoint = fixture.session.scalar(
+        select(StoryboardSegmentCheckpoint).where(StoryboardSegmentCheckpoint.sequence == 0)
+    )
+    # Attempt 1 failed validation and attempt 2 was checkpointed before the
+    # provider died, so the stored report is attempt 1's rejection.
+    assert checkpoint.attempt_count == 2
+    assert checkpoint.validation_report is not None
+    assert checkpoint.validation_report["valid"] is False
+
+    resumed = _CountingDirector()
+    result = run_pipeline(fixture, director=resumed, key="run-1")
+    assert result.status == "storyboard_complete"
+    # Attempt 1 for segment 0 completed and failed validation, so it is not
+    # replayed. Attempt 2 was started but never got a response, so it is retried
+    # rather than skipped - the repair budget is not silently spent.
+    assert (0, 1) not in resumed.requests
+    assert (0, 2) in resumed.requests
+
+
+class _RepairThenFailDirector(FakeStoryboardDirector):
+    """Fails segment 0's first attempt, then dies before the repair completes."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.calls = 0
+
+    async def propose(self, request: StoryboardProviderRequest) -> StoryboardProviderResult:
+        self.calls += 1
+        if self.calls > 1:
+            raise TimeoutError("provider timed out during the repair")
+        result = await super().propose(request)
+        extras = [uuid4() for _ in range(6)]
+        return result.model_copy(
+            update={
+                "proposals": [
+                    item.model_copy(update={"character_reference_ids": extras})
+                    for item in result.proposals
+                ]
+            }
+        )
+
+
+def test_timing_manifest_gets_its_own_content_key(tmp_path: Path) -> None:
+    """Regression: manifest and report keys were derived from the storyboard hash.
+
+    A manifest that differs while the storyboard is byte-identical then collided
+    on a stale key and raised a bare ValueError out of AssetService.
+    """
+    fixture = build_fixture(tmp_path)
+    result = run_pipeline(fixture)
+    storyboard_asset = fixture.session.get(Asset, result.storyboard_asset_id)
+    manifest_asset = fixture.session.get(Asset, result.timing_manifest_asset_id)
+    assert storyboard_asset.idempotency_key != manifest_asset.idempotency_key
+    assert storyboard_asset.idempotency_key.endswith(
+        storyboard_asset.generation_parameters["output_hash"]
+    )
+    # The manifest key is bound to the manifest's own bytes, not the storyboard's.
+    assert not manifest_asset.idempotency_key.endswith(
+        storyboard_asset.generation_parameters["output_hash"]
+    )
+
+
+def test_validation_report_is_kept_whenever_it_carries_diagnostics(tmp_path: Path) -> None:
+    """A run can succeed with warning diagnostics; those must not be discarded."""
+    fixture = build_fixture(tmp_path)
+    clean = run_pipeline(fixture, key="clean")
+    # No diagnostics and a small report, so no artifact is worth storing.
+    assert clean.validation_report_asset_id is None
 
 
 # -- assets, provenance, and persistence -------------------------------------
