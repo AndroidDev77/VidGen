@@ -19,7 +19,7 @@ with workflow.unsafe.imports_passed_through():
 
 @workflow.defn
 class ProjectWorkflow:
-    """The single deterministic owner of a project's T05-T09 execution."""
+    """The single deterministic owner of a project's T05-T11 execution."""
 
     def __init__(self) -> None:
         self._state: ProjectWorkflowState | None = None
@@ -38,6 +38,7 @@ class ProjectWorkflow:
             ),
             ("evidence", "run_evidence_activity", default_activity_retry_policy()),
             ("episode_analysis", "run_episode_analysis_activity", provider_activity_retry_policy()),
+            ("script_generation", "run_script_generation_activity", provider_activity_retry_policy()),
         )
         for stage, activity_name, retry_policy in stages:
             if self._cancelled:
@@ -63,7 +64,7 @@ class ProjectWorkflow:
                 self._state.cancelled = True
                 self._state.status = "cancelled"
                 return self._state
-        self._state.status = "episode_analyzed"
+        self._state.status = "script_generation_complete"
         return self._state
 
     @workflow.signal

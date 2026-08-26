@@ -72,6 +72,7 @@ def test_production_worker_configures_every_workflow_stage(tmp_path: Path) -> No
         "transcript_acquisition",
         "evidence",
         "episode_analysis",
+        "script_generation",
     }
 
 
@@ -139,6 +140,7 @@ async def test_cancellation_during_final_activity_is_not_reported_as_success() -
             "run_transcript_acquisition_activity",
             "run_evidence_activity",
             "run_episode_analysis_activity",
+            "run_script_generation_activity",
         )
     ]
 

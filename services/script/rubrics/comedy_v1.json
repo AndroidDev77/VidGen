@@ -1,0 +1,34 @@
+{
+  "rubric_version": "comedy-v1",
+  "dimensions": [
+    "plot_fidelity",
+    "clarity",
+    "joke_density",
+    "joke_variety",
+    "punchline_placement",
+    "spoken_rhythm",
+    "pacing",
+    "callback_quality",
+    "repetition",
+    "narratability"
+  ],
+  "weights": {
+    "plot_fidelity": 0.20,
+    "clarity": 0.10,
+    "joke_density": 0.10,
+    "joke_variety": 0.10,
+    "punchline_placement": 0.10,
+    "spoken_rhythm": 0.10,
+    "pacing": 0.10,
+    "callback_quality": 0.08,
+    "repetition": 0.06,
+    "narratability": 0.06
+  },
+  "approval": {
+    "overall_min": 85,
+    "plot_fidelity_min": 92,
+    "mandatory_beat_coverage_min": 1.0,
+    "word_count_tolerance": 0.05
+  },
+  "max_revision_passes": 2
+}

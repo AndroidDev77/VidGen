@@ -162,31 +162,8 @@ class PlotBeat(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     )
 
 
-class Script(UUIDPrimaryKeyMixin, TimestampMixin, Base):
-    __tablename__ = "scripts"
-    project_id: Mapped[UUID] = mapped_column(
-        ForeignKey("projects.id", ondelete="CASCADE"), index=True
-    )
-    revision: Mapped[int] = mapped_column(Integer, nullable=False)
-    status: Mapped[str] = mapped_column(String(64), default="draft", nullable=False)
-    contract: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
-    __table_args__ = (UniqueConstraint("project_id", "revision"),)
-
-
-class ScriptSegment(UUIDPrimaryKeyMixin, TimestampMixin, Base):
-    __tablename__ = "script_segments"
-    script_id: Mapped[UUID] = mapped_column(
-        ForeignKey("scripts.id", ondelete="CASCADE"), index=True
-    )
-    sequence: Mapped[int] = mapped_column(Integer, nullable=False)
-    narration: Mapped[str] = mapped_column(Text, nullable=False)
-    target_duration_seconds: Mapped[float] = mapped_column(Float, nullable=False)
-    measured_duration_seconds: Mapped[float | None] = mapped_column(Float)
-    contract: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
-    __table_args__ = (
-        UniqueConstraint("script_id", "sequence"),
-        CheckConstraint("target_duration_seconds > 0", name="positive_target_duration"),
-    )
+# ``Script`` and ``ScriptSegment`` are defined in ``vidgen.db.script_models`` (T11);
+# ``Shot``/``AudioAsset`` below reference "script_segments.id" by table name only.
 
 
 class Shot(UUIDPrimaryKeyMixin, TimestampMixin, Base):

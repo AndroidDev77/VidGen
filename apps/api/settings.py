@@ -20,6 +20,9 @@ class APISettings(BaseSettings):
     transcription_model: str = "whisper-1"
     diarization_model: str = "gpt-4o-transcribe-diarize"
     analysis_model: str = "gpt-5.6"
+    script_compressor_model: str = "gpt-5.6"
+    script_writer_model: str = "gpt-5.6"
+    script_editor_model: str = "gpt-5.6"
     opensubtitles_api_key: str | None = None
     opensubtitles_username: str | None = None
     opensubtitles_password: str | None = None
