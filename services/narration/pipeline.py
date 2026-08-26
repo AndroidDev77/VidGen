@@ -283,7 +283,14 @@ class NarrationPipeline:
                 provider_idempotency_key=key,
                 voice_settings=cfg,
                 instructions=" ".join(
-                    filter(None, (str(source.voice_direction), retry_instructions))
+                    filter(
+                        None,
+                        (
+                            str(cfg.get("default_speaking_instructions", "")),
+                            str(source.voice_direction),
+                            retry_instructions,
+                        ),
+                    )
                 ),
             )
             self.session.add(attempt)
@@ -302,8 +309,7 @@ class NarrationPipeline:
             voice_profile_version=profile.version,
             voice_id=str(profile.provider_voice_id),
             model=str(profile.model),
-            speaking_instructions=attempt.instructions
-            or str(cfg.get("default_speaking_instructions", "")),
+            speaking_instructions=attempt.instructions,
             speed=float(cfg.get("default_pace", 1)),
             output_format=str(cfg.get("output_format", "wav")),
             language=str(profile.language),
@@ -492,6 +498,8 @@ class NarrationPipeline:
     ) -> NarrationAlignment:
         project.status = "narration_aligning"
         key = f"{row.generation_identity}:alignment"
+        if row.alignment is not None:
+            return NarrationAlignment.model_validate(row.alignment)
         provider = "openai" if self.provider.name != "fake" else "fake"
         model = "whisper-1" if self.provider.name != "fake" else "fake-aligner"
         rate = self.session.scalar(
@@ -538,7 +546,9 @@ class NarrationPipeline:
                     BudgetDecision.DENY_ENTITY_CAP,
                 ):
                     raise BudgetExceededError("alignment request denied by project budget")
-            alignment = self.aligner.align(text, duration, path)
+            alignment = self.aligner.align(text, duration, path, idempotency_key=key)
+            row.alignment = alignment.model_dump(mode="json")
+            self.session.commit()  # durable alignment result checkpoint
             telemetry_attempt.set_result(
                 usage=[{"unit": "AUDIO_INPUT_SECOND", "quantity": duration}],
                 metadata={"coverage": alignment.coverage},

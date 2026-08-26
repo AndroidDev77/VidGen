@@ -99,7 +99,12 @@ def reconcile_alignment(
 
 class FakeAligner:
     def align(
-        self, text: str, duration: float, audio_path: Path | None = None
+        self,
+        text: str,
+        duration: float,
+        audio_path: Path | None = None,
+        *,
+        idempotency_key: str | None = None,
     ) -> NarrationAlignment:
         words = re.findall(r"\w+(?:['\N{RIGHT SINGLE QUOTATION MARK}]\w+)*", text)
         step = duration / max(1, len(words))
@@ -115,7 +120,12 @@ class FakeAligner:
 
 class NarrationAligner(Protocol):
     def align(
-        self, text: str, duration: float, audio_path: Path | None = None
+        self,
+        text: str,
+        duration: float,
+        audio_path: Path | None = None,
+        *,
+        idempotency_key: str | None = None,
     ) -> NarrationAlignment: ...
 
 
@@ -128,14 +138,22 @@ class OpenAIWhisperAligner:
         self.api_key, self.model = api_key, model
 
     def align(
-        self, text: str, duration: float, audio_path: Path | None = None
+        self,
+        text: str,
+        duration: float,
+        audio_path: Path | None = None,
+        *,
+        idempotency_key: str | None = None,
     ) -> NarrationAlignment:
         if audio_path is None:
             raise ValueError("production alignment requires an audio path")
         with audio_path.open("rb") as audio, httpx.Client(timeout=120) as client:
             response = client.post(
                 "https://api.openai.com/v1/audio/transcriptions",
-                headers={"Authorization": f"Bearer {self.api_key}"},
+                headers={
+                    "Authorization": f"Bearer {self.api_key}",
+                    **({"Idempotency-Key": idempotency_key} if idempotency_key else {}),
+                },
                 data={
                     "model": self.model,
                     "response_format": "verbose_json",
