@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any
 from uuid import UUID
 
@@ -9,6 +10,7 @@ from sqlalchemy import (
     Boolean,
     CheckConstraint,
     Column,
+    DateTime,
     Float,
     ForeignKey,
     Index,
@@ -290,3 +292,86 @@ class RenderJob(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         ForeignKey("assets.id", ondelete="SET NULL")
     )
     error: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict, nullable=False)
+    # T17 extends the original placeholder without duplicating upstream records.
+    script_id: Mapped[UUID | None] = mapped_column(ForeignKey("scripts.id", ondelete="RESTRICT"))
+    script_version: Mapped[int | None] = mapped_column(Integer)
+    narration_run_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("narration_runs.id", ondelete="RESTRICT")
+    )
+    storyboard_run_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("storyboard_runs.id", ondelete="RESTRICT")
+    )
+    t16_result_reference: Mapped[str | None] = mapped_column(String(255))
+    render_identity: Mapped[str | None] = mapped_column(String(64))
+    idempotency_key: Mapped[str | None] = mapped_column(String(255))
+    input_hash: Mapped[str | None] = mapped_column(String(64))
+    srt_asset_id: Mapped[UUID | None] = mapped_column(ForeignKey("assets.id", ondelete="RESTRICT"))
+    webvtt_asset_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("assets.id", ondelete="RESTRICT")
+    )
+    ass_asset_id: Mapped[UUID | None] = mapped_column(ForeignKey("assets.id", ondelete="RESTRICT"))
+    premaster_audio_asset_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("assets.id", ondelete="RESTRICT")
+    )
+    final_video_asset_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("assets.id", ondelete="RESTRICT")
+    )
+    verification_report_asset_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("assets.id", ondelete="RESTRICT")
+    )
+    expected_duration_us: Mapped[int | None] = mapped_column(BigInteger)
+    measured_duration_us: Mapped[int | None] = mapped_column(BigInteger)
+    video_profile: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict, nullable=False)
+    audio_profile: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict, nullable=False)
+    caption_profile: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict, nullable=False)
+    ffmpeg_version: Mapped[str | None] = mapped_column(String(255))
+    pipeline_version: Mapped[str] = mapped_column(String(32), default="t17/1", nullable=False)
+    selected: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    error_code: Mapped[str | None] = mapped_column(String(128))
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    __table_args__ = (
+        CheckConstraint(
+            "render_identity IS NULL OR length(render_identity) = 64",
+            name="render_identity_hash_length",
+        ),
+        CheckConstraint(
+            "input_hash IS NULL OR length(input_hash) = 64", name="render_input_hash_length"
+        ),
+        CheckConstraint(
+            "expected_duration_us IS NULL OR expected_duration_us > 0",
+            name="render_expected_duration_positive",
+        ),
+        CheckConstraint(
+            "measured_duration_us IS NULL OR measured_duration_us > 0",
+            name="render_measured_duration_positive",
+        ),
+        CheckConstraint(
+            "status <> 'render_complete' OR (manifest_asset_id IS NOT NULL AND "
+            "srt_asset_id IS NOT NULL AND webvtt_asset_id IS NOT NULL AND "
+            "final_video_asset_id IS NOT NULL AND verification_report_asset_id IS NOT NULL)",
+            name="render_complete_has_outputs",
+        ),
+        Index(
+            "uq_render_jobs_identity",
+            "render_identity",
+            unique=True,
+            sqlite_where=sql_text("render_identity IS NOT NULL"),
+            postgresql_where=sql_text("render_identity IS NOT NULL"),
+        ),
+        Index(
+            "uq_render_jobs_idempotency",
+            "project_id",
+            "idempotency_key",
+            unique=True,
+            sqlite_where=sql_text("idempotency_key IS NOT NULL"),
+            postgresql_where=sql_text("idempotency_key IS NOT NULL"),
+        ),
+        Index(
+            "uq_render_jobs_selected_project",
+            "project_id",
+            unique=True,
+            sqlite_where=sql_text("selected = 1"),
+            postgresql_where=sql_text("selected"),
+        ),
+    )

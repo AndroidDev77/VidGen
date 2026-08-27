@@ -1,0 +1,235 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "audio_sample_rate_hz": {
+      "exclusiveMinimum": 0,
+      "title": "Audio Sample Rate Hz",
+      "type": "integer"
+    },
+    "black_intervals": {
+      "items": {
+        "additionalProperties": {
+          "type": "integer"
+        },
+        "type": "object"
+      },
+      "title": "Black Intervals",
+      "type": "array"
+    },
+    "caption_asset_ids": {
+      "items": {
+        "format": "uuid",
+        "type": "string"
+      },
+      "maxItems": 3,
+      "minItems": 2,
+      "title": "Caption Asset Ids",
+      "type": "array"
+    },
+    "caption_hashes": {
+      "items": {
+        "pattern": "^[a-f0-9]{64}$",
+        "type": "string"
+      },
+      "maxItems": 3,
+      "minItems": 2,
+      "title": "Caption Hashes",
+      "type": "array"
+    },
+    "command_plan_hash": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Command Plan Hash",
+      "type": "string"
+    },
+    "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+    },
+    "duration_difference_us": {
+      "title": "Duration Difference Us",
+      "type": "integer"
+    },
+    "encoder": {
+      "maxLength": 128,
+      "title": "Encoder",
+      "type": "string"
+    },
+    "expected_duration_us": {
+      "exclusiveMinimum": 0,
+      "title": "Expected Duration Us",
+      "type": "integer"
+    },
+    "failures": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Failures",
+      "type": "array"
+    },
+    "ffmpeg_version": {
+      "maxLength": 256,
+      "title": "Ffmpeg Version",
+      "type": "string"
+    },
+    "ffprobe_version": {
+      "maxLength": 256,
+      "title": "Ffprobe Version",
+      "type": "string"
+    },
+    "final_video_asset_id": {
+      "format": "uuid",
+      "title": "Final Video Asset Id",
+      "type": "string"
+    },
+    "final_video_hash": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Final Video Hash",
+      "type": "string"
+    },
+    "frame_count": {
+      "anyOf": [
+        {
+          "minimum": 0,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Frame Count"
+    },
+    "frame_rate": {
+      "title": "Frame Rate",
+      "type": "string"
+    },
+    "freeze_intervals": {
+      "items": {
+        "additionalProperties": {
+          "type": "integer"
+        },
+        "type": "object"
+      },
+      "title": "Freeze Intervals",
+      "type": "array"
+    },
+    "full_decode_ok": {
+      "title": "Full Decode Ok",
+      "type": "boolean"
+    },
+    "integrated_lufs": {
+      "title": "Integrated Lufs",
+      "type": "number"
+    },
+    "loudness_range": {
+      "title": "Loudness Range",
+      "type": "number"
+    },
+    "manifest_asset_id": {
+      "format": "uuid",
+      "title": "Manifest Asset Id",
+      "type": "string"
+    },
+    "manifest_hash": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Manifest Hash",
+      "type": "string"
+    },
+    "measured_duration_us": {
+      "exclusiveMinimum": 0,
+      "title": "Measured Duration Us",
+      "type": "integer"
+    },
+    "provenance": {
+      "additionalProperties": true,
+      "title": "Provenance",
+      "type": "object"
+    },
+    "render_identity": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Render Identity",
+      "type": "string"
+    },
+    "render_job_id": {
+      "format": "uuid",
+      "title": "Render Job Id",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "silence_intervals": {
+      "items": {
+        "additionalProperties": {
+          "type": "integer"
+        },
+        "type": "object"
+      },
+      "title": "Silence Intervals",
+      "type": "array"
+    },
+    "stream_metadata": {
+      "additionalProperties": true,
+      "title": "Stream Metadata",
+      "type": "object"
+    },
+    "subtitle_valid": {
+      "title": "Subtitle Valid",
+      "type": "boolean"
+    },
+    "true_peak_dbtp": {
+      "title": "True Peak Dbtp",
+      "type": "number"
+    },
+    "verification_profile_version": {
+      "const": "verify/1",
+      "default": "verify/1",
+      "title": "Verification Profile Version",
+      "type": "string"
+    },
+    "verified": {
+      "title": "Verified",
+      "type": "boolean"
+    },
+    "warning_codes": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Warning Codes",
+      "type": "array"
+    }
+  },
+  "required": [
+    "render_job_id",
+    "render_identity",
+    "manifest_asset_id",
+    "manifest_hash",
+    "final_video_asset_id",
+    "final_video_hash",
+    "caption_asset_ids",
+    "caption_hashes",
+    "ffmpeg_version",
+    "ffprobe_version",
+    "encoder",
+    "command_plan_hash",
+    "stream_metadata",
+    "measured_duration_us",
+    "expected_duration_us",
+    "duration_difference_us",
+    "frame_rate",
+    "audio_sample_rate_hz",
+    "integrated_lufs",
+    "true_peak_dbtp",
+    "loudness_range",
+    "full_decode_ok",
+    "subtitle_valid",
+    "verified",
+    "created_at"
+  ],
+  "title": "RenderVerificationReport",
+  "type": "object"
+}

@@ -1,0 +1,41 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "asset_id": {
+      "format": "uuid",
+      "title": "Asset Id",
+      "type": "string"
+    },
+    "media_type": {
+      "maxLength": 128,
+      "minLength": 1,
+      "title": "Media Type",
+      "type": "string"
+    },
+    "role": {
+      "maxLength": 64,
+      "minLength": 1,
+      "title": "Role",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "sha256": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Sha256",
+      "type": "string"
+    }
+  },
+  "required": [
+    "asset_id",
+    "sha256",
+    "media_type",
+    "role"
+  ],
+  "title": "RenderInputReference",
+  "type": "object"
+}

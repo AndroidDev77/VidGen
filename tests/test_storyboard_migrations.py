@@ -45,7 +45,7 @@ def test_storyboard_migration_follows_the_narration_head() -> None:
     script = ScriptDirectory.from_config(_config())
     revision = script.get_revision("0010_storyboard")
     assert revision.down_revision == "0009_narration"
-    assert list(script.get_heads()) == ["0012_animation"]
+    assert list(script.get_heads()) == ["0013_render"]
 
 
 def test_storyboard_migration_up_down_up(tmp_path: Path, monkeypatch: MonkeyPatch) -> None:

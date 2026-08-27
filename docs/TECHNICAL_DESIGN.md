@@ -24,7 +24,8 @@ example conflicts with an implemented interface.
 | T14 | Complete | Reviewed restartable image generation from the selected T13 storyboard provides deterministic prompt packages, optional verified image references, first/explicit-last keyframes, technical validation, immutable provenance, and T23-accounted provider attempts. T19 remains the later comprehensive character/location reference-bible task. |
 | T15 | Complete | The Runway image-to-video implementation adds authoritative T13/T14 selection, deterministic motion prompts and routing, durable asynchronous task checkpoints, bounded download, FFprobe validation, deterministic trimming, immutable AssetService provenance, T23 accounting, fake-provider execution, contracts, persistence, CLI, and parent-workflow integration. Review and CI succeeded. |
 | T16 | Complete | Deterministic per-shot Temporal children coordinate restartable T14 keyframe and T15 animation work with bounded ten-shot fan-out, isolated failure/cancellation, compact queries and commands, durable checkpoints, and T23-aware idempotency. |
-| T17-T22, T24-T26 | Planned | Do not begin a later task until its dependencies and the current implementation are reconciled. |
+| T17 | Complete | Implements strict caption/render contracts, deterministic caption reflow, canonical manifests and identities, bounded FFmpeg argument plans, media verification, immutable asset provenance, and restartable relational projections. |
+| T18-T22, T24-T26 | Planned | Do not begin a later task until its dependencies and the current implementation are reconciled. |
 
 When a roadmap task is completed, update this table, `README.md`, and any affected design section in
 the same pull request.

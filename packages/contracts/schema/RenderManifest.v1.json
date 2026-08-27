@@ -1,0 +1,608 @@
+{
+  "$defs": {
+    "RenderAudioEntry": {
+      "additionalProperties": false,
+      "properties": {
+        "asset": {
+          "$ref": "#/$defs/RenderInputReference"
+        },
+        "duck_under_narration": {
+          "default": false,
+          "title": "Duck Under Narration",
+          "type": "boolean"
+        },
+        "duration_us": {
+          "exclusiveMinimum": 0,
+          "title": "Duration Us",
+          "type": "integer"
+        },
+        "gain_millidb": {
+          "default": 0,
+          "maximum": 12000,
+          "minimum": -60000,
+          "title": "Gain Millidb",
+          "type": "integer"
+        },
+        "role": {
+          "enum": [
+            "narration",
+            "dialogue",
+            "sfx",
+            "music"
+          ],
+          "title": "Role",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "start_us": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Start Us",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "role",
+        "asset",
+        "duration_us"
+      ],
+      "title": "RenderAudioEntry",
+      "type": "object"
+    },
+    "RenderAudioProfile": {
+      "additionalProperties": false,
+      "properties": {
+        "bitrate_kbps": {
+          "default": 320,
+          "maximum": 512,
+          "minimum": 96,
+          "title": "Bitrate Kbps",
+          "type": "integer"
+        },
+        "channels": {
+          "const": 2,
+          "default": 2,
+          "title": "Channels",
+          "type": "integer"
+        },
+        "codec": {
+          "const": "aac",
+          "default": "aac",
+          "title": "Codec",
+          "type": "string"
+        },
+        "integrated_lufs": {
+          "default": -14,
+          "maximum": -5,
+          "minimum": -24,
+          "title": "Integrated Lufs",
+          "type": "integer"
+        },
+        "max_lra": {
+          "default": 11,
+          "maximum": 20,
+          "minimum": 1,
+          "title": "Max Lra",
+          "type": "number"
+        },
+        "sample_rate_hz": {
+          "const": 48000,
+          "default": 48000,
+          "title": "Sample Rate Hz",
+          "type": "integer"
+        },
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "true_peak_dbtp": {
+          "default": -1.5,
+          "maximum": -0.1,
+          "minimum": -3,
+          "title": "True Peak Dbtp",
+          "type": "number"
+        }
+      },
+      "title": "RenderAudioProfile",
+      "type": "object"
+    },
+    "RenderInputReference": {
+      "additionalProperties": false,
+      "properties": {
+        "asset_id": {
+          "format": "uuid",
+          "title": "Asset Id",
+          "type": "string"
+        },
+        "media_type": {
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "Media Type",
+          "type": "string"
+        },
+        "role": {
+          "maxLength": 64,
+          "minLength": 1,
+          "title": "Role",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "sha256": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Sha256",
+          "type": "string"
+        }
+      },
+      "required": [
+        "asset_id",
+        "sha256",
+        "media_type",
+        "role"
+      ],
+      "title": "RenderInputReference",
+      "type": "object"
+    },
+    "RenderShotEntry": {
+      "additionalProperties": false,
+      "properties": {
+        "animation_run_id": {
+          "format": "uuid",
+          "title": "Animation Run Id",
+          "type": "string"
+        },
+        "exact_usable_duration_us": {
+          "exclusiveMinimum": 0,
+          "title": "Exact Usable Duration Us",
+          "type": "integer"
+        },
+        "global_end_us": {
+          "exclusiveMinimum": 0,
+          "title": "Global End Us",
+          "type": "integer"
+        },
+        "global_start_us": {
+          "minimum": 0,
+          "title": "Global Start Us",
+          "type": "integer"
+        },
+        "measured_source_duration_us": {
+          "exclusiveMinimum": 0,
+          "title": "Measured Source Duration Us",
+          "type": "integer"
+        },
+        "normalization_policy": {
+          "default": "scale_pad",
+          "enum": [
+            "scale_crop",
+            "scale_pad"
+          ],
+          "title": "Normalization Policy",
+          "type": "string"
+        },
+        "parent_asset_ids": {
+          "items": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "maxItems": 32,
+          "title": "Parent Asset Ids",
+          "type": "array"
+        },
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "sequence": {
+          "minimum": 0,
+          "title": "Sequence",
+          "type": "integer"
+        },
+        "shot_id": {
+          "format": "uuid",
+          "title": "Shot Id",
+          "type": "string"
+        },
+        "shot_workflow_identity": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Shot Workflow Identity",
+          "type": "string"
+        },
+        "source_codec": {
+          "maxLength": 32,
+          "minLength": 1,
+          "title": "Source Codec",
+          "type": "string"
+        },
+        "source_frame_rate": {
+          "pattern": "^[1-9][0-9]*/[1-9][0-9]*$",
+          "title": "Source Frame Rate",
+          "type": "string"
+        },
+        "source_height": {
+          "exclusiveMinimum": 0,
+          "maximum": 16384,
+          "title": "Source Height",
+          "type": "integer"
+        },
+        "source_width": {
+          "exclusiveMinimum": 0,
+          "maximum": 16384,
+          "title": "Source Width",
+          "type": "integer"
+        },
+        "transition_in": {
+          "$ref": "#/$defs/RenderTransition"
+        },
+        "transition_out": {
+          "$ref": "#/$defs/RenderTransition"
+        },
+        "trim_end_us": {
+          "exclusiveMinimum": 0,
+          "title": "Trim End Us",
+          "type": "integer"
+        },
+        "trim_start_us": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Trim Start Us",
+          "type": "integer"
+        },
+        "video": {
+          "$ref": "#/$defs/RenderInputReference"
+        },
+        "warning_codes": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 32,
+          "title": "Warning Codes",
+          "type": "array"
+        }
+      },
+      "required": [
+        "shot_id",
+        "sequence",
+        "shot_workflow_identity",
+        "animation_run_id",
+        "video",
+        "source_width",
+        "source_height",
+        "source_frame_rate",
+        "source_codec",
+        "measured_source_duration_us",
+        "global_start_us",
+        "global_end_us",
+        "exact_usable_duration_us",
+        "trim_end_us"
+      ],
+      "title": "RenderShotEntry",
+      "type": "object"
+    },
+    "RenderTransition": {
+      "additionalProperties": false,
+      "properties": {
+        "duration_us": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Duration Us",
+          "type": "integer"
+        },
+        "handle_in_us": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Handle In Us",
+          "type": "integer"
+        },
+        "handle_out_us": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Handle Out Us",
+          "type": "integer"
+        },
+        "kind": {
+          "$ref": "#/$defs/TransitionKind",
+          "default": "cut"
+        },
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        }
+      },
+      "title": "RenderTransition",
+      "type": "object"
+    },
+    "RenderVideoProfile": {
+      "additionalProperties": false,
+      "properties": {
+        "codec": {
+          "const": "libx264",
+          "default": "libx264",
+          "title": "Codec",
+          "type": "string"
+        },
+        "codec_profile": {
+          "const": "high",
+          "default": "high",
+          "title": "Codec Profile",
+          "type": "string"
+        },
+        "frame_rate": {
+          "default": 24,
+          "enum": [
+            24,
+            30
+          ],
+          "title": "Frame Rate",
+          "type": "integer"
+        },
+        "height": {
+          "const": 1080,
+          "default": 1080,
+          "title": "Height",
+          "type": "integer"
+        },
+        "normalization_policy": {
+          "default": "scale_pad",
+          "enum": [
+            "scale_crop",
+            "scale_pad"
+          ],
+          "title": "Normalization Policy",
+          "type": "string"
+        },
+        "pixel_format": {
+          "const": "yuv420p",
+          "default": "yuv420p",
+          "title": "Pixel Format",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "width": {
+          "const": 1920,
+          "default": 1920,
+          "title": "Width",
+          "type": "integer"
+        }
+      },
+      "title": "RenderVideoProfile",
+      "type": "object"
+    },
+    "TransitionKind": {
+      "enum": [
+        "cut",
+        "crossfade"
+      ],
+      "title": "TransitionKind",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "approved_script_hash": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Approved Script Hash",
+      "type": "string"
+    },
+    "approved_script_id": {
+      "format": "uuid",
+      "title": "Approved Script Id",
+      "type": "string"
+    },
+    "approved_script_version": {
+      "exclusiveMinimum": 0,
+      "title": "Approved Script Version",
+      "type": "integer"
+    },
+    "audio_entries": {
+      "items": {
+        "$ref": "#/$defs/RenderAudioEntry"
+      },
+      "maxItems": 128,
+      "minItems": 1,
+      "title": "Audio Entries",
+      "type": "array"
+    },
+    "audio_profile": {
+      "$ref": "#/$defs/RenderAudioProfile"
+    },
+    "caption_assets": {
+      "items": {
+        "$ref": "#/$defs/RenderInputReference"
+      },
+      "maxItems": 3,
+      "minItems": 2,
+      "title": "Caption Assets",
+      "type": "array"
+    },
+    "caption_identity": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Caption Identity",
+      "type": "string"
+    },
+    "caption_track_id": {
+      "format": "uuid",
+      "title": "Caption Track Id",
+      "type": "string"
+    },
+    "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+    },
+    "ffmpeg_profile_version": {
+      "const": "ffmpeg/1",
+      "default": "ffmpeg/1",
+      "title": "Ffmpeg Profile Version",
+      "type": "string"
+    },
+    "idempotency_key": {
+      "maxLength": 255,
+      "minLength": 1,
+      "title": "Idempotency Key",
+      "type": "string"
+    },
+    "input_hash": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Input Hash",
+      "type": "string"
+    },
+    "manifest_id": {
+      "format": "uuid",
+      "title": "Manifest Id",
+      "type": "string"
+    },
+    "narration_assets": {
+      "items": {
+        "$ref": "#/$defs/RenderInputReference"
+      },
+      "maxItems": 1000,
+      "minItems": 1,
+      "title": "Narration Assets",
+      "type": "array"
+    },
+    "narration_duration_us": {
+      "exclusiveMinimum": 0,
+      "title": "Narration Duration Us",
+      "type": "integer"
+    },
+    "narration_run_id": {
+      "format": "uuid",
+      "title": "Narration Run Id",
+      "type": "string"
+    },
+    "narration_word_timing_hash": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Narration Word Timing Hash",
+      "type": "string"
+    },
+    "pipeline_version": {
+      "const": "t17/1",
+      "default": "t17/1",
+      "title": "Pipeline Version",
+      "type": "string"
+    },
+    "project_id": {
+      "format": "uuid",
+      "title": "Project Id",
+      "type": "string"
+    },
+    "provenance": {
+      "additionalProperties": true,
+      "title": "Provenance",
+      "type": "object"
+    },
+    "render_identity": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Render Identity",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "shots": {
+      "items": {
+        "$ref": "#/$defs/RenderShotEntry"
+      },
+      "maxItems": 500,
+      "minItems": 1,
+      "title": "Shots",
+      "type": "array"
+    },
+    "storyboard_hash": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Storyboard Hash",
+      "type": "string"
+    },
+    "storyboard_run_id": {
+      "format": "uuid",
+      "title": "Storyboard Run Id",
+      "type": "string"
+    },
+    "subtitle_mode": {
+      "default": "selectable",
+      "enum": [
+        "selectable",
+        "burn_in",
+        "both"
+      ],
+      "title": "Subtitle Mode",
+      "type": "string"
+    },
+    "t16_result_id": {
+      "maxLength": 255,
+      "minLength": 1,
+      "title": "T16 Result Id",
+      "type": "string"
+    },
+    "timing_manifest_hash": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Timing Manifest Hash",
+      "type": "string"
+    },
+    "timing_manifest_id": {
+      "format": "uuid",
+      "title": "Timing Manifest Id",
+      "type": "string"
+    },
+    "verification_profile_version": {
+      "const": "verify/1",
+      "default": "verify/1",
+      "title": "Verification Profile Version",
+      "type": "string"
+    },
+    "video_profile": {
+      "$ref": "#/$defs/RenderVideoProfile"
+    }
+  },
+  "required": [
+    "manifest_id",
+    "render_identity",
+    "project_id",
+    "approved_script_id",
+    "approved_script_version",
+    "approved_script_hash",
+    "narration_run_id",
+    "narration_assets",
+    "narration_word_timing_hash",
+    "narration_duration_us",
+    "storyboard_run_id",
+    "storyboard_hash",
+    "timing_manifest_id",
+    "timing_manifest_hash",
+    "t16_result_id",
+    "shots",
+    "caption_track_id",
+    "caption_identity",
+    "caption_assets",
+    "audio_entries",
+    "input_hash",
+    "idempotency_key",
+    "created_at"
+  ],
+  "title": "RenderManifest",
+  "type": "object"
+}
