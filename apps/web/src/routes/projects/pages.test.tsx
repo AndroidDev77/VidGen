@@ -338,12 +338,19 @@ describe("StoryboardPage", () => {
     const siblingKey = ["projects", PROJECT_ID, "shots", fixtures.storyboard.shots[2]!.shot_id];
     queryClient.setQueryData(siblingKey, fixtures.shotDetail(2));
 
-    await user.click(await screen.findByRole("button", { name: "Regenerate this shot" }));
-    const dialog = await screen.findByRole("alertdialog");
-    expect(within(dialog).getByText(/Sibling shots keep their locked results/)).toBeVisible();
-    await user.click(within(dialog).getByRole("button", { name: "Regenerate the shot" }));
+    // The keyframe previews resolve asynchronously and re-render the page, so
+    // each control is queried afresh immediately before it is clicked.
+    await screen.findByRole("button", { name: "Regenerate this shot" });
+    await waitFor(async () => {
+      await user.click(screen.getByRole("button", { name: "Regenerate this shot" }));
+      expect(screen.getByRole("alertdialog")).toBeInTheDocument();
+    });
+    expect(screen.getByText(/Sibling shots keep their locked results/)).toBeVisible();
+    await waitFor(async () => {
+      await user.click(screen.getByRole("button", { name: "Regenerate the shot" }));
+      expect(screen.getByText("Regeneration started")).toBeInTheDocument();
+    });
 
-    expect(await screen.findByText("Regeneration started")).toBeVisible();
     expect(screen.getByText(/Shot 6, Verified render attempt 1/)).toBeVisible();
     expect(requests).toBe(1);
     // The sibling's cached data is untouched.

@@ -19,7 +19,9 @@ export default defineConfig({
   },
   projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
   webServer: {
-    command: `pnpm exec vite preview --port ${PORT} --strictPort`,
+    // Bound explicitly to 127.0.0.1: on a runner where localhost resolves to
+    // ::1 first, the default binding never answers the health check below.
+    command: `pnpm exec vite preview --host 127.0.0.1 --port ${PORT} --strictPort`,
     url: `http://127.0.0.1:${PORT}`,
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,

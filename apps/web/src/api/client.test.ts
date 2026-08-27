@@ -81,6 +81,46 @@ describe("VidGenClient", () => {
     await expect(client.get("/api/v1/thing")).rejects.toMatchObject({ name: "AbortError" });
   });
 
+  it("retries without the signal when the runtime refuses that signal class", async () => {
+    // Under jsdom on Node the caller's signal comes from a different realm than
+    // fetch, whose brand check would otherwise reject the whole request.
+    const seen: boolean[] = [];
+    const fetchImpl = vi.fn((_url: string, init: RequestInit) => {
+      const hasSignal = init.signal !== undefined && init.signal !== null;
+      seen.push(hasSignal);
+      if (hasSignal) {
+        return Promise.reject(new TypeError("member signal is not of type AbortSignal"));
+      }
+      return Promise.resolve(jsonResponse({ ok: true }));
+    });
+    const client = new VidGenClient(config, fetchImpl as unknown as typeof fetch);
+    const controller = new AbortController();
+    await expect(
+      client.get("/api/v1/projects", { signal: controller.signal }),
+    ).resolves.toMatchObject({ data: { ok: true } });
+    expect(seen).toEqual([true, false]);
+
+    // The refusal is remembered, so the next request skips the wasted attempt.
+    await client.get("/api/v1/projects", { signal: new AbortController().signal });
+    expect(seen).toEqual([true, false, false]);
+  });
+
+  it("still rejects promptly when a refused signal aborts", async () => {
+    const controller = new AbortController();
+    const client = new VidGenClient(
+      config,
+      ((_url: string, init: RequestInit) =>
+        init.signal === undefined || init.signal === null
+          ? new Promise(() => undefined)
+          : Promise.reject(
+              new TypeError("member signal is not of type AbortSignal"),
+            )) as unknown as typeof fetch,
+    );
+    const pending = client.get("/api/v1/projects", { signal: controller.signal });
+    controller.abort();
+    await expect(pending).rejects.toMatchObject({ name: "AbortError" });
+  });
+
   it("builds unique idempotency keys per submission", () => {
     expect(newIdempotencyKey("x")).not.toBe(newIdempotencyKey("x"));
   });

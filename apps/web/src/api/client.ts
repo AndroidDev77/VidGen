@@ -64,19 +64,44 @@ export class VidGenClient {
     }
 
     const method = options.method ?? "GET";
-    let response: Response;
-    try {
-      const init: RequestInit = { method, headers, ...(payload === undefined ? {} : { body: payload }) };
-      if (options.signal) {
+    const attempt = (withSignal: boolean): Promise<Response> => {
+      const init: RequestInit = {
+        method,
+        headers,
+        ...(payload === undefined ? {} : { body: payload }),
+      };
+      if (withSignal && options.signal) {
         Object.assign(init, { signal: options.signal });
       }
-      response = await this.transport(url, init);
+      return this.transport(url, init);
+    };
+
+    const signal = options.signal;
+    let useSignal = signal !== undefined && signalIsCompatible(signal);
+    let response: Response;
+    try {
+      response = await raceAbort(attempt(useSignal), signal);
     } catch (cause) {
       if (cause instanceof DOMException && cause.name === "AbortError") {
         throw cause;
       }
-      this.trace(method, path, "network-error", null);
-      throw new NetworkError();
+      // A runtime that refuses this signal class must not lose the request.
+      if (useSignal && signal !== undefined && isSignalRejection(cause)) {
+        rememberIncompatibleSignal(signal);
+        useSignal = false;
+        try {
+          response = await raceAbort(attempt(false), signal);
+        } catch (retryCause) {
+          if (retryCause instanceof DOMException && retryCause.name === "AbortError") {
+            throw retryCause;
+          }
+          this.trace(method, path, "network-error", null);
+          throw new NetworkError();
+        }
+      } else {
+        this.trace(method, path, "network-error", null);
+        throw new NetworkError();
+      }
     }
 
     const correlationId = response.headers.get("x-vidgen-correlation-id");
@@ -131,12 +156,23 @@ export class VidGenClient {
     if (options.lastEventId !== undefined) {
       headers.set("Last-Event-ID", String(options.lastEventId));
     }
-    const response = await this.transport(this.buildUrl(path), {
-      method: "GET",
-      headers,
-      signal: options.signal,
-      cache: "no-store",
-    });
+    const open = (withSignal: boolean): Promise<Response> =>
+      this.transport(this.buildUrl(path), {
+        method: "GET",
+        headers,
+        cache: "no-store",
+        ...(withSignal ? { signal: options.signal } : {}),
+      });
+    let response: Response;
+    try {
+      response = await raceAbort(open(signalIsCompatible(options.signal)), options.signal);
+    } catch (cause) {
+      if (!isSignalRejection(cause)) {
+        throw cause;
+      }
+      rememberIncompatibleSignal(options.signal);
+      response = await raceAbort(open(false), options.signal);
+    }
     if (!response.ok || response.body === null) {
       const text = response.body === null ? "" : await response.text();
       throw new VidGenApiError(
@@ -201,6 +237,63 @@ function parseEtag(value: string | null): number | null {
   }
   const digits = value.replace(/^W\//, "").replace(/"/g, "");
   return /^\d+$/.test(digits) ? Number(digits) : null;
+}
+
+/**
+ * Whether this environment's `AbortSignal` is one `fetch` will accept.
+ *
+ * Under jsdom on Node, the caller's signal comes from a different realm than
+ * `fetch`, and the brand check rejects the whole request rather than just
+ * ignoring the signal. Probed once, because it is a property of the runtime.
+ */
+/**
+ * Signal classes this runtime's `fetch` refuses.
+ *
+ * Under jsdom on Node the caller's `AbortSignal` comes from a different realm
+ * than `fetch`, and the brand check rejects the whole request rather than
+ * ignoring the signal. Refusal is a property of the signal's class, so one
+ * observation is remembered for all its instances.
+ */
+const incompatibleSignals = new WeakSet<object>();
+
+function signalIsCompatible(signal: AbortSignal): boolean {
+  const key: object = (signal.constructor as object | undefined) ?? signal;
+  return !incompatibleSignals.has(key);
+}
+
+function rememberIncompatibleSignal(signal: AbortSignal): void {
+  incompatibleSignals.add((signal.constructor as object | undefined) ?? signal);
+}
+
+/** A `fetch` rejection caused by the signal rather than by the network. */
+function isSignalRejection(cause: unknown): boolean {
+  return cause instanceof TypeError;
+}
+
+/**
+ * Honour cancellation even where the signal cannot be handed to `fetch`.
+ *
+ * The in-flight socket is not torn down in that case, but the caller still sees
+ * the abort promptly, which is what request cancellation means to the UI.
+ */
+function raceAbort<T>(work: Promise<T>, signal: AbortSignal | undefined): Promise<T> {
+  if (signal === undefined || signalIsCompatible(signal)) {
+    return work;
+  }
+  return Promise.race([
+    work,
+    new Promise<never>((_resolve, reject) => {
+      if (signal.aborted) {
+        reject(new DOMException("The request was aborted.", "AbortError"));
+        return;
+      }
+      signal.addEventListener(
+        "abort",
+        () => reject(new DOMException("The request was aborted.", "AbortError")),
+        { once: true },
+      );
+    }),
+  ]);
 }
 
 /** A stable client key so a duplicate submission cannot double-apply. */
