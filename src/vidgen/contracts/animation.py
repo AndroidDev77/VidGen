@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Any, Literal
 from uuid import UUID
 
-from pydantic import Field
+from pydantic import Field, field_validator
+from pydantic.json_schema import SkipJsonSchema
 
 from vidgen.contracts.common import StrictContract
 
@@ -31,6 +32,15 @@ class VideoTaskStatus(StrEnum):
 
 
 class VideoFormat(StrEnum):
+    MP4 = "mp4"
+
+
+class VideoCodec(StrEnum):
+    H264 = "h264"
+    HEVC = "hevc"
+
+
+class VideoContainer(StrEnum):
     MP4 = "mp4"
 
 
@@ -112,6 +122,17 @@ class VideoProviderTask(StrictContract):
     latency_ms: int | None = Field(default=None, ge=0)
     application_idempotency_key: str
     provider_configuration_version: str
+    # Transport handles expire and must never be serialized into durable state.
+    output_handles: SkipJsonSchema[tuple[str, ...]] = Field(default=(), exclude=True, repr=False)
+
+    @field_validator("requested_at", "completed_at", "last_polled_at")
+    @classmethod
+    def timestamps_are_utc(cls, value: datetime | None) -> datetime | None:
+        if value is None:
+            return None
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError("provider timestamps must be timezone-aware UTC instants")
+        return value.astimezone(UTC)
 
 
 class VideoProviderResult(VideoProviderTask):
@@ -120,8 +141,8 @@ class VideoProviderResult(VideoProviderTask):
 
 class VideoProbeResult(StrictContract):
     schema_version: Literal["1.0"] = "1.0"
-    container: str
-    video_codec: str
+    container: VideoContainer
+    video_codec: VideoCodec
     audio_codec: str | None = None
     width: int = Field(gt=0)
     height: int = Field(gt=0)

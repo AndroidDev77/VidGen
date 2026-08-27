@@ -17,7 +17,7 @@ class VideoCapability:
     image_to_video: bool = True
     supports_last_frame: bool = False
     formats: tuple[str, ...] = ("mp4",)
-    max_input_bytes: int = 16 * 1024 * 1024
+    max_input_bytes: int = 5 * 1024 * 1024
 
 
 CAPABILITIES = {

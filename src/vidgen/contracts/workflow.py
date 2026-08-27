@@ -34,6 +34,8 @@ class ProjectWorkflowInput(StrictContract):
     source_video_id: UUID
     # Leave room for the longest generated ``:<stage>`` suffix.
     idempotency_key: str = Field(min_length=1, max_length=220)
+    provider_configuration_version: str = "runway/2024-11-06"
+    trace_context: dict[str, str] = Field(default_factory=dict)
 
 
 class StageActivityInput(StrictContract):
@@ -42,6 +44,19 @@ class StageActivityInput(StrictContract):
     source_video_id: UUID
     stage: str
     idempotency_key: str = Field(min_length=1, max_length=255)
+
+
+class AnimationActivityInput(StrictContract):
+    """Compact T15 message; large canonical payloads stay in durable storage."""
+
+    schema_version: Literal["1.0"] = "1.0"
+    project_id: UUID
+    storyboard_id: UUID | None
+    image_generation_run_id: UUID | None
+    animation_run_id: UUID
+    provider_configuration_version: str
+    idempotency_key: str = Field(min_length=1, max_length=255)
+    trace_context: dict[str, str] = Field(default_factory=dict)
 
 
 class StageActivityResult(StrictContract):

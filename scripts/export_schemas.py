@@ -13,6 +13,7 @@ from vidgen.contracts import (
     AnalysisObservation,
     AnalysisValidationError,
     AnalysisValidationReport,
+    AnimationActivityInput,
     AudioChunk,
     AudioExtractionResult,
     BeatCoverage,
@@ -125,6 +126,22 @@ from vidgen.contracts import (
     WordBudget,
     WorkflowFailure,
 )
+from vidgen.contracts.animation import (
+    AnimationResult,
+    AnimationRunRequest,
+    AnimationRunResult,
+    GeneratedVideoCandidate,
+    MotionIntent,
+    MotionPromptPackage,
+    ShotAnimationResult,
+    VideoProbeResult,
+    VideoProviderRequest,
+    VideoProviderResult,
+    VideoProviderTask,
+    VideoTrimManifest,
+    VideoValidationDiagnostic,
+    VideoValidationReport,
+)
 from vidgen.contracts.costs import (
     BudgetDecisionResult,
     BudgetPolicy,
@@ -170,6 +187,21 @@ from vidgen.contracts.telemetry import (
 ROOT = Path(__file__).resolve().parents[1]
 OUTPUT = ROOT / "packages" / "contracts" / "schema"
 CONTRACTS = (
+    AnimationActivityInput,
+    AnimationRunRequest,
+    AnimationRunResult,
+    MotionIntent,
+    MotionPromptPackage,
+    VideoProviderRequest,
+    VideoProviderTask,
+    VideoProviderResult,
+    VideoProbeResult,
+    VideoValidationDiagnostic,
+    VideoValidationReport,
+    VideoTrimManifest,
+    GeneratedVideoCandidate,
+    ShotAnimationResult,
+    AnimationResult,
     ImageGenerationRunRequest,
     ImageGenerationRunResult,
     VisualIntent,

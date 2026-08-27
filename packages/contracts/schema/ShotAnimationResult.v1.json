@@ -1,0 +1,313 @@
+{
+  "$defs": {
+    "GeneratedVideoCandidate": {
+      "additionalProperties": false,
+      "properties": {
+        "canonical_asset_id": {
+          "format": "uuid",
+          "title": "Canonical Asset Id",
+          "type": "string"
+        },
+        "generated_video_id": {
+          "format": "uuid",
+          "title": "Generated Video Id",
+          "type": "string"
+        },
+        "original_asset_id": {
+          "format": "uuid",
+          "title": "Original Asset Id",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "selected": {
+          "title": "Selected",
+          "type": "boolean"
+        },
+        "shot_id": {
+          "format": "uuid",
+          "title": "Shot Id",
+          "type": "string"
+        },
+        "validation": {
+          "$ref": "#/$defs/VideoValidationReport"
+        }
+      },
+      "required": [
+        "generated_video_id",
+        "original_asset_id",
+        "canonical_asset_id",
+        "shot_id",
+        "selected",
+        "validation"
+      ],
+      "title": "GeneratedVideoCandidate",
+      "type": "object"
+    },
+    "VideoCodec": {
+      "enum": [
+        "h264",
+        "hevc"
+      ],
+      "title": "VideoCodec",
+      "type": "string"
+    },
+    "VideoContainer": {
+      "enum": [
+        "mp4"
+      ],
+      "title": "VideoContainer",
+      "type": "string"
+    },
+    "VideoProbeResult": {
+      "additionalProperties": false,
+      "properties": {
+        "audio_codec": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Audio Codec"
+        },
+        "byte_size": {
+          "exclusiveMinimum": 0,
+          "title": "Byte Size",
+          "type": "integer"
+        },
+        "container": {
+          "$ref": "#/$defs/VideoContainer"
+        },
+        "display_aspect_ratio": {
+          "title": "Display Aspect Ratio",
+          "type": "string"
+        },
+        "duration_seconds": {
+          "exclusiveMinimum": 0,
+          "title": "Duration Seconds",
+          "type": "number"
+        },
+        "ffprobe_json": {
+          "additionalProperties": true,
+          "title": "Ffprobe Json",
+          "type": "object"
+        },
+        "ffprobe_version": {
+          "title": "Ffprobe Version",
+          "type": "string"
+        },
+        "frame_count": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Frame Count"
+        },
+        "frame_rate": {
+          "title": "Frame Rate",
+          "type": "string"
+        },
+        "height": {
+          "exclusiveMinimum": 0,
+          "title": "Height",
+          "type": "integer"
+        },
+        "pixel_format": {
+          "title": "Pixel Format",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "sha256": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Sha256",
+          "type": "string"
+        },
+        "timebase": {
+          "title": "Timebase",
+          "type": "string"
+        },
+        "video_codec": {
+          "$ref": "#/$defs/VideoCodec"
+        },
+        "width": {
+          "exclusiveMinimum": 0,
+          "title": "Width",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "container",
+        "video_codec",
+        "width",
+        "height",
+        "display_aspect_ratio",
+        "pixel_format",
+        "frame_rate",
+        "timebase",
+        "duration_seconds",
+        "byte_size",
+        "sha256",
+        "ffprobe_json",
+        "ffprobe_version"
+      ],
+      "title": "VideoProbeResult",
+      "type": "object"
+    },
+    "VideoValidationDiagnostic": {
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "title": "Code",
+          "type": "string"
+        },
+        "message": {
+          "title": "Message",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "severity": {
+          "enum": [
+            "error",
+            "warning"
+          ],
+          "title": "Severity",
+          "type": "string"
+        }
+      },
+      "required": [
+        "code",
+        "severity",
+        "message"
+      ],
+      "title": "VideoValidationDiagnostic",
+      "type": "object"
+    },
+    "VideoValidationReport": {
+      "additionalProperties": false,
+      "properties": {
+        "diagnostics": {
+          "items": {
+            "$ref": "#/$defs/VideoValidationDiagnostic"
+          },
+          "title": "Diagnostics",
+          "type": "array"
+        },
+        "probe": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/VideoProbeResult"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "valid": {
+          "title": "Valid",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "valid"
+      ],
+      "title": "VideoValidationReport",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "candidate": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/GeneratedVideoCandidate"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "error_code": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Error Code"
+    },
+    "remote_task_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Remote Task Id"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "shot_id": {
+      "format": "uuid",
+      "title": "Shot Id",
+      "type": "string"
+    },
+    "status": {
+      "enum": [
+        "completed",
+        "reused",
+        "polling",
+        "failed"
+      ],
+      "title": "Status",
+      "type": "string"
+    }
+  },
+  "required": [
+    "shot_id",
+    "status"
+  ],
+  "title": "ShotAnimationResult",
+  "type": "object"
+}

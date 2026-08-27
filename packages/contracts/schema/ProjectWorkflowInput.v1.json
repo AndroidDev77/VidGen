@@ -12,6 +12,11 @@
       "title": "Project Id",
       "type": "string"
     },
+    "provider_configuration_version": {
+      "default": "runway/2024-11-06",
+      "title": "Provider Configuration Version",
+      "type": "string"
+    },
     "schema_version": {
       "const": "1.0",
       "default": "1.0",
@@ -22,6 +27,13 @@
       "format": "uuid",
       "title": "Source Video Id",
       "type": "string"
+    },
+    "trace_context": {
+      "additionalProperties": {
+        "type": "string"
+      },
+      "title": "Trace Context",
+      "type": "object"
     }
   },
   "required": [

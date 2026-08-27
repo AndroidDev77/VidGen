@@ -1,0 +1,73 @@
+{
+  "additionalProperties": false,
+  "description": "Compact T15 message; large canonical payloads stay in durable storage.",
+  "properties": {
+    "animation_run_id": {
+      "format": "uuid",
+      "title": "Animation Run Id",
+      "type": "string"
+    },
+    "idempotency_key": {
+      "maxLength": 255,
+      "minLength": 1,
+      "title": "Idempotency Key",
+      "type": "string"
+    },
+    "image_generation_run_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Image Generation Run Id"
+    },
+    "project_id": {
+      "format": "uuid",
+      "title": "Project Id",
+      "type": "string"
+    },
+    "provider_configuration_version": {
+      "title": "Provider Configuration Version",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "storyboard_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Storyboard Id"
+    },
+    "trace_context": {
+      "additionalProperties": {
+        "type": "string"
+      },
+      "title": "Trace Context",
+      "type": "object"
+    }
+  },
+  "required": [
+    "project_id",
+    "storyboard_id",
+    "image_generation_run_id",
+    "animation_run_id",
+    "provider_configuration_version",
+    "idempotency_key"
+  ],
+  "title": "AnimationActivityInput",
+  "type": "object"
+}

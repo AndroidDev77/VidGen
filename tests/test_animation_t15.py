@@ -72,3 +72,28 @@ async def test_fake_task_is_stable_and_polling_resumes_without_submission():
     result = await poll_task(provider, first.remote_task_id, max_polls=1, interval_seconds=0)
     assert result.status.value == "succeeded"
     assert provider.submissions == 1
+
+
+@pytest.mark.asyncio
+async def test_transient_poll_failure_retries_same_remote_task():
+    provider = FakeVideoProvider()
+    first = await provider.submit(request(), "data:image/png;base64,x")
+    original = provider.retrieve
+    calls = 0
+
+    async def flaky(remote_task_id):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise ConnectionError("temporary")
+        return await original(remote_task_id)
+
+    provider.retrieve = flaky
+    result = await poll_task(
+        provider,
+        first.remote_task_id,
+        max_polls=2,
+        interval_seconds=0,
+    )
+    assert result.status.value == "succeeded"
+    assert provider.submissions == 1

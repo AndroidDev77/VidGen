@@ -1,0 +1,126 @@
+{
+  "$defs": {
+    "VideoCodec": {
+      "enum": [
+        "h264",
+        "hevc"
+      ],
+      "title": "VideoCodec",
+      "type": "string"
+    },
+    "VideoContainer": {
+      "enum": [
+        "mp4"
+      ],
+      "title": "VideoContainer",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "audio_codec": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Audio Codec"
+    },
+    "byte_size": {
+      "exclusiveMinimum": 0,
+      "title": "Byte Size",
+      "type": "integer"
+    },
+    "container": {
+      "$ref": "#/$defs/VideoContainer"
+    },
+    "display_aspect_ratio": {
+      "title": "Display Aspect Ratio",
+      "type": "string"
+    },
+    "duration_seconds": {
+      "exclusiveMinimum": 0,
+      "title": "Duration Seconds",
+      "type": "number"
+    },
+    "ffprobe_json": {
+      "additionalProperties": true,
+      "title": "Ffprobe Json",
+      "type": "object"
+    },
+    "ffprobe_version": {
+      "title": "Ffprobe Version",
+      "type": "string"
+    },
+    "frame_count": {
+      "anyOf": [
+        {
+          "exclusiveMinimum": 0,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Frame Count"
+    },
+    "frame_rate": {
+      "title": "Frame Rate",
+      "type": "string"
+    },
+    "height": {
+      "exclusiveMinimum": 0,
+      "title": "Height",
+      "type": "integer"
+    },
+    "pixel_format": {
+      "title": "Pixel Format",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "sha256": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Sha256",
+      "type": "string"
+    },
+    "timebase": {
+      "title": "Timebase",
+      "type": "string"
+    },
+    "video_codec": {
+      "$ref": "#/$defs/VideoCodec"
+    },
+    "width": {
+      "exclusiveMinimum": 0,
+      "title": "Width",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "container",
+    "video_codec",
+    "width",
+    "height",
+    "display_aspect_ratio",
+    "pixel_format",
+    "frame_rate",
+    "timebase",
+    "duration_seconds",
+    "byte_size",
+    "sha256",
+    "ffprobe_json",
+    "ffprobe_version"
+  ],
+  "title": "VideoProbeResult",
+  "type": "object"
+}

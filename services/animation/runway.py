@@ -5,6 +5,9 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Any
 
+from runwayml import APIConnectionError, APITimeoutError
+
+from services.animation.pipeline_errors import AmbiguousVideoSubmission
 from services.animation.providers import validate_request
 from vidgen.contracts.animation import (
     RunwayModel,
@@ -32,13 +35,18 @@ class RunwayVideoProvider:
 
     async def submit(self, request: VideoProviderRequest, prompt_image: str) -> VideoProviderTask:
         validate_request(request)
-        result = await self._client.image_to_video.create(
-            model=request.model.value,
-            prompt_image=prompt_image,
-            prompt_text=request.compiled_motion_prompt,
-            duration=request.requested_duration_seconds,
-            ratio=f"{request.width}:{request.height}",
-        )
+        try:
+            result = await self._client.image_to_video.create(
+                model=request.model.value,
+                prompt_image=prompt_image,
+                prompt_text=request.compiled_motion_prompt,
+                duration=int(request.requested_duration_seconds),
+                ratio=f"{request.width}:{request.height}",
+            )
+        except (APIConnectionError, APITimeoutError) as error:
+            raise AmbiguousVideoSubmission(
+                "Runway submission transport failed before a remote task ID was received"
+            ) from error
         now = datetime.now(UTC)
         return VideoProviderTask(
             provider=request.provider,
@@ -72,6 +80,7 @@ class RunwayVideoProvider:
             last_polled_at=now,
             application_idempotency_key=getattr(result, "idempotency_key", remote_task_id),
             provider_configuration_version=getattr(result, "configuration_version", "runway-v1"),
+            output_handles=tuple(getattr(result, "output", None) or ()),
         )
 
     async def cancel(self, remote_task_id: str) -> bool:

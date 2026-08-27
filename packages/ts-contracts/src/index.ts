@@ -27,6 +27,19 @@ export interface ProjectWorkflowInput {
   project_id: UUID;
   source_video_id: UUID;
   idempotency_key: string;
+  provider_configuration_version: string;
+  trace_context: Record<string,string>;
+}
+
+export interface AnimationActivityInput {
+  schema_version: "1.0";
+  project_id: UUID;
+  storyboard_id: UUID | null;
+  image_generation_run_id: UUID | null;
+  animation_run_id: UUID;
+  provider_configuration_version: string;
+  idempotency_key: string;
+  trace_context: Record<string,string>;
 }
 
 export interface ProjectWorkflowState {
@@ -955,3 +968,21 @@ export interface ComedyEditRequest { schema_version: "1.0"; project_id: UUID; sc
 export interface ComedyEditResult { schema_version: "1.0"; scores: ComedyRubricScores; issues: ComedyIssue[]; edits: ScriptEdit[]; revised_script: RecapScript; approval_recommendation: ApprovalRecommendation }
 export interface ProviderComedyEditResult { output: ComedyEditResult; metadata: ScriptProviderMetadata }
 export interface ScriptGenerationResult { schema_version: "1.0"; generation_run_id: UUID; compressed_plot_plan_id: UUID | null; script_id: UUID | null; script_version: number | null; status: string; validation_report: ScriptValidationReport | null; review_scores: ComedyRubricScores | null; revision_count: number }
+
+export type VideoProvider = "runway" | "fake";
+export type RunwayModel = "gen4_turbo" | "gen4.5";
+export type VideoTaskStatus = "pending" | "running" | "succeeded" | "failed" | "cancelled";
+export interface MotionIntent { schema_version: "1.0"; shot_id: UUID; shot_sequence: number; visual_purpose: string; primary_action: string; start_pose: string; expected_end_pose: string; camera_movement: string; motion_intensity: string; subject_priority: string[]; character_state: string[]; prop_state: string[]; environment_motion: string[]; timing_beats: string[]; continuity_invariants: string[]; negative_motion_constraints: string[] }
+export interface MotionPromptPackage { schema_version: "1.0"; intent: MotionIntent; compiler_version: string; template_version: string; prompt: string; prompt_hash: string; diagnostics: string[]; provider_parameters: Record<string,unknown> }
+export interface VideoProviderRequest { schema_version: "1.0"; application_idempotency_key: string; project_id: UUID; animation_run_id: UUID; animation_item_id: UUID; storyboard_id: UUID; storyboard_version: number; shot_id: UUID; shot_sequence: number; first_keyframe_asset_id: UUID; first_keyframe_sha256: string; last_keyframe_asset_id: UUID | null; last_keyframe_sha256: string | null; compiled_motion_prompt: string; provider: VideoProvider; model: RunwayModel; requested_duration_seconds: number; width: number; height: number; output_format: "mp4"; seed: number | null; provider_options: Record<string,unknown>; trace_context: Record<string,string>; attempt_number: number; provider_configuration_version: string }
+export interface VideoProviderTask { schema_version: "1.0"; provider: VideoProvider; model: RunwayModel; remote_task_id: string; requested_at: string; status: VideoTaskStatus; provider_request_id: string | null; attempt_number: number; requested_duration_seconds: number; progress: number | null; usage: Record<string,number>; failure_reason: string | null; provider_error_code: string | null; metadata: Record<string,string|number|boolean>; completed_at: string | null; last_polled_at: string | null; latency_ms: number | null; application_idempotency_key: string; provider_configuration_version: string }
+export interface VideoProviderResult extends VideoProviderTask { output_count: number }
+export interface VideoProbeResult { schema_version: "1.0"; container: string; video_codec: string; audio_codec: string | null; width: number; height: number; display_aspect_ratio: string; pixel_format: string; frame_rate: string; timebase: string; duration_seconds: number; frame_count: number | null; byte_size: number; sha256: string; ffprobe_json: Record<string,unknown>; ffprobe_version: string }
+export interface VideoValidationDiagnostic { schema_version: "1.0"; code: string; severity: "error"|"warning"; message: string }
+export interface VideoValidationReport { schema_version: "1.0"; valid: boolean; probe: VideoProbeResult | null; diagnostics: VideoValidationDiagnostic[] }
+export interface VideoTrimManifest { schema_version: "1.0"; trim_in_seconds: number; trim_out_seconds: number; usable_duration_seconds: number; ffmpeg_arguments: string[]; encoding_profile: string }
+export interface GeneratedVideoCandidate { schema_version: "1.0"; generated_video_id: UUID; original_asset_id: UUID; canonical_asset_id: UUID; shot_id: UUID; selected: boolean; validation: VideoValidationReport }
+export interface ShotAnimationResult { schema_version: "1.0"; shot_id: UUID; status: "completed"|"reused"|"polling"|"failed"; remote_task_id: string|null; candidate: GeneratedVideoCandidate|null; error_code: string|null }
+export interface AnimationRunRequest { schema_version: "1.0"; project_id: UUID; storyboard_id: UUID|null; image_generation_run_id: UUID|null; idempotency_key: string; provider_configuration_version: string; provider: VideoProvider; model: RunwayModel|null; shot_id: UUID|null }
+export interface AnimationRunResult { schema_version: "1.0"; run_id: UUID; storyboard_id: UUID; image_generation_run_id: UUID; requested_count: number; submitted_count: number; polling_count: number; completed_count: number; reused_count: number; failed_count: number; status: string }
+export interface AnimationResult extends AnimationRunResult { items: ShotAnimationResult[] }

@@ -6,7 +6,7 @@ The complete system architecture and T01-T26 implementation roadmap are maintain
 [`docs/TECHNICAL_DESIGN.md`](docs/TECHNICAL_DESIGN.md). Contributors and coding agents should
 read it together with `AGENTS.md` before planning the next roadmap task.
 
-This repository implements roadmap tasks T01 through T13 and T23, including subtitle-first transcript acquisition, restartable episode analysis, comedy script generation, measured narration, deterministic storyboard timing, and cloud-neutral observability/cost controls:
+This repository implements roadmap tasks T01 through T14 and T23, including subtitle-first transcript acquisition, restartable episode analysis, comedy script generation, measured narration, deterministic storyboard timing, reviewed keyframe generation, and cloud-neutral observability/cost controls. T15 is implemented on its review branch and is not marked complete until review and CI succeed:
 
 - Python monorepo, CI, and local infrastructure
 - Versioned Pydantic contracts plus exported JSON Schema
@@ -25,7 +25,54 @@ This repository implements roadmap tasks T01 through T13 and T23, including subt
 - T14 image-generation foundations: strict provider-neutral keyframe contracts, a deterministic
   versioned prompt compiler, bounded technical image validation, content-addressable provenance
   projections, a network-free fake provider, and an OpenAI Image API adapter pinned by default to
-  `gpt-image-2-2026-04-21`. T14 remains in progress until review and CI complete.
+  `gpt-image-2-2026-04-21`. T14 review and CI are complete.
+
+## T15 Runway image-to-video generation
+
+T15 loads only the selected, complete T13 storyboard and the newest completed T14 run for that
+exact storyboard version. It revalidates T10-T14 selection, project ownership, canonical artifact
+hashes, dense timing, and a selected technically valid `FIRST_FRAME` for every requested shot.
+Stale, cross-project, incomplete, invalid, or mismatched inputs fail with actionable lineage codes.
+
+The provider-neutral `VideoGenerationProvider` boundary separates task submission, retrieval, and
+cancellation from canonical orchestration. Production uses the official asynchronous Runway Python
+SDK; tests and local development use a deterministic fake that creates small H.264 MP4 files with
+FFmpeg and makes no network or paid calls. The versioned routing policy defaults to `gen4_turbo`.
+It selects `gen4.5` only for configured hero shots when the project quality profile, remaining
+budget, and capability registry permit the premium model. Current capability validation requires
+image-to-video, an exact supported 2-10 second T13 generation duration, a supported output ratio,
+an MP4 result, a bounded prompt, and a keyframe whose aspect ratio exactly matches the output.
+
+Motion prompts are compiled without an LLM in stable action, pose, camera, timing, environment,
+continuity, and restriction order. Runway receives the verified first keyframe as a bounded data
+URI. Unsupported last-frame controls are never sent; strict T13 last-frame enforcement fails
+rather than being silently ignored. Signed URLs, data URIs, output URLs, provider payloads, and
+video bytes are excluded from contracts, database JSON, logs, telemetry, and Temporal history.
+
+Before submission T15 creates or reuses a T23 provider attempt, estimates the configured per-second
+price, reserves budget, and commits a pre-call checkpoint. It commits the remote task ID immediately
+after submission and before polling. Restarts, activity retries, polling timeouts, and transient
+retrieval failures resume that task and never submit a replacement. If the submission response is
+lost before an ID is known, T15 records an ambiguous outcome and requires manual reconciliation;
+the Runway API does not document an application idempotency key that can prove exactly-once task
+creation.
+
+Successful output is streamed into bounded temporary storage, hashed, and checked with FFprobe and
+boundary FFmpeg decodes for container, codec, dimensions, frame rate, timebase, duration, streams,
+frame count, finite metadata, size, and truncation. AssetService preserves the immutable provider
+output with storyboard, timing, keyframe, task, attempt, prompt, capability, routing, configuration,
+and validation provenance. T13 trim values then drive deterministic single-threaded H.264
+re-encoding with zero-based timestamps; the canonical clip is probed again and stored as a child of
+the original. T15 performs technical validation only, not semantic motion or identity QA.
+
+Local commands are:
+
+```bash
+uv run python scripts/generate_shot_videos.py PROJECT_UUID --provider fake
+RUNWAYML_API_SECRET=... uv run python scripts/generate_shot_videos.py PROJECT_UUID --provider runway
+uv run python scripts/generate_shot_videos.py PROJECT_UUID --provider fake --shot-id SHOT_UUID
+RUNWAYML_API_SECRET=... uv run python scripts/generate_shot_videos.py PROJECT_UUID --provider runway --model gen4_turbo
+```
 
 ## T14 image generation
 

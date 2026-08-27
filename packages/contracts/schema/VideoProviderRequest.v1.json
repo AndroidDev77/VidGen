@@ -1,0 +1,199 @@
+{
+  "$defs": {
+    "RunwayModel": {
+      "enum": [
+        "gen4_turbo",
+        "gen4.5"
+      ],
+      "title": "RunwayModel",
+      "type": "string"
+    },
+    "VideoFormat": {
+      "enum": [
+        "mp4"
+      ],
+      "title": "VideoFormat",
+      "type": "string"
+    },
+    "VideoProvider": {
+      "enum": [
+        "runway",
+        "fake"
+      ],
+      "title": "VideoProvider",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "animation_item_id": {
+      "format": "uuid",
+      "title": "Animation Item Id",
+      "type": "string"
+    },
+    "animation_run_id": {
+      "format": "uuid",
+      "title": "Animation Run Id",
+      "type": "string"
+    },
+    "application_idempotency_key": {
+      "maxLength": 255,
+      "minLength": 1,
+      "title": "Application Idempotency Key",
+      "type": "string"
+    },
+    "attempt_number": {
+      "exclusiveMinimum": 0,
+      "title": "Attempt Number",
+      "type": "integer"
+    },
+    "compiled_motion_prompt": {
+      "minLength": 1,
+      "title": "Compiled Motion Prompt",
+      "type": "string"
+    },
+    "first_keyframe_asset_id": {
+      "format": "uuid",
+      "title": "First Keyframe Asset Id",
+      "type": "string"
+    },
+    "first_keyframe_sha256": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "First Keyframe Sha256",
+      "type": "string"
+    },
+    "height": {
+      "exclusiveMinimum": 0,
+      "title": "Height",
+      "type": "integer"
+    },
+    "last_keyframe_asset_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Last Keyframe Asset Id"
+    },
+    "last_keyframe_sha256": {
+      "anyOf": [
+        {
+          "pattern": "^[a-f0-9]{64}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Last Keyframe Sha256"
+    },
+    "model": {
+      "$ref": "#/$defs/RunwayModel"
+    },
+    "output_format": {
+      "$ref": "#/$defs/VideoFormat",
+      "default": "mp4"
+    },
+    "project_id": {
+      "format": "uuid",
+      "title": "Project Id",
+      "type": "string"
+    },
+    "provider": {
+      "$ref": "#/$defs/VideoProvider"
+    },
+    "provider_configuration_version": {
+      "title": "Provider Configuration Version",
+      "type": "string"
+    },
+    "provider_options": {
+      "additionalProperties": true,
+      "title": "Provider Options",
+      "type": "object"
+    },
+    "requested_duration_seconds": {
+      "exclusiveMinimum": 0,
+      "title": "Requested Duration Seconds",
+      "type": "number"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "seed": {
+      "anyOf": [
+        {
+          "minimum": 0,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Seed"
+    },
+    "shot_id": {
+      "format": "uuid",
+      "title": "Shot Id",
+      "type": "string"
+    },
+    "shot_sequence": {
+      "minimum": 0,
+      "title": "Shot Sequence",
+      "type": "integer"
+    },
+    "storyboard_id": {
+      "format": "uuid",
+      "title": "Storyboard Id",
+      "type": "string"
+    },
+    "storyboard_version": {
+      "exclusiveMinimum": 0,
+      "title": "Storyboard Version",
+      "type": "integer"
+    },
+    "trace_context": {
+      "additionalProperties": {
+        "type": "string"
+      },
+      "title": "Trace Context",
+      "type": "object"
+    },
+    "width": {
+      "exclusiveMinimum": 0,
+      "title": "Width",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "application_idempotency_key",
+    "project_id",
+    "animation_run_id",
+    "animation_item_id",
+    "storyboard_id",
+    "storyboard_version",
+    "shot_id",
+    "shot_sequence",
+    "first_keyframe_asset_id",
+    "first_keyframe_sha256",
+    "compiled_motion_prompt",
+    "provider",
+    "model",
+    "requested_duration_seconds",
+    "width",
+    "height",
+    "attempt_number",
+    "provider_configuration_version"
+  ],
+  "title": "VideoProviderRequest",
+  "type": "object"
+}
