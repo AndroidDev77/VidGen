@@ -1,0 +1,211 @@
+{
+  "$defs": {
+    "RunwayModel": {
+      "enum": [
+        "gen4_turbo",
+        "gen4.5"
+      ],
+      "title": "RunwayModel",
+      "type": "string"
+    },
+    "VideoProvider": {
+      "enum": [
+        "runway",
+        "fake"
+      ],
+      "title": "VideoProvider",
+      "type": "string"
+    },
+    "VideoTaskStatus": {
+      "enum": [
+        "pending",
+        "running",
+        "succeeded",
+        "failed",
+        "cancelled"
+      ],
+      "title": "VideoTaskStatus",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "application_idempotency_key": {
+      "title": "Application Idempotency Key",
+      "type": "string"
+    },
+    "attempt_number": {
+      "exclusiveMinimum": 0,
+      "title": "Attempt Number",
+      "type": "integer"
+    },
+    "completed_at": {
+      "anyOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Completed At"
+    },
+    "failure_reason": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Failure Reason"
+    },
+    "last_polled_at": {
+      "anyOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Last Polled At"
+    },
+    "latency_ms": {
+      "anyOf": [
+        {
+          "minimum": 0,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Latency Ms"
+    },
+    "metadata": {
+      "additionalProperties": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "integer"
+          },
+          {
+            "type": "number"
+          },
+          {
+            "type": "boolean"
+          }
+        ]
+      },
+      "title": "Metadata",
+      "type": "object"
+    },
+    "model": {
+      "$ref": "#/$defs/RunwayModel"
+    },
+    "output_count": {
+      "default": 0,
+      "minimum": 0,
+      "title": "Output Count",
+      "type": "integer"
+    },
+    "progress": {
+      "anyOf": [
+        {
+          "maximum": 1,
+          "minimum": 0,
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Progress"
+    },
+    "provider": {
+      "$ref": "#/$defs/VideoProvider"
+    },
+    "provider_configuration_version": {
+      "title": "Provider Configuration Version",
+      "type": "string"
+    },
+    "provider_error_code": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Provider Error Code"
+    },
+    "provider_request_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Provider Request Id"
+    },
+    "remote_task_id": {
+      "title": "Remote Task Id",
+      "type": "string"
+    },
+    "requested_at": {
+      "format": "date-time",
+      "title": "Requested At",
+      "type": "string"
+    },
+    "requested_duration_seconds": {
+      "exclusiveMinimum": 0,
+      "title": "Requested Duration Seconds",
+      "type": "number"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "status": {
+      "$ref": "#/$defs/VideoTaskStatus"
+    },
+    "usage": {
+      "additionalProperties": {
+        "type": "number"
+      },
+      "title": "Usage",
+      "type": "object"
+    }
+  },
+  "required": [
+    "provider",
+    "model",
+    "remote_task_id",
+    "requested_at",
+    "status",
+    "attempt_number",
+    "requested_duration_seconds",
+    "application_idempotency_key",
+    "provider_configuration_version"
+  ],
+  "title": "VideoProviderResult",
+  "type": "object"
+}

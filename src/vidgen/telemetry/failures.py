@@ -15,7 +15,7 @@ def classify_failure(
     metadata: dict[str, Any] | None = None,
 ) -> FailureClassification:
     name = type(exc).__name__.lower()
-    if "unknownprovideroutcome" in name:
+    if "unknownprovideroutcome" in name or "ambiguousvideosubmission" in name:
         kind, code, retry = FailureClass.UNKNOWN, "PROVIDER_OUTCOME_UNKNOWN", False
     elif isinstance(exc, (TimeoutError, asyncio.TimeoutError)):
         kind, code, retry = FailureClass.TIMEOUT, "PROVIDER_TIMEOUT", True

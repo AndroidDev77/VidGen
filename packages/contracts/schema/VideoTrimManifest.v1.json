@@ -1,0 +1,45 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "encoding_profile": {
+      "title": "Encoding Profile",
+      "type": "string"
+    },
+    "ffmpeg_arguments": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Ffmpeg Arguments",
+      "type": "array"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "trim_in_seconds": {
+      "minimum": 0,
+      "title": "Trim In Seconds",
+      "type": "number"
+    },
+    "trim_out_seconds": {
+      "minimum": 0,
+      "title": "Trim Out Seconds",
+      "type": "number"
+    },
+    "usable_duration_seconds": {
+      "exclusiveMinimum": 0,
+      "title": "Usable Duration Seconds",
+      "type": "number"
+    }
+  },
+  "required": [
+    "trim_in_seconds",
+    "trim_out_seconds",
+    "usable_duration_seconds",
+    "encoding_profile"
+  ],
+  "title": "VideoTrimManifest",
+  "type": "object"
+}

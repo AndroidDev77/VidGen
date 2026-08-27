@@ -1,0 +1,103 @@
+{
+  "$defs": {
+    "RunwayModel": {
+      "enum": [
+        "gen4_turbo",
+        "gen4.5"
+      ],
+      "title": "RunwayModel",
+      "type": "string"
+    },
+    "VideoProvider": {
+      "enum": [
+        "runway",
+        "fake"
+      ],
+      "title": "VideoProvider",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "idempotency_key": {
+      "title": "Idempotency Key",
+      "type": "string"
+    },
+    "image_generation_run_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Image Generation Run Id"
+    },
+    "model": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/RunwayModel"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "project_id": {
+      "format": "uuid",
+      "title": "Project Id",
+      "type": "string"
+    },
+    "provider": {
+      "$ref": "#/$defs/VideoProvider",
+      "default": "fake"
+    },
+    "provider_configuration_version": {
+      "title": "Provider Configuration Version",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "shot_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Shot Id"
+    },
+    "storyboard_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Storyboard Id"
+    }
+  },
+  "required": [
+    "project_id",
+    "idempotency_key",
+    "provider_configuration_version"
+  ],
+  "title": "AnimationRunRequest",
+  "type": "object"
+}

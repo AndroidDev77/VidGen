@@ -4,12 +4,17 @@ from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from contextvars import copy_context
 from threading import Event, Thread
+from typing import Any
 
 from temporalio import activity
 
-from vidgen.contracts.workflow import StageActivityInput, StageActivityResult
+from vidgen.contracts.workflow import (
+    AnimationActivityInput,
+    StageActivityInput,
+    StageActivityResult,
+)
 
-StageHandler = Callable[[StageActivityInput], StageActivityResult]
+StageHandler = Callable[[Any], StageActivityResult]
 _handlers: dict[str, StageHandler] = {}
 HEARTBEAT_INTERVAL_SECONDS = 30.0
 
@@ -20,11 +25,12 @@ def configure_activity_handlers(handlers: dict[str, StageHandler]) -> None:
     _handlers.update(handlers)
 
 
-def _execute(request: StageActivityInput) -> StageActivityResult:
-    handler = _handlers.get(request.stage)
+def _execute(request: StageActivityInput | AnimationActivityInput) -> StageActivityResult:
+    stage = request.stage if isinstance(request, StageActivityInput) else "animation"
+    handler = _handlers.get(stage)
     if handler is None:
-        raise RuntimeError(f"no activity handler configured for {request.stage}")
-    with _activity_heartbeats(request.stage):
+        raise RuntimeError(f"no activity handler configured for {stage}")
+    with _activity_heartbeats(stage):
         return handler(request)
 
 
@@ -102,4 +108,10 @@ def run_storyboard_activity(request: StageActivityInput) -> StageActivityResult:
 @activity.defn(name="run_image_generation_activity")
 def run_image_generation_activity(request: StageActivityInput) -> StageActivityResult:
     """T14 ID-only boundary; prompts and images never enter workflow history."""
+    return _execute(request)
+
+
+@activity.defn(name="run_animation_activity")
+def run_animation_activity(request: AnimationActivityInput) -> StageActivityResult:
+    """T15 ID-only boundary; prompts, URLs, video and probe JSON stay out of history."""
     return _execute(request)

@@ -1,0 +1,74 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "completed_count": {
+      "minimum": 0,
+      "title": "Completed Count",
+      "type": "integer"
+    },
+    "failed_count": {
+      "minimum": 0,
+      "title": "Failed Count",
+      "type": "integer"
+    },
+    "image_generation_run_id": {
+      "format": "uuid",
+      "title": "Image Generation Run Id",
+      "type": "string"
+    },
+    "polling_count": {
+      "minimum": 0,
+      "title": "Polling Count",
+      "type": "integer"
+    },
+    "requested_count": {
+      "minimum": 0,
+      "title": "Requested Count",
+      "type": "integer"
+    },
+    "reused_count": {
+      "minimum": 0,
+      "title": "Reused Count",
+      "type": "integer"
+    },
+    "run_id": {
+      "format": "uuid",
+      "title": "Run Id",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "status": {
+      "title": "Status",
+      "type": "string"
+    },
+    "storyboard_id": {
+      "format": "uuid",
+      "title": "Storyboard Id",
+      "type": "string"
+    },
+    "submitted_count": {
+      "minimum": 0,
+      "title": "Submitted Count",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "run_id",
+    "storyboard_id",
+    "image_generation_run_id",
+    "requested_count",
+    "submitted_count",
+    "polling_count",
+    "completed_count",
+    "reused_count",
+    "failed_count",
+    "status"
+  ],
+  "title": "AnimationRunResult",
+  "type": "object"
+}

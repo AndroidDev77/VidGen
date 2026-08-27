@@ -1,0 +1,107 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "camera_movement": {
+      "title": "Camera Movement",
+      "type": "string"
+    },
+    "character_state": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Character State",
+      "type": "array"
+    },
+    "continuity_invariants": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Continuity Invariants",
+      "type": "array"
+    },
+    "environment_motion": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Environment Motion",
+      "type": "array"
+    },
+    "expected_end_pose": {
+      "title": "Expected End Pose",
+      "type": "string"
+    },
+    "motion_intensity": {
+      "title": "Motion Intensity",
+      "type": "string"
+    },
+    "negative_motion_constraints": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Negative Motion Constraints",
+      "type": "array"
+    },
+    "primary_action": {
+      "minLength": 1,
+      "title": "Primary Action",
+      "type": "string"
+    },
+    "prop_state": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Prop State",
+      "type": "array"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "shot_id": {
+      "format": "uuid",
+      "title": "Shot Id",
+      "type": "string"
+    },
+    "shot_sequence": {
+      "minimum": 0,
+      "title": "Shot Sequence",
+      "type": "integer"
+    },
+    "start_pose": {
+      "title": "Start Pose",
+      "type": "string"
+    },
+    "subject_priority": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Subject Priority",
+      "type": "array"
+    },
+    "timing_beats": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Timing Beats",
+      "type": "array"
+    },
+    "visual_purpose": {
+      "title": "Visual Purpose",
+      "type": "string"
+    }
+  },
+  "required": [
+    "shot_id",
+    "shot_sequence",
+    "visual_purpose",
+    "primary_action",
+    "start_pose",
+    "expected_end_pose",
+    "camera_movement",
+    "motion_intensity"
+  ],
+  "title": "MotionIntent",
+  "type": "object"
+}

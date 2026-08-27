@@ -21,8 +21,9 @@ example conflicts with an implemented interface.
 | T23 | Complete | Structured/redacted telemetry, W3C tracing, bounded metrics, provider-attempt persistence, versioned Decimal pricing, transactional budgets, append-only cost ledger, operations APIs/CLI, and a local observability stack are implemented. |
 | T12 | Complete | Provider-neutral narration contracts, adapters, lossless normalization, forced alignment, quality gates, restartable segment orchestration, measured ffprobe durations, word timings, and the preview manifest are implemented. |
 | T13 | Complete | Restartable Storyboard Director with a provider-neutral abstraction (fake + OpenAI Responses), versioned visual-provider capability profiles, an exact-integer deterministic retimer, structured continuity state, targeted per-segment repair, T23 cost/telemetry integration, and canonical `Storyboard` plus timing-manifest asset persistence produce stable inputs for T14, T15, and T16. |
-| T14 | In progress | Executable T14 is restartable image generation from the selected T13 storyboard: deterministic prompt packages, optional verified image references, first/explicit-last keyframes, technical validation, immutable provenance, and T23-accounted provider attempts. T19 remains the later comprehensive character/location reference-bible task. |
-| T15-T22, T24-T26 | Planned | Do not begin a later task until its dependencies and the current implementation are reconciled. |
+| T14 | Complete | Reviewed restartable image generation from the selected T13 storyboard provides deterministic prompt packages, optional verified image references, first/explicit-last keyframes, technical validation, immutable provenance, and T23-accounted provider attempts. T19 remains the later comprehensive character/location reference-bible task. |
+| T15 | Complete | The Runway image-to-video implementation adds authoritative T13/T14 selection, deterministic motion prompts and routing, durable asynchronous task checkpoints, bounded download, FFprobe validation, deterministic trimming, immutable AssetService provenance, T23 accounting, fake-provider execution, contracts, persistence, CLI, and parent-workflow integration. Review and CI succeeded. |
+| T16-T22, T24-T26 | Planned | Do not begin a later task until its dependencies and the current implementation are reconciled. |
 
 When a roadmap task is completed, update this table, `README.md`, and any affected design section in
 the same pull request.
@@ -3094,3 +3095,38 @@ Local commands are:
 uv run python scripts/generate_keyframes.py PROJECT_UUID --provider fake
 VIDGEN_OPENAI_API_KEY=... uv run python scripts/generate_keyframes.py PROJECT_UUID --provider openai
 ```
+
+## T15 Runway animation
+
+Executable T15 consumes the selected, complete T13 storyboard and newest completed T14 run for the
+same project, storyboard ID, and storyboard version. It reuses T14's T10-T13 selection checks and
+then verifies selected valid first-keyframe rows, AssetService ownership and hashes, optional last
+frames, exact T13 generation/trim timing, and the Runway capability profile. It never combines
+different storyboard, timing, capability, or keyframe versions.
+
+`services/animation` separates authoritative selection, versioned motion compilation, deterministic
+model routing, provider mapping, input delivery, submission persistence, bounded polling, streaming
+download, FFprobe validation, T13-authoritative FFmpeg trimming, AssetService persistence, and T23
+accounting. `gen4_turbo` is the default. `gen4.5` requires hero importance, a premium project quality
+profile, sufficient budget, and registry support. Pricing is centralized with its official source,
+verification date, credits per second, and USD-per-credit conversion.
+
+The durable lifecycle commits an item, T23 attempt, optional reservation, and pre-call task row
+before submission, then commits the returned remote task ID before polling. Once that ID exists,
+every restart retrieves it. Local timeouts and transient poll/download/storage/trim failures do not
+create replacement tasks or reservations. A transport loss before the remote ID is received is an
+ambiguous provider outcome and is never blindly retried because Runway does not document a server
+idempotency mechanism for this endpoint.
+
+Output URLs are transient. T15 streams one deterministic primary output to bounded temporary disk,
+hashes it while downloading, checks Content-Type, and validates one H.264/HEVC MP4 video stream,
+dimensions, aspect, frame rate, timebase, duration, frames, size, finite timestamps, no audio, and
+decodable boundary frames. AssetService stores the immutable original with complete lineage. T13
+trim values then drive the documented deterministic single-thread H.264 profile, timestamps begin
+at zero, the measured usable duration is checked within one frame, and the canonical asset records
+the original as its parent. Semantic motion and visual-quality scoring remain T16/later concerns.
+
+The parent workflow starts its compact ID-only `animation` activity only after image generation.
+Database task checkpoints and activity heartbeats, rather than SDK blocking waits or Temporal
+history payloads, are the durable state. Cancellation stops new submissions, preserves history and
+assets, and asks the provider to cancel known active tasks.
