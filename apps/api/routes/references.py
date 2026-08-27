@@ -6,11 +6,12 @@ Routes only persist decisions or queue work; provider calls remain in workers.
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from typing import Any, Literal
+from typing import Any, Literal, cast
 from uuid import UUID, uuid4, uuid5
 
 from fastapi import APIRouter, Response, status
 from sqlalchemy import insert, select, update
+from sqlalchemy.engine import CursorResult
 
 from apps.api.routes._common import (
     IdempotencyKeyDep,
@@ -401,17 +402,35 @@ def _decide(
             "Confirm the exact downstream invalidation set",
         )
     now = datetime.now(UTC)
-    session.execute(
-        update(table)
-        .where(table.c.id == reference_set_id)
-        .values(
-            status=decision,
-            approved_by=principal.subject if decision == "approved" else None,
-            approved_at=now if decision == "approved" else None,
-            updated_at=now,
-            row_version=expected + 1,
-        )
+    update_result = cast(
+        CursorResult[Any],
+        session.execute(
+            update(table)
+            .where(table.c.id == reference_set_id, table.c.row_version == expected)
+            .values(
+                status=decision,
+                approved_by=principal.subject if decision == "approved" else None,
+                approved_at=now if decision == "approved" else None,
+                updated_at=now,
+                row_version=expected + 1,
+            )
+        ),
     )
+    # The read above is only used to construct the response and invalidation preview.
+    # Concurrency is enforced by the write itself so two workers cannot both approve
+    # the same version after observing the same ETag.
+    if update_result.rowcount != 1:
+        session.rollback()
+        current_version = session.scalar(
+            select(table.c.row_version).where(
+                table.c.id == reference_set_id, table.c.project_id == project_id
+            )
+        )
+        raise conflict(
+            ApiErrorCode.VERSION_CONFLICT,
+            "Reference version changed",
+            current_version=current_version,
+        )
     if decision == "approved":
         session.execute(
             insert(reference_approvals).values(
