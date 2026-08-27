@@ -1,0 +1,97 @@
+{
+  "$defs": {
+    "RenderInputReference": {
+      "additionalProperties": false,
+      "properties": {
+        "asset_id": {
+          "format": "uuid",
+          "title": "Asset Id",
+          "type": "string"
+        },
+        "media_type": {
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "Media Type",
+          "type": "string"
+        },
+        "role": {
+          "maxLength": 64,
+          "minLength": 1,
+          "title": "Role",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "sha256": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Sha256",
+          "type": "string"
+        }
+      },
+      "required": [
+        "asset_id",
+        "sha256",
+        "media_type",
+        "role"
+      ],
+      "title": "RenderInputReference",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "asset": {
+      "$ref": "#/$defs/RenderInputReference"
+    },
+    "duck_under_narration": {
+      "default": false,
+      "title": "Duck Under Narration",
+      "type": "boolean"
+    },
+    "duration_us": {
+      "exclusiveMinimum": 0,
+      "title": "Duration Us",
+      "type": "integer"
+    },
+    "gain_millidb": {
+      "default": 0,
+      "maximum": 12000,
+      "minimum": -60000,
+      "title": "Gain Millidb",
+      "type": "integer"
+    },
+    "role": {
+      "enum": [
+        "narration",
+        "dialogue",
+        "sfx",
+        "music"
+      ],
+      "title": "Role",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "start_us": {
+      "default": 0,
+      "minimum": 0,
+      "title": "Start Us",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "role",
+    "asset",
+    "duration_us"
+  ],
+  "title": "RenderAudioEntry",
+  "type": "object"
+}

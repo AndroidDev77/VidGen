@@ -1,0 +1,224 @@
+{
+  "$defs": {
+    "RenderInputReference": {
+      "additionalProperties": false,
+      "properties": {
+        "asset_id": {
+          "format": "uuid",
+          "title": "Asset Id",
+          "type": "string"
+        },
+        "media_type": {
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "Media Type",
+          "type": "string"
+        },
+        "role": {
+          "maxLength": 64,
+          "minLength": 1,
+          "title": "Role",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "sha256": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Sha256",
+          "type": "string"
+        }
+      },
+      "required": [
+        "asset_id",
+        "sha256",
+        "media_type",
+        "role"
+      ],
+      "title": "RenderInputReference",
+      "type": "object"
+    },
+    "RenderTransition": {
+      "additionalProperties": false,
+      "properties": {
+        "duration_us": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Duration Us",
+          "type": "integer"
+        },
+        "handle_in_us": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Handle In Us",
+          "type": "integer"
+        },
+        "handle_out_us": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Handle Out Us",
+          "type": "integer"
+        },
+        "kind": {
+          "$ref": "#/$defs/TransitionKind",
+          "default": "cut"
+        },
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        }
+      },
+      "title": "RenderTransition",
+      "type": "object"
+    },
+    "TransitionKind": {
+      "enum": [
+        "cut",
+        "crossfade"
+      ],
+      "title": "TransitionKind",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "animation_run_id": {
+      "format": "uuid",
+      "title": "Animation Run Id",
+      "type": "string"
+    },
+    "exact_usable_duration_us": {
+      "exclusiveMinimum": 0,
+      "title": "Exact Usable Duration Us",
+      "type": "integer"
+    },
+    "global_end_us": {
+      "exclusiveMinimum": 0,
+      "title": "Global End Us",
+      "type": "integer"
+    },
+    "global_start_us": {
+      "minimum": 0,
+      "title": "Global Start Us",
+      "type": "integer"
+    },
+    "measured_source_duration_us": {
+      "exclusiveMinimum": 0,
+      "title": "Measured Source Duration Us",
+      "type": "integer"
+    },
+    "normalization_policy": {
+      "default": "scale_pad",
+      "enum": [
+        "scale_crop",
+        "scale_pad"
+      ],
+      "title": "Normalization Policy",
+      "type": "string"
+    },
+    "parent_asset_ids": {
+      "items": {
+        "format": "uuid",
+        "type": "string"
+      },
+      "maxItems": 32,
+      "title": "Parent Asset Ids",
+      "type": "array"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "sequence": {
+      "minimum": 0,
+      "title": "Sequence",
+      "type": "integer"
+    },
+    "shot_id": {
+      "format": "uuid",
+      "title": "Shot Id",
+      "type": "string"
+    },
+    "shot_workflow_identity": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Shot Workflow Identity",
+      "type": "string"
+    },
+    "source_codec": {
+      "maxLength": 32,
+      "minLength": 1,
+      "title": "Source Codec",
+      "type": "string"
+    },
+    "source_frame_rate": {
+      "pattern": "^[1-9][0-9]*/[1-9][0-9]*$",
+      "title": "Source Frame Rate",
+      "type": "string"
+    },
+    "source_height": {
+      "exclusiveMinimum": 0,
+      "maximum": 16384,
+      "title": "Source Height",
+      "type": "integer"
+    },
+    "source_width": {
+      "exclusiveMinimum": 0,
+      "maximum": 16384,
+      "title": "Source Width",
+      "type": "integer"
+    },
+    "transition_in": {
+      "$ref": "#/$defs/RenderTransition"
+    },
+    "transition_out": {
+      "$ref": "#/$defs/RenderTransition"
+    },
+    "trim_end_us": {
+      "exclusiveMinimum": 0,
+      "title": "Trim End Us",
+      "type": "integer"
+    },
+    "trim_start_us": {
+      "default": 0,
+      "minimum": 0,
+      "title": "Trim Start Us",
+      "type": "integer"
+    },
+    "video": {
+      "$ref": "#/$defs/RenderInputReference"
+    },
+    "warning_codes": {
+      "items": {
+        "type": "string"
+      },
+      "maxItems": 32,
+      "title": "Warning Codes",
+      "type": "array"
+    }
+  },
+  "required": [
+    "shot_id",
+    "sequence",
+    "shot_workflow_identity",
+    "animation_run_id",
+    "video",
+    "source_width",
+    "source_height",
+    "source_frame_rate",
+    "source_codec",
+    "measured_source_duration_us",
+    "global_start_us",
+    "global_end_us",
+    "exact_usable_duration_us",
+    "trim_end_us"
+  ],
+  "title": "RenderShotEntry",
+  "type": "object"
+}

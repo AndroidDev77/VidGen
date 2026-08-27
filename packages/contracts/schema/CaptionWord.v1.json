@@ -1,0 +1,40 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "end_us": {
+      "exclusiveMinimum": 0,
+      "title": "End Us",
+      "type": "integer"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "sequence": {
+      "minimum": 0,
+      "title": "Sequence",
+      "type": "integer"
+    },
+    "start_us": {
+      "minimum": 0,
+      "title": "Start Us",
+      "type": "integer"
+    },
+    "text": {
+      "maxLength": 128,
+      "minLength": 1,
+      "title": "Text",
+      "type": "string"
+    }
+  },
+  "required": [
+    "sequence",
+    "text",
+    "start_us",
+    "end_us"
+  ],
+  "title": "CaptionWord",
+  "type": "object"
+}

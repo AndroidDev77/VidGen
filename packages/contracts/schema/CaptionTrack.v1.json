@@ -1,0 +1,113 @@
+{
+  "$defs": {
+    "CaptionCue": {
+      "additionalProperties": false,
+      "properties": {
+        "end_us": {
+          "exclusiveMinimum": 0,
+          "title": "End Us",
+          "type": "integer"
+        },
+        "lines": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 2,
+          "minItems": 1,
+          "title": "Lines",
+          "type": "array"
+        },
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "sequence": {
+          "minimum": 1,
+          "title": "Sequence",
+          "type": "integer"
+        },
+        "start_us": {
+          "minimum": 0,
+          "title": "Start Us",
+          "type": "integer"
+        },
+        "word_end": {
+          "exclusiveMinimum": 0,
+          "title": "Word End",
+          "type": "integer"
+        },
+        "word_start": {
+          "minimum": 0,
+          "title": "Word Start",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "sequence",
+        "start_us",
+        "end_us",
+        "lines",
+        "word_start",
+        "word_end"
+      ],
+      "title": "CaptionCue",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "caption_track_id": {
+      "format": "uuid",
+      "title": "Caption Track Id",
+      "type": "string"
+    },
+    "cues": {
+      "items": {
+        "$ref": "#/$defs/CaptionCue"
+      },
+      "maxItems": 10000,
+      "minItems": 1,
+      "title": "Cues",
+      "type": "array"
+    },
+    "duration_us": {
+      "exclusiveMinimum": 0,
+      "title": "Duration Us",
+      "type": "integer"
+    },
+    "language": {
+      "pattern": "^[a-z]{2,3}(-[A-Z]{2})?$",
+      "title": "Language",
+      "type": "string"
+    },
+    "pipeline_version": {
+      "const": "captions/1",
+      "default": "captions/1",
+      "title": "Pipeline Version",
+      "type": "string"
+    },
+    "safe_zone_percent": {
+      "default": 10,
+      "maximum": 30,
+      "minimum": 0,
+      "title": "Safe Zone Percent",
+      "type": "integer"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    }
+  },
+  "required": [
+    "caption_track_id",
+    "language",
+    "cues",
+    "duration_us"
+  ],
+  "title": "CaptionTrack",
+  "type": "object"
+}

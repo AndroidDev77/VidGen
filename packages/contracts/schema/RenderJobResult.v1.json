@@ -1,0 +1,102 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "final_video_asset_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Final Video Asset Id"
+    },
+    "manifest_asset_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Manifest Asset Id"
+    },
+    "render_identity": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Render Identity",
+      "type": "string"
+    },
+    "render_job_id": {
+      "format": "uuid",
+      "title": "Render Job Id",
+      "type": "string"
+    },
+    "reused": {
+      "default": false,
+      "title": "Reused",
+      "type": "boolean"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "srt_asset_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Srt Asset Id"
+    },
+    "status": {
+      "title": "Status",
+      "type": "string"
+    },
+    "verification_report_asset_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Verification Report Asset Id"
+    },
+    "webvtt_asset_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Webvtt Asset Id"
+    }
+  },
+  "required": [
+    "render_job_id",
+    "render_identity",
+    "status"
+  ],
+  "title": "RenderJobResult",
+  "type": "object"
+}

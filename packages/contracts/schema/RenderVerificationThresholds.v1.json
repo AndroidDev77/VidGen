@@ -1,0 +1,34 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "duration_tolerance_us": {
+      "default": 80000,
+      "maximum": 500000,
+      "minimum": 0,
+      "title": "Duration Tolerance Us",
+      "type": "integer"
+    },
+    "loudness_tolerance_lu": {
+      "default": 1.0,
+      "maximum": 3,
+      "minimum": 0,
+      "title": "Loudness Tolerance Lu",
+      "type": "number"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "true_peak_tolerance_db": {
+      "default": 0.5,
+      "maximum": 2,
+      "minimum": 0,
+      "title": "True Peak Tolerance Db",
+      "type": "number"
+    }
+  },
+  "title": "RenderVerificationThresholds",
+  "type": "object"
+}

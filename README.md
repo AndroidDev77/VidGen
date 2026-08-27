@@ -502,3 +502,28 @@ the configured capability profile, runs or resumes the storyboard, and prints th
 ID, segment and shot counts, exact total measured duration, repair-attempt count, storyboard and
 timing-manifest asset IDs, capability profile and hash, provider and model, cost summary, and final
 status. Supply `--idempotency-key` to resume a specific run.
+
+## T17 captions and deterministic rendering (implementation branch)
+
+T17 derives approved caption wording from T11 and exact word timing from the selected T12
+narration, then binds the selected T13 timing manifest and every locked T16/T15 video asset into
+one immutable, canonical render manifest. Integer microseconds prevent timing drift. Caption cues
+are deterministically grouped at punctuation boundaries, reflowed to at most two lines, validated,
+and serialized as standalone UTF-8 SRT and WebVTT (with optional escaped ASS). The standard MP4
+uses a selectable `mov_text` subtitle stream.
+
+FFmpeg commands are argument arrays constructed only from the persisted manifest. Inputs are
+streamed into a contained attempt directory and hash-checked; shots are trimmed without stretching,
+scaled/padded or scaled/cropped to 1920x1080, converted to square-pixel H.264 `yuv420p`, and joined
+in canonical order. Hard cuts are the default; only manifest-declared crossfades are accepted.
+Narration remains the time authority. Audio is resampled to stereo 48 kHz, peak-limited, measured as
+structured JSON, and normalized toward -14 LUFS/-1.5 dBTP before AAC encoding. Verification checks
+streams, frame rate, duration, selectable subtitles, and a complete decode. Stable manifests,
+command-plan hashes, and normalized report fields—not encoder-dependent MP4 bytes—define
+reproducibility. Assets retain ordered parents and lineage; completed identities are reusable without
+new provider charges. Durable render/attempt/caption rows support resume and cancellation while T23
+continues trace and bounded-metric propagation without fabricated provider costs.
+
+Local entry points are `uv run python scripts/render_project.py PROJECT_UUID` and
+`uv run python scripts/inspect_render.py PROJECT_UUID` once a project has completed and locked T16
+outputs. T18 and later roadmap stages remain unfinished.

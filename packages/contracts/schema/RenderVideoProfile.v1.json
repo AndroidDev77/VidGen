@@ -1,0 +1,61 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "codec": {
+      "const": "libx264",
+      "default": "libx264",
+      "title": "Codec",
+      "type": "string"
+    },
+    "codec_profile": {
+      "const": "high",
+      "default": "high",
+      "title": "Codec Profile",
+      "type": "string"
+    },
+    "frame_rate": {
+      "default": 24,
+      "enum": [
+        24,
+        30
+      ],
+      "title": "Frame Rate",
+      "type": "integer"
+    },
+    "height": {
+      "const": 1080,
+      "default": 1080,
+      "title": "Height",
+      "type": "integer"
+    },
+    "normalization_policy": {
+      "default": "scale_pad",
+      "enum": [
+        "scale_crop",
+        "scale_pad"
+      ],
+      "title": "Normalization Policy",
+      "type": "string"
+    },
+    "pixel_format": {
+      "const": "yuv420p",
+      "default": "yuv420p",
+      "title": "Pixel Format",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "width": {
+      "const": 1920,
+      "default": 1920,
+      "title": "Width",
+      "type": "integer"
+    }
+  },
+  "title": "RenderVideoProfile",
+  "type": "object"
+}

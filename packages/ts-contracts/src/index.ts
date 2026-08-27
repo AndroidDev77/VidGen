@@ -998,3 +998,13 @@ export interface ShotAnimationResult { schema_version: "1.0"; shot_id: UUID; sta
 export interface AnimationRunRequest { schema_version: "1.0"; project_id: UUID; storyboard_id: UUID|null; image_generation_run_id: UUID|null; idempotency_key: string; provider_configuration_version: string; provider: VideoProvider; model: RunwayModel|null; shot_id: UUID|null }
 export interface AnimationRunResult { schema_version: "1.0"; run_id: UUID; storyboard_id: UUID; image_generation_run_id: UUID; requested_count: number; submitted_count: number; polling_count: number; completed_count: number; reused_count: number; failed_count: number; status: string }
 export interface AnimationResult extends AnimationRunResult { items: ShotAnimationResult[] }
+
+// T17 captions and deterministic rendering. Canonical time is integer microseconds.
+export interface RenderInputReference { schema_version: "1.0"; asset_id: UUID; sha256: string; media_type: string; role: string }
+export interface RenderTransition { schema_version: "1.0"; kind: "cut" | "crossfade"; duration_us: number; handle_in_us: number; handle_out_us: number }
+export interface CaptionWord { schema_version: "1.0"; sequence: number; text: string; start_us: number; end_us: number }
+export interface CaptionCue { schema_version: "1.0"; sequence: number; start_us: number; end_us: number; lines: string[]; word_start: number; word_end: number }
+export interface CaptionTrack { schema_version: "1.0"; caption_track_id: UUID; language: string; cues: CaptionCue[]; duration_us: number; safe_zone_percent: number; pipeline_version: "captions/1" }
+export interface RenderVideoProfile { schema_version: "1.0"; width: 1920; height: 1080; frame_rate: 24 | 30; codec: "libx264"; codec_profile: "high"; pixel_format: "yuv420p"; normalization_policy: "scale_crop" | "scale_pad" }
+export interface RenderAudioProfile { schema_version: "1.0"; codec: "aac"; sample_rate_hz: 48000; channels: 2; bitrate_kbps: number; integrated_lufs: number; true_peak_dbtp: number; max_lra: number }
+export interface RenderJobResult { schema_version: "1.0"; render_job_id: UUID; render_identity: string; status: string; manifest_asset_id: UUID | null; srt_asset_id: UUID | null; webvtt_asset_id: UUID | null; final_video_asset_id: UUID | null; verification_report_asset_id: UUID | null; reused: boolean }

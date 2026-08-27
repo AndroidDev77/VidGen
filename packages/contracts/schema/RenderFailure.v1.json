@@ -1,0 +1,106 @@
+{
+  "$defs": {
+    "CaptionValidationDiagnostic": {
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "maxLength": 64,
+          "minLength": 1,
+          "title": "Code",
+          "type": "string"
+        },
+        "cue_sequence": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Cue Sequence"
+        },
+        "message": {
+          "maxLength": 512,
+          "minLength": 1,
+          "title": "Message",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "severity": {
+          "enum": [
+            "warning",
+            "error"
+          ],
+          "title": "Severity",
+          "type": "string"
+        }
+      },
+      "required": [
+        "code",
+        "severity",
+        "message"
+      ],
+      "title": "CaptionValidationDiagnostic",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "classification": {
+      "enum": [
+        "lineage",
+        "validation",
+        "transient",
+        "cancelled",
+        "execution"
+      ],
+      "title": "Classification",
+      "type": "string"
+    },
+    "code": {
+      "maxLength": 128,
+      "minLength": 1,
+      "title": "Code",
+      "type": "string"
+    },
+    "diagnostics": {
+      "items": {
+        "$ref": "#/$defs/CaptionValidationDiagnostic"
+      },
+      "title": "Diagnostics",
+      "type": "array"
+    },
+    "message": {
+      "maxLength": 1024,
+      "minLength": 1,
+      "title": "Message",
+      "type": "string"
+    },
+    "retryable": {
+      "title": "Retryable",
+      "type": "boolean"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    }
+  },
+  "required": [
+    "classification",
+    "code",
+    "message",
+    "retryable"
+  ],
+  "title": "RenderFailure",
+  "type": "object"
+}

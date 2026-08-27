@@ -1,0 +1,78 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "command_plan_hash": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Command Plan Hash",
+      "type": "string"
+    },
+    "final_arguments": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Final Arguments",
+      "type": "array"
+    },
+    "loudness_pass1_arguments": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Loudness Pass1 Arguments",
+      "type": "array"
+    },
+    "loudness_pass2_arguments": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Loudness Pass2 Arguments",
+      "type": "array"
+    },
+    "normalization_arguments": {
+      "items": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      },
+      "title": "Normalization Arguments",
+      "type": "array"
+    },
+    "picture_arguments": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Picture Arguments",
+      "type": "array"
+    },
+    "premaster_arguments": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Premaster Arguments",
+      "type": "array"
+    },
+    "render_identity": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Render Identity",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    }
+  },
+  "required": [
+    "render_identity",
+    "normalization_arguments",
+    "picture_arguments",
+    "premaster_arguments",
+    "loudness_pass1_arguments",
+    "loudness_pass2_arguments",
+    "final_arguments",
+    "command_plan_hash"
+  ],
+  "title": "RenderCommandPlan",
+  "type": "object"
+}
