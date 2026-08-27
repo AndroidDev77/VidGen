@@ -45,6 +45,7 @@ class ProjectWorkflow:
             ),
             ("narration", "run_narration_activity", provider_activity_retry_policy()),
             ("storyboard", "run_storyboard_activity", provider_activity_retry_policy()),
+            ("image_generation", "run_image_generation_activity", provider_activity_retry_policy()),
         )
         for stage, activity_name, retry_policy in stages:
             if self._cancelled:
@@ -70,7 +71,7 @@ class ProjectWorkflow:
                 self._state.cancelled = True
                 self._state.status = "cancelled"
                 return self._state
-        self._state.status = "storyboard_complete"
+        self._state.status = "keyframes_complete"
         return self._state
 
     @workflow.signal

@@ -1,0 +1,78 @@
+{
+  "$defs": {
+    "KeyframeRole": {
+      "enum": [
+        "FIRST_FRAME",
+        "LAST_FRAME"
+      ],
+      "title": "KeyframeRole",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "idempotency_key": {
+      "title": "Idempotency Key",
+      "type": "string"
+    },
+    "keyframe_role": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/KeyframeRole"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "project_id": {
+      "format": "uuid",
+      "title": "Project Id",
+      "type": "string"
+    },
+    "provider_configuration_version": {
+      "title": "Provider Configuration Version",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "shot_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Shot Id"
+    },
+    "storyboard_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Storyboard Id"
+    }
+  },
+  "required": [
+    "project_id",
+    "idempotency_key",
+    "provider_configuration_version"
+  ],
+  "title": "ImageGenerationRunRequest",
+  "type": "object"
+}

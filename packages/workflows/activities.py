@@ -97,3 +97,9 @@ def run_storyboard_activity(request: StageActivityInput) -> StageActivityResult:
     # model, approved script, and completed narration run from the database, and
     # returns the storyboard run and canonical asset IDs.
     return _execute(request)
+
+
+@activity.defn(name="run_image_generation_activity")
+def run_image_generation_activity(request: StageActivityInput) -> StageActivityResult:
+    """T14 ID-only boundary; prompts and images never enter workflow history."""
+    return _execute(request)

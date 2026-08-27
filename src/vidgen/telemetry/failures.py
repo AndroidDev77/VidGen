@@ -15,7 +15,9 @@ def classify_failure(
     metadata: dict[str, Any] | None = None,
 ) -> FailureClassification:
     name = type(exc).__name__.lower()
-    if isinstance(exc, (TimeoutError, asyncio.TimeoutError)):
+    if "unknownprovideroutcome" in name:
+        kind, code, retry = FailureClass.UNKNOWN, "PROVIDER_OUTCOME_UNKNOWN", False
+    elif isinstance(exc, (TimeoutError, asyncio.TimeoutError)):
         kind, code, retry = FailureClass.TIMEOUT, "PROVIDER_TIMEOUT", True
     elif isinstance(exc, asyncio.CancelledError):
         kind, code, retry = FailureClass.CANCELLED, "CANCELLED", False

@@ -535,6 +535,11 @@
           "title": "Requested Generation Duration Us",
           "type": "integer"
         },
+        "requires_last_frame": {
+          "default": false,
+          "title": "Requires Last Frame",
+          "type": "boolean"
+        },
         "schema_version": {
           "const": "1.0",
           "default": "1.0",

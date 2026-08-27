@@ -4,7 +4,13 @@ from datetime import timedelta
 
 from temporalio.common import RetryPolicy
 
-NON_RETRYABLE_ERROR_TYPES = ["PermanentError", "ValidationError", "CancelledError"]
+NON_RETRYABLE_ERROR_TYPES = [
+    "PermanentError",
+    "ValidationError",
+    "CancelledError",
+    "UnknownProviderOutcome",
+    "ProviderResponseRequiresReview",
+]
 
 
 def default_activity_retry_policy() -> RetryPolicy:

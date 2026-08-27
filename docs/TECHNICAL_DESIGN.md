@@ -21,7 +21,8 @@ example conflicts with an implemented interface.
 | T23 | Complete | Structured/redacted telemetry, W3C tracing, bounded metrics, provider-attempt persistence, versioned Decimal pricing, transactional budgets, append-only cost ledger, operations APIs/CLI, and a local observability stack are implemented. |
 | T12 | Complete | Provider-neutral narration contracts, adapters, lossless normalization, forced alignment, quality gates, restartable segment orchestration, measured ffprobe durations, word timings, and the preview manifest are implemented. |
 | T13 | Complete | Restartable Storyboard Director with a provider-neutral abstraction (fake + OpenAI Responses), versioned visual-provider capability profiles, an exact-integer deterministic retimer, structured continuity state, targeted per-segment repair, T23 cost/telemetry integration, and canonical `Storyboard` plus timing-manifest asset persistence produce stable inputs for T14, T15, and T16. |
-| T14-T22, T24-T26 | Planned | Do not begin a later task until its dependencies and the current implementation are reconciled. |
+| T14 | In progress | Executable T14 is restartable image generation from the selected T13 storyboard: deterministic prompt packages, optional verified image references, first/explicit-last keyframes, technical validation, immutable provenance, and T23-accounted provider attempts. T19 remains the later comprehensive character/location reference-bible task. |
+| T15-T22, T24-T26 | Planned | Do not begin a later task until its dependencies and the current implementation are reconciled. |
 
 When a roadmap task is completed, update this table, `README.md`, and any affected design section in
 the same pull request.
@@ -3062,3 +3063,34 @@ class VerticalSliceShotWorkflow:
 - Regenerating shot 6 creates a new attempt, re-runs only normalization and final render downstream, and leaves shots 1 to 5 and 7 to 10 untouched.
 - The final render passes full decode, A/V drift, black-frame, loudness, and duration verification.
 This vertical slice proves the durable architecture, narration-first timing, provider abstraction, shot-local restartability, provenance, and deterministic render path before investing in the harder continuity and QA layers.
+## T14 image generation
+
+Executable T14 consumes only the selected, complete T13 storyboard after revalidating its selected
+T10 episode model, approved T11 script, completed T12 narration, capability hash, canonical
+storyboard asset, timing manifest, dense shot sequence, and gapless timing. It creates a first
+keyframe for each eligible shot and creates a last keyframe only when the T13 shot provenance
+explicitly requests one. T14 does not create the comprehensive character or location reference
+bibles reserved for T19 and does not begin T15 animation or T16 shot child workflows.
+
+`services/image_generation` separates visual intent, deterministic prompt compilation, verified
+reference resolution, provider request mapping, response validation, AssetService persistence,
+relational checkpoints, T23 attempts/budgets, and Temporal orchestration. Prompt sections have a
+fixed order and optional detail is compacted deterministically; identity, count, state, location,
+pose, action, camera, continuity, and hard negatives are never silently dropped. References must
+be project-owned PNG, JPEG, or WebP assets whose persisted and decoded SHA-256 values agree.
+
+Production uses `gpt-image-2-2026-04-21` by default, `images.generate` for text-to-image, and
+`images.edit` when verified references exist. Canonical output is one opaque PNG at medium quality
+and 1536x864 unless configured otherwise. Dimensions must be divisible by 16, at most 3:1, and
+within centralized pixel/edge reliability limits. Provider base64 is ephemeral and excluded from
+persisted contracts and schemas; decoded bytes are integrity-checked before immutable,
+content-addressed storage. Stable identities prevent duplicate provider attempts, reservations,
+assets, rows, reconciliation events, and ledger entries for known completed outcomes. Ambiguous
+post-submission timeouts are recorded as unknown outcomes and are not blindly retried.
+
+Local commands are:
+
+```bash
+uv run python scripts/generate_keyframes.py PROJECT_UUID --provider fake
+VIDGEN_OPENAI_API_KEY=... uv run python scripts/generate_keyframes.py PROJECT_UUID --provider openai
+```

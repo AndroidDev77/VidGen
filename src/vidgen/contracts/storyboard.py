@@ -286,6 +286,7 @@ class StoryboardShotProposal(StrictContract):
     word_end_index: int = Field(gt=0)
     clause_label: str = Field(default="", max_length=255)
     importance: float = Field(default=0.5, ge=0, le=1)
+    requires_last_frame: bool = False
     camera: CameraPlan
     action: ActionPlan
     transition_in: TransitionPlan
@@ -329,6 +330,7 @@ class StoryboardShot(StrictContract):
     word_end_index: int = Field(gt=0)
     clause_label: str = Field(default="", max_length=255)
     visual_objective: str = Field(min_length=1, max_length=2048)
+    requires_last_frame: bool = False
     camera: CameraPlan
     action: ActionPlan
     character_reference_ids: list[UUID] = Field(default_factory=list)

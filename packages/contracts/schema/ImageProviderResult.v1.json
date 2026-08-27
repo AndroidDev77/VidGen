@@ -1,0 +1,155 @@
+{
+  "$defs": {
+    "ImageFormat": {
+      "enum": [
+        "png",
+        "jpeg",
+        "webp"
+      ],
+      "title": "ImageFormat",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "application_idempotency_key": {
+      "title": "Application Idempotency Key",
+      "type": "string"
+    },
+    "attempt_number": {
+      "exclusiveMinimum": 0,
+      "title": "Attempt Number",
+      "type": "integer"
+    },
+    "declared_height": {
+      "anyOf": [
+        {
+          "exclusiveMinimum": 0,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Declared Height"
+    },
+    "declared_width": {
+      "anyOf": [
+        {
+          "exclusiveMinimum": 0,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Declared Width"
+    },
+    "latency_ms": {
+      "minimum": 0,
+      "title": "Latency Ms",
+      "type": "integer"
+    },
+    "model": {
+      "title": "Model",
+      "type": "string"
+    },
+    "model_snapshot": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Model Snapshot"
+    },
+    "output_format": {
+      "$ref": "#/$defs/ImageFormat"
+    },
+    "provider": {
+      "title": "Provider",
+      "type": "string"
+    },
+    "provider_configuration_version": {
+      "title": "Provider Configuration Version",
+      "type": "string"
+    },
+    "provider_request_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Provider Request Id"
+    },
+    "requested_at": {
+      "format": "date-time",
+      "title": "Requested At",
+      "type": "string"
+    },
+    "response_metadata": {
+      "additionalProperties": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "integer"
+          },
+          {
+            "type": "boolean"
+          }
+        ]
+      },
+      "title": "Response Metadata",
+      "type": "object"
+    },
+    "returned_image_count": {
+      "minimum": 0,
+      "title": "Returned Image Count",
+      "type": "integer"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "usage": {
+      "additionalProperties": {
+        "type": "integer"
+      },
+      "title": "Usage",
+      "type": "object"
+    },
+    "warnings": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Warnings",
+      "type": "array"
+    }
+  },
+  "required": [
+    "provider",
+    "model",
+    "requested_at",
+    "attempt_number",
+    "returned_image_count",
+    "output_format",
+    "latency_ms",
+    "application_idempotency_key",
+    "provider_configuration_version"
+  ],
+  "title": "ImageProviderResult",
+  "type": "object"
+}

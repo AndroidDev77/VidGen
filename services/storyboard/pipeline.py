@@ -946,6 +946,7 @@ class StoryboardPipeline:
             word_end_index=timing.word_end_index,
             clause_label=timing.clause_label,
             visual_objective=proposal.visual_objective,
+            requires_last_frame=proposal.requires_last_frame,
             camera=proposal.camera,
             action=proposal.action,
             character_reference_ids=list(proposal.character_reference_ids),

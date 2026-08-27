@@ -75,6 +75,7 @@ def test_production_worker_configures_every_workflow_stage(tmp_path: Path) -> No
         "script_generation",
         "narration",
         "storyboard",
+        "image_generation",
     }
 
 

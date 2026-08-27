@@ -139,6 +139,20 @@ from vidgen.contracts.costs import (
     PricingRate,
     ProjectCostSummary,
 )
+from vidgen.contracts.image_generation import (
+    GeneratedImageCandidate,
+    ImageGenerationResult,
+    ImageGenerationRunRequest,
+    ImageGenerationRunResult,
+    ImagePromptPackage,
+    ImageProviderRequest,
+    ImageProviderResult,
+    ImageReferenceBinding,
+    ImageValidationDiagnostic,
+    ImageValidationReport,
+    ShotKeyframeResult,
+    VisualIntent,
+)
 from vidgen.contracts.telemetry import (
     FailureClassification,
     OperationsDashboardSummary,
@@ -156,6 +170,18 @@ from vidgen.contracts.telemetry import (
 ROOT = Path(__file__).resolve().parents[1]
 OUTPUT = ROOT / "packages" / "contracts" / "schema"
 CONTRACTS = (
+    ImageGenerationRunRequest,
+    ImageGenerationRunResult,
+    VisualIntent,
+    ImageReferenceBinding,
+    ImagePromptPackage,
+    ImageProviderRequest,
+    ImageProviderResult,
+    ImageValidationDiagnostic,
+    ImageValidationReport,
+    GeneratedImageCandidate,
+    ShotKeyframeResult,
+    ImageGenerationResult,
     VoiceProfile,
     NarrationProviderRequest,
     NarrationProviderResult,

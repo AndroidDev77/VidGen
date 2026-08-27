@@ -7,6 +7,7 @@ from sqlalchemy import engine_from_config, pool
 
 import vidgen.db.cost_models
 import vidgen.db.episode_analysis_models
+import vidgen.db.image_generation_models
 import vidgen.db.models
 import vidgen.db.narration_models
 import vidgen.db.script_models
