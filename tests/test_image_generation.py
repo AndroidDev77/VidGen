@@ -4,7 +4,7 @@ from uuid import uuid4
 
 import pytest
 
-from services.image_generation.fake_provider import DeterministicFakeImageProvider
+from packages.providers.image_generation import DeterministicFakeImageProvider
 from services.image_generation.prompt_compiler import PromptTooLong, compile_prompt
 from services.image_generation.providers import GPT_IMAGE_SNAPSHOT, validate_dimensions
 from services.image_generation.validation import validate_base64_image

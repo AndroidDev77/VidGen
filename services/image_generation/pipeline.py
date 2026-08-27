@@ -46,9 +46,10 @@ from vidgen.db.image_generation_models import (
     ImageGenerationRun,
 )
 from vidgen.db.image_generation_repository import ImageGenerationRepository, SelectedStoryboard
-from vidgen.db.models import Asset, Character, Project
+from vidgen.db.models import Asset, Character, Location, Project
 from vidgen.storage.asset_service import AssetService
 from vidgen.storage.blob import BlobStore
+from vidgen.telemetry.failures import classify_failure
 from vidgen.telemetry.metrics import Metrics
 from vidgen.telemetry.provider import instrument_provider_attempt
 
@@ -358,6 +359,15 @@ class ImageGenerationPipeline:
                         Decimal("0"),
                         billable=False,
                     )
+                # The context manager will apply the same classification while
+                # unwinding, but persist it here with reconciliation before the
+                # outer process rollback can discard the failed attempt.
+                failure = classify_failure(exc)
+                attempt.row.status = "FAILED"
+                attempt.row.failure_class = failure.failure_class
+                attempt.row.error_code = failure.error_code
+                attempt.row.retryable = failure.retryable
+                self.session.commit()
                 raise
             # Persist the known provider outcome before validation, decoding,
             # blob writes, or relational projection can fail. Since image bytes
@@ -466,10 +476,13 @@ class ImageGenerationPipeline:
         pose = str(
             shot.provenance.get(pose_key) or shot.action.staging_note or shot.action.subject_action
         )
-        descriptions = self._character_descriptions(
-            selected, continuity.present_character_ids
-        )
-        character_labels = dict(zip(continuity.present_character_ids, descriptions, strict=True))
+        identity_ids = list(continuity.present_character_ids)
+        for prop in continuity.props:
+            if prop.owner_character_id is not None and prop.owner_character_id not in identity_ids:
+                identity_ids.append(prop.owner_character_id)
+        identity_descriptions = self._character_descriptions(selected, identity_ids)
+        character_labels = dict(zip(identity_ids, identity_descriptions, strict=True))
+        descriptions = [character_labels[value] for value in continuity.present_character_ids]
         states = [
             f"{character_labels[state.character_id]}: wardrobe {state.wardrobe_state}, "
             f"injury {state.injury_state}, emotion {state.emotional_state}"
@@ -492,9 +505,7 @@ class ImageGenerationPipeline:
             visible_character_count=len(continuity.present_character_ids),
             character_descriptions=descriptions,
             character_states=states,
-            location_description=f"project location {continuity.location_id}"
-            if continuity.location_id
-            else "unspecified project location",
+            location_description=self._location_description(selected, continuity.location_id),
             location_invariants=[continuity.sub_location, *continuity.environment_conditions]
             if continuity.sub_location
             else list(continuity.environment_conditions),
@@ -590,3 +601,40 @@ class ImageGenerationPipeline:
                 description += ", anonymous character"
             descriptions.append(description)
         return descriptions
+
+    def _location_description(
+        self, selected: SelectedStoryboard, location_id: UUID | None
+    ) -> str:
+        if location_id is None:
+            return "unspecified project location"
+        row = self.session.get(Location, location_id)
+        definition: dict[str, object] | None = None
+        name: str | None = None
+        if row is not None:
+            if row.project_id != selected.project.id:
+                raise ValueError(f"location {location_id} belongs to another project")
+            name = row.canonical_name
+            definition = row.definition
+        else:
+            episode = self.session.get(EpisodeAnalysisRecord, selected.storyboard.episode_model_id)
+            asset = (
+                self.session.get(Asset, episode.canonical_analysis_asset_id)
+                if episode
+                else None
+            )
+            if asset is not None and asset.project_id == selected.project.id:
+                payload = json.loads(self.blob_store.read(asset.storage_key))
+                for value in payload.get("locations", []):
+                    if UUID(value["location_id"]) == location_id:
+                        definition = value
+                        name = str(value["canonical_name"])
+                        break
+        if definition is None or name is None:
+            raise ValueError(f"project location {location_id} has no selected T10 definition")
+        aliases_value = definition.get("aliases")
+        aliases = (
+            [str(value) for value in aliases_value]
+            if isinstance(aliases_value, list)
+            else []
+        )
+        return f"{name} (also known as {', '.join(aliases)})" if aliases else name

@@ -11,20 +11,22 @@ from temporalio import activity
 
 from apps.api.settings import APISettings, get_settings
 from packages.providers import FakeSubtitleProvider
+from packages.providers.image_generation import DeterministicFakeImageProvider
 from packages.workflows.activities import StageHandler
 from services.analysis.contact_sheet import contact_sheet_manifest
 from services.analysis.evidence_builder import build_evidence_package
 from services.analysis.fake_provider import FakeEpisodeAnalysisProvider
 from services.analysis.openai_adapter import OpenAIAnalysisConfig, OpenAIEpisodeAnalysisProvider
 from services.analysis.pipeline import EpisodeAnalysisPipeline
-from services.image_generation.fake_provider import DeterministicFakeImageProvider
 from services.image_generation.openai_image import OpenAIImageProvider
 from services.image_generation.pipeline import ImageGenerationPipeline
+from services.image_generation.providers import ImageGenerationProvider
 from services.media_worker.pipeline import MediaPipeline
 from services.narration.alignment import OpenAIWhisperAligner
 from services.narration.fake_provider import FakeNarrationProvider
 from services.narration.openai_adapter import OpenAINarrationProvider
 from services.narration.pipeline import NarrationPipeline
+from services.narration.providers import NarrationProvider
 from services.script.fake_provider import FakeScriptGenerationProvider
 from services.script.openai_adapter import OpenAIScriptConfig, OpenAIScriptGenerationProvider
 from services.script.pipeline import ScriptGenerationPipeline
@@ -445,6 +447,7 @@ def _generate_narration(
         voice_profile_id = UUID(str(project.settings["voice_profile_id"]))
     except (KeyError, ValueError) as error:
         raise ValueError("project settings require a valid voice_profile_id") from error
+    provider: NarrationProvider
     if settings.openai_api_key:
         provider = OpenAINarrationProvider(settings.openai_api_key)
     elif settings.temporal_allow_fake_providers:
@@ -589,10 +592,13 @@ def _generate_keyframes(
     request: StageActivityInput,
 ) -> StageActivityResult:
     """T14. The activity receives IDs only and resumes database checkpoints."""
+    provider: ImageGenerationProvider
     if settings.openai_api_key:
         from openai import OpenAI
 
-        provider = OpenAIImageProvider(OpenAI(api_key=settings.openai_api_key))
+        provider = OpenAIImageProvider(
+            OpenAI(api_key=settings.openai_api_key, max_retries=0)
+        )
     elif settings.temporal_allow_fake_providers:
         provider = DeterministicFakeImageProvider()
     else:

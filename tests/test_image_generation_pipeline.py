@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 from sqlalchemy import func, select
 
-from services.image_generation.fake_provider import DeterministicFakeImageProvider
+from packages.providers.image_generation import DeterministicFakeImageProvider
 from services.image_generation.openai_image import UnknownProviderOutcome
 from services.image_generation.pipeline import (
     ImageGenerationPipeline,
@@ -16,7 +16,7 @@ from tests.storyboard_fixtures import build_fixture
 from tests.test_storyboard_pipeline import run_pipeline as run_storyboard
 from vidgen.db.cost_models import ProviderAttempt
 from vidgen.db.image_generation_models import GeneratedKeyframeImage, ImageGenerationItem
-from vidgen.db.models import Asset
+from vidgen.db.models import Asset, Character
 from vidgen.db.storyboard_models import StoryboardShotRecord
 
 
@@ -258,4 +258,46 @@ def test_results_and_prompts_use_canonical_t13_identities(tmp_path: Path) -> Non
     assert item is not None
     prompt = item.prompt_package["prompt"]
     assert "Character 0" in prompt
+    assert "Location 0" in prompt
     assert str(shot.contract["incoming_continuity"]["present_character_ids"][0]) not in prompt
+
+
+def test_prompt_resolves_offscreen_prop_owner(tmp_path: Path) -> None:
+    fixture = build_fixture(tmp_path)
+    storyboard = run_storyboard(fixture)
+    shot = fixture.session.scalar(
+        select(StoryboardShotRecord)
+        .where(StoryboardShotRecord.storyboard_run_id == storyboard.storyboard_run_id)
+        .order_by(StoryboardShotRecord.global_sequence)
+    )
+    assert shot is not None
+    owner = Character(
+        project_id=fixture.project.id,
+        canonical_name="Offscreen Owner",
+        definition={"canonical_name": "Offscreen Owner", "aliases": ["The Courier"]},
+    )
+    fixture.session.add(owner)
+    fixture.session.flush()
+    continuity = dict(shot.contract["incoming_continuity"])
+    continuity["props"] = [
+        {
+            "schema_version": "1.0",
+            "prop_id": "sealed-envelope",
+            "owner_character_id": str(owner.id),
+            "note": "held by the visible subject",
+        }
+    ]
+    shot.contract = {**shot.contract, "incoming_continuity": continuity}
+    fixture.session.commit()
+    asyncio.run(
+        ImageGenerationPipeline(
+            fixture.session, fixture.blobs, DeterministicFakeImageProvider()
+        ).process(
+            project_id=fixture.project.id,
+            idempotency_key="offscreen-owner",
+            shot_id=shot.id,
+        )
+    )
+    item = fixture.session.scalar(select(ImageGenerationItem))
+    assert item is not None
+    assert "sealed-envelope owned by Offscreen Owner" in item.prompt_package["prompt"]

@@ -18,7 +18,12 @@ class OpenAIImageProvider:
     name = "openai"
 
     def __init__(self, client: Any) -> None:
-        self.client = client
+        # Image creation has no provider-enforced application idempotency key.
+        # Disable openai-python's implicit retries so one durable T23 attempt can
+        # never submit multiple billable jobs before we classify the outcome.
+        self.client = (
+            client.with_options(max_retries=0) if hasattr(client, "with_options") else client
+        )
 
     async def generate(
         self, request: ImageProviderRequest, reference_bytes: tuple[bytes, ...] = ()

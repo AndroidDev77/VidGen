@@ -8,7 +8,7 @@ from uuid import UUID, uuid4
 
 from sqlalchemy.orm import Session
 
-from services.image_generation.fake_provider import DeterministicFakeImageProvider
+from packages.providers.image_generation import DeterministicFakeImageProvider
 from services.image_generation.openai_image import OpenAIImageProvider
 from services.image_generation.pipeline import ImageGenerationPipeline
 from services.image_generation.providers import GPT_IMAGE_SNAPSHOT, ImageGenerationProvider
@@ -39,7 +39,7 @@ def build_provider(
         if client is None:
             from openai import OpenAI
 
-            client = OpenAI(api_key=options.openai_api_key)
+            client = OpenAI(api_key=options.openai_api_key, max_retries=0)
         return OpenAIImageProvider(client)
     raise ValueError(f"unsupported image provider: {options.provider}")
 
