@@ -4,6 +4,7 @@ from packages.workflows.activities import (
     run_media_processing_activity,
     run_narration_activity,
     run_script_generation_activity,
+    run_storyboard_activity,
     run_transcript_acquisition_activity,
     run_upload_activity,
 )
@@ -18,4 +19,5 @@ ACTIVITIES = [
     run_episode_analysis_activity,
     run_script_generation_activity,
     run_narration_activity,
+    run_storyboard_activity,
 ]

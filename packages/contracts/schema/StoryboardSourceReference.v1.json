@@ -1,0 +1,69 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "end_us": {
+      "anyOf": [
+        {
+          "minimum": 0,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "End Us"
+    },
+    "note": {
+      "default": "",
+      "maxLength": 512,
+      "title": "Note",
+      "type": "string"
+    },
+    "reference_id": {
+      "format": "uuid",
+      "title": "Reference Id",
+      "type": "string"
+    },
+    "reference_type": {
+      "enum": [
+        "evidence_package",
+        "scene_evidence",
+        "script_segment",
+        "narration_segment",
+        "narration_asset",
+        "plot_beat",
+        "character",
+        "location",
+        "episode_model"
+      ],
+      "title": "Reference Type",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "start_us": {
+      "anyOf": [
+        {
+          "minimum": 0,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Start Us"
+    }
+  },
+  "required": [
+    "reference_type",
+    "reference_id"
+  ],
+  "title": "StoryboardSourceReference",
+  "type": "object"
+}

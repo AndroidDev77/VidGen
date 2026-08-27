@@ -116,33 +116,461 @@ export interface CharacterState {
   props: string[];
 }
 
-export interface ShotDefinition {
+// ---------------------------------------------------------------------------
+// T13 storyboard generation and deterministic timing.
+// Canonical timing is exact integer microseconds; never a floating-point second.
+// ---------------------------------------------------------------------------
+
+export type CameraFraming =
+  | "extreme_wide"
+  | "wide"
+  | "medium_wide"
+  | "medium"
+  | "medium_close"
+  | "close_up"
+  | "extreme_close_up"
+  | "insert";
+
+export type CameraAngle =
+  | "eye_level"
+  | "low_angle"
+  | "high_angle"
+  | "overhead"
+  | "dutch"
+  | "over_the_shoulder"
+  | "point_of_view";
+
+export type CameraMovement =
+  | "static"
+  | "pan_left"
+  | "pan_right"
+  | "tilt_up"
+  | "tilt_down"
+  | "dolly_in"
+  | "dolly_out"
+  | "tracking"
+  | "crane"
+  | "handheld"
+  | "zoom_in"
+  | "zoom_out";
+
+export type MovementIntensity = "none" | "subtle" | "moderate" | "strong";
+export type BeatIntent = "establish" | "react" | "reveal" | "punchline" | "continue" | "insert";
+export type TransitionKind =
+  | "cut"
+  | "dissolve"
+  | "fade_in"
+  | "fade_out"
+  | "wipe"
+  | "match_cut"
+  | "whip_pan";
+export type TimeOfDay =
+  | "dawn"
+  | "morning"
+  | "midday"
+  | "afternoon"
+  | "dusk"
+  | "night"
+  | "unspecified";
+export type ScreenPosition =
+  | "left"
+  | "center_left"
+  | "center"
+  | "center_right"
+  | "right"
+  | "offscreen";
+export type ScreenDirection = "neutral" | "left_to_right" | "right_to_left";
+export type TrimmingPolicy = "trim_end" | "trim_start" | "trim_center" | "none";
+export type BoundaryKind = "sentence" | "clause" | "beat" | "word";
+
+export type StoryboardReferenceType =
+  | "evidence_package"
+  | "scene_evidence"
+  | "script_segment"
+  | "narration_segment"
+  | "narration_asset"
+  | "plot_beat"
+  | "character"
+  | "location"
+  | "episode_model";
+
+export type StoryboardDiagnosticCode =
+  | "narration_coverage_gap"
+  | "invalid_overlap"
+  | "impossible_duration_allocation"
+  | "unsupported_provider_duration"
+  | "excessive_character_count"
+  | "too_many_references"
+  | "missing_continuity_state"
+  | "invalid_character_reference"
+  | "invalid_location_reference"
+  | "missing_evidence_reference"
+  | "provider_schema_failure"
+  | "continuity_contradiction"
+  | "unsupported_camera_movement"
+  | "unsupported_transition"
+  | "nonpositive_duration"
+  | "word_range_gap";
+
+export type TimingAdjustmentKind =
+  | "boundary_snap"
+  | "split"
+  | "merge"
+  | "clamp_min"
+  | "clamp_max"
+  | "residual_allocation"
+  | "final_end_snap"
+  | "generation_round_up"
+  | "trim";
+
+export interface VisualProviderCapability {
+  schema_version: "1.0";
+  capability_profile_id: string;
+  profile_version: number;
+  provider: string;
+  model_family: string;
+  /** Empty means continuous durations on `duration_increment_us` steps. */
+  supported_generation_durations_us: number[];
+  min_generation_duration_us: number;
+  max_generation_duration_us: number;
+  duration_increment_us: number;
+  supported_aspect_ratios: string[];
+  supported_resolutions: string[];
+  max_characters_per_shot: number;
+  max_reference_images: number;
+  supports_camera_motion: boolean;
+  supported_camera_movements: CameraMovement[];
+  supported_transitions: TransitionKind[];
+  supports_image_to_video: boolean;
+  supports_text_to_video: boolean;
+  supports_continuity_seed: boolean;
+  trimming_policy: TrimmingPolicy;
+  capability_hash: string;
+}
+
+export interface CameraPlan {
+  schema_version: "1.0";
+  framing: CameraFraming;
+  angle: CameraAngle;
+  movement: CameraMovement;
+  movement_intensity: MovementIntensity;
+  lens_note: string;
+}
+
+export interface ActionPlan {
+  schema_version: "1.0";
+  subject_action: string;
+  secondary_action: string;
+  beat_intent: BeatIntent;
+  staging_note: string;
+  prop_references: string[];
+}
+
+export interface TransitionPlan {
+  schema_version: "1.0";
+  kind: TransitionKind;
+  duration_us: number;
+  /** Extra generated material for the transition; never narration coverage. */
+  handle_us: number;
+  note: string;
+}
+
+export interface CharacterAppearanceState {
+  schema_version: "1.0";
+  character_id: UUID;
+  appearance_state_id: string;
+  wardrobe_state: string;
+  injury_state: string;
+  emotional_state: string;
+}
+
+export interface PropState {
+  schema_version: "1.0";
+  prop_id: string;
+  owner_character_id: UUID | null;
+  note: string;
+}
+
+export interface SubjectPosition {
+  schema_version: "1.0";
+  character_id: UUID;
+  screen_position: ScreenPosition;
+  facing: ScreenDirection;
+}
+
+export interface ContinuityState {
+  schema_version: "1.0";
+  present_character_ids: UUID[];
+  character_appearance_states: CharacterAppearanceState[];
+  location_id: UUID | null;
+  sub_location: string;
+  time_of_day: TimeOfDay;
+  props: PropState[];
+  subject_positions: SubjectPosition[];
+  screen_direction: ScreenDirection;
+  emotional_state: string;
+  environment_conditions: string[];
+  previous_shot_id: UUID | null;
+  unresolved_warnings: StructuredNote[];
+}
+
+export interface StoryboardSourceReference {
+  schema_version: "1.0";
+  reference_type: StoryboardReferenceType;
+  reference_id: UUID;
+  start_us: number | null;
+  end_us: number | null;
+  note: string;
+}
+
+export interface NarrationBoundary {
+  schema_version: "1.0";
+  word_index: number;
+  offset_us: number;
+  kind: BoundaryKind;
+  label: string;
+}
+
+export interface StoryboardShotProposal {
+  schema_version: "1.0";
+  proposal_sequence: number;
+  visual_objective: string;
+  desired_duration_us: number;
+  word_start_index: number;
+  word_end_index: number;
+  clause_label: string;
+  importance: number;
+  camera: CameraPlan;
+  action: ActionPlan;
+  transition_in: TransitionPlan;
+  transition_out: TransitionPlan;
+  character_reference_ids: UUID[];
+  location_reference_id: UUID | null;
+  evidence_references: StoryboardSourceReference[];
+  incoming_continuity: ContinuityState;
+  expected_outgoing_continuity: ContinuityState;
+  warnings: StructuredNote[];
+}
+
+export interface StoryboardShot {
   schema_version: "1.0";
   shot_id: UUID;
+  storyboard_run_id: UUID;
   segment_id: UUID;
+  global_sequence: number;
+  segment_sequence: number;
+  script_segment_id: UUID;
+  narration_segment_id: UUID;
+  start_us: number;
+  end_us: number;
+  global_start_us: number;
+  global_end_us: number;
+  usable_duration_us: number;
+  requested_generation_duration_us: number;
+  trim_start_us: number;
+  trim_end_us: number;
+  transition_handle_us: number;
+  word_start_index: number;
+  word_end_index: number;
+  clause_label: string;
+  visual_objective: string;
+  camera: CameraPlan;
+  action: ActionPlan;
+  character_reference_ids: UUID[];
+  location_reference_id: UUID | null;
+  prop_references: string[];
+  evidence_references: StoryboardSourceReference[];
+  transition_in: TransitionPlan;
+  transition_out: TransitionPlan;
+  incoming_continuity: ContinuityState;
+  expected_outgoing_continuity: ContinuityState;
+  capability_profile_id: string;
+  capability_hash: string;
+  warnings: StructuredNote[];
+  provenance: Record<string, unknown>;
+}
+
+export interface StoryboardSegment {
+  schema_version: "1.0";
+  segment_id: UUID;
+  storyboard_run_id: UUID;
+  script_segment_id: UUID;
+  narration_segment_id: UUID;
   sequence: number;
-  duration_seconds: number;
-  location_id: UUID;
-  character_states: CharacterState[];
-  action: string;
-  composition: string;
-  camera_motion: string;
-  visual_gag: string | null;
-  image_prompt: string;
-  video_prompt: string;
-  negative_prompt: string;
-  reference_asset_ids: UUID[];
-  seed: number | null;
-  max_provider_clip_seconds: number;
+  narration_duration_us: number;
+  global_start_us: number;
+  input_hash: string;
+  shot_count: number;
+  attempt_count: number;
+  repair_attempt_count: number;
+  warnings: StructuredNote[];
+}
+
+export interface TimingAdjustment {
+  schema_version: "1.0";
+  segment_sequence: number;
+  proposal_sequence: number;
+  shot_sequence: number;
+  kind: TimingAdjustmentKind;
+  proposed_duration_us: number;
+  canonical_duration_us: number;
+  delta_us: number;
+  reason: string;
+}
+
+export interface TimingManifestEntry {
+  schema_version: "1.0";
+  shot_id: UUID;
+  global_sequence: number;
+  segment_sequence: number;
+  script_segment_id: UUID;
+  narration_segment_id: UUID;
+  global_start_us: number;
+  global_end_us: number;
+  usable_duration_us: number;
+  requested_generation_duration_us: number;
+  trim_start_us: number;
+  trim_end_us: number;
+  transition_handle_us: number;
+}
+
+export interface TimingManifest {
+  schema_version: "1.0";
+  storyboard_run_id: UUID;
+  project_id: UUID;
+  script_id: UUID;
+  script_version: number;
+  narration_run_id: UUID;
+  capability_profile_id: string;
+  capability_hash: string;
+  retimer_version: string;
+  contract_version: string;
+  segment_boundaries_us: number[];
+  total_narration_duration_us: number;
+  total_usable_duration_us: number;
+  total_requested_generation_duration_us: number;
+  total_transition_handle_us: number;
+  residual_allocation_us: number;
+  entries: TimingManifestEntry[];
+  adjustments: TimingAdjustment[];
+  warnings: StructuredNote[];
+}
+
+export interface StoryboardValidationDiagnostic {
+  schema_version: "1.0";
+  code: StoryboardDiagnosticCode;
+  severity: "error" | "warning";
+  repairable: boolean;
+  message: string;
+  entity_path: string;
+  segment_sequence: number;
+  shot_sequence: number;
+  measured_us: number | null;
+  expected_us: number | null;
+}
+
+export interface StoryboardValidationReport {
+  schema_version: "1.0";
+  valid: boolean;
+  diagnostics: StoryboardValidationDiagnostic[];
+  checked_segment_sequences: number[];
+  covered_duration_us: number;
+  expected_duration_us: number;
+}
+
+export interface StoryboardProviderRequest {
+  schema_version: "1.0";
+  idempotency_key: string;
+  project_id: UUID;
+  episode_model_id: UUID;
+  episode_model_hash: string;
+  script_id: UUID;
+  script_version: number;
+  script_segment_id: UUID;
+  segment_sequence: number;
+  narration_run_id: UUID;
+  narration_segment_id: UUID;
+  narration_asset_id: UUID;
+  measured_duration_us: number;
+  narration_text: string;
+  word_timings: NarrationBoundary[];
+  approved_boundaries: NarrationBoundary[];
+  evidence_references: StoryboardSourceReference[];
+  available_character_ids: UUID[];
+  available_location_ids: UUID[];
+  anonymous_speaker_label: string | null;
+  incoming_continuity: ContinuityState;
+  capability: VisualProviderCapability;
+  contract_version: string;
+  prompt_version: string;
+  provider_options: Record<string, string | number | boolean>;
+  validation_diagnostics: StoryboardValidationDiagnostic[];
+  trace_context: Record<string, string>;
+  attempt_number: number;
+}
+
+export interface StoryboardProviderResult {
+  schema_version: "1.0";
+  proposals: StoryboardShotProposal[];
+  expected_incoming_continuity: ContinuityState;
+  expected_outgoing_continuity: ContinuityState;
+  provider: string;
+  model: string;
+  provider_request_id: string;
+  idempotency_key: string;
+  attempt_number: number;
+  usage: Record<string, number>;
+  redacted_response_metadata: Record<string, string | number | boolean>;
+  warnings: StructuredNote[];
 }
 
 export interface Storyboard {
   schema_version: "1.0";
+  storyboard_id: UUID;
+  storyboard_run_id: UUID;
   project_id: UUID;
-  script_revision: number;
-  total_duration_seconds: number;
-  visual_style: string;
-  shots: ShotDefinition[];
+  version: number;
+  episode_model_id: UUID;
+  episode_model_hash: string;
+  script_id: UUID;
+  script_version: number;
+  script_hash: string;
+  narration_run_id: UUID;
+  capability_profile_id: string;
+  capability_hash: string;
+  contract_version: string;
+  director_version: string;
+  prompt_version: string;
+  retimer_version: string;
+  input_hash: string;
+  total_duration_us: number;
+  segments: StoryboardSegment[];
+  shots: StoryboardShot[];
+  warnings: StructuredNote[];
+  provenance: Record<string, unknown>;
+}
+
+export interface StoryboardResult {
+  schema_version: "1.0";
+  storyboard_run_id: UUID;
+  project_id: UUID;
+  status: "storyboard_complete" | "storyboard_failed";
+  selected: boolean;
+  storyboard_id: UUID | null;
+  storyboard_asset_id: UUID | null;
+  timing_manifest_asset_id: UUID | null;
+  validation_report_asset_id: UUID | null;
+  segment_count: number;
+  shot_count: number;
+  total_duration_us: number;
+  repair_attempt_count: number;
+  provider: string;
+  model: string;
+  estimated_cost: string;
+  actual_cost: string;
+  currency: string;
+  error_code: string | null;
+  warnings: StructuredNote[];
 }
 
 export interface VideoStreamInfo {

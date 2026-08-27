@@ -25,6 +25,13 @@ from services.narration.pipeline import NarrationPipeline
 from services.script.fake_provider import FakeScriptGenerationProvider
 from services.script.openai_adapter import OpenAIScriptConfig, OpenAIScriptGenerationProvider
 from services.script.pipeline import ScriptGenerationPipeline
+from services.storyboard.fake_provider import FakeStoryboardDirector
+from services.storyboard.openai_adapter import (
+    OpenAIStoryboardConfig,
+    OpenAIStoryboardDirector,
+)
+from services.storyboard.pipeline import StoryboardPipeline
+from services.storyboard.providers import StoryboardDirector
 from services.subtitles.acquisition import TranscriptAcquisitionService
 from services.subtitles.opensubtitles import OpenSubtitlesAdapter
 from services.subtitles.pipeline import SubtitlePipeline, SubtitlePipelineConfig
@@ -50,7 +57,7 @@ from vidgen.storage.blob import FilesystemBlobStore
 def build_production_handlers(
     settings: APISettings | None = None,
 ) -> dict[str, StageHandler]:
-    """Build configured T05-T09 adapters used by the production worker."""
+    """Build configured T05-T13 adapters used by the production worker."""
     configured = settings or get_settings()
     return {
         "upload": _with_session(configured, _validate_upload),
@@ -60,6 +67,7 @@ def build_production_handlers(
         "episode_analysis": _with_session(configured, _analyze_episode),
         "script_generation": _with_session(configured, _generate_script),
         "narration": _with_session(configured, _generate_narration),
+        "storyboard": _with_session(configured, _generate_storyboard),
     }
 
 
@@ -531,4 +539,42 @@ def _contract_segment(segment: TranscriptSegmentRecord) -> TranscriptSegment:
         confidence=segment.confidence,
         source_chunk_ids=[UUID(value) for value in segment.source_chunk_ids],
         words=[TranscriptWord.model_validate(word) for word in segment.words],
+    )
+
+
+def _generate_storyboard(
+    session: Session,
+    blob_store: FilesystemBlobStore,
+    settings: APISettings,
+    request: StageActivityInput,
+) -> StageActivityResult:
+    """T13. Only IDs cross the workflow boundary; payloads stay in storage."""
+    director: StoryboardDirector
+    if settings.openai_api_key:
+        director = OpenAIStoryboardDirector(
+            OpenAIStoryboardConfig(
+                api_key=settings.openai_api_key, model=settings.storyboard_model
+            )
+        )
+    elif settings.temporal_allow_fake_providers:
+        director = FakeStoryboardDirector()
+    else:
+        raise ValueError("storyboard director is not configured")
+    result = asyncio.run(
+        StoryboardPipeline(
+            session,
+            blob_store,
+            director,
+            capability_profile_id=settings.visual_capability_profile,
+            cancellation_check=activity.is_cancelled,
+        ).process(
+            project_id=request.project_id,
+            idempotency_key=request.idempotency_key,
+        )
+    )
+    return StageActivityResult(
+        stage=request.stage,
+        entity_id=result.storyboard_run_id,
+        asset_id=result.storyboard_asset_id,
+        reused=False,
     )

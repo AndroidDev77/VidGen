@@ -1,0 +1,87 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "global_end_us": {
+      "exclusiveMinimum": 0,
+      "title": "Global End Us",
+      "type": "integer"
+    },
+    "global_sequence": {
+      "minimum": 0,
+      "title": "Global Sequence",
+      "type": "integer"
+    },
+    "global_start_us": {
+      "minimum": 0,
+      "title": "Global Start Us",
+      "type": "integer"
+    },
+    "narration_segment_id": {
+      "format": "uuid",
+      "title": "Narration Segment Id",
+      "type": "string"
+    },
+    "requested_generation_duration_us": {
+      "exclusiveMinimum": 0,
+      "title": "Requested Generation Duration Us",
+      "type": "integer"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "script_segment_id": {
+      "format": "uuid",
+      "title": "Script Segment Id",
+      "type": "string"
+    },
+    "segment_sequence": {
+      "minimum": 0,
+      "title": "Segment Sequence",
+      "type": "integer"
+    },
+    "shot_id": {
+      "format": "uuid",
+      "title": "Shot Id",
+      "type": "string"
+    },
+    "transition_handle_us": {
+      "minimum": 0,
+      "title": "Transition Handle Us",
+      "type": "integer"
+    },
+    "trim_end_us": {
+      "minimum": 0,
+      "title": "Trim End Us",
+      "type": "integer"
+    },
+    "trim_start_us": {
+      "minimum": 0,
+      "title": "Trim Start Us",
+      "type": "integer"
+    },
+    "usable_duration_us": {
+      "exclusiveMinimum": 0,
+      "title": "Usable Duration Us",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "shot_id",
+    "global_sequence",
+    "segment_sequence",
+    "script_segment_id",
+    "narration_segment_id",
+    "global_start_us",
+    "global_end_us",
+    "usable_duration_us",
+    "requested_generation_duration_us",
+    "trim_start_us",
+    "trim_end_us",
+    "transition_handle_us"
+  ],
+  "title": "TimingManifestEntry",
+  "type": "object"
+}

@@ -19,8 +19,9 @@ example conflicts with an implemented interface.
 | T10 | Complete | Restartable scene-map/global-reduce Episode Analyst, strict evidence-linked contracts, deterministic validation, provider abstraction, checkpoints, and canonical asset persistence are implemented. |
 | T11 | Complete | Restartable Plot Compressor, Comedy Writer, and Comedy Editor with a deterministic validator, provider abstraction (fake + OpenAI Responses), versioned/diffable revisions, and canonical asset persistence produce an approved, selected `RecapScript` from the selected T10 `EpisodeAnalysis`. |
 | T23 | Complete | Structured/redacted telemetry, W3C tracing, bounded metrics, provider-attempt persistence, versioned Decimal pricing, transactional budgets, append-only cost ledger, operations APIs/CLI, and a local observability stack are implemented. |
-| T12 | In progress | Provider-neutral narration contracts, adapters, lossless normalization, forced alignment, quality gates, and persistence foundations are implemented; orchestration remains incomplete. |
-| T13-T22, T24-T26 | Planned | Do not begin a later task until its dependencies and the current implementation are reconciled. |
+| T12 | Complete | Provider-neutral narration contracts, adapters, lossless normalization, forced alignment, quality gates, restartable segment orchestration, measured ffprobe durations, word timings, and the preview manifest are implemented. |
+| T13 | Complete | Restartable Storyboard Director with a provider-neutral abstraction (fake + OpenAI Responses), versioned visual-provider capability profiles, an exact-integer deterministic retimer, structured continuity state, targeted per-segment repair, T23 cost/telemetry integration, and canonical `Storyboard` plus timing-manifest asset persistence produce stable inputs for T14, T15, and T16. |
+| T14-T22, T24-T26 | Planned | Do not begin a later task until its dependencies and the current implementation are reconciled. |
 
 When a roadmap task is completed, update this table, `README.md`, and any affected design section in
 the same pull request.
@@ -235,8 +236,20 @@ All public outputs use the repository's snake-case Pydantic contracts, including
 ## Storyboard Director
 
 - **Responsibility:** Convert measured narration into a timed sequence of visually varied shots.
-- **Input schema:** `StoryboardRequest {script, measuredAudioSegments[], episodeAnalysis, visualStyle, providerCapabilities, continuityTimeline}`.
-- **Output schema:** `Storyboard` from section 5.
+- **Implemented as:** `services/storyboard/` (Director abstraction, deterministic retimer,
+  validator, canonicalizer, pipeline) with contracts in `src/vidgen/contracts/storyboard.py` and
+  persistence in `src/vidgen/db/storyboard_models.py` (migration `0010_storyboard`).
+- **Input schema:** `StoryboardProviderRequest` - IDs and hashes for the selected episode model,
+  approved script and segment, and completed narration segment; the exact measured duration in
+  integer microseconds; word timings and approved clause/beat boundaries; evidence, character, and
+  location references; incoming continuity; the visual-provider capability profile; contract and
+  prompt versions; trace context; and the attempt number.
+- **Output schema:** `StoryboardProviderResult` (proposals plus continuity expectations and
+  redacted provider metadata), canonicalized by the retimer and validator into `Storyboard` and
+  `TimingManifest`.
+- **Timing authority:** The Director proposes; the deterministic retimer decides. Measured T12
+  durations are authoritative, narration is never stretched, and the approved script is never
+  changed. Canonical timing is exact integer microseconds throughout.
 - **System prompt responsibilities:** Show rather than restate narration; plan visual punchlines; limit simultaneous characters; choose shot size, angle, camera motion, action, transition, and start/end frame needs; use exact measured durations.
 - **Validation rules:** Full audio coverage with no gap or overlap; shot IDs unique; character/location/state references valid; desired durations fit the retimer rules; at least one visual change every 8 seconds; no cut within a protected punchline window.
 

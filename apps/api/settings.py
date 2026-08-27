@@ -23,6 +23,8 @@ class APISettings(BaseSettings):
     script_compressor_model: str = "gpt-5.6"
     script_writer_model: str = "gpt-5.6"
     script_editor_model: str = "gpt-5.6"
+    storyboard_model: str = "gpt-5.6"
+    visual_capability_profile: str = "runway-gen4-turbo"
     opensubtitles_api_key: str | None = None
     opensubtitles_username: str | None = None
     opensubtitles_password: str | None = None

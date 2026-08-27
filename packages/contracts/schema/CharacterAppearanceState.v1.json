@@ -1,0 +1,46 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "appearance_state_id": {
+      "maxLength": 128,
+      "minLength": 1,
+      "title": "Appearance State Id",
+      "type": "string"
+    },
+    "character_id": {
+      "format": "uuid",
+      "title": "Character Id",
+      "type": "string"
+    },
+    "emotional_state": {
+      "default": "neutral",
+      "maxLength": 255,
+      "title": "Emotional State",
+      "type": "string"
+    },
+    "injury_state": {
+      "default": "none",
+      "maxLength": 255,
+      "title": "Injury State",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "wardrobe_state": {
+      "default": "default",
+      "maxLength": 255,
+      "title": "Wardrobe State",
+      "type": "string"
+    }
+  },
+  "required": [
+    "character_id",
+    "appearance_state_id"
+  ],
+  "title": "CharacterAppearanceState",
+  "type": "object"
+}

@@ -1,0 +1,112 @@
+{
+  "$defs": {
+    "StructuredNote": {
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "minLength": 1,
+          "title": "Code",
+          "type": "string"
+        },
+        "message": {
+          "minLength": 1,
+          "title": "Message",
+          "type": "string"
+        }
+      },
+      "required": [
+        "code",
+        "message"
+      ],
+      "title": "StructuredNote",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "One narration segment's canonical storyboard projection.",
+  "properties": {
+    "attempt_count": {
+      "minimum": 1,
+      "title": "Attempt Count",
+      "type": "integer"
+    },
+    "global_start_us": {
+      "minimum": 0,
+      "title": "Global Start Us",
+      "type": "integer"
+    },
+    "input_hash": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Input Hash",
+      "type": "string"
+    },
+    "narration_duration_us": {
+      "exclusiveMinimum": 0,
+      "title": "Narration Duration Us",
+      "type": "integer"
+    },
+    "narration_segment_id": {
+      "format": "uuid",
+      "title": "Narration Segment Id",
+      "type": "string"
+    },
+    "repair_attempt_count": {
+      "minimum": 0,
+      "title": "Repair Attempt Count",
+      "type": "integer"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "script_segment_id": {
+      "format": "uuid",
+      "title": "Script Segment Id",
+      "type": "string"
+    },
+    "segment_id": {
+      "format": "uuid",
+      "title": "Segment Id",
+      "type": "string"
+    },
+    "sequence": {
+      "minimum": 0,
+      "title": "Sequence",
+      "type": "integer"
+    },
+    "shot_count": {
+      "exclusiveMinimum": 0,
+      "title": "Shot Count",
+      "type": "integer"
+    },
+    "storyboard_run_id": {
+      "format": "uuid",
+      "title": "Storyboard Run Id",
+      "type": "string"
+    },
+    "warnings": {
+      "items": {
+        "$ref": "#/$defs/StructuredNote"
+      },
+      "title": "Warnings",
+      "type": "array"
+    }
+  },
+  "required": [
+    "segment_id",
+    "storyboard_run_id",
+    "script_segment_id",
+    "narration_segment_id",
+    "sequence",
+    "narration_duration_us",
+    "global_start_us",
+    "input_hash",
+    "shot_count",
+    "attempt_count",
+    "repair_attempt_count"
+  ],
+  "title": "StoryboardSegment",
+  "type": "object"
+}

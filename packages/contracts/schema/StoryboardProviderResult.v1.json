@@ -342,115 +342,15 @@
       "title": "PropState",
       "type": "object"
     },
-    "StoryboardSegment": {
+    "StoryboardShotProposal": {
       "additionalProperties": false,
-      "description": "One narration segment's canonical storyboard projection.",
-      "properties": {
-        "attempt_count": {
-          "minimum": 1,
-          "title": "Attempt Count",
-          "type": "integer"
-        },
-        "global_start_us": {
-          "minimum": 0,
-          "title": "Global Start Us",
-          "type": "integer"
-        },
-        "input_hash": {
-          "pattern": "^[a-f0-9]{64}$",
-          "title": "Input Hash",
-          "type": "string"
-        },
-        "narration_duration_us": {
-          "exclusiveMinimum": 0,
-          "title": "Narration Duration Us",
-          "type": "integer"
-        },
-        "narration_segment_id": {
-          "format": "uuid",
-          "title": "Narration Segment Id",
-          "type": "string"
-        },
-        "repair_attempt_count": {
-          "minimum": 0,
-          "title": "Repair Attempt Count",
-          "type": "integer"
-        },
-        "schema_version": {
-          "const": "1.0",
-          "default": "1.0",
-          "title": "Schema Version",
-          "type": "string"
-        },
-        "script_segment_id": {
-          "format": "uuid",
-          "title": "Script Segment Id",
-          "type": "string"
-        },
-        "segment_id": {
-          "format": "uuid",
-          "title": "Segment Id",
-          "type": "string"
-        },
-        "sequence": {
-          "minimum": 0,
-          "title": "Sequence",
-          "type": "integer"
-        },
-        "shot_count": {
-          "exclusiveMinimum": 0,
-          "title": "Shot Count",
-          "type": "integer"
-        },
-        "storyboard_run_id": {
-          "format": "uuid",
-          "title": "Storyboard Run Id",
-          "type": "string"
-        },
-        "warnings": {
-          "items": {
-            "$ref": "#/$defs/StructuredNote"
-          },
-          "title": "Warnings",
-          "type": "array"
-        }
-      },
-      "required": [
-        "segment_id",
-        "storyboard_run_id",
-        "script_segment_id",
-        "narration_segment_id",
-        "sequence",
-        "narration_duration_us",
-        "global_start_us",
-        "input_hash",
-        "shot_count",
-        "attempt_count",
-        "repair_attempt_count"
-      ],
-      "title": "StoryboardSegment",
-      "type": "object"
-    },
-    "StoryboardShot": {
-      "additionalProperties": false,
-      "description": "One canonical, fully timed shot.",
+      "description": "A creative proposal. It carries a desired duration, never authority.",
       "properties": {
         "action": {
           "$ref": "#/$defs/ActionPlan"
         },
         "camera": {
           "$ref": "#/$defs/CameraPlan"
-        },
-        "capability_hash": {
-          "pattern": "^[a-f0-9]{64}$",
-          "title": "Capability Hash",
-          "type": "string"
-        },
-        "capability_profile_id": {
-          "maxLength": 128,
-          "minLength": 1,
-          "title": "Capability Profile Id",
-          "type": "string"
         },
         "character_reference_ids": {
           "items": {
@@ -466,9 +366,9 @@
           "title": "Clause Label",
           "type": "string"
         },
-        "end_us": {
+        "desired_duration_us": {
           "exclusiveMinimum": 0,
-          "title": "End Us",
+          "title": "Desired Duration Us",
           "type": "integer"
         },
         "evidence_references": {
@@ -481,20 +381,12 @@
         "expected_outgoing_continuity": {
           "$ref": "#/$defs/ContinuityState"
         },
-        "global_end_us": {
-          "exclusiveMinimum": 0,
-          "title": "Global End Us",
-          "type": "integer"
-        },
-        "global_sequence": {
+        "importance": {
+          "default": 0.5,
+          "maximum": 1,
           "minimum": 0,
-          "title": "Global Sequence",
-          "type": "integer"
-        },
-        "global_start_us": {
-          "minimum": 0,
-          "title": "Global Start Us",
-          "type": "integer"
+          "title": "Importance",
+          "type": "number"
         },
         "incoming_continuity": {
           "$ref": "#/$defs/ContinuityState"
@@ -512,27 +404,9 @@
           "default": null,
           "title": "Location Reference Id"
         },
-        "narration_segment_id": {
-          "format": "uuid",
-          "title": "Narration Segment Id",
-          "type": "string"
-        },
-        "prop_references": {
-          "items": {
-            "type": "string"
-          },
-          "maxItems": 16,
-          "title": "Prop References",
-          "type": "array"
-        },
-        "provenance": {
-          "additionalProperties": true,
-          "title": "Provenance",
-          "type": "object"
-        },
-        "requested_generation_duration_us": {
-          "exclusiveMinimum": 0,
-          "title": "Requested Generation Duration Us",
+        "proposal_sequence": {
+          "minimum": 0,
+          "title": "Proposal Sequence",
           "type": "integer"
         },
         "schema_version": {
@@ -541,64 +415,11 @@
           "title": "Schema Version",
           "type": "string"
         },
-        "script_segment_id": {
-          "format": "uuid",
-          "title": "Script Segment Id",
-          "type": "string"
-        },
-        "segment_id": {
-          "format": "uuid",
-          "title": "Segment Id",
-          "type": "string"
-        },
-        "segment_sequence": {
-          "minimum": 0,
-          "title": "Segment Sequence",
-          "type": "integer"
-        },
-        "shot_id": {
-          "format": "uuid",
-          "title": "Shot Id",
-          "type": "string"
-        },
-        "start_us": {
-          "minimum": 0,
-          "title": "Start Us",
-          "type": "integer"
-        },
-        "storyboard_run_id": {
-          "format": "uuid",
-          "title": "Storyboard Run Id",
-          "type": "string"
-        },
-        "transition_handle_us": {
-          "default": 0,
-          "minimum": 0,
-          "title": "Transition Handle Us",
-          "type": "integer"
-        },
         "transition_in": {
           "$ref": "#/$defs/TransitionPlan"
         },
         "transition_out": {
           "$ref": "#/$defs/TransitionPlan"
-        },
-        "trim_end_us": {
-          "default": 0,
-          "minimum": 0,
-          "title": "Trim End Us",
-          "type": "integer"
-        },
-        "trim_start_us": {
-          "default": 0,
-          "minimum": 0,
-          "title": "Trim Start Us",
-          "type": "integer"
-        },
-        "usable_duration_us": {
-          "exclusiveMinimum": 0,
-          "title": "Usable Duration Us",
-          "type": "integer"
         },
         "visual_objective": {
           "maxLength": 2048,
@@ -625,32 +446,19 @@
         }
       },
       "required": [
-        "shot_id",
-        "storyboard_run_id",
-        "segment_id",
-        "global_sequence",
-        "segment_sequence",
-        "script_segment_id",
-        "narration_segment_id",
-        "start_us",
-        "end_us",
-        "global_start_us",
-        "global_end_us",
-        "usable_duration_us",
-        "requested_generation_duration_us",
+        "proposal_sequence",
+        "visual_objective",
+        "desired_duration_us",
         "word_start_index",
         "word_end_index",
-        "visual_objective",
         "camera",
         "action",
         "transition_in",
         "transition_out",
         "incoming_continuity",
-        "expected_outgoing_continuity",
-        "capability_profile_id",
-        "capability_hash"
+        "expected_outgoing_continuity"
       ],
-      "title": "StoryboardShot",
+      "title": "StoryboardShotProposal",
       "type": "object"
     },
     "StoryboardSourceReference": {
@@ -837,72 +645,70 @@
     }
   },
   "additionalProperties": false,
-  "description": "The canonical, versioned T13 output stored through AssetService.",
   "properties": {
-    "capability_hash": {
-      "pattern": "^[a-f0-9]{64}$",
-      "title": "Capability Hash",
+    "attempt_number": {
+      "maximum": 8,
+      "minimum": 1,
+      "title": "Attempt Number",
+      "type": "integer"
+    },
+    "expected_incoming_continuity": {
+      "$ref": "#/$defs/ContinuityState"
+    },
+    "expected_outgoing_continuity": {
+      "$ref": "#/$defs/ContinuityState"
+    },
+    "idempotency_key": {
+      "maxLength": 255,
+      "minLength": 1,
+      "title": "Idempotency Key",
       "type": "string"
     },
-    "capability_profile_id": {
+    "model": {
       "maxLength": 128,
       "minLength": 1,
-      "title": "Capability Profile Id",
+      "title": "Model",
       "type": "string"
     },
-    "contract_version": {
-      "maxLength": 32,
+    "proposals": {
+      "items": {
+        "$ref": "#/$defs/StoryboardShotProposal"
+      },
+      "minItems": 1,
+      "title": "Proposals",
+      "type": "array"
+    },
+    "provider": {
+      "maxLength": 64,
       "minLength": 1,
-      "title": "Contract Version",
+      "title": "Provider",
       "type": "string"
     },
-    "director_version": {
-      "maxLength": 32,
+    "provider_request_id": {
+      "maxLength": 255,
       "minLength": 1,
-      "title": "Director Version",
+      "title": "Provider Request Id",
       "type": "string"
     },
-    "episode_model_hash": {
-      "pattern": "^[a-f0-9]{64}$",
-      "title": "Episode Model Hash",
-      "type": "string"
-    },
-    "episode_model_id": {
-      "format": "uuid",
-      "title": "Episode Model Id",
-      "type": "string"
-    },
-    "input_hash": {
-      "pattern": "^[a-f0-9]{64}$",
-      "title": "Input Hash",
-      "type": "string"
-    },
-    "narration_run_id": {
-      "format": "uuid",
-      "title": "Narration Run Id",
-      "type": "string"
-    },
-    "project_id": {
-      "format": "uuid",
-      "title": "Project Id",
-      "type": "string"
-    },
-    "prompt_version": {
-      "maxLength": 32,
-      "minLength": 1,
-      "title": "Prompt Version",
-      "type": "string"
-    },
-    "provenance": {
-      "additionalProperties": true,
-      "title": "Provenance",
+    "redacted_response_metadata": {
+      "additionalProperties": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "integer"
+          },
+          {
+            "type": "number"
+          },
+          {
+            "type": "boolean"
+          }
+        ]
+      },
+      "title": "Redacted Response Metadata",
       "type": "object"
-    },
-    "retimer_version": {
-      "maxLength": 32,
-      "minLength": 1,
-      "title": "Retimer Version",
-      "type": "string"
     },
     "schema_version": {
       "const": "1.0",
@@ -910,56 +716,19 @@
       "title": "Schema Version",
       "type": "string"
     },
-    "script_hash": {
-      "pattern": "^[a-f0-9]{64}$",
-      "title": "Script Hash",
-      "type": "string"
-    },
-    "script_id": {
-      "format": "uuid",
-      "title": "Script Id",
-      "type": "string"
-    },
-    "script_version": {
-      "exclusiveMinimum": 0,
-      "title": "Script Version",
-      "type": "integer"
-    },
-    "segments": {
-      "items": {
-        "$ref": "#/$defs/StoryboardSegment"
+    "usage": {
+      "additionalProperties": {
+        "anyOf": [
+          {
+            "type": "integer"
+          },
+          {
+            "type": "number"
+          }
+        ]
       },
-      "minItems": 1,
-      "title": "Segments",
-      "type": "array"
-    },
-    "shots": {
-      "items": {
-        "$ref": "#/$defs/StoryboardShot"
-      },
-      "minItems": 1,
-      "title": "Shots",
-      "type": "array"
-    },
-    "storyboard_id": {
-      "format": "uuid",
-      "title": "Storyboard Id",
-      "type": "string"
-    },
-    "storyboard_run_id": {
-      "format": "uuid",
-      "title": "Storyboard Run Id",
-      "type": "string"
-    },
-    "total_duration_us": {
-      "exclusiveMinimum": 0,
-      "title": "Total Duration Us",
-      "type": "integer"
-    },
-    "version": {
-      "exclusiveMinimum": 0,
-      "title": "Version",
-      "type": "integer"
+      "title": "Usage",
+      "type": "object"
     },
     "warnings": {
       "items": {
@@ -970,27 +739,15 @@
     }
   },
   "required": [
-    "storyboard_id",
-    "storyboard_run_id",
-    "project_id",
-    "version",
-    "episode_model_id",
-    "episode_model_hash",
-    "script_id",
-    "script_version",
-    "script_hash",
-    "narration_run_id",
-    "capability_profile_id",
-    "capability_hash",
-    "contract_version",
-    "director_version",
-    "prompt_version",
-    "retimer_version",
-    "input_hash",
-    "total_duration_us",
-    "segments",
-    "shots"
+    "proposals",
+    "expected_incoming_continuity",
+    "expected_outgoing_continuity",
+    "provider",
+    "model",
+    "provider_request_id",
+    "idempotency_key",
+    "attempt_number"
   ],
-  "title": "Storyboard",
+  "title": "StoryboardProviderResult",
   "type": "object"
 }

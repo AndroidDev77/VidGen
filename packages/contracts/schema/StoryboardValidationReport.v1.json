@@ -1,0 +1,151 @@
+{
+  "$defs": {
+    "StoryboardValidationDiagnostic": {
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "enum": [
+            "narration_coverage_gap",
+            "invalid_overlap",
+            "impossible_duration_allocation",
+            "unsupported_provider_duration",
+            "excessive_character_count",
+            "too_many_references",
+            "missing_continuity_state",
+            "invalid_character_reference",
+            "invalid_location_reference",
+            "missing_evidence_reference",
+            "provider_schema_failure",
+            "continuity_contradiction",
+            "unsupported_camera_movement",
+            "unsupported_transition",
+            "nonpositive_duration",
+            "word_range_gap"
+          ],
+          "title": "Code",
+          "type": "string"
+        },
+        "entity_path": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Entity Path",
+          "type": "string"
+        },
+        "expected_us": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Expected Us"
+        },
+        "measured_us": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Measured Us"
+        },
+        "message": {
+          "maxLength": 1024,
+          "minLength": 1,
+          "title": "Message",
+          "type": "string"
+        },
+        "repairable": {
+          "title": "Repairable",
+          "type": "boolean"
+        },
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "segment_sequence": {
+          "default": -1,
+          "minimum": -1,
+          "title": "Segment Sequence",
+          "type": "integer"
+        },
+        "severity": {
+          "enum": [
+            "error",
+            "warning"
+          ],
+          "title": "Severity",
+          "type": "string"
+        },
+        "shot_sequence": {
+          "default": -1,
+          "minimum": -1,
+          "title": "Shot Sequence",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "code",
+        "severity",
+        "repairable",
+        "message",
+        "entity_path"
+      ],
+      "title": "StoryboardValidationDiagnostic",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "checked_segment_sequences": {
+      "items": {
+        "minimum": 0,
+        "type": "integer"
+      },
+      "title": "Checked Segment Sequences",
+      "type": "array"
+    },
+    "covered_duration_us": {
+      "default": 0,
+      "minimum": 0,
+      "title": "Covered Duration Us",
+      "type": "integer"
+    },
+    "diagnostics": {
+      "items": {
+        "$ref": "#/$defs/StoryboardValidationDiagnostic"
+      },
+      "title": "Diagnostics",
+      "type": "array"
+    },
+    "expected_duration_us": {
+      "default": 0,
+      "minimum": 0,
+      "title": "Expected Duration Us",
+      "type": "integer"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "valid": {
+      "title": "Valid",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "valid"
+  ],
+  "title": "StoryboardValidationReport",
+  "type": "object"
+}

@@ -1,0 +1,316 @@
+{
+  "$defs": {
+    "StructuredNote": {
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "minLength": 1,
+          "title": "Code",
+          "type": "string"
+        },
+        "message": {
+          "minLength": 1,
+          "title": "Message",
+          "type": "string"
+        }
+      },
+      "required": [
+        "code",
+        "message"
+      ],
+      "title": "StructuredNote",
+      "type": "object"
+    },
+    "TimingAdjustment": {
+      "additionalProperties": false,
+      "description": "Every deviation from the Director's proposal to canonical timing.",
+      "properties": {
+        "canonical_duration_us": {
+          "title": "Canonical Duration Us",
+          "type": "integer"
+        },
+        "delta_us": {
+          "title": "Delta Us",
+          "type": "integer"
+        },
+        "kind": {
+          "enum": [
+            "boundary_snap",
+            "split",
+            "merge",
+            "clamp_min",
+            "clamp_max",
+            "residual_allocation",
+            "final_end_snap",
+            "generation_round_up",
+            "trim"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "proposal_sequence": {
+          "minimum": -1,
+          "title": "Proposal Sequence",
+          "type": "integer"
+        },
+        "proposed_duration_us": {
+          "title": "Proposed Duration Us",
+          "type": "integer"
+        },
+        "reason": {
+          "maxLength": 512,
+          "minLength": 1,
+          "title": "Reason",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "segment_sequence": {
+          "minimum": 0,
+          "title": "Segment Sequence",
+          "type": "integer"
+        },
+        "shot_sequence": {
+          "minimum": -1,
+          "title": "Shot Sequence",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "segment_sequence",
+        "proposal_sequence",
+        "shot_sequence",
+        "kind",
+        "proposed_duration_us",
+        "canonical_duration_us",
+        "delta_us",
+        "reason"
+      ],
+      "title": "TimingAdjustment",
+      "type": "object"
+    },
+    "TimingManifestEntry": {
+      "additionalProperties": false,
+      "properties": {
+        "global_end_us": {
+          "exclusiveMinimum": 0,
+          "title": "Global End Us",
+          "type": "integer"
+        },
+        "global_sequence": {
+          "minimum": 0,
+          "title": "Global Sequence",
+          "type": "integer"
+        },
+        "global_start_us": {
+          "minimum": 0,
+          "title": "Global Start Us",
+          "type": "integer"
+        },
+        "narration_segment_id": {
+          "format": "uuid",
+          "title": "Narration Segment Id",
+          "type": "string"
+        },
+        "requested_generation_duration_us": {
+          "exclusiveMinimum": 0,
+          "title": "Requested Generation Duration Us",
+          "type": "integer"
+        },
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "script_segment_id": {
+          "format": "uuid",
+          "title": "Script Segment Id",
+          "type": "string"
+        },
+        "segment_sequence": {
+          "minimum": 0,
+          "title": "Segment Sequence",
+          "type": "integer"
+        },
+        "shot_id": {
+          "format": "uuid",
+          "title": "Shot Id",
+          "type": "string"
+        },
+        "transition_handle_us": {
+          "minimum": 0,
+          "title": "Transition Handle Us",
+          "type": "integer"
+        },
+        "trim_end_us": {
+          "minimum": 0,
+          "title": "Trim End Us",
+          "type": "integer"
+        },
+        "trim_start_us": {
+          "minimum": 0,
+          "title": "Trim Start Us",
+          "type": "integer"
+        },
+        "usable_duration_us": {
+          "exclusiveMinimum": 0,
+          "title": "Usable Duration Us",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "shot_id",
+        "global_sequence",
+        "segment_sequence",
+        "script_segment_id",
+        "narration_segment_id",
+        "global_start_us",
+        "global_end_us",
+        "usable_duration_us",
+        "requested_generation_duration_us",
+        "trim_start_us",
+        "trim_end_us",
+        "transition_handle_us"
+      ],
+      "title": "TimingManifestEntry",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "adjustments": {
+      "items": {
+        "$ref": "#/$defs/TimingAdjustment"
+      },
+      "title": "Adjustments",
+      "type": "array"
+    },
+    "capability_hash": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Capability Hash",
+      "type": "string"
+    },
+    "capability_profile_id": {
+      "maxLength": 128,
+      "minLength": 1,
+      "title": "Capability Profile Id",
+      "type": "string"
+    },
+    "contract_version": {
+      "maxLength": 32,
+      "minLength": 1,
+      "title": "Contract Version",
+      "type": "string"
+    },
+    "entries": {
+      "items": {
+        "$ref": "#/$defs/TimingManifestEntry"
+      },
+      "minItems": 1,
+      "title": "Entries",
+      "type": "array"
+    },
+    "narration_run_id": {
+      "format": "uuid",
+      "title": "Narration Run Id",
+      "type": "string"
+    },
+    "project_id": {
+      "format": "uuid",
+      "title": "Project Id",
+      "type": "string"
+    },
+    "residual_allocation_us": {
+      "default": 0,
+      "title": "Residual Allocation Us",
+      "type": "integer"
+    },
+    "retimer_version": {
+      "maxLength": 32,
+      "minLength": 1,
+      "title": "Retimer Version",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "script_id": {
+      "format": "uuid",
+      "title": "Script Id",
+      "type": "string"
+    },
+    "script_version": {
+      "exclusiveMinimum": 0,
+      "title": "Script Version",
+      "type": "integer"
+    },
+    "segment_boundaries_us": {
+      "items": {
+        "minimum": 0,
+        "type": "integer"
+      },
+      "minItems": 2,
+      "title": "Segment Boundaries Us",
+      "type": "array"
+    },
+    "storyboard_run_id": {
+      "format": "uuid",
+      "title": "Storyboard Run Id",
+      "type": "string"
+    },
+    "total_narration_duration_us": {
+      "exclusiveMinimum": 0,
+      "title": "Total Narration Duration Us",
+      "type": "integer"
+    },
+    "total_requested_generation_duration_us": {
+      "exclusiveMinimum": 0,
+      "title": "Total Requested Generation Duration Us",
+      "type": "integer"
+    },
+    "total_transition_handle_us": {
+      "default": 0,
+      "minimum": 0,
+      "title": "Total Transition Handle Us",
+      "type": "integer"
+    },
+    "total_usable_duration_us": {
+      "exclusiveMinimum": 0,
+      "title": "Total Usable Duration Us",
+      "type": "integer"
+    },
+    "warnings": {
+      "items": {
+        "$ref": "#/$defs/StructuredNote"
+      },
+      "title": "Warnings",
+      "type": "array"
+    }
+  },
+  "required": [
+    "storyboard_run_id",
+    "project_id",
+    "script_id",
+    "script_version",
+    "narration_run_id",
+    "capability_profile_id",
+    "capability_hash",
+    "retimer_version",
+    "contract_version",
+    "segment_boundaries_us",
+    "total_narration_duration_us",
+    "total_usable_duration_us",
+    "total_requested_generation_duration_us",
+    "entries"
+  ],
+  "title": "TimingManifest",
+  "type": "object"
+}

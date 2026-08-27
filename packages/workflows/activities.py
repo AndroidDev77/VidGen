@@ -89,3 +89,11 @@ def run_script_generation_activity(request: StageActivityInput) -> StageActivity
 @activity.defn(name="run_narration_activity")
 def run_narration_activity(request: StageActivityInput) -> StageActivityResult:
     return _execute(request)
+
+
+@activity.defn(name="run_storyboard_activity")
+def run_storyboard_activity(request: StageActivityInput) -> StageActivityResult:
+    # T13 receives IDs only. The configured adapter loads the selected episode
+    # model, approved script, and completed narration run from the database, and
+    # returns the storyboard run and canonical asset IDs.
+    return _execute(request)
