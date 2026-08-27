@@ -124,15 +124,20 @@ def build_caption_track(
         duration_us=duration_us,
         safe_zone_percent=config.safe_zone_percent,
     )
-    identity = hashlib.sha256(
-        json.dumps(track.model_dump(mode="json"), sort_keys=True, separators=(",", ":")).encode()
-    ).hexdigest()
+    identity = caption_identity(track)
     return track, CaptionValidationReport(
         valid=not any(d.severity == "error" for d in diagnostics),
         caption_identity=identity,
         diagnostics=diagnostics,
         adjustment_codes=adjustments,
     )
+
+
+def caption_identity(track: CaptionTrack) -> str:
+    """Hash the complete canonical caption contract, including every cue."""
+    return hashlib.sha256(
+        json.dumps(track.model_dump(mode="json"), sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
 
 
 def _timestamp(us: int, separator: str) -> str:

@@ -134,32 +134,68 @@ def build_command_plan(manifest: RenderManifest, root: Path) -> RenderCommandPla
         str(root / "picture.mp4"),
         "-i",
         str(root / "master.wav"),
-        "-i",
-        str(root / "captions.srt"),
-        "-map",
-        "0:v:0",
-        "-map",
-        "1:a:0",
-        "-map",
-        "2:s:0",
-        "-c:v",
-        "copy",
-        "-c:a",
-        "aac",
-        "-b:a",
-        f"{manifest.audio_profile.bitrate_kbps}k",
-        "-ar",
-        "48000",
-        "-c:s",
-        "mov_text",
-        "-metadata:s:s:0",
-        "language=eng",
-        "-movflags",
-        "+faststart",
-        "-avoid_negative_ts",
-        "make_zero",
-        str(root / "final.mp4"),
     ]
+    selectable = manifest.subtitle_mode in {"selectable", "both"}
+    burn_in = manifest.subtitle_mode in {"burn_in", "both"}
+    if selectable:
+        final.extend(["-i", str(root / "captions.srt")])
+    final.extend(["-map", "0:v:0", "-map", "1:a:0"])
+    if selectable:
+        final.extend(["-map", "2:s:0"])
+    if burn_in:
+        ass_path = str(root / "captions.ass")
+        escaped_ass_path = (
+            ass_path.replace("\\", "\\\\")
+            .replace(":", "\\:")
+            .replace("'", "\\'")
+            .replace(",", "\\,")
+            .replace("[", "\\[")
+            .replace("]", "\\]")
+        )
+        final.extend(
+            [
+                "-vf",
+                f"ass=filename='{escaped_ass_path}'",
+                "-c:v",
+                "libx264",
+                "-profile:v",
+                "high",
+                "-pix_fmt",
+                "yuv420p",
+                "-x264-params",
+                "bframes=0:scenecut=0",
+            ]
+        )
+    else:
+        final.extend(["-c:v", "copy"])
+    final.extend(
+        [
+            "-c:a",
+            "aac",
+            "-b:a",
+            f"{manifest.audio_profile.bitrate_kbps}k",
+            "-ar",
+            "48000",
+        ]
+    )
+    if selectable:
+        final.extend(
+            [
+                "-c:s",
+                "mov_text",
+                "-metadata:s:s:0",
+                "language=eng",
+            ]
+        )
+    final.extend(
+        [
+            "-movflags",
+            "+faststart",
+            "-avoid_negative_ts",
+            "make_zero",
+            str(root / "final.mp4"),
+        ]
+    )
     data = {
         "normalization_arguments": normalized,
         "picture_arguments": picture,

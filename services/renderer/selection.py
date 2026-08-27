@@ -8,7 +8,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from vidgen.db.animation_models import AnimationGeneratedVideo, AnimationRun
+from vidgen.db.animation_models import AnimationGeneratedVideo, AnimationItem, AnimationRun
 from vidgen.db.models import Asset, Project
 from vidgen.db.narration_models import NarrationRun, NarrationSegment
 from vidgen.db.script_models import Script
@@ -40,6 +40,20 @@ class AuthoritativeRenderSelection:
     storyboard: StoryboardRun
     timing_manifest_asset: Asset
     shots: tuple[SelectedShotInput, ...]
+
+
+def animation_run_for_video(
+    session: Session, video: AnimationGeneratedVideo, storyboard_id: UUID
+) -> AnimationRun | None:
+    """Resolve a clip through its owning item, never through project coincidence."""
+    return session.scalar(
+        select(AnimationRun)
+        .join(AnimationItem, AnimationItem.run_id == AnimationRun.id)
+        .where(
+            AnimationItem.id == video.animation_item_id,
+            AnimationRun.storyboard_id == storyboard_id,
+        )
+    )
 
 
 def select_authoritative_inputs(session: Session, project_id: UUID) -> AuthoritativeRenderSelection:
@@ -146,17 +160,7 @@ def select_authoritative_inputs(session: Session, project_id: UUID) -> Authorita
                 "required T16 shot has no selected canonical T15 video",
                 reference_id=shot.id,
             )
-        run = session.scalar(
-            select(AnimationRun)
-            .join_from(
-                AnimationRun,
-                AnimationGeneratedVideo,
-                AnimationGeneratedVideo.project_id == AnimationRun.project_id,
-            )
-            .where(
-                AnimationGeneratedVideo.id == video.id, AnimationRun.storyboard_id == storyboard.id
-            )
-        )
+        run = animation_run_for_video(session, video, storyboard.id)
         if run is None or run.status != "completed":
             raise RenderLineageError(
                 "animation_not_complete",

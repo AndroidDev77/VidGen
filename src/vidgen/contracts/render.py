@@ -202,6 +202,7 @@ class RenderManifest(StrictContract):
     t16_result_id: str = Field(min_length=1, max_length=255)
     shots: list[RenderShotEntry] = Field(min_length=1, max_length=500)
     caption_track_id: UUID
+    caption_identity: SHA256
     caption_assets: list[RenderInputReference] = Field(min_length=2, max_length=3)
     audio_entries: list[RenderAudioEntry] = Field(min_length=1, max_length=128)
     video_profile: RenderVideoProfile = Field(default_factory=RenderVideoProfile)

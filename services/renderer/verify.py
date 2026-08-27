@@ -34,7 +34,12 @@ def probe(path: Path) -> dict[str, Any]:
 
 
 def verify_streams(
-    metadata: dict[str, Any], *, fps: int, duration_us: int, tolerance_us: int = 80_000
+    metadata: dict[str, Any],
+    *,
+    fps: int,
+    duration_us: int,
+    selectable_subtitles: bool = True,
+    tolerance_us: int = 80_000,
 ) -> dict[str, Any]:
     streams = metadata.get("streams", [])
     video = [s for s in streams if s.get("codec_type") == "video"]
@@ -55,8 +60,11 @@ def verify_streams(
         or int(audio[0].get("sample_rate", 0)) != 48000
     ):
         failures.append("expected one AAC 48 kHz audio stream")
-    if len(subtitle) != 1 or subtitle[0].get("codec_name") not in {"mov_text", "tx3g"}:
-        failures.append("expected selectable MP4 subtitle stream")
+    if selectable_subtitles:
+        if len(subtitle) != 1 or subtitle[0].get("codec_name") not in {"mov_text", "tx3g"}:
+            failures.append("expected selectable MP4 subtitle stream")
+    elif subtitle:
+        failures.append("burn-in-only output contains an unexpected subtitle stream")
     measured = round(float(metadata.get("format", {}).get("duration", 0)) * 1_000_000)
     if abs(measured - duration_us) > tolerance_us:
         failures.append("duration outside tolerance")
@@ -70,7 +78,7 @@ def verify_streams(
         "frame_rate": rate,
         "video": video[0],
         "audio": audio[0],
-        "subtitle": subtitle[0],
+        "subtitle": subtitle[0] if subtitle else None,
     }
 
 

@@ -10,8 +10,14 @@ from uuid import uuid4
 
 import pytest
 
-from services.renderer.captions import build_caption_track, serialize_srt, serialize_webvtt
-from services.renderer.manifest import render_identity
+from services.renderer.captions import (
+    build_caption_track,
+    serialize_ass,
+    serialize_srt,
+    serialize_webvtt,
+)
+from services.renderer.commands import build_command_plan
+from services.renderer.manifest import bound_manifest_identity, render_identity
 from services.renderer.pipeline import DeterministicRenderPipeline, FilesystemArtifactStore
 from services.renderer.render import CommandExecutor
 from services.renderer.verify import decode_complete, probe
@@ -172,6 +178,7 @@ def test_deterministic_ten_shot_render_and_completed_identity_reuse(tmp_path: Pa
         t16_result_id="fixture-t16-locked",
         shots=shots,
         caption_track_id=caption_track.caption_track_id,
+        caption_identity=validation.caption_identity,
         caption_assets=[
             RenderInputReference(
                 asset_id=srt.asset_id,
@@ -203,6 +210,7 @@ def test_deterministic_ten_shot_render_and_completed_identity_reuse(tmp_path: Pa
         created_at=datetime.now(UTC),
         provenance={"fixture": "ten-shot/1"},
     )
+    manifest = manifest.model_copy(update={"render_identity": bound_manifest_identity(manifest)})
 
     def resolve(asset_id: object, destination: Path) -> None:
         with source_by_id[asset_id].open("rb") as incoming, destination.open("xb") as outgoing:
@@ -234,3 +242,69 @@ def test_deterministic_ten_shot_render_and_completed_identity_reuse(tmp_path: Pa
     assert second.reused
     assert second.final_video.asset_id == first.final_video.asset_id
     assert executor.executions == execution_count
+
+    changed_cue = caption_track.cues[0].model_copy(update={"lines": ["different approved text"]})
+    changed_track = caption_track.model_copy(
+        update={"cues": [changed_cue, *caption_track.cues[1:]]}
+    )
+    with pytest.raises(ValueError, match="caption content identity"):
+        pipeline.run(manifest=manifest, caption_track=changed_track, resolve_asset=resolve)
+    assert executor.executions == execution_count
+
+    ass = store.store_bytes(
+        content=serialize_ass(caption_track).encode(),
+        media_type="text/x-ssa",
+        kind="caption_ass",
+        identity_key="fixture:ass",
+    )
+    ass_reference = RenderInputReference(
+        asset_id=ass.asset_id,
+        sha256=ass.sha256,
+        media_type=ass.media_type,
+        role="caption_ass",
+    )
+    both_manifest = manifest.model_copy(
+        update={
+            "subtitle_mode": "both",
+            "caption_assets": [*manifest.caption_assets, ass_reference],
+        }
+    )
+    both_manifest = both_manifest.model_copy(
+        update={"render_identity": bound_manifest_identity(both_manifest)}
+    )
+    both_root = tmp_path / "both"
+    both_root.mkdir()
+    assert first.picture_master is not None and first.normalized_audio is not None
+    shutil.copyfile(first.picture_master.path, both_root / "picture.mp4")
+    shutil.copyfile(first.normalized_audio.path, both_root / "master.wav")
+    (both_root / "captions.srt").write_text(serialize_srt(caption_track), encoding="utf-8")
+    (both_root / "captions.ass").write_text(serialize_ass(caption_track), encoding="utf-8")
+    both_plan = build_command_plan(both_manifest, both_root)
+    assert "-vf" in both_plan.final_arguments
+    assert "-c:s" in both_plan.final_arguments
+    assert any(argument.startswith("ass=filename=") for argument in both_plan.final_arguments)
+    executor.run(both_plan.final_arguments, "acceptance:both-subtitle-modes")
+    assert [
+        stream["codec_name"]
+        for stream in probe(both_root / "final.mp4")["streams"]
+        if stream["codec_type"] == "subtitle"
+    ] == ["mov_text"]
+
+    burn_manifest = both_manifest.model_copy(update={"subtitle_mode": "burn_in"})
+    burn_manifest = burn_manifest.model_copy(
+        update={"render_identity": bound_manifest_identity(burn_manifest)}
+    )
+    burn_root = tmp_path / "burn"
+    burn_root.mkdir()
+    shutil.copyfile(first.picture_master.path, burn_root / "picture.mp4")
+    shutil.copyfile(first.normalized_audio.path, burn_root / "master.wav")
+    (burn_root / "captions.ass").write_text(serialize_ass(caption_track), encoding="utf-8")
+    burn_plan = build_command_plan(burn_manifest, burn_root)
+    assert "-vf" in burn_plan.final_arguments
+    assert "-c:s" not in burn_plan.final_arguments
+    executor.run(burn_plan.final_arguments, "acceptance:burn-in-only")
+    assert not [
+        stream
+        for stream in probe(burn_root / "final.mp4")["streams"]
+        if stream["codec_type"] == "subtitle"
+    ]

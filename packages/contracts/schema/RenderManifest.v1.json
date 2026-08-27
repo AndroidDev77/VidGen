@@ -435,6 +435,11 @@
       "title": "Caption Assets",
       "type": "array"
     },
+    "caption_identity": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Caption Identity",
+      "type": "string"
+    },
     "caption_track_id": {
       "format": "uuid",
       "title": "Caption Track Id",
@@ -591,6 +596,7 @@
     "t16_result_id",
     "shots",
     "caption_track_id",
+    "caption_identity",
     "caption_assets",
     "audio_entries",
     "input_hash",

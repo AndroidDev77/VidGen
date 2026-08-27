@@ -20,9 +20,14 @@ from typing import Any, Protocol
 from uuid import NAMESPACE_URL, UUID, uuid5
 
 from services.renderer.audio import parse_loudnorm_json
-from services.renderer.captions import serialize_srt, serialize_webvtt
+from services.renderer.captions import (
+    caption_identity,
+    serialize_ass,
+    serialize_srt,
+    serialize_webvtt,
+)
 from services.renderer.commands import build_command_plan
-from services.renderer.manifest import canonical_json, reproducibility_hash
+from services.renderer.manifest import bound_manifest_identity, canonical_json, reproducibility_hash
 from services.renderer.render import CommandExecutor, contained
 from services.renderer.verify import decode_complete, diagnostic_intervals, probe, verify_streams
 from vidgen.contracts.render import CaptionTrack, RenderManifest
@@ -336,11 +341,32 @@ class DeterministicRenderPipeline:
         caption_track: CaptionTrack,
         resolve_asset: AssetResolver,
     ) -> CompletedRender:
+        if caption_track.caption_track_id != manifest.caption_track_id:
+            raise ValueError("caption track does not match immutable manifest")
+        if caption_identity(caption_track) != manifest.caption_identity:
+            raise ValueError("caption content identity does not match immutable manifest")
+        srt_text = serialize_srt(caption_track)
+        webvtt_text = serialize_webvtt(caption_track)
+        ass_text = serialize_ass(caption_track)
+        caption_bytes = {
+            "caption_srt": srt_text.encode("utf-8"),
+            "caption_webvtt": webvtt_text.encode("utf-8"),
+            "caption_ass": ass_text.encode("utf-8"),
+        }
+        references = {reference.role: reference for reference in manifest.caption_assets}
+        required_roles = {"caption_srt", "caption_webvtt"}
+        if manifest.subtitle_mode in {"burn_in", "both"}:
+            required_roles.add("caption_ass")
+        if not required_roles.issubset(references):
+            raise ValueError("immutable manifest is missing required caption asset references")
+        for role in required_roles:
+            if hashlib.sha256(caption_bytes[role]).hexdigest() != references[role].sha256:
+                raise ValueError(f"generated {role} hash does not match immutable manifest")
+        if bound_manifest_identity(manifest) != manifest.render_identity:
+            raise ValueError("render identity does not bind the immutable manifest")
         existing = self.store.completed(manifest.render_identity)
         if existing is not None:
             return existing
-        if caption_track.caption_track_id != manifest.caption_track_id:
-            raise ValueError("caption track does not match immutable manifest")
 
         attempt = Path(
             tempfile.mkdtemp(prefix=f"render-{manifest.render_identity[:12]}-", dir=self.work_root)
@@ -349,10 +375,10 @@ class DeterministicRenderPipeline:
         succeeded = False
         try:
             self._stage_inputs(manifest, attempt, resolve_asset)
-            srt_text = serialize_srt(caption_track)
-            webvtt_text = serialize_webvtt(caption_track)
             (attempt / "captions.srt").write_text(srt_text, encoding="utf-8", newline="\n")
             (attempt / "captions.vtt").write_text(webvtt_text, encoding="utf-8", newline="\n")
+            if manifest.subtitle_mode in {"burn_in", "both"}:
+                (attempt / "captions.ass").write_text(ass_text, encoding="utf-8", newline="\n")
             plan = build_command_plan(manifest, attempt)
             self._write_concat(manifest, attempt)
             for index, arguments in enumerate(plan.normalization_arguments):
@@ -371,6 +397,7 @@ class DeterministicRenderPipeline:
                 metadata,
                 fps=manifest.video_profile.frame_rate,
                 duration_us=manifest.narration_duration_us,
+                selectable_subtitles=manifest.subtitle_mode in {"selectable", "both"},
             )
             decode_complete(final_path)
             black_intervals = diagnostic_intervals(final_path, "black")
