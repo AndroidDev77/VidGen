@@ -6,7 +6,11 @@ The complete system architecture and T01-T26 implementation roadmap are maintain
 [`docs/TECHNICAL_DESIGN.md`](docs/TECHNICAL_DESIGN.md). Contributors and coding agents should
 read it together with `AGENTS.md` before planning the next roadmap task.
 
-This repository implements roadmap tasks T01 through T16 and T23, including subtitle-first transcript acquisition, restartable episode analysis, comedy script generation, measured narration, deterministic storyboard timing, reviewed keyframe and video generation, per-shot orchestration, and cloud-neutral observability/cost controls:
+This repository implements roadmap tasks T01 through T15 and T23. T16 per-shot orchestration is
+implemented on its feature branch but remains in review until required CI succeeds. The foundations
+include subtitle-first transcript acquisition, restartable episode analysis, comedy script
+generation, measured narration, deterministic storyboard timing, reviewed keyframe and video
+generation, and cloud-neutral observability/cost controls:
 
 - Python monorepo, CI, and local infrastructure
 - Versioned Pydantic contracts plus exported JSON Schema
