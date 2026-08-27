@@ -1,0 +1,183 @@
+{
+  "$defs": {
+    "ContinuityAmbiguity": {
+      "additionalProperties": false,
+      "properties": {
+        "alternatives": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Alternatives",
+          "type": "array"
+        },
+        "evidence": {
+          "items": {
+            "$ref": "#/$defs/EvidenceLink"
+          },
+          "title": "Evidence",
+          "type": "array"
+        },
+        "field": {
+          "title": "Field",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        }
+      },
+      "required": [
+        "field",
+        "alternatives"
+      ],
+      "title": "ContinuityAmbiguity",
+      "type": "object"
+    },
+    "EvidenceLink": {
+      "additionalProperties": false,
+      "properties": {
+        "evidence_id": {
+          "format": "uuid",
+          "title": "Evidence Id",
+          "type": "string"
+        },
+        "scene_id": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Scene Id"
+        },
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "source_timestamp_ms": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Source Timestamp Ms"
+        }
+      },
+      "required": [
+        "evidence_id"
+      ],
+      "title": "EvidenceLink",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "aliases": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Aliases",
+      "type": "array"
+    },
+    "ambiguities": {
+      "items": {
+        "$ref": "#/$defs/ContinuityAmbiguity"
+      },
+      "title": "Ambiguities",
+      "type": "array"
+    },
+    "anonymous_speaker_label": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Anonymous Speaker Label"
+    },
+    "character_id": {
+      "format": "uuid",
+      "title": "Character Id",
+      "type": "string"
+    },
+    "confidence": {
+      "maximum": 1,
+      "minimum": 0,
+      "title": "Confidence",
+      "type": "number"
+    },
+    "display_name": {
+      "title": "Display Name",
+      "type": "string"
+    },
+    "evidence": {
+      "items": {
+        "$ref": "#/$defs/EvidenceLink"
+      },
+      "title": "Evidence",
+      "type": "array"
+    },
+    "role": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Role"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "stable_traits": {
+      "additionalProperties": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "title": "Stable Traits",
+      "type": "object"
+    }
+  },
+  "required": [
+    "character_id",
+    "display_name",
+    "confidence"
+  ],
+  "title": "CharacterIdentityBible",
+  "type": "object"
+}

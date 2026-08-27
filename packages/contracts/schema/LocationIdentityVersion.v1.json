@@ -1,0 +1,242 @@
+{
+  "$defs": {
+    "ContinuityAmbiguity": {
+      "additionalProperties": false,
+      "properties": {
+        "alternatives": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Alternatives",
+          "type": "array"
+        },
+        "evidence": {
+          "items": {
+            "$ref": "#/$defs/EvidenceLink"
+          },
+          "title": "Evidence",
+          "type": "array"
+        },
+        "field": {
+          "title": "Field",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        }
+      },
+      "required": [
+        "field",
+        "alternatives"
+      ],
+      "title": "ContinuityAmbiguity",
+      "type": "object"
+    },
+    "EvidenceLink": {
+      "additionalProperties": false,
+      "properties": {
+        "evidence_id": {
+          "format": "uuid",
+          "title": "Evidence Id",
+          "type": "string"
+        },
+        "scene_id": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Scene Id"
+        },
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "source_timestamp_ms": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Source Timestamp Ms"
+        }
+      },
+      "required": [
+        "evidence_id"
+      ],
+      "title": "EvidenceLink",
+      "type": "object"
+    },
+    "LocationIdentityBible": {
+      "additionalProperties": false,
+      "properties": {
+        "ambiguities": {
+          "items": {
+            "$ref": "#/$defs/ContinuityAmbiguity"
+          },
+          "title": "Ambiguities",
+          "type": "array"
+        },
+        "confidence": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Confidence",
+          "type": "number"
+        },
+        "display_name": {
+          "title": "Display Name",
+          "type": "string"
+        },
+        "evidence": {
+          "items": {
+            "$ref": "#/$defs/EvidenceLink"
+          },
+          "title": "Evidence",
+          "type": "array"
+        },
+        "location_id": {
+          "format": "uuid",
+          "title": "Location Id",
+          "type": "string"
+        },
+        "location_type": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Location Type"
+        },
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "stable_traits": {
+          "additionalProperties": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "title": "Stable Traits",
+          "type": "object"
+        }
+      },
+      "required": [
+        "location_id",
+        "display_name",
+        "confidence"
+      ],
+      "title": "LocationIdentityBible",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "bible": {
+      "$ref": "#/$defs/LocationIdentityBible"
+    },
+    "configuration_hash": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Configuration Hash",
+      "type": "string"
+    },
+    "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+    },
+    "episode_analysis_id": {
+      "format": "uuid",
+      "title": "Episode Analysis Id",
+      "type": "string"
+    },
+    "id": {
+      "format": "uuid",
+      "title": "Id",
+      "type": "string"
+    },
+    "identity_hash": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Identity Hash",
+      "type": "string"
+    },
+    "location_id": {
+      "format": "uuid",
+      "title": "Location Id",
+      "type": "string"
+    },
+    "project_id": {
+      "format": "uuid",
+      "title": "Project Id",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "status": {
+      "default": "draft",
+      "enum": [
+        "draft",
+        "approved",
+        "rejected",
+        "stale"
+      ],
+      "title": "Status",
+      "type": "string"
+    },
+    "version": {
+      "exclusiveMinimum": 0,
+      "title": "Version",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "id",
+    "project_id",
+    "episode_analysis_id",
+    "location_id",
+    "version",
+    "bible",
+    "configuration_hash",
+    "identity_hash",
+    "created_at"
+  ],
+  "title": "LocationIdentityVersion",
+  "type": "object"
+}

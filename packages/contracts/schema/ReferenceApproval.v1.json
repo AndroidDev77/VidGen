@@ -1,0 +1,56 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "approved_at": {
+      "format": "date-time",
+      "title": "Approved At",
+      "type": "string"
+    },
+    "approving_principal": {
+      "title": "Approving Principal",
+      "type": "string"
+    },
+    "id": {
+      "format": "uuid",
+      "title": "Id",
+      "type": "string"
+    },
+    "identity_version_id": {
+      "format": "uuid",
+      "title": "Identity Version Id",
+      "type": "string"
+    },
+    "project_id": {
+      "format": "uuid",
+      "title": "Project Id",
+      "type": "string"
+    },
+    "reference_set_id": {
+      "format": "uuid",
+      "title": "Reference Set Id",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "upstream_lineage_hash": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Upstream Lineage Hash",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id",
+    "project_id",
+    "reference_set_id",
+    "identity_version_id",
+    "approving_principal",
+    "upstream_lineage_hash",
+    "approved_at"
+  ],
+  "title": "ReferenceApproval",
+  "type": "object"
+}

@@ -1,0 +1,196 @@
+{
+  "$defs": {
+    "ReferenceBundleItem": {
+      "additionalProperties": false,
+      "properties": {
+        "asset_id": {
+          "format": "uuid",
+          "title": "Asset Id",
+          "type": "string"
+        },
+        "entity_id": {
+          "format": "uuid",
+          "title": "Entity Id",
+          "type": "string"
+        },
+        "priority": {
+          "minimum": 0,
+          "title": "Priority",
+          "type": "integer"
+        },
+        "required": {
+          "default": true,
+          "title": "Required",
+          "type": "boolean"
+        },
+        "role": {
+          "enum": [
+            "character_identity",
+            "character_state",
+            "location_identity",
+            "location_state",
+            "prop"
+          ],
+          "title": "Role",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "sha256": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Sha256",
+          "type": "string"
+        }
+      },
+      "required": [
+        "asset_id",
+        "sha256",
+        "role",
+        "entity_id",
+        "priority"
+      ],
+      "title": "ReferenceBundleItem",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "bundle_hash": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Bundle Hash",
+      "type": "string"
+    },
+    "character_identity_version_ids": {
+      "items": {
+        "format": "uuid",
+        "type": "string"
+      },
+      "title": "Character Identity Version Ids",
+      "type": "array"
+    },
+    "character_state_snapshot_ids": {
+      "items": {
+        "format": "uuid",
+        "type": "string"
+      },
+      "title": "Character State Snapshot Ids",
+      "type": "array"
+    },
+    "continuity_warnings": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Continuity Warnings",
+      "type": "array"
+    },
+    "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+    },
+    "id": {
+      "format": "uuid",
+      "title": "Id",
+      "type": "string"
+    },
+    "location_identity_version_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Location Identity Version Id"
+    },
+    "location_state_snapshot_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Location State Snapshot Id"
+    },
+    "omitted_references": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Omitted References",
+      "type": "array"
+    },
+    "project_id": {
+      "format": "uuid",
+      "title": "Project Id",
+      "type": "string"
+    },
+    "provider_reference_limit": {
+      "minimum": 0,
+      "title": "Provider Reference Limit",
+      "type": "integer"
+    },
+    "references": {
+      "items": {
+        "$ref": "#/$defs/ReferenceBundleItem"
+      },
+      "title": "References",
+      "type": "array"
+    },
+    "required_props": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Required Props",
+      "type": "array"
+    },
+    "resolver_version": {
+      "title": "Resolver Version",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "shot_id": {
+      "format": "uuid",
+      "title": "Shot Id",
+      "type": "string"
+    },
+    "shot_sequence": {
+      "minimum": 0,
+      "title": "Shot Sequence",
+      "type": "integer"
+    },
+    "storyboard_run_id": {
+      "format": "uuid",
+      "title": "Storyboard Run Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id",
+    "project_id",
+    "storyboard_run_id",
+    "shot_id",
+    "shot_sequence",
+    "provider_reference_limit",
+    "bundle_hash",
+    "resolver_version",
+    "created_at"
+  ],
+  "title": "ShotReferenceBundle",
+  "type": "object"
+}

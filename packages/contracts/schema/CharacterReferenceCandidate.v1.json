@@ -1,0 +1,251 @@
+{
+  "$defs": {
+    "CandidateScores": {
+      "additionalProperties": false,
+      "properties": {
+        "diversity": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Diversity",
+          "type": "number"
+        },
+        "evidence": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Evidence",
+          "type": "number"
+        },
+        "exposure": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Exposure",
+          "type": "number"
+        },
+        "obstruction": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Obstruction",
+          "type": "number"
+        },
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "sharpness": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Sharpness",
+          "type": "number"
+        },
+        "state_relevance": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "State Relevance",
+          "type": "number"
+        },
+        "visibility": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Visibility",
+          "type": "number"
+        }
+      },
+      "required": [
+        "evidence",
+        "visibility",
+        "sharpness",
+        "exposure",
+        "obstruction",
+        "state_relevance",
+        "diversity"
+      ],
+      "title": "CandidateScores",
+      "type": "object"
+    },
+    "EvidenceLink": {
+      "additionalProperties": false,
+      "properties": {
+        "evidence_id": {
+          "format": "uuid",
+          "title": "Evidence Id",
+          "type": "string"
+        },
+        "scene_id": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Scene Id"
+        },
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "source_timestamp_ms": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Source Timestamp Ms"
+        }
+      },
+      "required": [
+        "evidence_id"
+      ],
+      "title": "EvidenceLink",
+      "type": "object"
+    },
+    "Interval": {
+      "additionalProperties": false,
+      "properties": {
+        "end_sequence": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "End Sequence"
+        },
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "start_sequence": {
+          "minimum": 0,
+          "title": "Start Sequence",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "start_sequence"
+      ],
+      "title": "Interval",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "asset_id": {
+      "format": "uuid",
+      "title": "Asset Id",
+      "type": "string"
+    },
+    "character_id": {
+      "format": "uuid",
+      "title": "Character Id",
+      "type": "string"
+    },
+    "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+    },
+    "evidence": {
+      "items": {
+        "$ref": "#/$defs/EvidenceLink"
+      },
+      "title": "Evidence",
+      "type": "array"
+    },
+    "height": {
+      "exclusiveMinimum": 0,
+      "title": "Height",
+      "type": "integer"
+    },
+    "interval": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Interval"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "rejection_reasons": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Rejection Reasons",
+      "type": "array"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "scores": {
+      "$ref": "#/$defs/CandidateScores"
+    },
+    "selector_version": {
+      "title": "Selector Version",
+      "type": "string"
+    },
+    "sha256": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Sha256",
+      "type": "string"
+    },
+    "source_scene_id": {
+      "format": "uuid",
+      "title": "Source Scene Id",
+      "type": "string"
+    },
+    "source_timestamp_ms": {
+      "minimum": 0,
+      "title": "Source Timestamp Ms",
+      "type": "integer"
+    },
+    "total_score": {
+      "maximum": 1,
+      "minimum": 0,
+      "title": "Total Score",
+      "type": "number"
+    },
+    "width": {
+      "exclusiveMinimum": 0,
+      "title": "Width",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "asset_id",
+    "source_scene_id",
+    "source_timestamp_ms",
+    "scores",
+    "total_score",
+    "width",
+    "height",
+    "sha256",
+    "selector_version",
+    "created_at",
+    "character_id"
+  ],
+  "title": "CharacterReferenceCandidate",
+  "type": "object"
+}

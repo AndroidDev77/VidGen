@@ -8,6 +8,7 @@ the tables reference each other by name, and a partial import leaves a
 from vidgen.db.base import Base
 
 from . import animation_models as animation_models
+from . import continuity_models as continuity_models
 from . import cost_models as cost_models
 from . import episode_analysis_models as episode_analysis_models
 from . import image_generation_models as image_generation_models
