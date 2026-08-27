@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 import subprocess
 from pathlib import Path
 from typing import Any
@@ -79,3 +80,34 @@ def decode_complete(path: Path, *, timeout: int = 600) -> None:
     )
     if result.returncode:
         raise RenderVerificationError("complete output decode failed")
+
+
+def diagnostic_intervals(path: Path, detector: str) -> list[dict[str, int]]:
+    """Run a supported diagnostic filter and return exact microsecond intervals."""
+    filters = {
+        "black": "blackdetect=d=0.1:pix_th=0.10",
+        "freeze": "freezedetect=n=-60dB:d=0.5",
+        "silence": "silencedetect=n=-50dB:d=0.5",
+    }
+    if detector not in filters:
+        raise ValueError("unsupported diagnostic detector")
+    arguments = ["ffmpeg", "-nostdin", "-hide_banner", "-i", str(path)]
+    if detector == "silence":
+        arguments.extend(["-af", filters[detector]])
+    else:
+        arguments.extend(["-vf", filters[detector]])
+    arguments.extend(["-f", "null", "-"])
+    result = run_bounded(arguments)
+    if result.returncode:
+        raise RenderVerificationError(f"{detector} diagnostic failed")
+    patterns = {
+        "black": (r"black_start:([0-9.]+)", r"black_end:([0-9.]+)"),
+        "freeze": (r"freeze_start: ([0-9.]+)", r"freeze_end: ([0-9.]+)"),
+        "silence": (r"silence_start: ([0-9.]+)", r"silence_end: ([0-9.]+)"),
+    }
+    starts = re.findall(patterns[detector][0], result.stderr)
+    ends = re.findall(patterns[detector][1], result.stderr)
+    return [
+        {"start_us": round(float(start) * 1_000_000), "end_us": round(float(end) * 1_000_000)}
+        for start, end in zip(starts, ends, strict=False)
+    ]

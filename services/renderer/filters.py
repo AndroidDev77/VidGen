@@ -15,7 +15,8 @@ def normalization_filter(manifest: RenderManifest, sequence: int) -> str:
         )
     )
     return (
-        f"trim=start={shot.trim_start_us}/1000000:end={shot.trim_end_us}/1000000,"
+        f"trim=start={shot.trim_start_us // 1_000_000}.{shot.trim_start_us % 1_000_000:06d}:"
+        f"end={shot.trim_end_us // 1_000_000}.{shot.trim_end_us % 1_000_000:06d},"
         f"setpts=PTS-STARTPTS,{scale},setsar=1,fps={profile.frame_rate},"
         f"format={profile.pixel_format}"
     )
@@ -26,3 +27,5 @@ def validate_transitions(manifest: RenderManifest) -> None:
         for transition in (shot.transition_in, shot.transition_out):
             if transition.kind not in (TransitionKind.CUT, TransitionKind.CROSSFADE):
                 raise ValueError("unsupported transition")
+            if transition.kind == TransitionKind.CROSSFADE:
+                raise ValueError("crossfade assembly requires the versioned xfade profile")

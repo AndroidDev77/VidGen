@@ -27,6 +27,8 @@ def build_command_plan(manifest: RenderManifest, root: Path) -> RenderCommandPla
                 "libx264",
                 "-profile:v",
                 "high",
+                "-x264-params",
+                "bframes=0:scenecut=0",
                 "-pix_fmt",
                 "yuv420p",
                 str(root / f"shot-{shot.sequence:04}.mp4"),
@@ -40,26 +42,67 @@ def build_command_plan(manifest: RenderManifest, root: Path) -> RenderCommandPla
         "-f",
         "concat",
         "-safe",
-        "1",
+        "0",
         "-i",
         str(concat),
         "-c",
         "copy",
         str(root / "picture.mp4"),
     ]
-    narration = next(item for item in manifest.audio_entries if item.role == "narration")
-    premaster = [
-        "ffmpeg",
-        "-nostdin",
-        "-y",
-        "-i",
-        str(root / f"{narration.asset.sha256}.input"),
-        "-af",
-        "aresample=48000,aformat=channel_layouts=stereo,alimiter=limit=0.84",
-        "-c:a",
-        "pcm_s24le",
-        str(root / "premaster.wav"),
+    premaster = ["ffmpeg", "-nostdin", "-y"]
+    for entry in manifest.audio_entries:
+        premaster.extend(["-i", str(root / f"{entry.asset.sha256}.input")])
+    filters: list[str] = []
+    mix_labels: list[str] = []
+    narration_label = "narration"
+    for index, entry in enumerate(manifest.audio_entries):
+        label = narration_label if entry.role == "narration" else f"stem{index}"
+        samples = (entry.start_us * manifest.audio_profile.sample_rate_hz) // 1_000_000
+        gain_db = f"{entry.gain_millidb / 1000:.3f}"
+        chain = (
+            f"[{index}:a]aresample={manifest.audio_profile.sample_rate_hz},"
+            f"aformat=channel_layouts=stereo,volume={gain_db}dB"
+        )
+        if samples:
+            chain += f",adelay={samples}S:all=1"
+        filters.append(f"{chain}[{label}]")
+        mix_labels.append(label)
+    music = [
+        (index, entry)
+        for index, entry in enumerate(manifest.audio_entries)
+        if entry.role == "music" and entry.duck_under_narration
     ]
+    if music:
+        narration_outputs = ["narration_mix", *(f"narration_sc{index}" for index, _ in music)]
+        filters.append(
+            f"[{narration_label}]asplit={len(narration_outputs)}"
+            + "".join(f"[{label}]" for label in narration_outputs)
+        )
+        mix_labels[mix_labels.index(narration_label)] = "narration_mix"
+    for index, _entry in music:
+        source_label = f"stem{index}"
+        ducked = f"ducked{index}"
+        filters.append(
+            f"[{source_label}][narration_sc{index}]"
+            "sidechaincompress=threshold=0.0316228:ratio=6:attack=20:release=400"
+            f"[{ducked}]"
+        )
+        mix_labels[mix_labels.index(source_label)] = ducked
+    filters.append(
+        "".join(f"[{label}]" for label in mix_labels)
+        + f"amix=inputs={len(mix_labels)}:normalize=0,alimiter=limit=0.84[premaster]"
+    )
+    premaster.extend(
+        [
+            "-filter_complex",
+            ";".join(filters),
+            "-map",
+            "[premaster]",
+            "-c:a",
+            "pcm_s24le",
+            str(root / "premaster.wav"),
+        ]
+    )
     pass1 = [
         "ffmpeg",
         "-nostdin",

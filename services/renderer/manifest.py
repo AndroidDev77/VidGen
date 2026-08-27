@@ -9,7 +9,7 @@ from typing import Any
 from pydantic import BaseModel
 
 
-def canonical_json(value: BaseModel | dict[str, Any]) -> bytes:
+def canonical_json(value: BaseModel | Any) -> bytes:
     payload = (
         value.model_dump(mode="json", exclude_none=True) if isinstance(value, BaseModel) else value
     )
@@ -18,7 +18,7 @@ def canonical_json(value: BaseModel | dict[str, Any]) -> bytes:
     )
 
 
-def render_identity(material: BaseModel | dict[str, Any]) -> str:
+def render_identity(material: BaseModel | Any) -> str:
     return hashlib.sha256(canonical_json(material)).hexdigest()
 
 

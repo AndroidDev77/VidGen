@@ -527,3 +527,10 @@ continues trace and bounded-metric propagation without fabricated provider costs
 Local entry points are `uv run python scripts/render_project.py PROJECT_UUID` and
 `uv run python scripts/inspect_render.py PROJECT_UUID` once a project has completed and locked T16
 outputs. T18 and later roadmap stages remain unfinished.
+
+The required synthetic acceptance test generates ten copyright-free clips and narration with
+FFmpeg at test time, persists SRT/WebVTT, renders and fully decodes a 1920x1080 H.264/yuv420p MP4
+with AAC 48 kHz audio and selectable `mov_text` subtitles, persists a reproducibility report, then
+proves that a second identical identity performs zero FFmpeg executions. T17 persistence extends
+the existing render-job placeholder and adds render-attempt and caption-track projections in
+Alembic revision `0013_render`, the repository's single current head.

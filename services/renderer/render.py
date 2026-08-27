@@ -30,7 +30,7 @@ class CommandExecutor:
         self.heartbeat = heartbeat or (lambda _: None)
         self.executions = 0
 
-    def run(self, arguments: list[str], phase: str) -> None:
+    def run(self, arguments: list[str], phase: str) -> subprocess.CompletedProcess[bytes]:
         self.heartbeat(phase)
         self.executions += 1
         result = subprocess.run(
@@ -39,6 +39,7 @@ class CommandExecutor:
         if result.returncode:
             error = result.stderr[-self.output_limit :].decode("utf-8", "replace")
             raise RuntimeError(f"FFmpeg phase {phase} failed: {error}")
+        return result
 
     def execute(self, plan: RenderCommandPlan) -> None:
         for index, args in enumerate(plan.normalization_arguments):
