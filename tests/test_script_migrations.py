@@ -53,4 +53,4 @@ def test_single_alembic_head_after_t23_and_t11_merge(
     script = ScriptDirectory.from_config(config)
     heads = script.get_heads()
     assert len(heads) == 1
-    assert heads[0] == "0014_review_ui"
+    assert heads[0] == "0015_continuity_references"
