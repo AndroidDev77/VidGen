@@ -18,6 +18,7 @@ from vidgen.db.transcription_models import SpeakerTurnRecord, TranscriptSegmentR
 from workers.temporal_worker.production_handlers import (
     _segments_with_speakers,
     build_production_handlers,
+    build_shot_production_handlers,
 )
 
 
@@ -76,6 +77,24 @@ def test_production_worker_configures_every_workflow_stage(tmp_path: Path) -> No
         "narration",
         "storyboard",
         "image_generation",
+    }
+
+
+def test_production_worker_configures_every_t16_activity(tmp_path: Path) -> None:
+    handlers = build_shot_production_handlers(
+        APISettings(
+            database_url=f"sqlite:///{tmp_path / 'shot-worker.db'}",
+            blob_root=tmp_path / "blobs",
+            temporal_allow_fake_providers=True,
+        )
+    )
+    assert set(handlers) == {
+        "resolve_shot_fanout",
+        "resolve_shot_input",
+        "run_shot_keyframe",
+        "run_shot_animation",
+        "persist_shot_checkpoint",
+        "persist_shot_fanout_checkpoint",
     }
 
 

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 from datetime import datetime
 from enum import StrEnum
 from typing import Literal
@@ -68,6 +70,31 @@ class ShotWorkflowIdentity(StrictContract):
     attempt_policy_version: Literal["shot-attempt/1"] = "shot-attempt/1"
     identity_hash: str = Field(pattern=r"^[a-f0-9]{64}$")
 
+    def material(self) -> dict[str, str | int]:
+        """Return exactly the immutable fields bound by the Temporal identity."""
+        return {
+            "project_id": str(self.project_id),
+            "storyboard_run_id": str(self.storyboard_run_id),
+            "storyboard_input_hash": self.storyboard_input_hash,
+            "storyboard_shot_id": str(self.storyboard_shot_id),
+            "canonical_shot_hash": self.canonical_shot_hash,
+            "shot_sequence": self.shot_sequence,
+            "timing_manifest_hash": self.timing_manifest_hash,
+            "t14_configuration_identity": self.t14_configuration_identity,
+            "t15_capability_profile_identity": self.t15_capability_profile_identity,
+            "t14_pipeline_version": self.t14_pipeline_version,
+            "t15_pipeline_version": self.t15_pipeline_version,
+            "t16_workflow_version": self.t16_workflow_version,
+            "attempt_policy_version": self.attempt_policy_version,
+        }
+
+    @model_validator(mode="after")
+    def identity_hash_matches_material(self) -> ShotWorkflowIdentity:
+        encoded = json.dumps(self.material(), sort_keys=True, separators=(",", ":")).encode()
+        if self.identity_hash != hashlib.sha256(encoded).hexdigest():
+            raise ValueError("identity_hash does not bind the material identity fields")
+        return self
+
 
 class ShotWorkflowInput(StrictContract):
     schema_version: Literal["1.0"] = "1.0"
@@ -78,6 +105,7 @@ class ShotWorkflowInput(StrictContract):
     workflow_identity: ShotWorkflowIdentity
     t14_run_id: UUID | None = None
     t15_run_id: UUID | None = None
+    parent_workflow_id: str | None = Field(default=None, max_length=255)
     idempotency_key: str = Field(min_length=1, max_length=255)
     trace_context: dict[str, str] = Field(default_factory=dict)
     attempt_policy_version: Literal["shot-attempt/1"] = "shot-attempt/1"

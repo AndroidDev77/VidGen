@@ -59,6 +59,8 @@ outputs, and regenerate commands are supported; regenerate requires a new materi
 Fake-provider development requires no paid credentials:
 
 ```bash
+VIDGEN_TEMPORAL_ALLOW_FAKE_PROVIDERS=true \
+  uv run python -m workers.temporal_worker.main
 uv run python scripts/run_shot_workflow.py PROJECT_UUID \
   --storyboard-run-id STORYBOARD_RUN_UUID --provider fake --concurrency 10
 uv run python scripts/inspect_shot_workflow.py PROJECT_UUID \

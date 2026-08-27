@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import json
 from collections.abc import Callable
 from typing import Literal
 from uuid import UUID
@@ -13,13 +15,25 @@ from apps.api.settings import APISettings, get_settings
 from packages.providers import FakeSubtitleProvider
 from packages.providers.image_generation import DeterministicFakeImageProvider
 from packages.workflows.activities import StageHandler
+from packages.workflows.shot_activities import ShotActivityHandler
+from packages.workflows.shot_policy import identity_hash, shot_activity_idempotency_key
 from services.analysis.contact_sheet import contact_sheet_manifest
 from services.analysis.evidence_builder import build_evidence_package
 from services.analysis.fake_provider import FakeEpisodeAnalysisProvider
 from services.analysis.openai_adapter import OpenAIAnalysisConfig, OpenAIEpisodeAnalysisProvider
 from services.analysis.pipeline import EpisodeAnalysisPipeline
+from services.animation.fake_provider import FakeVideoProvider
+from services.animation.pipeline import PIPELINE_VERSION as T15_PIPELINE_VERSION
+from services.animation.pipeline import AnimationPipeline
+from services.animation.providers import VideoGenerationProvider
+from services.animation.runway import RunwayVideoProvider
 from services.image_generation.openai_image import OpenAIImageProvider
-from services.image_generation.pipeline import ImageGenerationPipeline
+from services.image_generation.pipeline import (
+    PIPELINE_VERSION as T14_PIPELINE_VERSION,
+)
+from services.image_generation.pipeline import (
+    ImageGenerationPipeline,
+)
 from services.image_generation.providers import ImageGenerationProvider
 from services.media_worker.pipeline import MediaPipeline
 from services.narration.alignment import OpenAIWhisperAligner
@@ -44,8 +58,21 @@ from services.transcription.fake import FakeTranscriptionProvider
 from services.transcription.openai_adapter import OpenAITranscriptionAdapter
 from services.transcription.pipeline import TranscriptionPipeline
 from vidgen.contracts.media import ExtractedFrame, SceneBoundary
+from vidgen.contracts.shot_workflow import (
+    ProjectShotFanoutInput,
+    ProjectShotFanoutResult,
+    ResolveShotFanoutResult,
+    ShotWorkflowIdentity,
+    ShotWorkflowInput,
+    ShotWorkflowProgress,
+    ShotWorkflowResult,
+    ShotWorkflowStatus,
+)
 from vidgen.contracts.transcription import TranscriptSegment, TranscriptWord
 from vidgen.contracts.workflow import StageActivityInput, StageActivityResult
+from vidgen.db.animation_models import AnimationGeneratedVideo
+from vidgen.db.image_generation_models import GeneratedKeyframeImage, ImageGenerationRun
+from vidgen.db.image_generation_repository import ImageGenerationRepository
 from vidgen.db.models import Asset, AudioAsset, Project, Scene, SourceVideo, asset_dependencies
 from vidgen.db.session import build_engine
 from vidgen.db.subtitle_models import SubtitleCandidateRecord
@@ -74,6 +101,300 @@ def build_production_handlers(
         "narration": _with_session(configured, _generate_narration),
         "storyboard": _with_session(configured, _generate_storyboard),
         "image_generation": _with_session(configured, _generate_keyframes),
+    }
+
+
+def _canonical_hash(value: object) -> str:
+    return hashlib.sha256(
+        json.dumps(value, sort_keys=True, separators=(",", ":"), default=str).encode()
+    ).hexdigest()
+
+
+def _shot_input(
+    request: ProjectShotFanoutInput, selected: object, shot: object
+) -> ShotWorkflowInput:
+    # Kept local to the activity so mutable database/configuration reads never
+    # occur in workflow code.
+    storyboard = selected.storyboard
+    material: dict[str, str | int] = {
+        "project_id": str(request.project_id),
+        "storyboard_run_id": str(storyboard.id),
+        "storyboard_input_hash": storyboard.input_hash,
+        "storyboard_shot_id": str(shot.stable_shot_id),
+        "canonical_shot_hash": _canonical_hash(shot.contract),
+        "shot_sequence": shot.global_sequence,
+        "timing_manifest_hash": selected.timing_asset.sha256,
+        "t14_configuration_identity": request.t14_configuration_identity,
+        "t15_capability_profile_identity": request.t15_capability_profile_identity,
+        "t14_pipeline_version": T14_PIPELINE_VERSION,
+        "t15_pipeline_version": T15_PIPELINE_VERSION,
+        "t16_workflow_version": "t16/1",
+        "attempt_policy_version": request.attempt_policy_version,
+    }
+    digest = identity_hash(material)
+    identity = ShotWorkflowIdentity(**material, identity_hash=digest)
+    return ShotWorkflowInput(
+        project_id=request.project_id,
+        storyboard_run_id=storyboard.id,
+        storyboard_shot_id=shot.stable_shot_id,
+        shot_input_hash=digest,
+        workflow_identity=identity,
+        idempotency_key=f"{request.idempotency_key}:{digest}",
+        trace_context=request.trace_context,
+        attempt_policy_version=request.attempt_policy_version,
+    )
+
+
+def _resolve_shot_fanout(
+    session: Session,
+    _blob_store: FilesystemBlobStore,
+    settings: APISettings,
+    image_provider: ImageGenerationProvider,
+    video_provider: VideoGenerationProvider,
+    raw_request: object,
+) -> ResolveShotFanoutResult:
+    request = ProjectShotFanoutInput.model_validate(raw_request)
+    selected = ImageGenerationRepository(session).selected_storyboard(
+        request.project_id, request.storyboard_run_id
+    )
+    request = request.model_copy(
+        update={
+            "t14_configuration_identity": (
+                f"{image_provider.name}:{settings.image_model}:image-provider/1"
+            ),
+            "t15_capability_profile_identity": (
+                f"{video_provider.name}:{settings.visual_capability_profile}:runway/2024-11-06"
+            ),
+        }
+    )
+    return ResolveShotFanoutResult(
+        shots=[_shot_input(request, selected, shot) for shot in selected.shots]
+    )
+
+
+def _authoritative_shot(session: Session, request: ShotWorkflowInput) -> tuple[object, object]:
+    selected = ImageGenerationRepository(session).selected_storyboard(
+        request.project_id, request.storyboard_run_id
+    )
+    shot = next(
+        (row for row in selected.shots if row.stable_shot_id == request.storyboard_shot_id),
+        None,
+    )
+    if shot is None:
+        raise ValueError("InvalidLineage: shot is not part of selected storyboard")
+    fanout = ProjectShotFanoutInput(
+        project_id=request.project_id,
+        storyboard_run_id=request.storyboard_run_id,
+        idempotency_key=request.idempotency_key.rsplit(":", 1)[0],
+        trace_context=request.trace_context,
+        t14_configuration_identity=request.workflow_identity.t14_configuration_identity,
+        t15_capability_profile_identity=(request.workflow_identity.t15_capability_profile_identity),
+        attempt_policy_version=request.attempt_policy_version,
+    )
+    expected = _shot_input(fanout, selected, shot)
+    if expected.workflow_identity != request.workflow_identity:
+        raise ValueError("InvalidLineage: shot workflow identity is stale or incompatible")
+    return selected, shot
+
+
+def _resolve_shot_input(
+    session: Session,
+    _blob_store: FilesystemBlobStore,
+    _settings: APISettings,
+    _image_provider: ImageGenerationProvider,
+    _video_provider: VideoGenerationProvider,
+    raw_request: object,
+) -> ShotWorkflowProgress:
+    request = ShotWorkflowInput.model_validate(raw_request)
+    _authoritative_shot(session, request)
+    return ShotWorkflowProgress(
+        state=ShotWorkflowStatus.PROMPTING,
+        current_stage="authoritative_input_resolved",
+        current_attempt=1,
+        last_checkpoint="lineage_validated",
+    )
+
+
+def _run_shot_keyframe(
+    session: Session,
+    blob_store: FilesystemBlobStore,
+    settings: APISettings,
+    image_provider: ImageGenerationProvider,
+    _video_provider: VideoGenerationProvider,
+    raw_request: object,
+) -> ShotWorkflowProgress:
+    request = ShotWorkflowInput.model_validate(raw_request)
+    _authoritative_shot(session, request)
+    result = asyncio.run(
+        ImageGenerationPipeline(
+            session,
+            blob_store,
+            image_provider,
+            model=settings.image_model,
+            provider_configuration_version=(request.workflow_identity.t14_configuration_identity),
+            cancellation_check=activity.is_cancelled,
+        ).process(
+            project_id=request.project_id,
+            storyboard_id=request.storyboard_run_id,
+            shot_id=request.storyboard_shot_id,
+            idempotency_key=shot_activity_idempotency_key(request.shot_input_hash, "t14"),
+        )
+    )
+    first = next(
+        (
+            item.candidate
+            for item in result.items
+            if item.candidate is not None and item.keyframe_role.value == "FIRST_FRAME"
+        ),
+        None,
+    )
+    if first is None:
+        raise RuntimeError("TechnicalValidationFailure: T14 did not select a first keyframe")
+    return ShotWorkflowProgress(
+        state=ShotWorkflowStatus.KEYFRAME_QA,
+        current_stage="t14_complete",
+        current_attempt=1,
+        t14_run_id=result.run_id,
+        selected_keyframe_asset_id=first.asset_id,
+        last_checkpoint="selected_keyframe_persisted",
+    )
+
+
+def _run_shot_animation(
+    session: Session,
+    blob_store: FilesystemBlobStore,
+    _settings: APISettings,
+    _image_provider: ImageGenerationProvider,
+    video_provider: VideoGenerationProvider,
+    raw_request: object,
+) -> ShotWorkflowResult:
+    request = ShotWorkflowInput.model_validate(raw_request)
+    _, shot = _authoritative_shot(session, request)
+    image_run = session.scalar(
+        select(ImageGenerationRun).where(
+            ImageGenerationRun.project_id == request.project_id,
+            ImageGenerationRun.idempotency_key
+            == shot_activity_idempotency_key(request.shot_input_hash, "t14"),
+        )
+    )
+    if image_run is None or image_run.status != "keyframes_complete":
+        raise ValueError("InvalidLineage: compatible completed T14 run is missing")
+    result = asyncio.run(
+        AnimationPipeline(
+            session,
+            blob_store,
+            video_provider,
+            provider_configuration_version=(
+                request.workflow_identity.t15_capability_profile_identity
+            ),
+            cancellation_check=activity.is_cancelled,
+        ).process(
+            project_id=request.project_id,
+            storyboard_id=request.storyboard_run_id,
+            image_run_id=image_run.id,
+            shot_id=request.storyboard_shot_id,
+            idempotency_key=shot_activity_idempotency_key(request.shot_input_hash, "t15"),
+        )
+    )
+    item_result = result.items[0] if result.items else None
+    candidate = item_result.candidate if item_result is not None else None
+    if candidate is None:
+        raise RuntimeError("TechnicalValidationFailure: T15 did not select a canonical clip")
+    video = session.scalar(
+        select(AnimationGeneratedVideo).where(
+            AnimationGeneratedVideo.canonical_asset_id == candidate.canonical_asset_id
+        )
+    )
+    if video is None:
+        raise RuntimeError("TechnicalValidationFailure: selected T15 clip is not durable")
+    keyframe = session.scalar(
+        select(GeneratedKeyframeImage).where(
+            GeneratedKeyframeImage.shot_id == shot.id,
+            GeneratedKeyframeImage.keyframe_role == "FIRST_FRAME",
+            GeneratedKeyframeImage.selected,
+        )
+    )
+    return ShotWorkflowResult(
+        shot_id=request.storyboard_shot_id,
+        child_workflow_id="",  # workflow replaces this compact deterministic reference
+        identity_hash=request.shot_input_hash,
+        final_state=ShotWorkflowStatus.VIDEO_QA,
+        t14_run_id=image_run.id,
+        selected_keyframe_asset_id=keyframe.asset_id if keyframe else None,
+        t15_run_id=result.run_id,
+        selected_video_asset_id=video.canonical_asset_id,
+        exact_usable_duration_us=shot.usable_duration_us,
+        provider_generation_duration_us=round(video.provider_duration * 1_000_000),
+        warning_codes=[str(item.get("code")) for item in video.trim_manifest.get("warnings", [])],
+    )
+
+
+def _persist_fanout_status(settings: APISettings) -> ShotActivityHandler:
+    engine = build_engine(settings.database_url)
+
+    def persist(raw_request: object) -> ProjectShotFanoutResult:
+        request = ProjectShotFanoutResult.model_validate(raw_request)
+        with Session(engine) as session:
+            project = session.get(Project, request.project_id)
+            if project is None:
+                raise ValueError("InvalidLineage: project does not exist")
+            project.status = request.status
+            session.commit()
+        return request
+
+    return persist
+
+
+def build_shot_production_handlers(
+    settings: APISettings | None = None,
+) -> dict[str, ShotActivityHandler]:
+    """Build T16 adapters while retaining T14/T15 ownership of paid operations."""
+    configured = settings or get_settings()
+    engine = build_engine(configured.database_url)
+    blob_store = FilesystemBlobStore(configured.blob_root, configured.signing_secret.encode())
+    image_provider: ImageGenerationProvider
+    video_provider: VideoGenerationProvider
+    if configured.openai_api_key:
+        from openai import OpenAI
+
+        image_provider = OpenAIImageProvider(
+            OpenAI(api_key=configured.openai_api_key, max_retries=0)
+        )
+    elif configured.temporal_allow_fake_providers:
+        image_provider = DeterministicFakeImageProvider()
+    else:
+        raise ValueError("T16 image generation provider is not configured")
+    if configured.runway_api_secret:
+        from runwayml import AsyncRunwayML
+
+        video_provider = RunwayVideoProvider(
+            AsyncRunwayML(api_key=configured.runway_api_secret, max_retries=0)
+        )
+    elif configured.temporal_allow_fake_providers:
+        # Retain one fake instance so a retried polling activity can retrieve the
+        # deterministic task submitted by the prior activity execution.
+        video_provider = FakeVideoProvider()
+    else:
+        raise ValueError("T16 video generation provider is not configured")
+
+    def with_session(handler: Callable[..., object]) -> ShotActivityHandler:
+        def execute(request: object) -> object:
+            with Session(engine, expire_on_commit=False) as session:
+                return handler(
+                    session, blob_store, configured, image_provider, video_provider, request
+                )
+
+        return execute
+
+    return {
+        "resolve_shot_fanout": with_session(_resolve_shot_fanout),
+        "resolve_shot_input": with_session(_resolve_shot_input),
+        "run_shot_keyframe": with_session(_run_shot_keyframe),
+        "run_shot_animation": with_session(_run_shot_animation),
+        # T14/T15 rows are the durable shot checkpoints; these activities form
+        # an explicit commit/query boundary without duplicating their tables.
+        "persist_shot_checkpoint": lambda request: request,
+        "persist_shot_fanout_checkpoint": _persist_fanout_status(configured),
     }
 
 
@@ -596,9 +917,7 @@ def _generate_keyframes(
     if settings.openai_api_key:
         from openai import OpenAI
 
-        provider = OpenAIImageProvider(
-            OpenAI(api_key=settings.openai_api_key, max_retries=0)
-        )
+        provider = OpenAIImageProvider(OpenAI(api_key=settings.openai_api_key, max_retries=0))
     elif settings.temporal_allow_fake_providers:
         provider = DeterministicFakeImageProvider()
     else:

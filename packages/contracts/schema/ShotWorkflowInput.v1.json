@@ -110,6 +110,19 @@
       "title": "Idempotency Key",
       "type": "string"
     },
+    "parent_workflow_id": {
+      "anyOf": [
+        {
+          "maxLength": 255,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Parent Workflow Id"
+    },
     "project_id": {
       "format": "uuid",
       "title": "Project Id",
