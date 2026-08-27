@@ -30,11 +30,16 @@ export interface ApiResponse<T> {
  */
 export class VidGenClient {
   private readonly config: WebConfig;
-  private readonly fetchImpl: typeof fetch;
+  /** Late-bound so a test double installed after construction is still used. */
+  private readonly fetchImpl: typeof fetch | undefined;
 
-  constructor(config: WebConfig = readConfig(), fetchImpl: typeof fetch = globalThis.fetch) {
+  constructor(config: WebConfig = readConfig(), fetchImpl?: typeof fetch) {
     this.config = config;
     this.fetchImpl = fetchImpl;
+  }
+
+  private get transport(): typeof fetch {
+    return this.fetchImpl ?? globalThis.fetch.bind(globalThis);
   }
 
   async request<T>(path: string, options: RequestOptions = {}): Promise<ApiResponse<T>> {
@@ -65,7 +70,7 @@ export class VidGenClient {
       if (options.signal) {
         Object.assign(init, { signal: options.signal });
       }
-      response = await this.fetchImpl(url, init);
+      response = await this.transport(url, init);
     } catch (cause) {
       if (cause instanceof DOMException && cause.name === "AbortError") {
         throw cause;
@@ -138,7 +143,6 @@ export class VidGenClient {
       return;
     }
     // Redacted by construction: no bodies, no signed URLs, no headers.
-    // eslint-disable-next-line no-console
     console.debug(`[vidgen] ${method} ${redactPath(path)} -> ${status}`, { correlationId });
   }
 }

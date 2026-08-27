@@ -57,6 +57,7 @@ export function toApiError(status: number, body: unknown): ApiError {
     stage: null,
     fields: [],
     correlation_id: null,
+    detail_code: null,
   };
 }
 
