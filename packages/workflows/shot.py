@@ -110,16 +110,22 @@ class ShotWorkflow:
             )
             self._progress = await self._activity("resolve_shot_input", ShotWorkflowProgress)  # type: ignore[assignment]
             self._progress.current_attempt = max(1, self._progress.current_attempt)
+            if self._cancelled:
+                raise CancelledError()
         if self._progress.selected_keyframe_asset_id is None:
             self._progress.state = ShotWorkflowStatus.KEYFRAME_GENERATING
             self._progress.current_stage = "t14"
             self._progress = await self._activity("run_shot_keyframe", ShotWorkflowProgress)  # type: ignore[assignment]
             self._progress.state = ShotWorkflowStatus.KEYFRAME_QA
             self._progress.last_checkpoint = "selected_keyframe_persisted"
+            if self._cancelled:
+                raise CancelledError()
         self._progress.state = ShotWorkflowStatus.ANIMATING
         self._progress.current_stage = "t15"
         result = await self._activity("run_shot_animation", ShotWorkflowResult)
         assert isinstance(result, ShotWorkflowResult)
+        if self._cancelled:
+            raise CancelledError()
         self._progress.state = ShotWorkflowStatus.VIDEO_QA
         self._progress.t15_run_id = result.t15_run_id
         self._progress.selected_video_asset_id = result.selected_video_asset_id
