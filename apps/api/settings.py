@@ -33,6 +33,19 @@ class APISettings(BaseSettings):
     subtitle_languages: tuple[str, ...] = ("en",)
     subtitle_sync_enabled: bool = False
     temporal_allow_fake_providers: bool = False
+    temporal_target_host: str = "localhost:7233"
+    temporal_namespace: str = "default"
+    # T18 keeps Temporal out of API and frontend unit tests.
+    temporal_use_fake_workflow_controller: bool = True
+    # CORS stays disabled unless an explicit development allowlist is configured.
+    cors_allowed_origins: tuple[str, ...] = ()
+
+    @field_validator("cors_allowed_origins", mode="before")
+    @classmethod
+    def parse_cors_origins(cls, value: object) -> object:
+        if isinstance(value, str):
+            return tuple(item.strip() for item in value.split(",") if item.strip())
+        return value
 
     @field_validator("allowed_video_types", mode="before")
     @classmethod

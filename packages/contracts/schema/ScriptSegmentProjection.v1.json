@@ -1,0 +1,129 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "content_hash": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Content Hash",
+      "type": "string"
+    },
+    "estimated_duration_ms": {
+      "exclusiveMinimum": 0,
+      "title": "Estimated Duration Ms",
+      "type": "integer"
+    },
+    "joke_annotation_count": {
+      "minimum": 0,
+      "title": "Joke Annotation Count",
+      "type": "integer"
+    },
+    "locked": {
+      "default": false,
+      "title": "Locked",
+      "type": "boolean"
+    },
+    "measured_narration_duration_ms": {
+      "anyOf": [
+        {
+          "minimum": 0,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Measured Narration Duration Ms"
+    },
+    "plot_beat_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Plot Beat Ids",
+      "type": "array"
+    },
+    "row_version": {
+      "minimum": 1,
+      "title": "Row Version",
+      "type": "integer"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "segment_id": {
+      "format": "uuid",
+      "title": "Segment Id",
+      "type": "string"
+    },
+    "segment_type": {
+      "maxLength": 16,
+      "title": "Segment Type",
+      "type": "string"
+    },
+    "sequence": {
+      "minimum": 0,
+      "title": "Sequence",
+      "type": "integer"
+    },
+    "speaker_kind": {
+      "maxLength": 16,
+      "title": "Speaker Kind",
+      "type": "string"
+    },
+    "speaker_label": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Speaker Label"
+    },
+    "stable_segment_id": {
+      "format": "uuid",
+      "title": "Stable Segment Id",
+      "type": "string"
+    },
+    "text": {
+      "title": "Text",
+      "type": "string"
+    },
+    "visual_gag": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Visual Gag"
+    },
+    "word_count": {
+      "minimum": 0,
+      "title": "Word Count",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "segment_id",
+    "stable_segment_id",
+    "sequence",
+    "segment_type",
+    "speaker_kind",
+    "text",
+    "joke_annotation_count",
+    "word_count",
+    "estimated_duration_ms",
+    "content_hash",
+    "row_version"
+  ],
+  "title": "ScriptSegmentProjection",
+  "type": "object"
+}

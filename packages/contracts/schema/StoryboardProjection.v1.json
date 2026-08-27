@@ -1,0 +1,353 @@
+{
+  "$defs": {
+    "StoryboardShotProjection": {
+      "additionalProperties": false,
+      "properties": {
+        "attempt_count": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Attempt Count",
+          "type": "integer"
+        },
+        "camera_framing": {
+          "anyOf": [
+            {
+              "maxLength": 64,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Camera Framing"
+        },
+        "camera_movement": {
+          "anyOf": [
+            {
+              "maxLength": 64,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Camera Movement"
+        },
+        "character_references": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 32,
+          "title": "Character References",
+          "type": "array"
+        },
+        "cost_amount": {
+          "anyOf": [
+            {
+              "maxLength": 32,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Cost Amount"
+        },
+        "failure_code": {
+          "anyOf": [
+            {
+              "maxLength": 64,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Failure Code"
+        },
+        "global_end_us": {
+          "exclusiveMinimum": 0,
+          "title": "Global End Us",
+          "type": "integer"
+        },
+        "global_sequence": {
+          "minimum": 0,
+          "title": "Global Sequence",
+          "type": "integer"
+        },
+        "global_start_us": {
+          "minimum": 0,
+          "title": "Global Start Us",
+          "type": "integer"
+        },
+        "location_reference": {
+          "anyOf": [
+            {
+              "maxLength": 255,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Location Reference"
+        },
+        "model": {
+          "anyOf": [
+            {
+              "maxLength": 128,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Model"
+        },
+        "provider": {
+          "anyOf": [
+            {
+              "maxLength": 64,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Provider"
+        },
+        "requested_generation_duration_us": {
+          "exclusiveMinimum": 0,
+          "title": "Requested Generation Duration Us",
+          "type": "integer"
+        },
+        "row_version": {
+          "minimum": 1,
+          "title": "Row Version",
+          "type": "integer"
+        },
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "script_segment_id": {
+          "format": "uuid",
+          "title": "Script Segment Id",
+          "type": "string"
+        },
+        "segment_sequence": {
+          "minimum": 0,
+          "title": "Segment Sequence",
+          "type": "integer"
+        },
+        "selected_keyframe_asset_id": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Selected Keyframe Asset Id"
+        },
+        "selected_video_asset_id": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Selected Video Asset Id"
+        },
+        "shot_id": {
+          "format": "uuid",
+          "title": "Shot Id",
+          "type": "string"
+        },
+        "stable_shot_id": {
+          "format": "uuid",
+          "title": "Stable Shot Id",
+          "type": "string"
+        },
+        "transition_in": {
+          "anyOf": [
+            {
+              "maxLength": 64,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Transition In"
+        },
+        "transition_out": {
+          "anyOf": [
+            {
+              "maxLength": 64,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Transition Out"
+        },
+        "trim_end_us": {
+          "minimum": 0,
+          "title": "Trim End Us",
+          "type": "integer"
+        },
+        "trim_start_us": {
+          "minimum": 0,
+          "title": "Trim Start Us",
+          "type": "integer"
+        },
+        "usable_duration_us": {
+          "exclusiveMinimum": 0,
+          "title": "Usable Duration Us",
+          "type": "integer"
+        },
+        "visual_objective": {
+          "maxLength": 2000,
+          "title": "Visual Objective",
+          "type": "string"
+        },
+        "warning_code": {
+          "anyOf": [
+            {
+              "maxLength": 64,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Warning Code"
+        },
+        "workflow_status": {
+          "maxLength": 64,
+          "title": "Workflow Status",
+          "type": "string"
+        }
+      },
+      "required": [
+        "shot_id",
+        "stable_shot_id",
+        "global_sequence",
+        "segment_sequence",
+        "script_segment_id",
+        "global_start_us",
+        "global_end_us",
+        "usable_duration_us",
+        "requested_generation_duration_us",
+        "trim_start_us",
+        "trim_end_us",
+        "visual_objective",
+        "workflow_status",
+        "row_version"
+      ],
+      "title": "StoryboardShotProjection",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "project_id": {
+      "format": "uuid",
+      "title": "Project Id",
+      "type": "string"
+    },
+    "row_version": {
+      "minimum": 1,
+      "title": "Row Version",
+      "type": "integer"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "segment_count": {
+      "minimum": 0,
+      "title": "Segment Count",
+      "type": "integer"
+    },
+    "selected": {
+      "title": "Selected",
+      "type": "boolean"
+    },
+    "shot_count": {
+      "minimum": 0,
+      "title": "Shot Count",
+      "type": "integer"
+    },
+    "shots": {
+      "items": {
+        "$ref": "#/$defs/StoryboardShotProjection"
+      },
+      "title": "Shots",
+      "type": "array"
+    },
+    "storyboard_run_id": {
+      "format": "uuid",
+      "title": "Storyboard Run Id",
+      "type": "string"
+    },
+    "timing_manifest_asset_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Timing Manifest Asset Id"
+    },
+    "total_duration_us": {
+      "minimum": 0,
+      "title": "Total Duration Us",
+      "type": "integer"
+    },
+    "version": {
+      "minimum": 1,
+      "title": "Version",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "project_id",
+    "storyboard_run_id",
+    "version",
+    "selected",
+    "shot_count",
+    "segment_count",
+    "total_duration_us",
+    "row_version"
+  ],
+  "title": "StoryboardProjection",
+  "type": "object"
+}

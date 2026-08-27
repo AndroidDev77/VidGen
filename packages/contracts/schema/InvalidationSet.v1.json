@@ -1,0 +1,68 @@
+{
+  "$defs": {
+    "InvalidationEntry": {
+      "additionalProperties": false,
+      "properties": {
+        "label": {
+          "maxLength": 255,
+          "title": "Label",
+          "type": "string"
+        },
+        "reason": {
+          "maxLength": 128,
+          "title": "Reason",
+          "type": "string"
+        },
+        "resource_id": {
+          "format": "uuid",
+          "title": "Resource Id",
+          "type": "string"
+        },
+        "resource_type": {
+          "maxLength": 64,
+          "title": "Resource Type",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        }
+      },
+      "required": [
+        "resource_type",
+        "resource_id",
+        "label",
+        "reason"
+      ],
+      "title": "InvalidationEntry",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "The exact downstream lineage a mutation will mark stale.",
+  "properties": {
+    "entries": {
+      "items": {
+        "$ref": "#/$defs/InvalidationEntry"
+      },
+      "maxItems": 512,
+      "title": "Entries",
+      "type": "array"
+    },
+    "requires_confirmation": {
+      "default": false,
+      "title": "Requires Confirmation",
+      "type": "boolean"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    }
+  },
+  "title": "InvalidationSet",
+  "type": "object"
+}

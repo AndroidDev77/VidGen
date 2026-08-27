@@ -1,0 +1,198 @@
+{
+  "$defs": {
+    "PipelineStage": {
+      "description": "Known pipeline stages in repository order, as shown by the timeline.",
+      "enum": [
+        "upload",
+        "media_processing",
+        "transcript_acquisition",
+        "evidence",
+        "episode_analysis",
+        "script_generation",
+        "narration",
+        "storyboard",
+        "keyframes",
+        "animation",
+        "shot_orchestration",
+        "captions",
+        "rendering",
+        "review"
+      ],
+      "title": "PipelineStage",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "description": "One deduplicated, ordered Server-Sent Event payload.",
+  "properties": {
+    "completed_shot_count": {
+      "anyOf": [
+        {
+          "minimum": 0,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Completed Shot Count"
+    },
+    "cost_summary_version": {
+      "anyOf": [
+        {
+          "minimum": 0,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Cost Summary Version"
+    },
+    "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+    },
+    "event_id": {
+      "minimum": 1,
+      "title": "Event Id",
+      "type": "integer"
+    },
+    "event_type": {
+      "maxLength": 64,
+      "title": "Event Type",
+      "type": "string"
+    },
+    "failure_code": {
+      "anyOf": [
+        {
+          "maxLength": 64,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Failure Code"
+    },
+    "progress_percentage": {
+      "anyOf": [
+        {
+          "maximum": 100,
+          "minimum": 0,
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Progress Percentage"
+    },
+    "project_id": {
+      "format": "uuid",
+      "title": "Project Id",
+      "type": "string"
+    },
+    "render_status": {
+      "anyOf": [
+        {
+          "maxLength": 64,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Render Status"
+    },
+    "retryable_failure_count": {
+      "anyOf": [
+        {
+          "minimum": 0,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Retryable Failure Count"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "stage": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/PipelineStage"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "status": {
+      "maxLength": 64,
+      "title": "Status",
+      "type": "string"
+    },
+    "total_shot_count": {
+      "anyOf": [
+        {
+          "minimum": 0,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Total Shot Count"
+    },
+    "warning_code": {
+      "anyOf": [
+        {
+          "maxLength": 64,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Warning Code"
+    },
+    "workflow_id": {
+      "anyOf": [
+        {
+          "maxLength": 255,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Workflow Id"
+    }
+  },
+  "required": [
+    "event_id",
+    "project_id",
+    "event_type",
+    "status",
+    "created_at"
+  ],
+  "title": "ProjectEventProjection",
+  "type": "object"
+}

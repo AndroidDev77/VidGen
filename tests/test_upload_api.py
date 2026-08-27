@@ -77,7 +77,7 @@ def test_project_api_and_resumable_upload(
     assert duplicate.json()["duplicate"] is True
     conflict = client.put(f"/api/v1/uploads/{upload['id']}/parts/0", content=b"different")
     assert conflict.status_code == 409
-    assert conflict.json()["detail"] == "conflicting_part"
+    assert conflict.json()["detail_code"] == "conflicting_part"
 
     complete = client.post(f"/api/v1/uploads/{upload['id']}/complete")
     assert complete.status_code == 200
@@ -172,7 +172,7 @@ def test_upload_validation_and_finalization_recovery(
     assert client.put(f"/api/v1/uploads/{upload['id']}/parts/0", content=content).status_code == 200
     mismatch = client.post(f"/api/v1/uploads/{upload['id']}/complete")
     assert mismatch.status_code == 422
-    assert mismatch.json()["detail"] == "hash_mismatch"
+    assert mismatch.json()["detail_code"] == "hash_mismatch"
 
     recovery_project = create_project(client)
     recovery = initialize(
@@ -200,7 +200,7 @@ def test_finalize_rejects_non_mp4_container(
     client.put(f"/api/v1/uploads/{upload['id']}/parts/0", content=content)
     response = client.post(f"/api/v1/uploads/{upload['id']}/complete")
     assert response.status_code == 422
-    assert response.json()["detail"] == "invalid_video_container"
+    assert response.json()["detail_code"] == "invalid_video_container"
 
 
 def test_project_and_assets_are_owner_scoped(

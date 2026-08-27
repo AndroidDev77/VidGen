@@ -1,0 +1,539 @@
+{
+  "$defs": {
+    "ShotAttemptProjection": {
+      "additionalProperties": false,
+      "properties": {
+        "asset_id": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Asset Id"
+        },
+        "attempt_id": {
+          "format": "uuid",
+          "title": "Attempt Id",
+          "type": "string"
+        },
+        "attempt_number": {
+          "minimum": 1,
+          "title": "Attempt Number",
+          "type": "integer"
+        },
+        "cost_amount": {
+          "anyOf": [
+            {
+              "maxLength": 32,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Cost Amount"
+        },
+        "created_at": {
+          "format": "date-time",
+          "title": "Created At",
+          "type": "string"
+        },
+        "failure_class": {
+          "anyOf": [
+            {
+              "maxLength": 64,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Failure Class"
+        },
+        "generated_duration_us": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Generated Duration Us"
+        },
+        "generation_identity": {
+          "anyOf": [
+            {
+              "maxLength": 64,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Generation Identity"
+        },
+        "kind": {
+          "enum": [
+            "keyframe",
+            "video"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "model": {
+          "maxLength": 128,
+          "title": "Model",
+          "type": "string"
+        },
+        "prompt_version": {
+          "anyOf": [
+            {
+              "maxLength": 32,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Prompt Version"
+        },
+        "provider": {
+          "maxLength": 64,
+          "title": "Provider",
+          "type": "string"
+        },
+        "provider_task_id": {
+          "anyOf": [
+            {
+              "maxLength": 255,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Provider Task Id"
+        },
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "selected": {
+          "default": false,
+          "title": "Selected",
+          "type": "boolean"
+        },
+        "status": {
+          "maxLength": 64,
+          "title": "Status",
+          "type": "string"
+        },
+        "usable_duration_us": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Usable Duration Us"
+        }
+      },
+      "required": [
+        "attempt_id",
+        "kind",
+        "attempt_number",
+        "status",
+        "provider",
+        "model",
+        "created_at"
+      ],
+      "title": "ShotAttemptProjection",
+      "type": "object"
+    },
+    "StoryboardShotProjection": {
+      "additionalProperties": false,
+      "properties": {
+        "attempt_count": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Attempt Count",
+          "type": "integer"
+        },
+        "camera_framing": {
+          "anyOf": [
+            {
+              "maxLength": 64,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Camera Framing"
+        },
+        "camera_movement": {
+          "anyOf": [
+            {
+              "maxLength": 64,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Camera Movement"
+        },
+        "character_references": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 32,
+          "title": "Character References",
+          "type": "array"
+        },
+        "cost_amount": {
+          "anyOf": [
+            {
+              "maxLength": 32,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Cost Amount"
+        },
+        "failure_code": {
+          "anyOf": [
+            {
+              "maxLength": 64,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Failure Code"
+        },
+        "global_end_us": {
+          "exclusiveMinimum": 0,
+          "title": "Global End Us",
+          "type": "integer"
+        },
+        "global_sequence": {
+          "minimum": 0,
+          "title": "Global Sequence",
+          "type": "integer"
+        },
+        "global_start_us": {
+          "minimum": 0,
+          "title": "Global Start Us",
+          "type": "integer"
+        },
+        "location_reference": {
+          "anyOf": [
+            {
+              "maxLength": 255,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Location Reference"
+        },
+        "model": {
+          "anyOf": [
+            {
+              "maxLength": 128,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Model"
+        },
+        "provider": {
+          "anyOf": [
+            {
+              "maxLength": 64,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Provider"
+        },
+        "requested_generation_duration_us": {
+          "exclusiveMinimum": 0,
+          "title": "Requested Generation Duration Us",
+          "type": "integer"
+        },
+        "row_version": {
+          "minimum": 1,
+          "title": "Row Version",
+          "type": "integer"
+        },
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "script_segment_id": {
+          "format": "uuid",
+          "title": "Script Segment Id",
+          "type": "string"
+        },
+        "segment_sequence": {
+          "minimum": 0,
+          "title": "Segment Sequence",
+          "type": "integer"
+        },
+        "selected_keyframe_asset_id": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Selected Keyframe Asset Id"
+        },
+        "selected_video_asset_id": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Selected Video Asset Id"
+        },
+        "shot_id": {
+          "format": "uuid",
+          "title": "Shot Id",
+          "type": "string"
+        },
+        "stable_shot_id": {
+          "format": "uuid",
+          "title": "Stable Shot Id",
+          "type": "string"
+        },
+        "transition_in": {
+          "anyOf": [
+            {
+              "maxLength": 64,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Transition In"
+        },
+        "transition_out": {
+          "anyOf": [
+            {
+              "maxLength": 64,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Transition Out"
+        },
+        "trim_end_us": {
+          "minimum": 0,
+          "title": "Trim End Us",
+          "type": "integer"
+        },
+        "trim_start_us": {
+          "minimum": 0,
+          "title": "Trim Start Us",
+          "type": "integer"
+        },
+        "usable_duration_us": {
+          "exclusiveMinimum": 0,
+          "title": "Usable Duration Us",
+          "type": "integer"
+        },
+        "visual_objective": {
+          "maxLength": 2000,
+          "title": "Visual Objective",
+          "type": "string"
+        },
+        "warning_code": {
+          "anyOf": [
+            {
+              "maxLength": 64,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Warning Code"
+        },
+        "workflow_status": {
+          "maxLength": 64,
+          "title": "Workflow Status",
+          "type": "string"
+        }
+      },
+      "required": [
+        "shot_id",
+        "stable_shot_id",
+        "global_sequence",
+        "segment_sequence",
+        "script_segment_id",
+        "global_start_us",
+        "global_end_us",
+        "usable_duration_us",
+        "requested_generation_duration_us",
+        "trim_start_us",
+        "trim_end_us",
+        "visual_objective",
+        "workflow_status",
+        "row_version"
+      ],
+      "title": "StoryboardShotProjection",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "child_workflow_id": {
+      "anyOf": [
+        {
+          "maxLength": 255,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Child Workflow Id"
+    },
+    "child_workflow_retryable": {
+      "default": false,
+      "title": "Child Workflow Retryable",
+      "type": "boolean"
+    },
+    "child_workflow_status": {
+      "maxLength": 64,
+      "title": "Child Workflow Status",
+      "type": "string"
+    },
+    "identity_hash": {
+      "anyOf": [
+        {
+          "pattern": "^[a-f0-9]{64}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Identity Hash"
+    },
+    "keyframe_attempts": {
+      "items": {
+        "$ref": "#/$defs/ShotAttemptProjection"
+      },
+      "title": "Keyframe Attempts",
+      "type": "array"
+    },
+    "regeneration_history": {
+      "items": {
+        "type": "string"
+      },
+      "maxItems": 64,
+      "title": "Regeneration History",
+      "type": "array"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "shot": {
+      "$ref": "#/$defs/StoryboardShotProjection"
+    },
+    "source_evidence_ids": {
+      "items": {
+        "type": "string"
+      },
+      "maxItems": 64,
+      "title": "Source Evidence Ids",
+      "type": "array"
+    },
+    "trim_instructions_asset_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Trim Instructions Asset Id"
+    },
+    "video_attempts": {
+      "items": {
+        "$ref": "#/$defs/ShotAttemptProjection"
+      },
+      "title": "Video Attempts",
+      "type": "array"
+    }
+  },
+  "required": [
+    "shot",
+    "child_workflow_status"
+  ],
+  "title": "ShotDetailProjection",
+  "type": "object"
+}

@@ -97,11 +97,15 @@ def test_pipeline_rejects_stale_selected_storyboard(tmp_path: Path) -> None:
 def test_run_idempotency_binds_shot_and_role_selectors(tmp_path: Path) -> None:
     fixture = build_fixture(tmp_path)
     storyboard = run_storyboard(fixture)
-    shots = fixture.session.execute(
-        select(StoryboardShotRecord)
-        .where(StoryboardShotRecord.storyboard_run_id == storyboard.storyboard_run_id)
-        .order_by(StoryboardShotRecord.global_sequence)
-    ).scalars().all()
+    shots = (
+        fixture.session.execute(
+            select(StoryboardShotRecord)
+            .where(StoryboardShotRecord.storyboard_run_id == storyboard.storyboard_run_id)
+            .order_by(StoryboardShotRecord.global_sequence)
+        )
+        .scalars()
+        .all()
+    )
     pipeline = ImageGenerationPipeline(
         fixture.session, fixture.blobs, DeterministicFakeImageProvider()
     )

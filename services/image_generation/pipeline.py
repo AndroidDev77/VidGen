@@ -572,9 +572,7 @@ class ImageGenerationPipeline:
         if len(rows) != len(character_ids):
             episode = self.session.get(EpisodeAnalysisRecord, selected.storyboard.episode_model_id)
             asset = (
-                self.session.get(Asset, episode.canonical_analysis_asset_id)
-                if episode
-                else None
+                self.session.get(Asset, episode.canonical_analysis_asset_id) if episode else None
             )
             if asset is not None and asset.project_id == selected.project.id:
                 payload = json.loads(self.blob_store.read(asset.storage_key))
@@ -590,9 +588,7 @@ class ImageGenerationPipeline:
             name = row.canonical_name if row is not None else str(definition["canonical_name"])
             aliases_value = definition.get("aliases")
             aliases = (
-                [str(value) for value in aliases_value]
-                if isinstance(aliases_value, list)
-                else []
+                [str(value) for value in aliases_value] if isinstance(aliases_value, list) else []
             )
             description = f"{name}"
             if aliases:
@@ -602,9 +598,7 @@ class ImageGenerationPipeline:
             descriptions.append(description)
         return descriptions
 
-    def _location_description(
-        self, selected: SelectedStoryboard, location_id: UUID | None
-    ) -> str:
+    def _location_description(self, selected: SelectedStoryboard, location_id: UUID | None) -> str:
         if location_id is None:
             return "unspecified project location"
         row = self.session.get(Location, location_id)
@@ -618,9 +612,7 @@ class ImageGenerationPipeline:
         else:
             episode = self.session.get(EpisodeAnalysisRecord, selected.storyboard.episode_model_id)
             asset = (
-                self.session.get(Asset, episode.canonical_analysis_asset_id)
-                if episode
-                else None
+                self.session.get(Asset, episode.canonical_analysis_asset_id) if episode else None
             )
             if asset is not None and asset.project_id == selected.project.id:
                 payload = json.loads(self.blob_store.read(asset.storage_key))
@@ -632,9 +624,5 @@ class ImageGenerationPipeline:
         if definition is None or name is None:
             raise ValueError(f"project location {location_id} has no selected T10 definition")
         aliases_value = definition.get("aliases")
-        aliases = (
-            [str(value) for value in aliases_value]
-            if isinstance(aliases_value, list)
-            else []
-        )
+        aliases = [str(value) for value in aliases_value] if isinstance(aliases_value, list) else []
         return f"{name} (also known as {', '.join(aliases)})" if aliases else name

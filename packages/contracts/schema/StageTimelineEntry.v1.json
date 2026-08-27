@@ -1,0 +1,97 @@
+{
+  "$defs": {
+    "PipelineStage": {
+      "description": "Known pipeline stages in repository order, as shown by the timeline.",
+      "enum": [
+        "upload",
+        "media_processing",
+        "transcript_acquisition",
+        "evidence",
+        "episode_analysis",
+        "script_generation",
+        "narration",
+        "storyboard",
+        "keyframes",
+        "animation",
+        "shot_orchestration",
+        "captions",
+        "rendering",
+        "review"
+      ],
+      "title": "PipelineStage",
+      "type": "string"
+    },
+    "StageState": {
+      "enum": [
+        "pending",
+        "running",
+        "complete",
+        "failed",
+        "skipped",
+        "cancelled"
+      ],
+      "title": "StageState",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "completed_at": {
+      "anyOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Completed At"
+    },
+    "detail_code": {
+      "anyOf": [
+        {
+          "maxLength": 64,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Detail Code"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "stage": {
+      "$ref": "#/$defs/PipelineStage"
+    },
+    "started_at": {
+      "anyOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Started At"
+    },
+    "state": {
+      "$ref": "#/$defs/StageState"
+    }
+  },
+  "required": [
+    "stage",
+    "state"
+  ],
+  "title": "StageTimelineEntry",
+  "type": "object"
+}

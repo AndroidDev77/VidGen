@@ -1,0 +1,70 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "attempt_count": {
+      "minimum": 0,
+      "title": "Attempt Count",
+      "type": "integer"
+    },
+    "child_workflow_id": {
+      "anyOf": [
+        {
+          "maxLength": 255,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Child Workflow Id"
+    },
+    "failure_code": {
+      "anyOf": [
+        {
+          "maxLength": 64,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Failure Code"
+    },
+    "retryable": {
+      "default": false,
+      "title": "Retryable",
+      "type": "boolean"
+    },
+    "row_version": {
+      "minimum": 1,
+      "title": "Row Version",
+      "type": "integer"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "shot_id": {
+      "format": "uuid",
+      "title": "Shot Id",
+      "type": "string"
+    },
+    "status": {
+      "maxLength": 64,
+      "title": "Status",
+      "type": "string"
+    }
+  },
+  "required": [
+    "shot_id",
+    "status",
+    "attempt_count",
+    "row_version"
+  ],
+  "title": "ShotStatusProjection",
+  "type": "object"
+}

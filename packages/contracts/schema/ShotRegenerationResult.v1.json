@@ -1,0 +1,133 @@
+{
+  "$defs": {
+    "InvalidationEntry": {
+      "additionalProperties": false,
+      "properties": {
+        "label": {
+          "maxLength": 255,
+          "title": "Label",
+          "type": "string"
+        },
+        "reason": {
+          "maxLength": 128,
+          "title": "Reason",
+          "type": "string"
+        },
+        "resource_id": {
+          "format": "uuid",
+          "title": "Resource Id",
+          "type": "string"
+        },
+        "resource_type": {
+          "maxLength": 64,
+          "title": "Resource Type",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        }
+      },
+      "required": [
+        "resource_type",
+        "resource_id",
+        "label",
+        "reason"
+      ],
+      "title": "InvalidationEntry",
+      "type": "object"
+    },
+    "InvalidationSet": {
+      "additionalProperties": false,
+      "description": "The exact downstream lineage a mutation will mark stale.",
+      "properties": {
+        "entries": {
+          "items": {
+            "$ref": "#/$defs/InvalidationEntry"
+          },
+          "maxItems": 512,
+          "title": "Entries",
+          "type": "array"
+        },
+        "requires_confirmation": {
+          "default": false,
+          "title": "Requires Confirmation",
+          "type": "boolean"
+        },
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        }
+      },
+      "title": "InvalidationSet",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "child_workflow_id": {
+      "maxLength": 255,
+      "title": "Child Workflow Id",
+      "type": "string"
+    },
+    "invalidation": {
+      "$ref": "#/$defs/InvalidationSet"
+    },
+    "new_identity_hash": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "New Identity Hash",
+      "type": "string"
+    },
+    "preserved_attempt_ids": {
+      "items": {
+        "format": "uuid",
+        "type": "string"
+      },
+      "maxItems": 64,
+      "title": "Preserved Attempt Ids",
+      "type": "array"
+    },
+    "previous_identity_hash": {
+      "anyOf": [
+        {
+          "pattern": "^[a-f0-9]{64}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Previous Identity Hash"
+    },
+    "row_version": {
+      "minimum": 1,
+      "title": "Row Version",
+      "type": "integer"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "shot_id": {
+      "format": "uuid",
+      "title": "Shot Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "shot_id",
+    "child_workflow_id",
+    "new_identity_hash",
+    "invalidation",
+    "row_version"
+  ],
+  "title": "ShotRegenerationResult",
+  "type": "object"
+}

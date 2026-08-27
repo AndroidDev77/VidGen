@@ -90,6 +90,8 @@ async def test_ambiguous_timeout_is_not_reported_as_pre_acceptance_failure() -> 
 
     with pytest.raises(UnknownProviderOutcome):
         await OpenAIImageProvider(SimpleNamespace(images=TimeoutImages())).generate(request())
+
+
 def test_adapter_disables_sdk_retries() -> None:
     class ConfigurableClient:
         def __init__(self) -> None:
