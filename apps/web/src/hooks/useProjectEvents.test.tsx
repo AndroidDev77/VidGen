@@ -11,6 +11,7 @@ import { server } from "../test/server";
 import {
   MAX_SSE_ATTEMPTS,
   backoffDelay,
+  cleanReconnectDelay,
   invalidateForEvent,
   parseFrames,
   useProjectEvents,
@@ -120,6 +121,32 @@ describe("useProjectEvents", () => {
     expect(backoffDelay(1)).toBe(1000);
     expect(backoffDelay(2)).toBe(2000);
     expect(backoffDelay(20)).toBe(15_000);
+  });
+
+  it("backs off when a stream keeps closing without delivering anything", () => {
+    // The first reopen is prompt, because a clean close is normal. Repeated
+    // empty closes are not, and must not become a reconnect loop.
+    expect(cleanReconnectDelay(1)).toBe(100);
+    expect(cleanReconnectDelay(2)).toBe(500);
+    expect(cleanReconnectDelay(3)).toBe(1000);
+    expect(cleanReconnectDelay(30)).toBe(15_000);
+  });
+
+  it("holds the connection state steady across empty reconnects", async () => {
+    const queryClient = new QueryClient();
+    // Every stream closes immediately, exactly like a stub endpoint returning
+    // an empty body. Reopening it must not produce a fresh state object, or
+    // every subscribed page would re-render on a timer and replace its DOM
+    // nodes under the user.
+    const openStream = vi.fn(() => Promise.resolve(readerOf([])));
+    const { result } = renderHook(() => useProjectEvents(PROJECT_ID, { client, openStream }), {
+      wrapper: wrapper(queryClient),
+    });
+
+    await waitFor(() => expect(result.current.connection).toBe("streaming"));
+    const settled = result.current;
+    await waitFor(() => expect(openStream.mock.calls.length).toBeGreaterThanOrEqual(3));
+    expect(result.current).toBe(settled);
   });
 });
 
