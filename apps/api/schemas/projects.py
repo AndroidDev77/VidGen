@@ -26,6 +26,21 @@ class ProjectResponse(BaseModel):
     updated_at: datetime
 
 
+class ProjectListItemResponse(ProjectResponse):
+    """The project-list row: everything the T18 list view renders.
+
+    Costs stay exact decimal strings so no currency value is ever rounded by a
+    binary float on the way to the browser.
+    """
+
+    current_stage: str | None = None
+    progress_percentage: float | None = None
+    committed_cost_amount: str | None = None
+    hard_cap_amount: str | None = None
+    has_failures: bool = False
+    row_version: int = Field(ge=1)
+
+
 class ProjectStatusResponse(BaseModel):
     project_id: UUID
     status: str

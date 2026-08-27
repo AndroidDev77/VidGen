@@ -27,12 +27,31 @@ class APISettings(BaseSettings):
     image_model: str = "gpt-image-2-2026-04-21"
     runway_api_secret: str | None = None
     visual_capability_profile: str = "runway-gen4-turbo"
+    # Provider names as bound into the T16 child-workflow identity.
+    image_provider_name: str = "openai"
+    video_provider_name: str = "runway"
     opensubtitles_api_key: str | None = None
     opensubtitles_username: str | None = None
     opensubtitles_password: str | None = None
     subtitle_languages: tuple[str, ...] = ("en",)
     subtitle_sync_enabled: bool = False
     temporal_allow_fake_providers: bool = False
+    temporal_target_host: str = "localhost:7233"
+    temporal_namespace: str = "default"
+    # T18 keeps Temporal out of API and frontend unit tests.
+    # Off by default so an unconfigured deployment cannot silently report
+    # workflows as running while nothing was started. Local development and the
+    # test suites enable it explicitly.
+    temporal_use_fake_workflow_controller: bool = False
+    # CORS stays disabled unless an explicit development allowlist is configured.
+    cors_allowed_origins: tuple[str, ...] = ()
+
+    @field_validator("cors_allowed_origins", mode="before")
+    @classmethod
+    def parse_cors_origins(cls, value: object) -> object:
+        if isinstance(value, str):
+            return tuple(item.strip() for item in value.split(",") if item.strip())
+        return value
 
     @field_validator("allowed_video_types", mode="before")
     @classmethod

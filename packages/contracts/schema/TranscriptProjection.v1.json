@@ -1,0 +1,181 @@
+{
+  "$defs": {
+    "TranscriptSegmentProjection": {
+      "additionalProperties": false,
+      "properties": {
+        "confidence": {
+          "anyOf": [
+            {
+              "maximum": 1,
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Confidence"
+        },
+        "edited": {
+          "default": false,
+          "title": "Edited",
+          "type": "boolean"
+        },
+        "end_seconds": {
+          "exclusiveMinimum": 0,
+          "title": "End Seconds",
+          "type": "number"
+        },
+        "row_version": {
+          "minimum": 1,
+          "title": "Row Version",
+          "type": "integer"
+        },
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "segment_id": {
+          "format": "uuid",
+          "title": "Segment Id",
+          "type": "string"
+        },
+        "sequence": {
+          "minimum": 0,
+          "title": "Sequence",
+          "type": "integer"
+        },
+        "speaker_label": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Speaker Label"
+        },
+        "start_seconds": {
+          "minimum": 0,
+          "title": "Start Seconds",
+          "type": "number"
+        },
+        "text": {
+          "title": "Text",
+          "type": "string"
+        }
+      },
+      "required": [
+        "segment_id",
+        "sequence",
+        "start_seconds",
+        "end_seconds",
+        "text",
+        "row_version"
+      ],
+      "title": "TranscriptSegmentProjection",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "coverage_score": {
+      "maximum": 1,
+      "minimum": 0,
+      "title": "Coverage Score",
+      "type": "number"
+    },
+    "duration_seconds": {
+      "exclusiveMinimum": 0,
+      "title": "Duration Seconds",
+      "type": "number"
+    },
+    "language": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Language"
+    },
+    "origin": {
+      "enum": [
+        "transcription",
+        "subtitle"
+      ],
+      "title": "Origin",
+      "type": "string"
+    },
+    "project_id": {
+      "format": "uuid",
+      "title": "Project Id",
+      "type": "string"
+    },
+    "row_version": {
+      "minimum": 1,
+      "title": "Row Version",
+      "type": "integer"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "segments": {
+      "items": {
+        "$ref": "#/$defs/TranscriptSegmentProjection"
+      },
+      "title": "Segments",
+      "type": "array"
+    },
+    "selected": {
+      "title": "Selected",
+      "type": "boolean"
+    },
+    "source_asset_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Source Asset Id"
+    },
+    "transcript_id": {
+      "format": "uuid",
+      "title": "Transcript Id",
+      "type": "string"
+    },
+    "version": {
+      "minimum": 1,
+      "title": "Version",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "transcript_id",
+    "project_id",
+    "version",
+    "origin",
+    "duration_seconds",
+    "coverage_score",
+    "selected",
+    "row_version"
+  ],
+  "title": "TranscriptProjection",
+  "type": "object"
+}

@@ -1,0 +1,81 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "confidence": {
+      "anyOf": [
+        {
+          "maximum": 1,
+          "minimum": 0,
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Confidence"
+    },
+    "edited": {
+      "default": false,
+      "title": "Edited",
+      "type": "boolean"
+    },
+    "end_seconds": {
+      "exclusiveMinimum": 0,
+      "title": "End Seconds",
+      "type": "number"
+    },
+    "row_version": {
+      "minimum": 1,
+      "title": "Row Version",
+      "type": "integer"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "segment_id": {
+      "format": "uuid",
+      "title": "Segment Id",
+      "type": "string"
+    },
+    "sequence": {
+      "minimum": 0,
+      "title": "Sequence",
+      "type": "integer"
+    },
+    "speaker_label": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Speaker Label"
+    },
+    "start_seconds": {
+      "minimum": 0,
+      "title": "Start Seconds",
+      "type": "number"
+    },
+    "text": {
+      "title": "Text",
+      "type": "string"
+    }
+  },
+  "required": [
+    "segment_id",
+    "sequence",
+    "start_seconds",
+    "end_seconds",
+    "text",
+    "row_version"
+  ],
+  "title": "TranscriptSegmentProjection",
+  "type": "object"
+}

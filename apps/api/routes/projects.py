@@ -11,6 +11,7 @@ from apps.api.auth import Principal, get_current_user
 from apps.api.dependencies import get_blob_store, get_session
 from apps.api.schemas.projects import (
     CreateProjectRequest,
+    ProjectListItemResponse,
     ProjectResponse,
     ProjectStatusResponse,
 )
@@ -19,6 +20,8 @@ from apps.api.settings import APISettings, get_settings
 from vidgen.db.models import Project, SourceVideo
 from vidgen.db.repositories import ProjectRepository
 from vidgen.db.upload_models import UploadSession
+from vidgen.review.projections import project_summary
+from vidgen.review.versions import RowVersionService
 from vidgen.storage.blob import FilesystemBlobStore
 from vidgen.uploads.service import UploadError, UploadService
 
@@ -57,9 +60,34 @@ def create_project(
     return project
 
 
-@router.get("", response_model=list[ProjectResponse])
-def list_projects(session: SessionDependency, principal: PrincipalDependency) -> list[Project]:
-    return ProjectRepository(session).list_for_owner(principal.subject)
+@router.get("", response_model=list[ProjectListItemResponse])
+def list_projects(
+    session: SessionDependency, principal: PrincipalDependency
+) -> list[ProjectListItemResponse]:
+    versions = RowVersionService(session)
+    items: list[ProjectListItemResponse] = []
+    for project in ProjectRepository(session).list_for_owner(principal.subject):
+        summary = project_summary(session, project, versions)
+        items.append(
+            ProjectListItemResponse(
+                id=project.id,
+                name=project.name,
+                status=project.status,
+                target_duration_seconds=project.target_duration_seconds,
+                visual_style=project.visual_style,
+                humor_intensity=project.humor_intensity,
+                created_at=project.created_at,
+                updated_at=project.updated_at,
+                current_stage=summary.current_stage.value if summary.current_stage else None,
+                progress_percentage=summary.progress_percentage,
+                committed_cost_amount=summary.committed_cost_amount,
+                hard_cap_amount=summary.hard_cap_amount,
+                has_failures=summary.has_failures,
+                row_version=summary.row_version,
+            )
+        )
+    session.commit()
+    return items
 
 
 @router.get("/{project_id}", response_model=ProjectResponse)

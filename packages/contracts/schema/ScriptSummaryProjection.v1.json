@@ -1,0 +1,81 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "actual_word_count": {
+      "minimum": 0,
+      "title": "Actual Word Count",
+      "type": "integer"
+    },
+    "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+    },
+    "parent_script_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Parent Script Id"
+    },
+    "row_version": {
+      "minimum": 1,
+      "title": "Row Version",
+      "type": "integer"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "script_id": {
+      "format": "uuid",
+      "title": "Script Id",
+      "type": "string"
+    },
+    "selected": {
+      "title": "Selected",
+      "type": "boolean"
+    },
+    "status": {
+      "maxLength": 64,
+      "title": "Status",
+      "type": "string"
+    },
+    "target_duration_ms": {
+      "exclusiveMinimum": 0,
+      "title": "Target Duration Ms",
+      "type": "integer"
+    },
+    "target_word_count": {
+      "exclusiveMinimum": 0,
+      "title": "Target Word Count",
+      "type": "integer"
+    },
+    "version": {
+      "minimum": 1,
+      "title": "Version",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "script_id",
+    "version",
+    "status",
+    "selected",
+    "actual_word_count",
+    "target_word_count",
+    "target_duration_ms",
+    "created_at",
+    "row_version"
+  ],
+  "title": "ScriptSummaryProjection",
+  "type": "object"
+}

@@ -1,0 +1,159 @@
+{
+  "$defs": {
+    "ApiErrorCode": {
+      "description": "Stable machine-readable failure codes rendered by the review UI.",
+      "enum": [
+        "validation_failed",
+        "not_found",
+        "precondition_required",
+        "version_conflict",
+        "idempotency_key_required",
+        "idempotency_key_mismatch",
+        "workflow_not_started",
+        "upload_incomplete",
+        "render_not_verified",
+        "render_stale",
+        "shot_not_retryable",
+        "attempt_not_eligible",
+        "budget_denied",
+        "provider_unavailable",
+        "rate_limited",
+        "internal_error"
+      ],
+      "title": "ApiErrorCode",
+      "type": "string"
+    },
+    "ApiErrorField": {
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "maxLength": 64,
+          "minLength": 1,
+          "title": "Code",
+          "type": "string"
+        },
+        "field": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Field",
+          "type": "string"
+        },
+        "message": {
+          "maxLength": 500,
+          "title": "Message",
+          "type": "string"
+        }
+      },
+      "required": [
+        "field",
+        "code",
+        "message"
+      ],
+      "title": "ApiErrorField",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "The single structured failure body every T18 route returns.",
+  "properties": {
+    "code": {
+      "$ref": "#/$defs/ApiErrorCode"
+    },
+    "correlation_id": {
+      "anyOf": [
+        {
+          "maxLength": 128,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Correlation Id"
+    },
+    "current_version": {
+      "anyOf": [
+        {
+          "minimum": 1,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Current Version"
+    },
+    "detail_code": {
+      "anyOf": [
+        {
+          "maxLength": 128,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Detail Code"
+    },
+    "fields": {
+      "items": {
+        "$ref": "#/$defs/ApiErrorField"
+      },
+      "maxItems": 64,
+      "title": "Fields",
+      "type": "array"
+    },
+    "retryable": {
+      "default": false,
+      "title": "Retryable",
+      "type": "boolean"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "stage": {
+      "anyOf": [
+        {
+          "maxLength": 64,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Stage"
+    },
+    "summary": {
+      "maxLength": 500,
+      "minLength": 1,
+      "title": "Summary",
+      "type": "string"
+    },
+    "workflow_id": {
+      "anyOf": [
+        {
+          "maxLength": 255,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Workflow Id"
+    }
+  },
+  "required": [
+    "code",
+    "summary"
+  ],
+  "title": "ApiError",
+  "type": "object"
+}

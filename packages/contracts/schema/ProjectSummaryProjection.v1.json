@@ -1,0 +1,143 @@
+{
+  "$defs": {
+    "PipelineStage": {
+      "description": "Known pipeline stages in repository order, as shown by the timeline.",
+      "enum": [
+        "upload",
+        "media_processing",
+        "transcript_acquisition",
+        "evidence",
+        "episode_analysis",
+        "script_generation",
+        "narration",
+        "storyboard",
+        "keyframes",
+        "animation",
+        "shot_orchestration",
+        "captions",
+        "rendering",
+        "review"
+      ],
+      "title": "PipelineStage",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "description": "The project-list row; costs stay exact decimal strings.",
+  "properties": {
+    "committed_cost_amount": {
+      "anyOf": [
+        {
+          "maxLength": 32,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Committed Cost Amount"
+    },
+    "current_stage": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/PipelineStage"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "hard_cap_amount": {
+      "anyOf": [
+        {
+          "maxLength": 32,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Hard Cap Amount"
+    },
+    "has_failures": {
+      "default": false,
+      "title": "Has Failures",
+      "type": "boolean"
+    },
+    "humor_intensity": {
+      "maximum": 10,
+      "minimum": 0,
+      "title": "Humor Intensity",
+      "type": "integer"
+    },
+    "name": {
+      "maxLength": 255,
+      "title": "Name",
+      "type": "string"
+    },
+    "progress_percentage": {
+      "anyOf": [
+        {
+          "maximum": 100,
+          "minimum": 0,
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Progress Percentage"
+    },
+    "project_id": {
+      "format": "uuid",
+      "title": "Project Id",
+      "type": "string"
+    },
+    "row_version": {
+      "minimum": 1,
+      "title": "Row Version",
+      "type": "integer"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "status": {
+      "maxLength": 64,
+      "title": "Status",
+      "type": "string"
+    },
+    "target_duration_seconds": {
+      "exclusiveMinimum": 0,
+      "title": "Target Duration Seconds",
+      "type": "number"
+    },
+    "updated_at": {
+      "format": "date-time",
+      "title": "Updated At",
+      "type": "string"
+    },
+    "visual_style": {
+      "title": "Visual Style",
+      "type": "string"
+    }
+  },
+  "required": [
+    "project_id",
+    "name",
+    "status",
+    "target_duration_seconds",
+    "visual_style",
+    "humor_intensity",
+    "updated_at",
+    "row_version"
+  ],
+  "title": "ProjectSummaryProjection",
+  "type": "object"
+}

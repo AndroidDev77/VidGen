@@ -1,0 +1,50 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "applies_to_current_lineage": {
+      "title": "Applies To Current Lineage",
+      "type": "boolean"
+    },
+    "approval_id": {
+      "format": "uuid",
+      "title": "Approval Id",
+      "type": "string"
+    },
+    "approved_at": {
+      "format": "date-time",
+      "title": "Approved At",
+      "type": "string"
+    },
+    "approved_by": {
+      "maxLength": 255,
+      "title": "Approved By",
+      "type": "string"
+    },
+    "lineage_hash": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Lineage Hash",
+      "type": "string"
+    },
+    "render_job_id": {
+      "format": "uuid",
+      "title": "Render Job Id",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    }
+  },
+  "required": [
+    "approval_id",
+    "render_job_id",
+    "approved_by",
+    "approved_at",
+    "lineage_hash",
+    "applies_to_current_lineage"
+  ],
+  "title": "RenderApprovalProjection",
+  "type": "object"
+}

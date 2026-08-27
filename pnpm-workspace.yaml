@@ -2,3 +2,7 @@ packages:
   - apps/*
   - packages/ts-contracts
 
+# Build scripts are opt-in: only these dependencies may run install scripts.
+allowBuilds:
+  esbuild: true
+  msw: true

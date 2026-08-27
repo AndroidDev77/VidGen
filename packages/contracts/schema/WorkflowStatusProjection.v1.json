@@ -1,0 +1,273 @@
+{
+  "$defs": {
+    "PipelineStage": {
+      "description": "Known pipeline stages in repository order, as shown by the timeline.",
+      "enum": [
+        "upload",
+        "media_processing",
+        "transcript_acquisition",
+        "evidence",
+        "episode_analysis",
+        "script_generation",
+        "narration",
+        "storyboard",
+        "keyframes",
+        "animation",
+        "shot_orchestration",
+        "captions",
+        "rendering",
+        "review"
+      ],
+      "title": "PipelineStage",
+      "type": "string"
+    },
+    "StageState": {
+      "enum": [
+        "pending",
+        "running",
+        "complete",
+        "failed",
+        "skipped",
+        "cancelled"
+      ],
+      "title": "StageState",
+      "type": "string"
+    },
+    "StageTimelineEntry": {
+      "additionalProperties": false,
+      "properties": {
+        "completed_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Completed At"
+        },
+        "detail_code": {
+          "anyOf": [
+            {
+              "maxLength": 64,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Detail Code"
+        },
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "stage": {
+          "$ref": "#/$defs/PipelineStage"
+        },
+        "started_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Started At"
+        },
+        "state": {
+          "$ref": "#/$defs/StageState"
+        }
+      },
+      "required": [
+        "stage",
+        "state"
+      ],
+      "title": "StageTimelineEntry",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Compact workflow status; never carries stage payloads.",
+  "properties": {
+    "cancelled": {
+      "default": false,
+      "title": "Cancelled",
+      "type": "boolean"
+    },
+    "completed_shot_count": {
+      "default": 0,
+      "minimum": 0,
+      "title": "Completed Shot Count",
+      "type": "integer"
+    },
+    "completed_stages": {
+      "items": {
+        "$ref": "#/$defs/PipelineStage"
+      },
+      "maxItems": 32,
+      "title": "Completed Stages",
+      "type": "array"
+    },
+    "current_stage": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/PipelineStage"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "elapsed_seconds": {
+      "anyOf": [
+        {
+          "minimum": 0,
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Elapsed Seconds"
+    },
+    "failed_shot_count": {
+      "default": 0,
+      "minimum": 0,
+      "title": "Failed Shot Count",
+      "type": "integer"
+    },
+    "progress_percentage": {
+      "anyOf": [
+        {
+          "maximum": 100,
+          "minimum": 0,
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Progress Percentage"
+    },
+    "project_id": {
+      "format": "uuid",
+      "title": "Project Id",
+      "type": "string"
+    },
+    "render_status": {
+      "anyOf": [
+        {
+          "maxLength": 64,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Render Status"
+    },
+    "retryable_failure_count": {
+      "default": 0,
+      "minimum": 0,
+      "title": "Retryable Failure Count",
+      "type": "integer"
+    },
+    "run_id": {
+      "anyOf": [
+        {
+          "maxLength": 255,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Run Id"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "stages": {
+      "items": {
+        "$ref": "#/$defs/StageTimelineEntry"
+      },
+      "maxItems": 32,
+      "title": "Stages",
+      "type": "array"
+    },
+    "started_at": {
+      "anyOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Started At"
+    },
+    "status": {
+      "maxLength": 64,
+      "title": "Status",
+      "type": "string"
+    },
+    "total_shot_count": {
+      "default": 0,
+      "minimum": 0,
+      "title": "Total Shot Count",
+      "type": "integer"
+    },
+    "updated_at": {
+      "anyOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Updated At"
+    },
+    "workflow_id": {
+      "anyOf": [
+        {
+          "maxLength": 255,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Workflow Id"
+    }
+  },
+  "required": [
+    "project_id",
+    "status"
+  ],
+  "title": "WorkflowStatusProjection",
+  "type": "object"
+}

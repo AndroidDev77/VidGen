@@ -8,6 +8,11 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from apps.api.settings import get_settings
 from vidgen.db.session import build_engine, session_factory
+from vidgen.review.workflow_control import (
+    FakeWorkflowController,
+    TemporalWorkflowController,
+    WorkflowController,
+)
 from vidgen.storage.blob import FilesystemBlobStore
 
 
@@ -30,3 +35,16 @@ def get_session() -> Generator[Session, None, None]:
 def get_blob_store() -> FilesystemBlobStore:
     settings = get_settings()
     return FilesystemBlobStore(settings.blob_root, settings.signing_secret.encode())
+
+
+@lru_cache
+def get_workflow_controller() -> WorkflowController:
+    """Return the configured workflow controller.
+
+    Local development and tests use the deterministic fake, so the review UI and
+    the API test suite never require a running Temporal cluster.
+    """
+    settings = get_settings()
+    if settings.temporal_use_fake_workflow_controller:
+        return FakeWorkflowController()
+    return TemporalWorkflowController(settings.temporal_target_host, settings.temporal_namespace)

@@ -1008,3 +1008,436 @@ export interface CaptionTrack { schema_version: "1.0"; caption_track_id: UUID; l
 export interface RenderVideoProfile { schema_version: "1.0"; width: 1920; height: 1080; frame_rate: 24 | 30; codec: "libx264"; codec_profile: "high"; pixel_format: "yuv420p"; normalization_policy: "scale_crop" | "scale_pad" }
 export interface RenderAudioProfile { schema_version: "1.0"; codec: "aac"; sample_rate_hz: 48000; channels: 2; bitrate_kbps: number; integrated_lufs: number; true_peak_dbtp: number; max_lra: number }
 export interface RenderJobResult { schema_version: "1.0"; render_job_id: UUID; render_identity: string; status: string; manifest_asset_id: UUID | null; srt_asset_id: UUID | null; webvtt_asset_id: UUID | null; final_video_asset_id: UUID | null; verification_report_asset_id: UUID | null; reused: boolean }
+
+// ---------------------------------------------------------------------------
+// T18 review-UI control-plane projections.
+// These mirror `vidgen.contracts.review`; the web app must not restate them.
+// ---------------------------------------------------------------------------
+
+export type ApiErrorCode =
+  | "validation_failed"
+  | "not_found"
+  | "precondition_required"
+  | "version_conflict"
+  | "idempotency_key_required"
+  | "idempotency_key_mismatch"
+  | "workflow_not_started"
+  | "upload_incomplete"
+  | "render_not_verified"
+  | "render_stale"
+  | "shot_not_retryable"
+  | "attempt_not_eligible"
+  | "budget_denied"
+  | "provider_unavailable"
+  | "rate_limited"
+  | "internal_error";
+
+export interface ApiErrorField {
+  schema_version: "1.0";
+  field: string;
+  code: string;
+  message: string;
+}
+
+export interface ApiError {
+  schema_version: "1.0";
+  code: ApiErrorCode;
+  summary: string;
+  retryable: boolean;
+  current_version: number | null;
+  workflow_id: string | null;
+  stage: string | null;
+  fields: ApiErrorField[];
+  correlation_id: string | null;
+  /** The originating domain code where a route raises a narrower one. */
+  detail_code: string | null;
+}
+
+export type PipelineStage =
+  | "upload"
+  | "media_processing"
+  | "transcript_acquisition"
+  | "evidence"
+  | "episode_analysis"
+  | "script_generation"
+  | "narration"
+  | "storyboard"
+  | "keyframes"
+  | "animation"
+  | "shot_orchestration"
+  | "captions"
+  | "rendering"
+  | "review";
+
+export const PIPELINE_STAGE_ORDER: readonly PipelineStage[] = [
+  "upload",
+  "media_processing",
+  "transcript_acquisition",
+  "evidence",
+  "episode_analysis",
+  "script_generation",
+  "narration",
+  "storyboard",
+  "keyframes",
+  "animation",
+  "shot_orchestration",
+  "captions",
+  "rendering",
+  "review",
+];
+
+export type StageState =
+  | "pending"
+  | "running"
+  | "complete"
+  | "failed"
+  | "skipped"
+  | "cancelled";
+
+export interface StageTimelineEntry {
+  schema_version: "1.0";
+  stage: PipelineStage;
+  state: StageState;
+  started_at: string | null;
+  completed_at: string | null;
+  detail_code: string | null;
+}
+
+export interface WorkflowStatusProjection {
+  schema_version: "1.0";
+  project_id: UUID;
+  workflow_id: string | null;
+  run_id: string | null;
+  status: string;
+  current_stage: PipelineStage | null;
+  completed_stages: PipelineStage[];
+  cancelled: boolean;
+  started_at: string | null;
+  updated_at: string | null;
+  elapsed_seconds: number | null;
+  total_shot_count: number;
+  completed_shot_count: number;
+  failed_shot_count: number;
+  retryable_failure_count: number;
+  render_status: string | null;
+  stages: StageTimelineEntry[];
+  progress_percentage: number | null;
+}
+
+export interface ProjectEventProjection {
+  schema_version: "1.0";
+  event_id: number;
+  project_id: UUID;
+  workflow_id: string | null;
+  event_type: string;
+  stage: PipelineStage | null;
+  status: string;
+  progress_percentage: number | null;
+  completed_shot_count: number | null;
+  total_shot_count: number | null;
+  retryable_failure_count: number | null;
+  render_status: string | null;
+  cost_summary_version: number | null;
+  warning_code: string | null;
+  failure_code: string | null;
+  created_at: string;
+}
+
+export interface TranscriptSegmentProjection {
+  schema_version: "1.0";
+  segment_id: UUID;
+  sequence: number;
+  start_seconds: number;
+  end_seconds: number;
+  text: string;
+  speaker_label: string | null;
+  confidence: number | null;
+  edited: boolean;
+  row_version: number;
+}
+
+export interface TranscriptProjection {
+  schema_version: "1.0";
+  transcript_id: UUID;
+  project_id: UUID;
+  version: number;
+  language: string | null;
+  origin: "transcription" | "subtitle";
+  duration_seconds: number;
+  coverage_score: number;
+  selected: boolean;
+  row_version: number;
+  source_asset_id: UUID | null;
+  segments: TranscriptSegmentProjection[];
+}
+
+export interface ScriptSegmentProjection {
+  schema_version: "1.0";
+  segment_id: UUID;
+  stable_segment_id: UUID;
+  sequence: number;
+  segment_type: string;
+  speaker_kind: string;
+  speaker_label: string | null;
+  text: string;
+  visual_gag: string | null;
+  joke_annotation_count: number;
+  plot_beat_ids: string[];
+  word_count: number;
+  estimated_duration_ms: number;
+  measured_narration_duration_ms: number | null;
+  locked: boolean;
+  content_hash: string;
+  row_version: number;
+}
+
+export interface ScriptSummaryProjection {
+  schema_version: "1.0";
+  script_id: UUID;
+  version: number;
+  status: string;
+  selected: boolean;
+  actual_word_count: number;
+  target_word_count: number;
+  target_duration_ms: number;
+  parent_script_id: UUID | null;
+  created_at: string;
+  row_version: number;
+}
+
+export interface ScriptProjection {
+  schema_version: "1.0";
+  project_id: UUID;
+  script: ScriptSummaryProjection;
+  approved: boolean;
+  segments: ScriptSegmentProjection[];
+}
+
+export interface InvalidationEntry {
+  schema_version: "1.0";
+  resource_type: string;
+  resource_id: UUID;
+  label: string;
+  reason: string;
+}
+
+export interface InvalidationSet {
+  schema_version: "1.0";
+  entries: InvalidationEntry[];
+  requires_confirmation: boolean;
+}
+
+export interface StoryboardShotProjection {
+  schema_version: "1.0";
+  shot_id: UUID;
+  stable_shot_id: UUID;
+  global_sequence: number;
+  segment_sequence: number;
+  script_segment_id: UUID;
+  global_start_us: number;
+  global_end_us: number;
+  usable_duration_us: number;
+  requested_generation_duration_us: number;
+  trim_start_us: number;
+  trim_end_us: number;
+  visual_objective: string;
+  camera_framing: string | null;
+  camera_movement: string | null;
+  character_references: string[];
+  location_reference: string | null;
+  transition_in: string | null;
+  transition_out: string | null;
+  workflow_status: string;
+  selected_keyframe_asset_id: UUID | null;
+  selected_video_asset_id: UUID | null;
+  provider: string | null;
+  model: string | null;
+  attempt_count: number;
+  cost_amount: string | null;
+  warning_code: string | null;
+  failure_code: string | null;
+  row_version: number;
+}
+
+export interface StoryboardProjection {
+  schema_version: "1.0";
+  project_id: UUID;
+  storyboard_run_id: UUID;
+  version: number;
+  selected: boolean;
+  shot_count: number;
+  segment_count: number;
+  total_duration_us: number;
+  timing_manifest_asset_id: UUID | null;
+  row_version: number;
+  shots: StoryboardShotProjection[];
+}
+
+export interface ShotAttemptProjection {
+  schema_version: "1.0";
+  attempt_id: UUID;
+  kind: "keyframe" | "video";
+  attempt_number: number;
+  status: string;
+  asset_id: UUID | null;
+  provider: string;
+  model: string;
+  provider_task_id: string | null;
+  generation_identity: string | null;
+  prompt_version: string | null;
+  generated_duration_us: number | null;
+  usable_duration_us: number | null;
+  cost_amount: string | null;
+  failure_class: string | null;
+  selected: boolean;
+  created_at: string;
+}
+
+export interface ShotDetailProjection {
+  schema_version: "1.0";
+  shot: StoryboardShotProjection;
+  child_workflow_id: string | null;
+  child_workflow_status: string;
+  child_workflow_retryable: boolean;
+  identity_hash: string | null;
+  trim_instructions_asset_id: UUID | null;
+  source_evidence_ids: string[];
+  keyframe_attempts: ShotAttemptProjection[];
+  video_attempts: ShotAttemptProjection[];
+  regeneration_history: string[];
+}
+
+export interface ShotStatusProjection {
+  schema_version: "1.0";
+  shot_id: UUID;
+  child_workflow_id: string | null;
+  status: string;
+  retryable: boolean;
+  attempt_count: number;
+  failure_code: string | null;
+  row_version: number;
+}
+
+export interface ShotRegenerationResult {
+  schema_version: "1.0";
+  shot_id: UUID;
+  child_workflow_id: string;
+  new_identity_hash: string;
+  previous_identity_hash: string | null;
+  preserved_attempt_ids: UUID[];
+  invalidation: InvalidationSet;
+  row_version: number;
+}
+
+export interface RenderApprovalProjection {
+  schema_version: "1.0";
+  approval_id: UUID;
+  render_job_id: UUID;
+  approved_by: string;
+  approved_at: string;
+  lineage_hash: string;
+  applies_to_current_lineage: boolean;
+}
+
+export interface RenderProjection {
+  schema_version: "1.0";
+  render_job_id: UUID;
+  project_id: UUID;
+  status: string;
+  attempt: number;
+  render_version: string;
+  render_identity: string | null;
+  selected: boolean;
+  stale: boolean;
+  verified: boolean;
+  verification_summary: string | null;
+  expected_duration_us: number | null;
+  measured_duration_us: number | null;
+  selected_shot_count: number;
+  caption_language: string | null;
+  caption_cue_count: number | null;
+  subtitle_mode: string;
+  integrated_loudness_lufs: number | null;
+  true_peak_dbtp: number | null;
+  warning_codes: string[];
+  final_video_asset_id: UUID | null;
+  srt_asset_id: UUID | null;
+  webvtt_asset_id: UUID | null;
+  verification_report_asset_id: UUID | null;
+  manifest_asset_id: UUID | null;
+  script_id: UUID | null;
+  script_version: number | null;
+  storyboard_run_id: UUID | null;
+  narration_run_id: UUID | null;
+  ffmpeg_version: string | null;
+  lineage_hash: string | null;
+  approval: RenderApprovalProjection | null;
+  row_version: number;
+  completed_at: string | null;
+}
+
+export interface ProjectSummaryProjection {
+  schema_version: "1.0";
+  project_id: UUID;
+  name: string;
+  status: string;
+  current_stage: PipelineStage | null;
+  progress_percentage: number | null;
+  target_duration_seconds: number;
+  visual_style: string;
+  humor_intensity: number;
+  updated_at: string;
+  committed_cost_amount: string | null;
+  hard_cap_amount: string | null;
+  has_failures: boolean;
+  row_version: number;
+}
+
+/** The T23 cost summary as projected by `GET /projects/{id}/costs` (camelCase). */
+export interface ProjectCostSummaryResponse {
+  projectId: UUID;
+  warningCap: string;
+  hardCap: string;
+  reservedAmount: string;
+  committedAmount: string;
+  releasedAmount: string;
+  remainingAmount: string;
+  warningPercentage: string | null;
+  hardPercentage: string | null;
+  byProvider: Record<string, string>;
+  byModel: Record<string, string>;
+  byOperation: Record<string, string>;
+  byReason: Record<string, string>;
+}
+
+export interface ProviderAttemptListItem {
+  id: UUID;
+  provider: string;
+  model: string;
+  operation: string;
+  status: string;
+  failureClass: string | null;
+  latencyMs: number | null;
+  startedAt: string;
+}
+
+export interface ProviderAttemptListResponse {
+  total: number;
+  offset: number;
+  limit: number;
+  items: ProviderAttemptListItem[];
+}
+
+export interface PipelineFailureListItem {
+  id: UUID;
+  workflowId: string | null;
+  stage: string;
+  failureClass: string;
+  errorCode: string;
+  retryable: boolean;
+  status: string;
+}
+
+export interface PipelineFailureListResponse {
+  items: PipelineFailureListItem[];
+}

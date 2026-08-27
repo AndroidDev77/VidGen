@@ -12,6 +12,7 @@ import vidgen.db.image_generation_models
 import vidgen.db.models
 import vidgen.db.narration_models
 import vidgen.db.render_models
+import vidgen.db.review_models
 import vidgen.db.script_models
 import vidgen.db.storyboard_models
 import vidgen.db.subtitle_models
