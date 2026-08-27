@@ -45,6 +45,14 @@ services:
       timeout: 3s
       retries: 30
 
+  web:
+    profiles: [web]
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    ports:
+      - "5173:8080"
+
   otel-collector:
     image: otel/opentelemetry-collector-contrib:0.132.0
     profiles: [observability]

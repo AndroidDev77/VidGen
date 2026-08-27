@@ -1,5 +1,5 @@
 import { QueryClient } from "@tanstack/react-query";
-import { screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { HttpResponse, http } from "msw";
 import { Route, Routes } from "react-router-dom";
@@ -171,8 +171,10 @@ describe("TranscriptPage", () => {
     );
     renderProjectRoute(<TranscriptPage />, `/projects/${PROJECT_ID}/transcript`);
     const textarea = await screen.findByLabelText("Transcript text for segment 1");
-    await user.clear(textarea);
-    await user.type(textarea, "Fixed.");
+    fireEvent.change(textarea, { target: { value: "Fixed." } });
+    await waitFor(() =>
+      expect(screen.getAllByRole("button", { name: "Save segment" })[0]!).toBeEnabled(),
+    );
     await user.click(screen.getAllByRole("button", { name: "Save segment" })[0]!);
 
     const dialog = await screen.findByRole("alertdialog");
@@ -195,8 +197,10 @@ describe("TranscriptPage", () => {
     );
     renderProjectRoute(<TranscriptPage />, `/projects/${PROJECT_ID}/transcript`);
     const textarea = await screen.findByLabelText("Transcript text for segment 1");
-    await user.clear(textarea);
-    await user.type(textarea, "My local edit.");
+    fireEvent.change(textarea, { target: { value: "My local edit." } });
+    await waitFor(() =>
+      expect(screen.getAllByRole("button", { name: "Save segment" })[0]!).toBeEnabled(),
+    );
     await user.click(screen.getAllByRole("button", { name: "Save segment" })[0]!);
     await user.click(await screen.findByRole("button", { name: "Save the segment" }));
     expect(await screen.findByText("It changed while you were editing.")).toBeVisible();
@@ -239,8 +243,10 @@ describe("ScriptPage", () => {
     );
     renderProjectRoute(<ScriptPage />, `/projects/${PROJECT_ID}/script`);
     const textarea = await screen.findByLabelText("Narration text for beat 1");
-    await user.clear(textarea);
-    await user.type(textarea, "Funnier.");
+    fireEvent.change(textarea, { target: { value: "Funnier." } });
+    await waitFor(() =>
+      expect(screen.getAllByRole("button", { name: "Save beat" })[0]!).toBeEnabled(),
+    );
     await user.click(screen.getAllByRole("button", { name: "Save beat" })[0]!);
     const dialog = await screen.findByRole("alertdialog");
     expect(within(dialog).getByText(/creates a new script version/)).toBeVisible();
@@ -250,10 +256,9 @@ describe("ScriptPage", () => {
   });
 
   it("marks a beat as unsaved while it is dirty", async () => {
-    const user = userEvent.setup();
     renderProjectRoute(<ScriptPage />, `/projects/${PROJECT_ID}/script`);
     const textarea = await screen.findByLabelText("Narration text for beat 1");
-    await user.type(textarea, "!");
+    fireEvent.change(textarea, { target: { value: "Recap beat number 1 lands with a joke!" } });
     expect(await screen.findByText("Unsaved")).toBeVisible();
   });
 });
@@ -319,7 +324,9 @@ describe("StoryboardPage", () => {
     );
     // A retained cache so the sibling entry survives long enough to inspect.
     const queryClient = new QueryClient({
-      defaultOptions: { queries: { retry: false, gcTime: Infinity, staleTime: 0 } },
+      defaultOptions: {
+        queries: { retry: false, gcTime: Infinity, staleTime: Infinity },
+      },
     });
     renderWithProviders(
       <Routes>

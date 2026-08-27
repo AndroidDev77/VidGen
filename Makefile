@@ -1,4 +1,4 @@
-.PHONY: install lint format typecheck test schemas verify infra-up infra-down observability-up migrate migrate-down verify-stack run-api
+.PHONY: install lint format typecheck test schemas verify infra-up infra-down observability-up migrate migrate-down verify-stack run-api run-web web-install web-lint web-typecheck web-test web-build web-e2e verify-web
 
 export UV_CACHE_DIR ?= .uv-cache
 
@@ -43,3 +43,26 @@ verify-stack:
 
 run-api:
 	uv run uvicorn apps.api.main:app --reload --host 0.0.0.0 --port 8000
+
+run-web:
+	pnpm --filter @vidgen/web dev
+
+web-install:
+	pnpm install
+
+web-lint:
+	pnpm --filter @vidgen/web lint
+
+web-typecheck:
+	pnpm --filter @vidgen/web typecheck
+
+web-test:
+	pnpm --filter @vidgen/web test
+
+web-build:
+	pnpm --filter @vidgen/web build
+
+web-e2e:
+	pnpm --filter @vidgen/web test:e2e
+
+verify-web: web-lint web-typecheck web-test web-build

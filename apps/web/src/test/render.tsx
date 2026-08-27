@@ -15,7 +15,9 @@ export const testClient = new VidGenClient({
 export function createTestQueryClient(): QueryClient {
   return new QueryClient({
     defaultOptions: {
-      queries: { retry: false, gcTime: 0, staleTime: 0 },
+      // No background refetching: a re-render in the middle of a typed
+      // interaction would replace DOM nodes and make assertions racy.
+      queries: { retry: false, gcTime: 0, staleTime: Infinity, refetchOnMount: false },
       mutations: { retry: false },
     },
   });

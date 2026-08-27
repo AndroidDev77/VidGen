@@ -6,11 +6,12 @@ The complete system architecture and T01-T26 implementation roadmap are maintain
 [`docs/TECHNICAL_DESIGN.md`](docs/TECHNICAL_DESIGN.md). Contributors and coding agents should
 read it together with `AGENTS.md` before planning the next roadmap task.
 
-This repository implements roadmap tasks T01 through T15 and T23. T16 per-shot orchestration is
-implemented on its feature branch but remains in review until required CI succeeds. The foundations
-include subtitle-first transcript acquisition, restartable episode analysis, comedy script
-generation, measured narration, deterministic storyboard timing, reviewed keyframe and video
-generation, and cloud-neutral observability/cost controls:
+This repository implements roadmap tasks T01 through T17 and T23. T18, the MVP review UI and its
+control-plane APIs, is implemented on its feature branch and remains in review until required CI
+succeeds. The foundations include subtitle-first transcript acquisition, restartable episode
+analysis, comedy script generation, measured narration, deterministic storyboard timing, reviewed
+keyframe and video generation, deterministic captioned rendering, and cloud-neutral
+observability/cost controls:
 
 - Python monorepo, CI, and local infrastructure
 - Versioned Pydantic contracts plus exported JSON Schema
@@ -30,6 +31,170 @@ generation, and cloud-neutral observability/cost controls:
   versioned prompt compiler, bounded technical image validation, content-addressable provenance
   projections, a network-free fake provider, and an OpenAI Image API adapter pinned by default to
   `gpt-image-2-2026-04-21`. T14 review and CI are complete.
+- A customer-facing React review application and the owner-scoped control-plane APIs behind it
+
+## T18 MVP review UI and control-plane APIs
+
+T18 is the first customer-facing VidGen application. An owner creates a project, uploads a source
+video, starts and monitors the workflow, reviews and edits the transcript and the recap script,
+inspects the storyboard and individual shots, regenerates a single shot without rerunning its
+siblings, previews the finished T17 render with selectable captions, approves it, and downloads the
+final MP4, SRT, and WebVTT assets.
+
+### Architecture
+
+The web application never talks to a provider, a workflow, or the database. It calls one typed API
+client, which calls the owner-scoped FastAPI control plane, which delegates to the review services.
+Route handlers stay thin: HTTP validation lives in the schemas, owner authorization in
+`apps/api/routes/_common.py`, concurrency and idempotency in `vidgen.review`, domain mutation in
+`services.review`, and response projection in `vidgen.review.projections`. No route handler calls
+an AI provider, a media provider, FFmpeg, or a Temporal activity.
+
+### Frontend stack
+
+`apps/web` is a workspace package built with React 18, TypeScript in strict mode, Vite, Fluent UI
+v9, TanStack Query, React Router, Vitest with React Testing Library, Mock Service Worker for
+deterministic API tests, and Playwright for browser acceptance tests. Canonical contracts are
+reused from `@vidgen/contracts` rather than restated as loose frontend interfaces.
+
+### Local development
+
+```bash
+# Terminal 1: the API, using the deterministic fake workflow controller.
+make run-api
+
+# Terminal 2: the web application on http://localhost:5173.
+make run-web           # or: pnpm dev:web
+```
+
+`apps/web/.env.example` documents the two browser variables:
+
+```text
+VITE_VIDGEN_API_BASE_URL   # empty in local development: requests use the Vite dev proxy
+VITE_VIDGEN_DEV_USER       # the local X-VidGen-User development identity
+```
+
+No server secret is ever exposed through a `VITE_` variable. T18 keeps the existing local
+`Principal` and `X-VidGen-User` development identity; production authentication is out of scope.
+
+### Application routes
+
+```text
+/                              redirect to /projects
+/projects                      project list
+/projects/new                  create a project and upload its source video
+/projects/:projectId           dashboard, stage timeline, costs, and failures
+/projects/:projectId/transcript  transcript review and editing
+/projects/:projectId/script      script review, editing, and version selection
+/projects/:projectId/storyboard  storyboard grid, timeline, and shot inspector
+/projects/:projectId/review      final render preview, approval, and downloads
+```
+
+Selected tabs, the inspected shot ID, the transcript search term, and the caption toggle live in
+the URL so a view can be shared or reloaded. Media data and stage payloads never enter history
+state.
+
+### Project creation and upload
+
+The new-project flow collects a name, target recap duration, visual style, and humor intensity, and
+never exposes provider credentials or model routing. The upload integrates the existing T05
+multipart API: the browser validates the file type and size, hashes the file with a streaming
+SHA-256 in a Web Worker (one bounded slice resident at a time), slices the `File` into configured
+parts, uploads them with bounded concurrency, retries transient part failures with bounded backoff,
+treats a conflicting duplicate part as an actionable failure, and finalizes only after every part
+succeeds. Hashing and upload progress are reported separately, cancellation is supported, and a
+resume is refused when the reselected file's fingerprint does not match. Source bytes are never
+placed in application state, local storage, logs, or the query cache.
+
+### Workflow control and progress
+
+Starting a project reuses one stable workflow ID per project, refuses to start before the source
+upload completes, and is idempotent, so a retried or duplicated request adopts the existing run
+instead of creating a second workflow. Cancellation and compact query-visible status are exposed.
+Only compact identifiers, hashes, statuses, and counts cross the Temporal boundary.
+
+Progress reaches the browser through Server-Sent Events at
+`GET /api/v1/projects/{projectId}/events`. Owner authorization happens before streaming starts; the
+stream honours `Last-Event-ID`, deduplicates by sequence, sends heartbeat comments, uses bounded
+payloads with no transcript or script text, and reads durable events in short transactions rather
+than holding one open. The frontend reconnects with bounded exponential backoff and falls back to
+polling after repeated failures. Events invalidate only the queries they affect.
+
+The dashboard renders the fourteen known stages in repository order. A progress percentage is shown
+only when the backend computed one from real shot counts; it is never guessed from a status name.
+
+### Transcript and script editing
+
+Transcript review offers a searchable segment list with times, speaker labels, confidence, keyboard
+navigation, and per-segment saving. An edit preserves the original provider provenance, never
+silently overwrites a newer version, returns the downstream invalidation set, and reruns nothing.
+
+Script review is version-aware. A material change to an approved immutable version creates a new
+compatible version rather than mutating it in place, selects the new version, preserves the
+original rows, and invalidates only the required downstream lineage. Narration, storyboard, shots,
+and render are never regenerated automatically.
+
+### Storyboard, shot inspector, and single-shot regeneration
+
+The storyboard grid presents the canonical shots in sequence with exact T13 timing, trim
+information, camera and reference details, provider, model, attempt count, and cost. The T13 timing
+manifest is the timing authority, and the timeline is read-only in T18. The shot inspector shows
+the canonical definition, keyframe and video attempts, selected outputs, provider task IDs in
+expandable technical details, child-workflow status, and regeneration history, and supports refresh,
+targeted retry, cancellation, attempt selection, and regeneration.
+
+Regenerating one shot verifies project and shot ownership, requires an idempotency key and an
+expected row version, creates a new material regeneration identity, preserves the previously locked
+attempt, leaves sibling shot workflows untouched, invalidates only that shot's render dependency,
+and marks the previous verified render stale rather than deleting it. The exact invalidation set is
+returned before confirmation.
+
+### Final review, approval, and downloads
+
+The final-review page loads only a completed, verified T17 render. It shows the player, render
+status and version, expected and measured duration, verification result, caption controls, loudness
+summary, warnings, selected shot count, approval state, and expandable technical provenance.
+Captions come from the standalone WebVTT asset loaded into a `<track>` element, so the browser's own
+selectable captions work. Approval verifies ownership, `If-Match`, an idempotency key, completion,
+verification, freshness, and lineage, then persists the approving principal, the render ID, and a
+timestamp, preserves previous approval records, and emits a bounded event. Approval never publishes
+the video; T25 owns publication.
+
+Signed download URLs are requested shortly before playback or download, cached briefly, refreshed
+when they expire, and never written into permanent application state or browser storage.
+
+### Owner authorization, concurrency, and idempotency
+
+Every project, transcript, script, storyboard, shot, render, review, event, and asset lookup is
+verified against the authenticated `Principal`. Cross-project and cross-owner identifiers return the
+same `404` as a missing one, so a foreign resource's existence is never disclosed. Ownership is
+never accepted from a request body.
+
+Every mutable operation takes `If-Match: <row-version>` and `Idempotency-Key: <stable-client-key>`.
+A missing `If-Match` returns a structured precondition error, a stale one returns `409` with the
+current version, and row-version comparisons happen transactionally in `resource_versions`.
+Repeating a key with an equivalent request replays the original result; reusing it with a different
+request is a structured conflict. Duplicate browser submissions therefore cannot create a second
+script revision, shot workflow, render job, or approval.
+
+### T23 cost and failure visibility
+
+The dashboard reads the existing T23 APIs for the warning and hard budgets, reserved, committed and
+remaining amounts, cost by provider, model and operation, recent provider attempts, and recent
+pipeline failures. Costs are rendered as exact decimal strings and are never parsed into a binary
+float. No second cost system is introduced.
+
+### Test commands
+
+```bash
+make verify                          # ruff, mypy --strict, pytest, schema export
+uv run pytest -q                     # backend, including the T18 API suite
+pnpm lint                            # workspace lint
+pnpm typecheck                       # workspace strict TypeScript
+pnpm test                            # workspace unit tests
+pnpm --filter @vidgen/web build      # production frontend build
+pnpm --filter @vidgen/web test:e2e   # Playwright MVP acceptance run
+```
 
 ## T16 per-shot workflows
 
@@ -154,6 +319,11 @@ VIDGEN_OPENAI_API_KEY=... \
 cp .env.example .env
 uv sync --all-groups
 make verify
+
+# The web application and its workspace checks.
+pnpm install
+cp apps/web/.env.example apps/web/.env
+make verify-web
 ```
 
 With Docker installed:
@@ -172,6 +342,9 @@ The default application database is `postgresql+psycopg://vidgen:vidgen@localhos
 - `vidgen.db`: relational models and repositories
 - `vidgen.storage`: content-addressed storage and asset service
 - `vidgen.providers`: provider protocols and deterministic fakes
+- `vidgen.review`: T18 row versions, idempotency, project events, and workflow control
+- `services.review`: T18 transactional review mutations and downstream invalidation
+- `apps/web`: the T18 React review application (`@vidgen/web`)
 
 ## Contract schemas
 
@@ -503,7 +676,7 @@ ID, segment and shot counts, exact total measured duration, repair-attempt count
 timing-manifest asset IDs, capability profile and hash, provider and model, cost summary, and final
 status. Supply `--idempotency-key` to resume a specific run.
 
-## T17 captions and deterministic rendering (implementation branch)
+## T17 captions and deterministic rendering
 
 T17 derives approved caption wording from T11 and exact word timing from the selected T12
 narration, then binds the selected T13 timing manifest and every locked T16/T15 video asset into
@@ -526,7 +699,7 @@ continues trace and bounded-metric propagation without fabricated provider costs
 
 Local entry points are `uv run python scripts/render_project.py PROJECT_UUID` and
 `uv run python scripts/inspect_render.py PROJECT_UUID` once a project has completed and locked T16
-outputs. T18 and later roadmap stages remain unfinished.
+outputs. T19 and later roadmap stages remain unfinished.
 
 The required synthetic acceptance test generates ten copyright-free clips and narration with
 FFmpeg at test time, persists SRT/WebVTT, renders and fully decodes a 1920x1080 H.264/yuv420p MP4

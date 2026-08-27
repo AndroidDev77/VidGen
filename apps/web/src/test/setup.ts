@@ -30,6 +30,22 @@ if (!("ResizeObserver" in window)) {
   });
 }
 
+// jsdom has no EventSource. Without a stand-in, every page test would fall
+// back to event polling and invalidate queries on a timer, which makes
+// component assertions nondeterministic. SSE behaviour itself is covered
+// directly in the useProjectEvents tests.
+if (!("EventSource" in window)) {
+  Object.defineProperty(window, "EventSource", {
+    writable: true,
+    value: class {
+      onopen: (() => void) | null = null;
+      onmessage: ((event: MessageEvent<string>) => void) | null = null;
+      onerror: (() => void) | null = null;
+      close(): void {}
+    },
+  });
+}
+
 if (!("scrollTo" in window)) {
   Object.defineProperty(window, "scrollTo", { writable: true, value: () => undefined });
 }
