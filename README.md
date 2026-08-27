@@ -6,12 +6,11 @@ The complete system architecture and T01-T26 implementation roadmap are maintain
 [`docs/TECHNICAL_DESIGN.md`](docs/TECHNICAL_DESIGN.md). Contributors and coding agents should
 read it together with `AGENTS.md` before planning the next roadmap task.
 
-This repository implements roadmap tasks T01 through T17 and T23. T18, the MVP review UI and its
-control-plane APIs, is implemented on its feature branch and remains in review until required CI
-succeeds. The foundations include subtitle-first transcript acquisition, restartable episode
-analysis, comedy script generation, measured narration, deterministic storyboard timing, reviewed
-keyframe and video generation, deterministic captioned rendering, and cloud-neutral
-observability/cost controls:
+This repository implements roadmap tasks T01 through T18 and T23, so the pipeline now runs end to
+end behind a customer-facing web application. The foundations include subtitle-first transcript
+acquisition, restartable episode analysis, comedy script generation, measured narration,
+deterministic storyboard timing, reviewed keyframe and video generation, deterministic captioned
+rendering, an owner-scoped review UI, and cloud-neutral observability/cost controls:
 
 - Python monorepo, CI, and local infrastructure
 - Versioned Pydantic contracts plus exported JSON Schema
