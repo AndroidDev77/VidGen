@@ -272,7 +272,7 @@ class AnimationPipeline:
         if item is not None:
             video = self.repo.video_for_item(item.id)
             if item.status == "completed" and video is not None:
-                return self._result(item, video, "reused")
+                return self._result(item, video, "reused", shot.shot_id)
             if item.run_id != run.id:
                 raise ValueError("animation identity belongs to an incompatible run")
             if item.status == "provider_outcome_ambiguous":
@@ -497,7 +497,7 @@ class AnimationPipeline:
             )
             self._reconcile(task, identity, actual)
             self.session.commit()
-            return self._result(item, video, "completed")
+            return self._result(item, video, "completed", shot.shot_id)
         finally:
             downloaded.path.unlink(missing_ok=True)
             if trimmed_path is not None:
@@ -685,19 +685,22 @@ class AnimationPipeline:
 
     @staticmethod
     def _result(
-        item: AnimationItem, video: AnimationGeneratedVideo, status: str
+        item: AnimationItem,
+        video: AnimationGeneratedVideo,
+        status: str,
+        canonical_shot_id: UUID,
     ) -> ShotAnimationResult:
         from vidgen.contracts.animation import VideoValidationReport
 
         return ShotAnimationResult(
-            shot_id=item.shot_id,
+            shot_id=canonical_shot_id,
             status=status,  # type: ignore[arg-type]
             remote_task_id=video.remote_task_id,
             candidate=GeneratedVideoCandidate(
                 generated_video_id=video.id,
                 original_asset_id=video.original_asset_id,
                 canonical_asset_id=video.canonical_asset_id,
-                shot_id=item.shot_id,
+                shot_id=canonical_shot_id,
                 selected=video.selected,
                 validation=VideoValidationReport.model_validate(video.validation_report),
             ),

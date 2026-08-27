@@ -64,6 +64,7 @@ def test_fake_pipeline_persists_original_canonical_and_reuses(tmp_path: Path) ->
     )
     assert first.status == "animation_complete"
     assert first.completed_count == 1
+    assert first.items[0].shot_id == shot.stable_shot_id
     candidate = first.items[0].candidate
     assert candidate is not None
     assert candidate.original_asset_id != candidate.canonical_asset_id
