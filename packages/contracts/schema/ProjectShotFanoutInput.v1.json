@@ -1,0 +1,64 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "attempt_policy_version": {
+      "const": "shot-attempt/1",
+      "default": "shot-attempt/1",
+      "title": "Attempt Policy Version",
+      "type": "string"
+    },
+    "concurrency": {
+      "default": 10,
+      "maximum": 100,
+      "minimum": 1,
+      "title": "Concurrency",
+      "type": "integer"
+    },
+    "idempotency_key": {
+      "maxLength": 220,
+      "minLength": 1,
+      "title": "Idempotency Key",
+      "type": "string"
+    },
+    "project_id": {
+      "format": "uuid",
+      "title": "Project Id",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "storyboard_run_id": {
+      "format": "uuid",
+      "title": "Storyboard Run Id",
+      "type": "string"
+    },
+    "t14_configuration_identity": {
+      "default": "image-provider/1",
+      "title": "T14 Configuration Identity",
+      "type": "string"
+    },
+    "t15_capability_profile_identity": {
+      "default": "runway/2024-11-06",
+      "title": "T15 Capability Profile Identity",
+      "type": "string"
+    },
+    "trace_context": {
+      "additionalProperties": {
+        "type": "string"
+      },
+      "title": "Trace Context",
+      "type": "object"
+    }
+  },
+  "required": [
+    "project_id",
+    "storyboard_run_id",
+    "idempotency_key"
+  ],
+  "title": "ProjectShotFanoutInput",
+  "type": "object"
+}

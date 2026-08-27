@@ -25,6 +25,7 @@ class APISettings(BaseSettings):
     script_editor_model: str = "gpt-5.6"
     storyboard_model: str = "gpt-5.6"
     image_model: str = "gpt-image-2-2026-04-21"
+    runway_api_secret: str | None = None
     visual_capability_profile: str = "runway-gen4-turbo"
     opensubtitles_api_key: str | None = None
     opensubtitles_username: str | None = None

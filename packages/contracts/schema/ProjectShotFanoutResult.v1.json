@@ -1,0 +1,322 @@
+{
+  "$defs": {
+    "ShotFailureClass": {
+      "enum": [
+        "transient_provider_failure",
+        "rate_limit",
+        "provider_timeout",
+        "polling_interruption",
+        "download_interruption",
+        "worker_interruption",
+        "temporary_storage_failure",
+        "budget_denial",
+        "deterministic_configuration_failure",
+        "invalid_lineage",
+        "unsupported_capability",
+        "corrupt_provider_output",
+        "technical_validation_failure",
+        "cancellation",
+        "unknown_failure"
+      ],
+      "title": "ShotFailureClass",
+      "type": "string"
+    },
+    "ShotWorkflowFailure": {
+      "additionalProperties": false,
+      "properties": {
+        "attempt": {
+          "minimum": 1,
+          "title": "Attempt",
+          "type": "integer"
+        },
+        "classification": {
+          "$ref": "#/$defs/ShotFailureClass"
+        },
+        "code": {
+          "maxLength": 100,
+          "minLength": 1,
+          "title": "Code",
+          "type": "string"
+        },
+        "message": {
+          "maxLength": 500,
+          "title": "Message",
+          "type": "string"
+        },
+        "retryable": {
+          "title": "Retryable",
+          "type": "boolean"
+        },
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        }
+      },
+      "required": [
+        "classification",
+        "code",
+        "retryable",
+        "attempt",
+        "message"
+      ],
+      "title": "ShotWorkflowFailure",
+      "type": "object"
+    },
+    "ShotWorkflowResult": {
+      "additionalProperties": false,
+      "properties": {
+        "child_workflow_id": {
+          "title": "Child Workflow Id",
+          "type": "string"
+        },
+        "exact_usable_duration_us": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Exact Usable Duration Us"
+        },
+        "failure": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ShotWorkflowFailure"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "final_state": {
+          "$ref": "#/$defs/ShotWorkflowStatus"
+        },
+        "identity_hash": {
+          "title": "Identity Hash",
+          "type": "string"
+        },
+        "provider_generation_duration_us": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Provider Generation Duration Us"
+        },
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "selected_keyframe_asset_id": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Selected Keyframe Asset Id"
+        },
+        "selected_video_asset_id": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Selected Video Asset Id"
+        },
+        "shot_id": {
+          "format": "uuid",
+          "title": "Shot Id",
+          "type": "string"
+        },
+        "t14_run_id": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "T14 Run Id"
+        },
+        "t15_run_id": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "T15 Run Id"
+        },
+        "trim_instructions_asset_id": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Trim Instructions Asset Id"
+        },
+        "warning_codes": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 32,
+          "title": "Warning Codes",
+          "type": "array"
+        }
+      },
+      "required": [
+        "shot_id",
+        "child_workflow_id",
+        "identity_hash",
+        "final_state"
+      ],
+      "title": "ShotWorkflowResult",
+      "type": "object"
+    },
+    "ShotWorkflowStatus": {
+      "enum": [
+        "defined",
+        "prompting",
+        "keyframe_generating",
+        "keyframe_qa",
+        "animating",
+        "video_qa",
+        "locked",
+        "failed",
+        "cancelled"
+      ],
+      "title": "ShotWorkflowStatus",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "active_count": {
+      "minimum": 0,
+      "title": "Active Count",
+      "type": "integer"
+    },
+    "cancelled_count": {
+      "minimum": 0,
+      "title": "Cancelled Count",
+      "type": "integer"
+    },
+    "current_concurrency": {
+      "minimum": 0,
+      "title": "Current Concurrency",
+      "type": "integer"
+    },
+    "locked_count": {
+      "minimum": 0,
+      "title": "Locked Count",
+      "type": "integer"
+    },
+    "project_id": {
+      "format": "uuid",
+      "title": "Project Id",
+      "type": "string"
+    },
+    "queued_count": {
+      "minimum": 0,
+      "title": "Queued Count",
+      "type": "integer"
+    },
+    "results": {
+      "items": {
+        "$ref": "#/$defs/ShotWorkflowResult"
+      },
+      "title": "Results",
+      "type": "array"
+    },
+    "retryable_failure_count": {
+      "minimum": 0,
+      "title": "Retryable Failure Count",
+      "type": "integer"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "status": {
+      "enum": [
+        "shot_generation_queued",
+        "shot_generation_running",
+        "shot_generation_partial",
+        "shot_generation_retrying",
+        "shot_generation_complete",
+        "shot_generation_failed",
+        "shot_generation_cancelled"
+      ],
+      "title": "Status",
+      "type": "string"
+    },
+    "storyboard_run_id": {
+      "format": "uuid",
+      "title": "Storyboard Run Id",
+      "type": "string"
+    },
+    "terminal_failure_count": {
+      "minimum": 0,
+      "title": "Terminal Failure Count",
+      "type": "integer"
+    },
+    "total_count": {
+      "minimum": 0,
+      "title": "Total Count",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "project_id",
+    "storyboard_run_id",
+    "status",
+    "total_count",
+    "queued_count",
+    "active_count",
+    "locked_count",
+    "retryable_failure_count",
+    "terminal_failure_count",
+    "cancelled_count",
+    "current_concurrency"
+  ],
+  "title": "ProjectShotFanoutResult",
+  "type": "object"
+}

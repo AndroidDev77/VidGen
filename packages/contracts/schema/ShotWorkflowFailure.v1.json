@@ -1,0 +1,66 @@
+{
+  "$defs": {
+    "ShotFailureClass": {
+      "enum": [
+        "transient_provider_failure",
+        "rate_limit",
+        "provider_timeout",
+        "polling_interruption",
+        "download_interruption",
+        "worker_interruption",
+        "temporary_storage_failure",
+        "budget_denial",
+        "deterministic_configuration_failure",
+        "invalid_lineage",
+        "unsupported_capability",
+        "corrupt_provider_output",
+        "technical_validation_failure",
+        "cancellation",
+        "unknown_failure"
+      ],
+      "title": "ShotFailureClass",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "attempt": {
+      "minimum": 1,
+      "title": "Attempt",
+      "type": "integer"
+    },
+    "classification": {
+      "$ref": "#/$defs/ShotFailureClass"
+    },
+    "code": {
+      "maxLength": 100,
+      "minLength": 1,
+      "title": "Code",
+      "type": "string"
+    },
+    "message": {
+      "maxLength": 500,
+      "title": "Message",
+      "type": "string"
+    },
+    "retryable": {
+      "title": "Retryable",
+      "type": "boolean"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    }
+  },
+  "required": [
+    "classification",
+    "code",
+    "retryable",
+    "attempt",
+    "message"
+  ],
+  "title": "ShotWorkflowFailure",
+  "type": "object"
+}

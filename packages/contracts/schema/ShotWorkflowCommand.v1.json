@@ -1,0 +1,88 @@
+{
+  "$defs": {
+    "ShotWorkflowStatus": {
+      "enum": [
+        "defined",
+        "prompting",
+        "keyframe_generating",
+        "keyframe_qa",
+        "animating",
+        "video_qa",
+        "locked",
+        "failed",
+        "cancelled"
+      ],
+      "title": "ShotWorkflowStatus",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "command": {
+      "enum": [
+        "inspect",
+        "resume",
+        "retry",
+        "cancel",
+        "regenerate",
+        "outputs"
+      ],
+      "title": "Command",
+      "type": "string"
+    },
+    "command_id": {
+      "maxLength": 128,
+      "minLength": 1,
+      "title": "Command Id",
+      "type": "string"
+    },
+    "expected_state": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ShotWorkflowStatus"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "new_shot_input_hash": {
+      "anyOf": [
+        {
+          "pattern": "^[a-f0-9]{64}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "New Shot Input Hash"
+    },
+    "project_id": {
+      "format": "uuid",
+      "title": "Project Id",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "storyboard_shot_id": {
+      "format": "uuid",
+      "title": "Storyboard Shot Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "command_id",
+    "project_id",
+    "storyboard_shot_id",
+    "command"
+  ],
+  "title": "ShotWorkflowCommand",
+  "type": "object"
+}
