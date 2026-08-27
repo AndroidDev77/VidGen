@@ -1,0 +1,45 @@
+{
+  "$defs": {
+    "TransitionKind": {
+      "enum": [
+        "cut",
+        "crossfade"
+      ],
+      "title": "TransitionKind",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "duration_us": {
+      "default": 0,
+      "minimum": 0,
+      "title": "Duration Us",
+      "type": "integer"
+    },
+    "handle_in_us": {
+      "default": 0,
+      "minimum": 0,
+      "title": "Handle In Us",
+      "type": "integer"
+    },
+    "handle_out_us": {
+      "default": 0,
+      "minimum": 0,
+      "title": "Handle Out Us",
+      "type": "integer"
+    },
+    "kind": {
+      "$ref": "#/$defs/TransitionKind",
+      "default": "cut"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    }
+  },
+  "title": "RenderTransition",
+  "type": "object"
+}

@@ -1,0 +1,59 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "bitrate_kbps": {
+      "default": 320,
+      "maximum": 512,
+      "minimum": 96,
+      "title": "Bitrate Kbps",
+      "type": "integer"
+    },
+    "channels": {
+      "const": 2,
+      "default": 2,
+      "title": "Channels",
+      "type": "integer"
+    },
+    "codec": {
+      "const": "aac",
+      "default": "aac",
+      "title": "Codec",
+      "type": "string"
+    },
+    "integrated_lufs": {
+      "default": -14,
+      "maximum": -5,
+      "minimum": -24,
+      "title": "Integrated Lufs",
+      "type": "integer"
+    },
+    "max_lra": {
+      "default": 11,
+      "maximum": 20,
+      "minimum": 1,
+      "title": "Max Lra",
+      "type": "number"
+    },
+    "sample_rate_hz": {
+      "const": 48000,
+      "default": 48000,
+      "title": "Sample Rate Hz",
+      "type": "integer"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "true_peak_dbtp": {
+      "default": -1.5,
+      "maximum": -0.1,
+      "minimum": -3,
+      "title": "True Peak Dbtp",
+      "type": "number"
+    }
+  },
+  "title": "RenderAudioProfile",
+  "type": "object"
+}
