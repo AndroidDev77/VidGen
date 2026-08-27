@@ -1,5 +1,7 @@
 from uuid import uuid4
+
 import pytest
+
 from services.animation.fake_provider import FakeVideoProvider
 from services.animation.motion_prompt import compile_motion_prompt
 from services.animation.routing import RoutingContext, route_model
@@ -24,7 +26,8 @@ def intent():
         camera_movement="locked camera",
         motion_intensity="low",
         continuity_invariants=[
-            "identity, face, skin tone, hair, clothing, proportions, props, palette, and geometry remain unchanged"
+            "identity, face, skin tone, hair, clothing, proportions, props, palette, "
+            "and geometry remain unchanged"
         ],
     )
 
