@@ -20,6 +20,27 @@ import { TranscriptPage } from "./TranscriptPage";
 const BASE = "http://localhost";
 const { PROJECT_ID } = fixtures;
 
+/**
+ * Click a control, re-querying it on each attempt until its dialog opens.
+ *
+ * Queries resolve at different times and re-render the page, so a node captured
+ * before the click can already be detached by the time it lands. Opening a
+ * dialog is idempotent, so retrying the click is safe; the confirm click that
+ * follows is issued once, against a freshly resolved node.
+ */
+async function openDialog(
+  user: ReturnType<typeof userEvent.setup>,
+  name: string,
+): Promise<HTMLElement> {
+  await waitFor(() => expect(screen.getAllByRole("button", { name })[0]!).toBeEnabled());
+  let dialog: HTMLElement | null = null;
+  await waitFor(async () => {
+    await user.click(screen.getAllByRole("button", { name })[0]!);
+    dialog = screen.getByRole("alertdialog");
+  });
+  return dialog!;
+}
+
 function renderProjectRoute(element: JSX.Element, route: string) {
   return renderWithProviders(
     <Routes>
@@ -172,14 +193,9 @@ describe("TranscriptPage", () => {
     renderProjectRoute(<TranscriptPage />, `/projects/${PROJECT_ID}/transcript`);
     const textarea = await screen.findByLabelText("Transcript text for segment 1");
     fireEvent.change(textarea, { target: { value: "Fixed." } });
-    await waitFor(() =>
-      expect(screen.getAllByRole("button", { name: "Save segment" })[0]!).toBeEnabled(),
-    );
-    await user.click(screen.getAllByRole("button", { name: "Save segment" })[0]!);
-
-    const dialog = await screen.findByRole("alertdialog");
+    const dialog = await openDialog(user, "Save segment");
     expect(within(dialog).getByText(/Editing the transcript makes/)).toBeVisible();
-    await user.click(within(dialog).getByRole("button", { name: "Save the segment" }));
+    await user.click(await screen.findByRole("button", { name: "Save the segment" }));
     await waitFor(() => expect(received).toMatchObject({ text: "Fixed." }));
   });
 
@@ -198,10 +214,7 @@ describe("TranscriptPage", () => {
     renderProjectRoute(<TranscriptPage />, `/projects/${PROJECT_ID}/transcript`);
     const textarea = await screen.findByLabelText("Transcript text for segment 1");
     fireEvent.change(textarea, { target: { value: "My local edit." } });
-    await waitFor(() =>
-      expect(screen.getAllByRole("button", { name: "Save segment" })[0]!).toBeEnabled(),
-    );
-    await user.click(screen.getAllByRole("button", { name: "Save segment" })[0]!);
+    await openDialog(user, "Save segment");
     await user.click(await screen.findByRole("button", { name: "Save the segment" }));
     expect(await screen.findByText("It changed while you were editing.")).toBeVisible();
     // The local text survives the conflict for comparison.
@@ -244,13 +257,9 @@ describe("ScriptPage", () => {
     renderProjectRoute(<ScriptPage />, `/projects/${PROJECT_ID}/script`);
     const textarea = await screen.findByLabelText("Narration text for beat 1");
     fireEvent.change(textarea, { target: { value: "Funnier." } });
-    await waitFor(() =>
-      expect(screen.getAllByRole("button", { name: "Save beat" })[0]!).toBeEnabled(),
-    );
-    await user.click(screen.getAllByRole("button", { name: "Save beat" })[0]!);
-    const dialog = await screen.findByRole("alertdialog");
+    const dialog = await openDialog(user, "Save beat");
     expect(within(dialog).getByText(/creates a new script version/)).toBeVisible();
-    await user.click(within(dialog).getByRole("button", { name: "Save the beat" }));
+    await user.click(await screen.findByRole("button", { name: "Save the beat" }));
     expect(await screen.findByText("Downstream work is now stale")).toBeVisible();
     expect(screen.getByText(/Verified render attempt 1/)).toBeVisible();
   });
@@ -338,19 +347,11 @@ describe("StoryboardPage", () => {
     const siblingKey = ["projects", PROJECT_ID, "shots", fixtures.storyboard.shots[2]!.shot_id];
     queryClient.setQueryData(siblingKey, fixtures.shotDetail(2));
 
-    // The keyframe previews resolve asynchronously and re-render the page, so
-    // each control is queried afresh immediately before it is clicked.
-    await screen.findByRole("button", { name: "Regenerate this shot" });
-    await waitFor(async () => {
-      await user.click(screen.getByRole("button", { name: "Regenerate this shot" }));
-      expect(screen.getByRole("alertdialog")).toBeInTheDocument();
-    });
-    expect(screen.getByText(/Sibling shots keep their locked results/)).toBeVisible();
-    await waitFor(async () => {
-      await user.click(screen.getByRole("button", { name: "Regenerate the shot" }));
-      expect(screen.getByText("Regeneration started")).toBeInTheDocument();
-    });
+    const dialog = await openDialog(user, "Regenerate this shot");
+    expect(within(dialog).getByText(/Sibling shots keep their locked results/)).toBeVisible();
+    await user.click(await screen.findByRole("button", { name: "Regenerate the shot" }));
 
+    expect(await screen.findByText("Regeneration started")).toBeVisible();
     expect(screen.getByText(/Shot 6, Verified render attempt 1/)).toBeVisible();
     expect(requests).toBe(1);
     // The sibling's cached data is untouched.
