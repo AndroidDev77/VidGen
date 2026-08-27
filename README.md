@@ -12,6 +12,13 @@ acquisition, restartable episode analysis, comedy script generation, measured na
 deterministic storyboard timing, reviewed keyframe and video generation, deterministic captioned
 rendering, an owner-scoped review UI, and cloud-neutral observability/cost controls:
 
+T19 continuity references are in progress. The additive implementation defines evidence-linked
+immutable character/location identity versions, interval-scoped temporary state, deterministic
+source-frame ranking and reference compaction, shot-bundle identities, owner-scoped review
+projections, and a `continuity_references_v1` T14 adapter. Projects without an approved bundle keep
+the unchanged legacy image-generation behavior. T19 remains incomplete until provider execution,
+durable approval orchestration, downstream stale transitions, and its acceptance fixture are green.
+
 - Python monorepo, CI, and local infrastructure
 - Versioned Pydantic contracts plus exported JSON Schema
 - PostgreSQL data model and Alembic migration

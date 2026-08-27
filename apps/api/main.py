@@ -9,6 +9,7 @@ from apps.api.routes import (
     costs,
     events,
     projects,
+    references,
     renders,
     reviews,
     scripts,
@@ -37,6 +38,7 @@ def create_app() -> FastAPI:
         )
     for module in (
         projects,
+        references,
         uploads,
         assets,
         costs,

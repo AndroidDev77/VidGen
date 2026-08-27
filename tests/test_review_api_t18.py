@@ -90,7 +90,18 @@ def test_project_list_carries_status_cost_and_failure_indicators(
 
 @pytest.mark.parametrize(
     "suffix",
-    ["", "/transcript", "/script", "/storyboard", "/shots", "/render", "/workflow", "/costs"],
+    [
+        "",
+        "/transcript",
+        "/script",
+        "/storyboard",
+        "/shots",
+        "/render",
+        "/workflow",
+        "/costs",
+        "/references",
+        "/references/invalidation",
+    ],
 )
 def test_cross_owner_reads_are_indistinguishable_from_missing(
     client: TestClient, graph: ProjectGraph, suffix: str
@@ -110,6 +121,19 @@ def test_cross_project_nested_resources_are_rejected(
         other = build_project_graph(session, owner_subject="owner-a", name="Other")
     response = client.get(api(other.project_id, f"/shots/{graph.shot_ids[0]}"), headers=OWNER)
     assert response.status_code == 404
+
+
+def test_reference_build_requires_concurrency_and_is_idempotent(
+    client: TestClient, graph: ProjectGraph
+) -> None:
+    path = api(graph.project_id, "/references:build")
+    payload = {"provider": "fake", "model": "fake-v1"}
+    assert client.post(path, headers=OWNER, json=payload).status_code in {409, 428}
+    mutation_headers = headers(if_match=1, key="reference-build-1")
+    first = client.post(path, headers=mutation_headers, json=payload)
+    second = client.post(path, headers=mutation_headers, json=payload)
+    assert first.status_code == second.status_code == 202
+    assert first.json() == second.json()
 
 
 def test_asset_download_requires_project_ownership(client: TestClient, graph: ProjectGraph) -> None:

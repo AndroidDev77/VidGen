@@ -26,7 +26,8 @@ example conflicts with an implemented interface.
 | T16 | Complete | Deterministic per-shot Temporal children coordinate restartable T14 keyframe and T15 animation work with bounded ten-shot fan-out, isolated failure/cancellation, compact queries and commands, durable checkpoints, and T23-aware idempotency. |
 | T17 | Complete | Implements strict caption/render contracts, deterministic caption reflow, canonical manifests and identities, bounded FFmpeg argument plans, media verification, immutable asset provenance, and restartable relational projections. |
 | T18 | Complete | The MVP review UI (`apps/web`) and its owner-scoped FastAPI control plane add workflow start/cancel/status, Server-Sent Events progress, transcript and script editing with versioned revisions, a read-only T13-timed storyboard grid and shot inspector, single-shot regeneration that leaves siblings locked, final render preview with a selectable WebVTT track, versioned approval, and authorized asset downloads. Optimistic concurrency uses `If-Match` row versions and replayable `Idempotency-Key` records. Review and CI succeeded. |
-| T19-T22, T24-T26 | Planned | Do not begin a later task until its dependencies and the current implementation are reconciled. |
+| T19 | In progress | Strict continuity contracts, deterministic candidate selection, stable-versus-temporary bibles, interval state resolution, bundle compaction/hashing, additive T14 projection, exact invalidation, relational persistence, owner-scoped API projections, CLI inspection, and initial T18 panels are implemented on PR 19. Provider orchestration, durable approval waits, downstream stale transitions, and the mandatory acceptance fixture remain before completion. |
+| T20-T22, T24-T26 | Planned | Do not begin a later task until its dependencies and the current implementation are reconciled. |
 
 When a roadmap task is completed, update this table, `README.md`, and any affected design section in
 the same pull request.

@@ -8,6 +8,8 @@ from typing import Any
 from vidgen.contracts.continuity import CharacterAppearanceState, LocationEnvironmentState
 
 RESOLVER_VERSION = "continuity-state/1.0"
+
+
 def _resolve(states: Sequence[Any], shot_sequence: int) -> Any | None:
     eligible = [
         state
@@ -17,11 +19,28 @@ def _resolve(states: Sequence[Any], shot_sequence: int) -> Any | None:
     ]
     if not eligible:
         return None
-    # Latest supported event wins; canonical JSON is a deterministic tie-breaker.
-    return sorted(
+    ordered = sorted(
         eligible,
         key=lambda state: (state.interval.start_sequence, state.model_dump_json()),
-    )[-1]
+    )
+    merged = ordered[0]
+    for state in ordered[1:]:
+        updates: dict[str, Any] = {}
+        for field, value in state.model_dump().items():
+            if field in {"schema_version", "interval", "confidence"}:
+                continue
+            current = getattr(merged, field)
+            if isinstance(value, list):
+                if value:
+                    updates[field] = list(dict.fromkeys([*current, *value]))
+            elif isinstance(value, dict):
+                if value:
+                    updates[field] = {**current, **value}
+            elif value is not None:
+                updates[field] = value
+        updates["confidence"] = min(merged.confidence, state.confidence)
+        merged = merged.model_copy(update=updates)
+    return merged
 
 
 def resolve_character_state(
