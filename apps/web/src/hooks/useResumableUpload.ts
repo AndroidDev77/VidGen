@@ -128,8 +128,16 @@ export function useResumableUpload(options: UseResumableUploadOptions = {}): Res
   const partSize = options.partSize ?? DEFAULT_PART_SIZE;
   const [state, setState] = useState<UploadState>(INITIAL);
   const abortRef = useRef<AbortController | null>(null);
-  // Kept across a resume within this session only; never persisted.
-  const sessionRef = useRef<{ upload: UploadSession; fingerprint: string } | null>(null);
+  // Kept across a resume within this session only; never persisted. The
+  // completed parts live in the ref rather than in `state`, because `start`
+  // resets the rendered state and a stale closure over it would re-upload
+  // finished parts and double-count their bytes.
+  const sessionRef = useRef<{
+    upload: UploadSession;
+    fingerprint: string;
+    completedParts: Set<number>;
+    bytesUploaded: number;
+  } | null>(null);
 
   const hashFile = useMemo(() => {
     if (options.hashFile) {
@@ -158,11 +166,22 @@ export function useResumableUpload(options: UseResumableUploadOptions = {}): Res
     setState(INITIAL);
   }, []);
 
+  const resumeState = () => sessionRef.current;
+
   const start = useCallback(
     async (projectId: string, file: File) => {
       const controller = new AbortController();
       abortRef.current = controller;
-      setState({ ...INITIAL, phase: "validating", fileName: file.name, totalBytes: file.size });
+      const resumed = resumeState();
+      setState({
+        ...INITIAL,
+        phase: "validating",
+        fileName: file.name,
+        totalBytes: file.size,
+        uploadId: resumed?.upload.id ?? null,
+        completedParts: [...(resumed?.completedParts ?? [])],
+        bytesUploaded: resumed?.bytesUploaded ?? 0,
+      });
 
       const validation = validateFile(file, options.validation ?? {});
       if (!validation.ok) {
@@ -199,7 +218,6 @@ export function useResumableUpload(options: UseResumableUploadOptions = {}): Res
       }
 
       const fingerprint = fileFingerprint(file, sha256);
-      const resumed = sessionRef.current;
       if (resumed !== null && resumed.fingerprint !== fingerprint) {
         setState((previous) => ({
           ...previous,
@@ -238,7 +256,13 @@ export function useResumableUpload(options: UseResumableUploadOptions = {}): Res
         }));
         return;
       }
-      sessionRef.current = { upload: session, fingerprint };
+      const completedParts = resumed?.completedParts ?? new Set<number>();
+      sessionRef.current = {
+        upload: session,
+        fingerprint,
+        completedParts,
+        bytesUploaded: resumed?.bytesUploaded ?? 0,
+      };
 
       const effectivePartSize = session.part_size;
       const totalParts = Math.max(1, Math.ceil(file.size / effectivePartSize));
@@ -250,11 +274,10 @@ export function useResumableUpload(options: UseResumableUploadOptions = {}): Res
         totalParts,
       }));
 
-      const alreadyDone = new Set(state.completedParts);
       const queue = Array.from({ length: totalParts }, (_, index) => index).filter(
-        (part) => !alreadyDone.has(part),
+        (part) => !completedParts.has(part),
       );
-      let uploadedBytes = state.bytesUploaded;
+      let uploadedBytes = sessionRef.current.bytesUploaded;
       let failure: { code: string; message: string } | null = null;
 
       const worker = async () => {
@@ -274,10 +297,14 @@ export function useResumableUpload(options: UseResumableUploadOptions = {}): Res
               controller.signal,
             );
             uploadedBytes += slice.size;
+            completedParts.add(part);
+            if (sessionRef.current !== null) {
+              sessionRef.current.bytesUploaded = uploadedBytes;
+            }
             setState((previous) => ({
               ...previous,
               bytesUploaded: uploadedBytes,
-              completedParts: [...previous.completedParts, part],
+              completedParts: [...completedParts],
             }));
           } catch (error) {
             if (controller.signal.aborted) {
@@ -326,7 +353,7 @@ export function useResumableUpload(options: UseResumableUploadOptions = {}): Res
         }));
       }
     },
-    [client, hashFile, options, partSize, state.bytesUploaded, state.completedParts],
+    [client, hashFile, options, partSize],
   );
 
   return { state, start, cancel, reset };

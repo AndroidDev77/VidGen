@@ -13,6 +13,8 @@ from uuid import UUID
 
 from fastapi import APIRouter, Query, Request
 from fastapi.responses import StreamingResponse
+from sqlalchemy.orm import Session, sessionmaker
+from starlette.concurrency import run_in_threadpool
 
 from apps.api.routes._common import (
     LastEventIdDep,
@@ -23,6 +25,7 @@ from apps.api.routes._common import (
     owned_project,
 )
 from apps.api.schemas.events import ProjectEventListResponse
+from vidgen.contracts.review import ProjectEventProjection
 from vidgen.review.events import (
     ProjectEventService,
     deduplicate,
@@ -36,6 +39,20 @@ router = APIRouter(prefix="/projects", tags=["events"])
 
 POLL_INTERVAL_SECONDS = 1.0
 HEARTBEAT_INTERVAL_SECONDS = 15.0
+
+
+def _read_batch(
+    factory: sessionmaker[Session],
+    project_id: UUID,
+    owner_subject: str,
+    position: int | None,
+) -> list[ProjectEventProjection]:
+    """Read one bounded batch of events in its own short transaction."""
+    with factory() as session:
+        resolve_project(session, project_id, owner_subject)
+        batch = deduplicate(ProjectEventService(session).since(project_id, position))
+        session.rollback()
+    return batch
 
 
 @router.get("/{project_id}/events", response_model=None)
@@ -75,13 +92,12 @@ async def stream_events(
             while True:
                 if await request.is_disconnected():
                     return
-                # A short transaction per poll: the stream never holds one open.
-                with factory() as stream_session:
-                    resolve_project(stream_session, project_id, owner_subject)
-                    batch = deduplicate(
-                        ProjectEventService(stream_session).since(project_id, position)
-                    )
-                    stream_session.rollback()
+                # A short transaction per poll, run off the event loop: the
+                # stream neither holds a transaction open nor blocks other
+                # requests with synchronous database I/O.
+                batch = await run_in_threadpool(
+                    _read_batch, factory, project_id, owner_subject, position
+                )
                 fresh = [event for event in batch if event.event_id not in delivered]
                 if fresh:
                     idle = 0.0

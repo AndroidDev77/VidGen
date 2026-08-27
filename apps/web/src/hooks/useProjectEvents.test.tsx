@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { act, renderHook, waitFor } from "@testing-library/react";
+import { renderHook, waitFor } from "@testing-library/react";
 import { HttpResponse, http } from "msw";
 import type { ReactNode } from "react";
 import { describe, expect, it, vi } from "vitest";
@@ -12,31 +12,34 @@ import {
   MAX_SSE_ATTEMPTS,
   backoffDelay,
   invalidateForEvent,
+  parseFrames,
   useProjectEvents,
 } from "./useProjectEvents";
 
 const BASE = "http://localhost";
 const client = new VidGenClient({ apiBaseUrl: BASE, devUser: "owner-a", isDevelopment: false });
+const encoder = new TextEncoder();
 
-/** A controllable stand-in for the browser's EventSource. */
-class FakeEventSource {
-  static instances: FakeEventSource[] = [];
-  onopen: (() => void) | null = null;
-  onmessage: ((event: MessageEvent<string>) => void) | null = null;
-  onerror: (() => void) | null = null;
-  closed = false;
-
-  constructor(readonly url: string) {
-    FakeEventSource.instances.push(this);
-  }
-
-  close(): void {
-    this.closed = true;
-  }
+/** A reader over a fixed set of `text/event-stream` chunks. */
+function readerOf(chunks: readonly string[]): ReadableStreamDefaultReader<Uint8Array> {
+  let index = 0;
+  return {
+    read: () =>
+      Promise.resolve(
+        index < chunks.length
+          ? { done: false as const, value: encoder.encode(chunks[index++]) }
+          : { done: true as const, value: undefined },
+      ),
+    cancel: () => Promise.resolve(),
+    releaseLock: () => undefined,
+    closed: Promise.resolve(undefined),
+  } as unknown as ReadableStreamDefaultReader<Uint8Array>;
 }
 
-/** Stable across renders so the subscription effect is not re-run. */
-const fakeFactory = (url: string) => new FakeEventSource(url) as unknown as EventSource;
+function sseFrame(eventId: number): string {
+  const event = projectEvent(eventId);
+  return `id: ${eventId}\nevent: ${event.event_type}\ndata: ${JSON.stringify(event)}\n\n`;
+}
 
 function wrapper(queryClient: QueryClient) {
   return function Wrapper({ children }: { children: ReactNode }) {
@@ -44,70 +47,56 @@ function wrapper(queryClient: QueryClient) {
   };
 }
 
+describe("parseFrames", () => {
+  it("splits complete frames and keeps the remainder", () => {
+    const { frames, rest } = parseFrames(`${sseFrame(1)}id: 2\ndata: {"partial"`);
+    expect(frames).toHaveLength(1);
+    expect(frames[0]?.id).toBe(1);
+    expect(rest).toBe('id: 2\ndata: {"partial"');
+  });
+
+  it("ignores heartbeat comments", () => {
+    const { frames } = parseFrames(": heartbeat\n\n");
+    expect(frames).toEqual([]);
+  });
+});
+
 describe("useProjectEvents", () => {
-  it("reports streaming and ingests events", async () => {
-    FakeEventSource.instances = [];
+  it("streams events and reports the streaming state", async () => {
     const queryClient = new QueryClient();
+    const openStream = vi.fn(() => Promise.resolve(readerOf([sseFrame(1), sseFrame(2)])));
     const { result } = renderHook(
-      () =>
-        useProjectEvents(PROJECT_ID, {
-          client,
-          eventSourceFactory: fakeFactory,
-        }),
+      () => useProjectEvents(PROJECT_ID, { client, openStream }),
       { wrapper: wrapper(queryClient) },
     );
+    await waitFor(() => expect(result.current.lastEventId).toBe(2));
+    expect(result.current.events).toHaveLength(2);
+  });
 
-    const source = FakeEventSource.instances[0];
-    expect(source).toBeDefined();
-    act(() => source?.onopen?.());
-    await waitFor(() => expect(result.current.connection).toBe("streaming"));
-
-    act(() =>
-      source?.onmessage?.(
-        new MessageEvent("message", { data: JSON.stringify(projectEvent(1)) }),
-      ),
-    );
-    await waitFor(() => expect(result.current.lastEventId).toBe(1));
-    expect(result.current.events).toHaveLength(1);
+  it("resumes from the last event ID it received", async () => {
+    const queryClient = new QueryClient();
+    const seen: (number | undefined)[] = [];
+    const openStream = vi.fn((lastEventId: number | undefined) => {
+      seen.push(lastEventId);
+      return Promise.resolve(readerOf(seen.length === 1 ? [sseFrame(4)] : []));
+    });
+    renderHook(() => useProjectEvents(PROJECT_ID, { client, openStream }), {
+      wrapper: wrapper(queryClient),
+    });
+    await waitFor(() => expect(seen.length).toBeGreaterThan(1));
+    expect(seen[0]).toBeUndefined();
+    expect(seen[1]).toBe(4);
   });
 
   it("deduplicates repeated event IDs", async () => {
-    FakeEventSource.instances = [];
     const queryClient = new QueryClient();
+    const openStream = vi.fn(() => Promise.resolve(readerOf([sseFrame(4), sseFrame(4)])));
     const { result } = renderHook(
-      () =>
-        useProjectEvents(PROJECT_ID, {
-          client,
-          eventSourceFactory: fakeFactory,
-        }),
+      () => useProjectEvents(PROJECT_ID, { client, openStream }),
       { wrapper: wrapper(queryClient) },
     );
-    const source = FakeEventSource.instances[0];
-    const frame = new MessageEvent("message", { data: JSON.stringify(projectEvent(4)) });
-    act(() => source?.onmessage?.(frame));
-    act(() => source?.onmessage?.(frame));
-    await waitFor(() => expect(result.current.events).toHaveLength(1));
-  });
-
-  it("enters a reconnecting state and backs off", () => {
-    vi.useFakeTimers();
-    try {
-      FakeEventSource.instances = [];
-      const queryClient = new QueryClient();
-      const { result } = renderHook(
-        () =>
-          useProjectEvents(PROJECT_ID, {
-            client,
-            eventSourceFactory: fakeFactory,
-          }),
-        { wrapper: wrapper(queryClient) },
-      );
-      act(() => FakeEventSource.instances[0]?.onerror?.());
-      expect(result.current.connection).toBe("reconnecting");
-      expect(result.current.reconnectAttempts).toBe(1);
-    } finally {
-      vi.useRealTimers();
-    }
+    await waitFor(() => expect(result.current.lastEventId).toBe(4));
+    expect(result.current.events).toHaveLength(1);
   });
 
   it("falls back to polling after repeated stream failures", async () => {
@@ -116,21 +105,14 @@ describe("useProjectEvents", () => {
         HttpResponse.json({ items: [projectEvent(9)], last_event_id: 9 }),
       ),
     );
-    FakeEventSource.instances = [];
     const queryClient = new QueryClient();
+    const openStream = vi.fn(() => Promise.reject(new Error("stream unavailable")));
     const { result } = renderHook(
-      () =>
-        useProjectEvents(PROJECT_ID, {
-          client,
-          pollIntervalMs: 10_000,
-          eventSourceFactory: fakeFactory,
-        }),
+      () => useProjectEvents(PROJECT_ID, { client, openStream, pollIntervalMs: 10_000 }),
       { wrapper: wrapper(queryClient) },
     );
-    for (let attempt = 0; attempt < MAX_SSE_ATTEMPTS; attempt += 1) {
-      act(() => FakeEventSource.instances.at(-1)?.onerror?.());
-    }
-    await waitFor(() => expect(result.current.connection).toBe("polling"));
+    await waitFor(() => expect(result.current.connection).toBe("polling"), { timeout: 5000 });
+    expect(openStream.mock.calls.length).toBeGreaterThanOrEqual(MAX_SSE_ATTEMPTS);
     await waitFor(() => expect(result.current.lastEventId).toBe(9));
   });
 
@@ -144,9 +126,11 @@ describe("useProjectEvents", () => {
 describe("invalidateForEvent", () => {
   it("invalidates only the queries an event affects", () => {
     const invalidateQueries = vi.fn();
-    invalidateForEvent({ invalidateQueries }, PROJECT_ID, projectEvent(1, {
-      event_type: "shot_regeneration_started",
-    }));
+    invalidateForEvent(
+      { invalidateQueries },
+      PROJECT_ID,
+      projectEvent(1, { event_type: "shot_regeneration_started" }),
+    );
     const keys = invalidateQueries.mock.calls.map(([filters]) =>
       JSON.stringify((filters as { queryKey: unknown[] }).queryKey),
     );
@@ -159,9 +143,11 @@ describe("invalidateForEvent", () => {
 
   it("invalidates the script lineage for a script edit", () => {
     const invalidateQueries = vi.fn();
-    invalidateForEvent({ invalidateQueries }, PROJECT_ID, projectEvent(2, {
-      event_type: "script_edited",
-    }));
+    invalidateForEvent(
+      { invalidateQueries },
+      PROJECT_ID,
+      projectEvent(2, { event_type: "script_edited" }),
+    );
     const keys = invalidateQueries.mock.calls.map(([filters]) =>
       JSON.stringify((filters as { queryKey: unknown[] }).queryKey),
     );

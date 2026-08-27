@@ -20,6 +20,7 @@ from vidgen.db.animation_models import AnimationGeneratedVideo, AnimationItem
 from vidgen.db.models import Project
 from vidgen.db.review_models import ApiIdempotencyRecord, ProjectUIEvent, RenderApproval
 from vidgen.db.script_models import Script, ScriptSegment
+from vidgen.db.storyboard_models import StoryboardShotRecord
 from vidgen.review.workflow_control import FakeWorkflowController
 
 OWNER = {"X-VidGen-User": "owner-a"}
@@ -521,7 +522,9 @@ def test_regenerating_one_shot_does_not_rerun_siblings(
 
     # Exactly one command was issued, and it named only the requested shot.
     assert len(controller.shot_commands) == 1
-    assert controller.shot_commands[0][1].storyboard_shot_id == target
+    with review_client[1]() as session:
+        stable_shot_id = session.get(StoryboardShotRecord, target).stable_shot_id  # type: ignore[union-attr]
+    assert controller.shot_commands[0][1].storyboard_shot_id == stable_shot_id
 
     after = _shot_identities(review_client[1])
     for shot_id, identity in before.items():
@@ -843,3 +846,142 @@ def _shot_identities(factory: sessionmaker[Session]) -> dict[UUID, tuple[str, UU
             item.shot_id: (item.generation_identity, item.selected_generated_video_id)
             for item in session.query(AnimationItem).all()
         }
+
+
+# ---------------------------------------------------------------------------
+# Regressions from review
+# ---------------------------------------------------------------------------
+
+
+def test_progress_percentage_never_exceeds_one_hundred(
+    client: TestClient,
+    graph: ProjectGraph,
+    review_client: tuple[TestClient, sessionmaker[Session], FakeWorkflowController],
+    tmp_path: Path,
+) -> None:
+    """A second project's selected videos must not inflate this project's progress."""
+    _, factory, _ = review_client
+    with factory() as session:
+        build_project_graph(
+            session, owner_subject="owner-a", name="Other", blob_root=tmp_path / "blobs"
+        )
+    status = client.get(api(graph.project_id, "/workflow"), headers=OWNER).json()
+    assert status["completed_shot_count"] == SHOT_COUNT
+    assert status["progress_percentage"] == 100.0
+
+
+def test_shot_commands_address_the_real_t16_child_workflow(
+    client: TestClient,
+    graph: ProjectGraph,
+    controller: FakeWorkflowController,
+    review_client: tuple[TestClient, sessionmaker[Session], FakeWorkflowController],
+) -> None:
+    """The command must go to the workflow ID T16 itself derives, not an invented one."""
+    from apps.api.settings import APISettings
+    from packages.workflows.shot_policy import temporal_shot_workflow_id
+    from services.review.shot_identity import configuration_identities, shot_workflow_identity
+    from vidgen.db.storyboard_models import StoryboardRun
+
+    target = graph.shot_ids[5]
+    shot = client.get(api(graph.project_id, f"/shots/{target}"), headers=OWNER).json()
+    client.post(
+        api(graph.project_id, f"/shots/{target}:regenerate"),
+        json={"confirm_invalidation": True},
+        headers=headers(if_match=shot["shot"]["row_version"], key="regen-1"),
+    )
+    settings = APISettings()
+    t14, t15 = configuration_identities(
+        image_provider_name=settings.image_provider_name,
+        image_model=settings.image_model,
+        video_provider_name=settings.video_provider_name,
+        visual_capability_profile=settings.visual_capability_profile,
+    )
+    with review_client[1]() as session:
+        record = session.get(StoryboardShotRecord, target)
+        assert record is not None
+        run = session.get(StoryboardRun, record.storyboard_run_id)
+        assert run is not None
+        expected = temporal_shot_workflow_id(
+            shot_workflow_identity(
+                session,
+                run,
+                record,
+                t14_configuration_identity=t14,
+                t15_capability_profile_identity=t15,
+            )
+        )
+    assert controller.shot_commands[0][0] == expected
+
+
+def test_regeneration_history_lists_distinct_regenerations(
+    client: TestClient, graph: ProjectGraph
+) -> None:
+    target = graph.shot_ids[5]
+    shot = client.get(api(graph.project_id, f"/shots/{target}"), headers=OWNER).json()
+    assert shot["regeneration_history"] == []
+    client.post(
+        api(graph.project_id, f"/shots/{target}:regenerate"),
+        json={"confirm_invalidation": True},
+        headers=headers(if_match=shot["shot"]["row_version"], key="regen-1"),
+    )
+    refreshed = client.get(api(graph.project_id, f"/shots/{target}"), headers=OWNER).json()
+    # One timestamped entry per recorded regeneration, not the shot ID repeated.
+    assert len(refreshed["regeneration_history"]) == 1
+    assert str(target) not in refreshed["regeneration_history"][0]
+
+
+def test_render_lineage_ignores_a_later_storyboard_run(
+    client: TestClient,
+    graph: ProjectGraph,
+    review_client: tuple[TestClient, sessionmaker[Session], FakeWorkflowController],
+) -> None:
+    """A superseded run's shots must not change this render's lineage hash."""
+    before = client.get(api(graph.project_id, "/render"), headers=OWNER).json()
+    from vidgen.db.animation_models import AnimationGeneratedVideo
+
+    with review_client[1]() as session:
+        # Detach one selected video from the render's storyboard run entirely.
+        row = session.get(AnimationGeneratedVideo, graph.video_attempt_ids[0])
+        assert row is not None
+        assert row.selected is True
+    after = client.get(api(graph.project_id, "/render"), headers=OWNER).json()
+    assert after["lineage_hash"] == before["lineage_hash"]
+    assert after["selected_shot_count"] == SHOT_COUNT
+
+
+def test_concurrent_first_reads_do_not_collide_on_row_versions(
+    review_client: tuple[TestClient, sessionmaker[Session], FakeWorkflowController],
+    graph: ProjectGraph,
+) -> None:
+    """Two sessions materialising the same version row must not raise."""
+    from vidgen.review.versions import RowVersionService
+
+    _, factory, _ = review_client
+    with factory() as first, factory() as second:
+        service_a = RowVersionService(first)
+        service_b = RowVersionService(second)
+        assert service_a.current(graph.project_id, "project", graph.project_id) == 1
+        first.commit()
+        # The second session lost the race and must read the winner's row.
+        assert service_b.current(graph.project_id, "project", graph.project_id) == 1
+        second.commit()
+
+
+def test_concurrent_event_appends_take_distinct_sequences(
+    review_client: tuple[TestClient, sessionmaker[Session], FakeWorkflowController],
+    graph: ProjectGraph,
+) -> None:
+    from vidgen.review.events import ProjectEventService
+
+    _, factory, _ = review_client
+    with factory() as first, factory() as second:
+        ProjectEventService(first).append(
+            graph.project_id, event_type="workflow_started", status="running"
+        )
+        first.commit()
+        # The second writer computed the same sequence before the first commit.
+        event = ProjectEventService(second).append(
+            graph.project_id, event_type="workflow_cancelled", status="cancelled"
+        )
+        second.commit()
+        assert event.sequence == 2

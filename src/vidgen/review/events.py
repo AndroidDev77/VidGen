@@ -15,6 +15,7 @@ from datetime import UTC, datetime
 from uuid import UUID
 
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from vidgen.contracts.review import PipelineStage, ProjectEventProjection
@@ -36,8 +37,16 @@ ALLOWED_PAYLOAD_KEYS = frozenset(
 )
 
 
+# Bounded retries for the per-project sequence allocation below.
+MAX_SEQUENCE_ATTEMPTS = 5
+
+
 class EventPayloadTooLarge(ValueError):
     """Raised when a caller tries to append an unbounded event payload."""
+
+
+class SequenceContention(RuntimeError):
+    """Raised when a project event sequence could not be allocated."""
 
 
 class ProjectEventService:
@@ -59,27 +68,29 @@ class ProjectEventService:
         encoded = json.dumps(bounded, sort_keys=True, separators=(",", ":"), default=str)
         if len(encoded.encode()) > MAX_EVENT_PAYLOAD_BYTES:
             raise EventPayloadTooLarge("project event payload exceeds the configured bound")
-        next_sequence = (
-            self._session.scalar(
-                select(func.coalesce(func.max(ProjectUIEvent.sequence), 0)).where(
-                    ProjectUIEvent.project_id == project_id
-                )
+        # ``max(sequence) + 1`` can collide when two mutations on one project
+        # commit concurrently. The unique constraint is the arbiter; a losing
+        # writer simply takes the next free sequence.
+        for _ in range(MAX_SEQUENCE_ATTEMPTS):
+            event = ProjectUIEvent(
+                project_id=project_id,
+                sequence=self.latest_sequence(project_id) + 1,
+                event_type=event_type,
+                stage=stage.value if stage is not None else None,
+                status=status,
+                workflow_id=workflow_id,
+                payload=bounded,
+                created_at=datetime.now(UTC),
             )
-            or 0
-        ) + 1
-        event = ProjectUIEvent(
-            project_id=project_id,
-            sequence=next_sequence,
-            event_type=event_type,
-            stage=stage.value if stage is not None else None,
-            status=status,
-            workflow_id=workflow_id,
-            payload=bounded,
-            created_at=datetime.now(UTC),
-        )
-        self._session.add(event)
-        self._session.flush()
-        return event
+            self._session.add(event)
+            try:
+                with self._session.begin_nested():
+                    self._session.flush()
+            except IntegrityError:
+                self._session.expunge(event)
+                continue
+            return event
+        raise SequenceContention("could not allocate a project event sequence")
 
     def since(
         self, project_id: UUID, last_event_id: int | None, limit: int = 200

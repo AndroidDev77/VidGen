@@ -110,9 +110,41 @@ export class VidGenClient {
     return this.request<T>(path, { ...options, method: "PUT" });
   }
 
-  /** The absolute URL of a streaming endpoint, for `EventSource`-style reads. */
+  /** The absolute URL of a streaming endpoint. */
   streamUrl(path: string, query: Record<string, string | number> = {}): string {
     return this.buildUrl(path, query);
+  }
+
+  /**
+   * Open a `text/event-stream` response.
+   *
+   * `EventSource` cannot send request headers, so it could carry neither the
+   * development identity nor `Last-Event-ID`. A streamed `fetch` can, and it is
+   * the only way the stream stays owner-scoped.
+   */
+  async openEventStream(
+    path: string,
+    options: { readonly lastEventId?: number | undefined; readonly signal: AbortSignal },
+  ): Promise<ReadableStreamDefaultReader<Uint8Array>> {
+    const headers = new Headers({ Accept: "text/event-stream" });
+    headers.set("X-VidGen-User", this.config.devUser);
+    if (options.lastEventId !== undefined) {
+      headers.set("Last-Event-ID", String(options.lastEventId));
+    }
+    const response = await this.transport(this.buildUrl(path), {
+      method: "GET",
+      headers,
+      signal: options.signal,
+      cache: "no-store",
+    });
+    if (!response.ok || response.body === null) {
+      const text = response.body === null ? "" : await response.text();
+      throw new VidGenApiError(
+        response.status,
+        toApiError(response.status, text === "" ? null : safeParse(text)),
+      );
+    }
+    return response.body.getReader();
   }
 
   get devUser(): string {

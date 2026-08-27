@@ -18,12 +18,14 @@ from services.review.mutations import (
     ScriptEditOutcome,
     ShotRegenerationOutcome,
 )
+from services.review.shot_identity import configuration_identities
 
 __all__ = [
     "InvalidationRecorder",
     "ReviewMutationService",
     "ScriptEditOutcome",
     "ShotRegenerationOutcome",
+    "configuration_identities",
     "script_invalidation_set",
     "shot_invalidation_set",
     "transcript_invalidation_set",

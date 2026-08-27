@@ -153,6 +153,40 @@ def current_render(session: Session, project_id: UUID) -> RenderJob | None:
 # --------------------------------------------------------------------------
 
 
+def selected_video_shot_ids(session: Session, run: StoryboardRun) -> list[UUID]:
+    """Shot IDs of this storyboard run that currently have a selected video."""
+    return list(
+        session.scalars(
+            select(AnimationGeneratedVideo.shot_id)
+            .join(
+                StoryboardShotRecord,
+                StoryboardShotRecord.id == AnimationGeneratedVideo.shot_id,
+            )
+            .where(
+                StoryboardShotRecord.storyboard_run_id == run.id,
+                AnimationGeneratedVideo.selected.is_(True),
+            )
+        ).all()
+    )
+
+
+def selected_video_asset_ids(session: Session, run: StoryboardRun) -> list[UUID]:
+    """Canonical asset IDs of this storyboard run's selected videos."""
+    return list(
+        session.scalars(
+            select(AnimationGeneratedVideo.canonical_asset_id)
+            .join(
+                StoryboardShotRecord,
+                StoryboardShotRecord.id == AnimationGeneratedVideo.shot_id,
+            )
+            .where(
+                StoryboardShotRecord.storyboard_run_id == run.id,
+                AnimationGeneratedVideo.selected.is_(True),
+            )
+        ).all()
+    )
+
+
 def project_summary(
     session: Session, project: Project, versions: RowVersionService
 ) -> ProjectSummaryProjection:
@@ -229,16 +263,7 @@ def workflow_status(
         )
     )
     total_shots = storyboard.shot_count if storyboard else 0
-    locked = 0
-    if storyboard is not None:
-        locked = len(
-            session.scalars(
-                select(AnimationGeneratedVideo.id).where(
-                    AnimationGeneratedVideo.project_id == project.id,
-                    AnimationGeneratedVideo.selected.is_(True),
-                )
-            ).all()
-        )
+    locked = len(selected_video_shot_ids(session, storyboard)) if storyboard else 0
     failures = session.scalars(
         select(PipelineFailureEvent).where(PipelineFailureEvent.project_id == project.id)
     ).all()
@@ -249,7 +274,7 @@ def workflow_status(
         ((updated or datetime.now(UTC)) - started).total_seconds() if started is not None else None
     )
     # Only report a percentage the shot counts can actually justify.
-    percentage = (locked / total_shots * 100) if total_shots else None
+    percentage = min(locked / total_shots * 100, 100.0) if total_shots else None
     return WorkflowStatusProjection(
         project_id=project.id,
         workflow_id=run.workflow_id if run else None,
@@ -495,14 +520,19 @@ def shot_detail(
         if item is not None
         else {}
     )
+    # One entry per recorded regeneration of this shot, timestamped, rather than
+    # the shot's own ID repeated once per invalidated downstream artifact.
     regenerations = [
-        str(row.origin_id)
+        (utc(row.created_at) or row.created_at).isoformat()
         for row in session.scalars(
-            select(DownstreamInvalidation).where(
+            select(DownstreamInvalidation)
+            .where(
                 DownstreamInvalidation.project_id == project_id,
                 DownstreamInvalidation.origin_type == "shot",
                 DownstreamInvalidation.origin_id == shot.id,
+                DownstreamInvalidation.invalidated_type == "shot",
             )
+            .order_by(DownstreamInvalidation.created_at)
         ).all()
     ]
     return ShotDetailProjection(
@@ -593,12 +623,14 @@ def render_projection(
     verified = (
         render.status == "render_complete" and render.verification_report_asset_id is not None
     )
-    selected_videos = session.scalars(
-        select(AnimationGeneratedVideo.canonical_asset_id).where(
-            AnimationGeneratedVideo.project_id == project_id,
-            AnimationGeneratedVideo.selected.is_(True),
-        )
-    ).all()
+    # The render's own storyboard run, never whatever is selected now: a later
+    # run's shots must not silently invalidate this render's approval.
+    render_run = (
+        session.get(StoryboardRun, render.storyboard_run_id)
+        if render.storyboard_run_id is not None
+        else None
+    )
+    selected_videos = selected_video_asset_ids(session, render_run) if render_run else []
     lineage = render_lineage_hash(
         project_id=project_id,
         script_id=render.script_id,

@@ -11,6 +11,7 @@ from __future__ import annotations
 from uuid import UUID
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from vidgen.db.review_models import ResourceVersion
@@ -48,18 +49,32 @@ class RowVersionService:
         )
 
     def current(self, project_id: UUID, resource_type: str, resource_id: UUID) -> int:
-        """Return the current version, materialising version 1 on first read."""
+        """Return the current version, materialising version 1 on first read.
+
+        Two concurrent reads of the same resource race to insert the first row;
+        the unique constraint decides, and the loser re-reads the winner's row
+        rather than failing an ordinary GET.
+        """
         row = self._row(resource_type, resource_id)
-        if row is None:
-            row = ResourceVersion(
-                project_id=project_id,
-                resource_type=resource_type,
-                resource_id=resource_id,
-                version=1,
-            )
-            self._session.add(row)
-            self._session.flush()
-        return row.version
+        if row is not None:
+            return row.version
+        candidate = ResourceVersion(
+            project_id=project_id,
+            resource_type=resource_type,
+            resource_id=resource_id,
+            version=1,
+        )
+        self._session.add(candidate)
+        try:
+            with self._session.begin_nested():
+                self._session.flush()
+        except IntegrityError:
+            self._session.expunge(candidate)
+            existing = self._row(resource_type, resource_id)
+            if existing is None:  # pragma: no cover - the constraint guarantees a row
+                raise
+            return existing.version
+        return candidate.version
 
     def require(
         self,

@@ -50,6 +50,12 @@ services:
     build:
       context: .
       dockerfile: apps/web/Dockerfile
+    environment:
+      # The API the container reverse-proxies under /api. Same-origin, so the
+      # API keeps CORS disabled.
+      VIDGEN_API_UPSTREAM: http://host.docker.internal:8000
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     ports:
       - "5173:8080"
 

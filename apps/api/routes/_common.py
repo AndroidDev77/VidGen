@@ -21,6 +21,7 @@ from apps.api.dependencies import (
 )
 from apps.api.settings import APISettings, get_settings
 from services.review.mutations import ReviewMutationService
+from services.review.shot_identity import configuration_identities
 from vidgen.db.models import Project
 from vidgen.review.events import ProjectEventService
 from vidgen.review.idempotency import IdempotencyService
@@ -58,14 +59,29 @@ def idempotency_for(session: Session, principal: Principal) -> IdempotencyServic
 
 
 def mutations_for(
-    session: Session, principal: Principal, controller: WorkflowController
+    session: Session,
+    principal: Principal,
+    controller: WorkflowController,
+    settings: APISettings | None = None,
 ) -> ReviewMutationService:
+    resolved = settings or get_settings()
+    # The same configuration identities the T16 fan-out binds into a child
+    # workflow ID, so a T18 command reaches the real child. They are composed in
+    # the review service so the route layer never names a provider.
+    t14_identity, t15_identity = configuration_identities(
+        image_provider_name=resolved.image_provider_name,
+        image_model=resolved.image_model,
+        video_provider_name=resolved.video_provider_name,
+        visual_capability_profile=resolved.visual_capability_profile,
+    )
     return ReviewMutationService(
         session,
         principal.subject,
         versions_for(session),
         events_for(session),
         controller,
+        t14_configuration_identity=t14_identity,
+        t15_capability_profile_identity=t15_identity,
     )
 
 

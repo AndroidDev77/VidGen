@@ -22,6 +22,11 @@ from services.review.invalidation import (
     shot_invalidation_set,
     transcript_invalidation_set,
 )
+from services.review.shot_identity import (
+    current_workflow_id,
+    regenerated_workflow_id,
+    shot_workflow_identity,
+)
 from services.script.canonicalize import compute_segment_content_hash
 from vidgen.contracts.review import (
     ApiErrorCode,
@@ -30,11 +35,11 @@ from vidgen.contracts.review import (
     ShotRegenerationResult,
 )
 from vidgen.contracts.shot_workflow import ShotWorkflowCommand, ShotWorkflowCommandResult
-from vidgen.db.animation_models import AnimationGeneratedVideo, AnimationItem
+from vidgen.db.animation_models import AnimationGeneratedVideo
 from vidgen.db.models import Project, RenderJob
 from vidgen.db.review_models import RenderApproval
 from vidgen.db.script_models import Script, ScriptSegment
-from vidgen.db.storyboard_models import StoryboardShotRecord
+from vidgen.db.storyboard_models import StoryboardRun, StoryboardShotRecord
 from vidgen.db.transcription_models import Transcript, TranscriptSegmentRecord
 from vidgen.review.errors import ReviewError, conflict, not_found, validation_failed
 from vidgen.review.events import ProjectEventService
@@ -64,13 +69,32 @@ class ReviewMutationService:
         versions: RowVersionService,
         events: ProjectEventService,
         controller: WorkflowController,
+        t14_configuration_identity: str,
+        t15_capability_profile_identity: str,
     ) -> None:
         self._session = session
         self._owner = owner_subject
         self._versions = versions
         self._events = events
         self._controller = controller
+        self._t14_identity = t14_configuration_identity
+        self._t15_identity = t15_capability_profile_identity
         self._invalidations = InvalidationRecorder(session)
+
+    def _shot_workflow_id(self, shot: StoryboardShotRecord) -> str:
+        """The Temporal ID of the child that currently owns this shot."""
+        run = self._session.get(StoryboardRun, shot.storyboard_run_id)
+        if run is None:
+            raise not_found("shot workflow")
+        return current_workflow_id(
+            shot_workflow_identity(
+                self._session,
+                run,
+                shot,
+                t14_configuration_identity=self._t14_identity,
+                t15_capability_profile_identity=self._t15_identity,
+            )
+        )
 
     # ------------------------------------------------------------------
     # Transcript
@@ -304,20 +328,33 @@ class ReviewMutationService:
                 "Regenerating this shot marks the current verified render stale. "
                 "Confirm to continue.",
             )
-        item = self._session.scalar(select(AnimationItem).where(AnimationItem.shot_id == shot.id))
-        previous_identity = item.generation_identity if item is not None else None
+        run = self._session.get(StoryboardRun, shot.storyboard_run_id)
+        if run is None:
+            raise not_found("shot workflow")
+        identity = shot_workflow_identity(
+            self._session,
+            run,
+            shot,
+            t14_configuration_identity=self._t14_identity,
+            t15_capability_profile_identity=self._t15_identity,
+        )
+        previous_identity = identity.identity_hash
+        # A new material regeneration identity: the same shot deliberately gets a
+        # different T16 child rather than overwriting the locked one.
         new_identity = hashlib.sha256(
-            f"{shot.id}:{previous_identity}:{idempotency_key}:{row_version}".encode()
+            f"t18-regenerate:{previous_identity}:{idempotency_key}:{row_version}".encode()
         ).hexdigest()
         command = ShotWorkflowCommand(
             command_id=f"t18-regenerate-{idempotency_key}"[:128],
             project_id=project.id,
-            storyboard_shot_id=shot.id,
+            storyboard_shot_id=shot.stable_shot_id,
             command="regenerate",
             new_shot_input_hash=new_identity,
         )
-        child_workflow_id = f"vidgen-shot-{shot.id}-{new_identity[:24]}"
-        result = self._controller.send_shot_command(child_workflow_id, command)
+        # The command goes to the child that currently owns the shot; the ID
+        # returned is the one the replacement child will take.
+        result = self._controller.send_shot_command(current_workflow_id(identity), command)
+        child_workflow_id = regenerated_workflow_id(shot.stable_shot_id, new_identity)
         if not result.accepted:
             raise conflict(
                 ApiErrorCode.SHOT_NOT_RETRYABLE,
@@ -353,17 +390,13 @@ class ReviewMutationService:
     def retry_shot(
         self, project: Project, shot: StoryboardShotRecord, *, idempotency_key: str
     ) -> ShotWorkflowCommandResult:
-        item = self._session.scalar(select(AnimationItem).where(AnimationItem.shot_id == shot.id))
-        identity = item.generation_identity if item is not None else str(shot.id)
         command = ShotWorkflowCommand(
             command_id=f"t18-retry-{idempotency_key}"[:128],
             project_id=project.id,
-            storyboard_shot_id=shot.id,
+            storyboard_shot_id=shot.stable_shot_id,
             command="retry",
         )
-        result = self._controller.send_shot_command(
-            f"vidgen-shot-{shot.id}-{identity[:24]}", command
-        )
+        result = self._controller.send_shot_command(self._shot_workflow_id(shot), command)
         if not result.accepted:
             raise conflict(
                 ApiErrorCode.SHOT_NOT_RETRYABLE,
@@ -380,17 +413,13 @@ class ReviewMutationService:
     def cancel_shot(
         self, project: Project, shot: StoryboardShotRecord, *, idempotency_key: str
     ) -> ShotWorkflowCommandResult:
-        item = self._session.scalar(select(AnimationItem).where(AnimationItem.shot_id == shot.id))
-        identity = item.generation_identity if item is not None else str(shot.id)
         command = ShotWorkflowCommand(
             command_id=f"t18-cancel-{idempotency_key}"[:128],
             project_id=project.id,
-            storyboard_shot_id=shot.id,
+            storyboard_shot_id=shot.stable_shot_id,
             command="cancel",
         )
-        result = self._controller.send_shot_command(
-            f"vidgen-shot-{shot.id}-{identity[:24]}", command
-        )
+        result = self._controller.send_shot_command(self._shot_workflow_id(shot), command)
         self._events.append(
             project.id,
             event_type="shot_cancel_requested",

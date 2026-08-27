@@ -21,17 +21,62 @@ export const MAX_SSE_ATTEMPTS = 3;
 const BASE_BACKOFF_MS = 500;
 const MAX_BACKOFF_MS = 15_000;
 const POLL_INTERVAL_MS = 5_000;
+/** A brief pause before reopening a stream the server closed cleanly. */
+const CLEAN_RECONNECT_MS = 100;
 const EVENT_BUFFER = 50;
 
 export function backoffDelay(attempt: number): number {
   return Math.min(BASE_BACKOFF_MS * 2 ** attempt, MAX_BACKOFF_MS);
 }
 
+/** One parsed `text/event-stream` frame. */
+export interface StreamFrame {
+  readonly id: number | null;
+  readonly data: string;
+}
+
+/** Split a Server-Sent Events buffer into complete frames plus a remainder. */
+export function parseFrames(buffer: string): {
+  frames: StreamFrame[];
+  rest: string;
+} {
+  const frames: StreamFrame[] = [];
+  const parts = buffer.split("\n\n");
+  const rest = parts.pop() ?? "";
+  for (const block of parts) {
+    let id: number | null = null;
+    const data: string[] = [];
+    for (const line of block.split("\n")) {
+      // ":" alone is a heartbeat comment; it carries no payload.
+      if (line.startsWith(":")) {
+        continue;
+      }
+      if (line.startsWith("id:")) {
+        const parsed = Number(line.slice(3).trim());
+        id = Number.isFinite(parsed) ? parsed : null;
+      } else if (line.startsWith("data:")) {
+        data.push(line.slice(5).trim());
+      }
+    }
+    if (data.length > 0) {
+      frames.push({ id, data: data.join("\n") });
+    }
+  }
+  return { frames, rest };
+}
+
 export interface UseProjectEventsOptions {
   readonly client?: VidGenClient;
   readonly enabled?: boolean;
-  /** Injected in tests; production uses the browser's `EventSource`. */
-  readonly eventSourceFactory?: (url: string) => EventSource;
+  /**
+   * Injected in tests. Production streams through the API client so the
+   * request can carry the development identity and `Last-Event-ID`, which
+   * `EventSource` cannot do.
+   */
+  readonly openStream?: (
+    lastEventId: number | undefined,
+    signal: AbortSignal,
+  ) => Promise<ReadableStreamDefaultReader<Uint8Array>>;
   readonly pollIntervalMs?: number;
 }
 
@@ -83,10 +128,10 @@ export function useProjectEvents(
       return;
     }
     let disposed = false;
-    let source: EventSource | null = null;
     let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
     let pollTimer: ReturnType<typeof setInterval> | undefined;
     let attempts = 0;
+    const controller = new AbortController();
 
     const startPolling = () => {
       setState((previous) => ({ ...previous, connection: "polling" }));
@@ -103,56 +148,92 @@ export function useProjectEvents(
       pollTimer = setInterval(tick, options.pollIntervalMs ?? POLL_INTERVAL_MS);
     };
 
-    const connect = () => {
+    const openStream =
+      options.openStream ??
+      ((lastEventId: number | undefined, signal: AbortSignal) =>
+        client.openEventStream(`/api/v1/projects/${projectId}/events`, {
+          lastEventId,
+          signal,
+        }));
+
+    const fail = () => {
       if (disposed) {
         return;
       }
-      const factory =
-        options.eventSourceFactory ?? ((url: string) => new EventSource(url, { withCredentials: false }));
-      const url = client.streamUrl(`/api/v1/projects/${projectId}/events`, {
-        ...(lastIdRef.current === null ? {} : { last_event_id: lastIdRef.current }),
-      });
-      try {
-        source = factory(url);
-      } catch {
+      attempts += 1;
+      const exhausted = attempts >= MAX_SSE_ATTEMPTS;
+      setState((previous) => ({
+        ...previous,
+        connection: exhausted ? "polling" : "reconnecting",
+        reconnectAttempts: attempts,
+      }));
+      if (exhausted) {
         startPolling();
         return;
       }
-      source.onopen = () => {
-        attempts = 0;
-        setState((previous) => ({ ...previous, connection: "streaming", reconnectAttempts: 0 }));
-      };
-      source.onmessage = (message: MessageEvent<string>) => {
-        try {
-          ingest(JSON.parse(message.data) as ProjectEventProjection);
-        } catch {
-          // A malformed frame is dropped; the next one still arrives.
-        }
-      };
-      source.onerror = () => {
-        source?.close();
-        source = null;
-        if (disposed) {
-          return;
-        }
-        attempts += 1;
-        setState((previous) => ({
-          ...previous,
-          connection: attempts >= MAX_SSE_ATTEMPTS ? "polling" : "reconnecting",
-          reconnectAttempts: attempts,
-        }));
-        if (attempts >= MAX_SSE_ATTEMPTS) {
-          startPolling();
-          return;
-        }
-        reconnectTimer = setTimeout(connect, backoffDelay(attempts));
-      };
+      reconnectTimer = setTimeout(() => void connect(), backoffDelay(attempts));
     };
 
-    connect();
+    const connect = async (): Promise<void> => {
+      if (disposed) {
+        return;
+      }
+      let reader: ReadableStreamDefaultReader<Uint8Array>;
+      try {
+        reader = await openStream(lastIdRef.current ?? undefined, controller.signal);
+      } catch {
+        fail();
+        return;
+      }
+      if (disposed) {
+        void reader.cancel();
+        return;
+      }
+      attempts = 0;
+      setState((previous) => ({ ...previous, connection: "streaming", reconnectAttempts: 0 }));
+      const decoder = new TextDecoder();
+      let buffer = "";
+      // A stream the server closed cleanly is a reconnect, not a failure: it
+      // must not count toward the polling-fallback budget.
+      let closedCleanly = false;
+      try {
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done) {
+            closedCleanly = true;
+            break;
+          }
+          if (disposed) {
+            break;
+          }
+          buffer += decoder.decode(value, { stream: true });
+          const { frames, rest } = parseFrames(buffer);
+          buffer = rest;
+          for (const frame of frames) {
+            try {
+              ingest(JSON.parse(frame.data) as ProjectEventProjection);
+            } catch {
+              // A malformed frame is dropped; the next one still arrives.
+            }
+          }
+        }
+      } catch {
+        // Fall through to the reconnect path below.
+      }
+      if (disposed) {
+        return;
+      }
+      if (closedCleanly) {
+        reconnectTimer = setTimeout(() => void connect(), CLEAN_RECONNECT_MS);
+        return;
+      }
+      fail();
+    };
+
+    void connect();
     return () => {
       disposed = true;
-      source?.close();
+      controller.abort();
       if (reconnectTimer !== undefined) {
         clearTimeout(reconnectTimer);
       }
@@ -160,7 +241,7 @@ export function useProjectEvents(
         clearInterval(pollTimer);
       }
     };
-  }, [client, enabled, ingest, options.eventSourceFactory, options.pollIntervalMs, projectId]);
+  }, [client, enabled, ingest, options.openStream, options.pollIntervalMs, projectId]);
 
   return state;
 }

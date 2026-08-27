@@ -77,6 +77,10 @@ VITE_VIDGEN_DEV_USER       # the local X-VidGen-User development identity
 No server secret is ever exposed through a `VITE_` variable. T18 keeps the existing local
 `Principal` and `X-VidGen-User` development identity; production authentication is out of scope.
 
+The web container (`docker compose --profile web up --build web`) serves the built assets and
+reverse-proxies the API under `/api` on the same origin, so the browser never makes a cross-origin
+request and the API keeps CORS disabled. `VIDGEN_API_UPSTREAM` selects the API it proxies to.
+
 ### Application routes
 
 ```text
