@@ -1,0 +1,298 @@
+{
+  "$defs": {
+    "ImageReferenceBinding": {
+      "additionalProperties": false,
+      "properties": {
+        "asset_id": {
+          "format": "uuid",
+          "title": "Asset Id",
+          "type": "string"
+        },
+        "media_type": {
+          "enum": [
+            "image/png",
+            "image/jpeg",
+            "image/webp"
+          ],
+          "title": "Media Type",
+          "type": "string"
+        },
+        "order": {
+          "minimum": 0,
+          "title": "Order",
+          "type": "integer"
+        },
+        "required": {
+          "default": false,
+          "title": "Required",
+          "type": "boolean"
+        },
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "semantic_role": {
+          "enum": [
+            "source",
+            "style",
+            "character",
+            "location",
+            "approved"
+          ],
+          "title": "Semantic Role",
+          "type": "string"
+        },
+        "sha256": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Sha256",
+          "type": "string"
+        }
+      },
+      "required": [
+        "asset_id",
+        "sha256",
+        "semantic_role",
+        "order",
+        "media_type"
+      ],
+      "title": "ImageReferenceBinding",
+      "type": "object"
+    },
+    "KeyframeRole": {
+      "enum": [
+        "FIRST_FRAME",
+        "LAST_FRAME"
+      ],
+      "title": "KeyframeRole",
+      "type": "string"
+    },
+    "VisualIntent": {
+      "additionalProperties": false,
+      "properties": {
+        "camera_angle": {
+          "minLength": 1,
+          "title": "Camera Angle",
+          "type": "string"
+        },
+        "character_descriptions": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Character Descriptions",
+          "type": "array"
+        },
+        "character_states": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Character States",
+          "type": "array"
+        },
+        "composition": {
+          "minLength": 1,
+          "title": "Composition",
+          "type": "string"
+        },
+        "continuity_assumptions": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Continuity Assumptions",
+          "type": "array"
+        },
+        "emotional_state": {
+          "minLength": 1,
+          "title": "Emotional State",
+          "type": "string"
+        },
+        "keyframe_role": {
+          "$ref": "#/$defs/KeyframeRole"
+        },
+        "location_description": {
+          "minLength": 1,
+          "title": "Location Description",
+          "type": "string"
+        },
+        "location_invariants": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Location Invariants",
+          "type": "array"
+        },
+        "negative_constraints": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Negative Constraints",
+          "type": "array"
+        },
+        "pose": {
+          "minLength": 1,
+          "title": "Pose",
+          "type": "string"
+        },
+        "positive_constraints": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Positive Constraints",
+          "type": "array"
+        },
+        "primary_action": {
+          "minLength": 1,
+          "title": "Primary Action",
+          "type": "string"
+        },
+        "props_and_ownership": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Props And Ownership",
+          "type": "array"
+        },
+        "required_source_evidence": {
+          "items": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "title": "Required Source Evidence",
+          "type": "array"
+        },
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "shot_id": {
+          "format": "uuid",
+          "title": "Shot Id",
+          "type": "string"
+        },
+        "shot_sequence": {
+          "minimum": 0,
+          "title": "Shot Sequence",
+          "type": "integer"
+        },
+        "shot_size": {
+          "minLength": 1,
+          "title": "Shot Size",
+          "type": "string"
+        },
+        "style_lock": {
+          "minLength": 1,
+          "title": "Style Lock",
+          "type": "string"
+        },
+        "subject_priority": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Subject Priority",
+          "type": "array"
+        },
+        "visible_character_count": {
+          "minimum": 0,
+          "title": "Visible Character Count",
+          "type": "integer"
+        },
+        "visual_purpose": {
+          "minLength": 1,
+          "title": "Visual Purpose",
+          "type": "string"
+        },
+        "warnings": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Warnings",
+          "type": "array"
+        }
+      },
+      "required": [
+        "shot_id",
+        "shot_sequence",
+        "keyframe_role",
+        "visual_purpose",
+        "style_lock",
+        "visible_character_count",
+        "location_description",
+        "composition",
+        "shot_size",
+        "camera_angle",
+        "pose",
+        "primary_action",
+        "emotional_state"
+      ],
+      "title": "VisualIntent",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "diagnostics": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Diagnostics",
+      "type": "array"
+    },
+    "input_hash": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Input Hash",
+      "type": "string"
+    },
+    "prompt": {
+      "minLength": 1,
+      "title": "Prompt",
+      "type": "string"
+    },
+    "prompt_compiler_version": {
+      "title": "Prompt Compiler Version",
+      "type": "string"
+    },
+    "prompt_hash": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Prompt Hash",
+      "type": "string"
+    },
+    "provider_parameters": {
+      "additionalProperties": true,
+      "title": "Provider Parameters",
+      "type": "object"
+    },
+    "references": {
+      "items": {
+        "$ref": "#/$defs/ImageReferenceBinding"
+      },
+      "title": "References",
+      "type": "array"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "template_version": {
+      "title": "Template Version",
+      "type": "string"
+    },
+    "visual_intent": {
+      "$ref": "#/$defs/VisualIntent"
+    }
+  },
+  "required": [
+    "visual_intent",
+    "prompt",
+    "prompt_compiler_version",
+    "template_version",
+    "prompt_hash",
+    "input_hash"
+  ],
+  "title": "ImagePromptPackage",
+  "type": "object"
+}

@@ -1,0 +1,172 @@
+{
+  "$defs": {
+    "KeyframeRole": {
+      "enum": [
+        "FIRST_FRAME",
+        "LAST_FRAME"
+      ],
+      "title": "KeyframeRole",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "camera_angle": {
+      "minLength": 1,
+      "title": "Camera Angle",
+      "type": "string"
+    },
+    "character_descriptions": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Character Descriptions",
+      "type": "array"
+    },
+    "character_states": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Character States",
+      "type": "array"
+    },
+    "composition": {
+      "minLength": 1,
+      "title": "Composition",
+      "type": "string"
+    },
+    "continuity_assumptions": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Continuity Assumptions",
+      "type": "array"
+    },
+    "emotional_state": {
+      "minLength": 1,
+      "title": "Emotional State",
+      "type": "string"
+    },
+    "keyframe_role": {
+      "$ref": "#/$defs/KeyframeRole"
+    },
+    "location_description": {
+      "minLength": 1,
+      "title": "Location Description",
+      "type": "string"
+    },
+    "location_invariants": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Location Invariants",
+      "type": "array"
+    },
+    "negative_constraints": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Negative Constraints",
+      "type": "array"
+    },
+    "pose": {
+      "minLength": 1,
+      "title": "Pose",
+      "type": "string"
+    },
+    "positive_constraints": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Positive Constraints",
+      "type": "array"
+    },
+    "primary_action": {
+      "minLength": 1,
+      "title": "Primary Action",
+      "type": "string"
+    },
+    "props_and_ownership": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Props And Ownership",
+      "type": "array"
+    },
+    "required_source_evidence": {
+      "items": {
+        "format": "uuid",
+        "type": "string"
+      },
+      "title": "Required Source Evidence",
+      "type": "array"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "shot_id": {
+      "format": "uuid",
+      "title": "Shot Id",
+      "type": "string"
+    },
+    "shot_sequence": {
+      "minimum": 0,
+      "title": "Shot Sequence",
+      "type": "integer"
+    },
+    "shot_size": {
+      "minLength": 1,
+      "title": "Shot Size",
+      "type": "string"
+    },
+    "style_lock": {
+      "minLength": 1,
+      "title": "Style Lock",
+      "type": "string"
+    },
+    "subject_priority": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Subject Priority",
+      "type": "array"
+    },
+    "visible_character_count": {
+      "minimum": 0,
+      "title": "Visible Character Count",
+      "type": "integer"
+    },
+    "visual_purpose": {
+      "minLength": 1,
+      "title": "Visual Purpose",
+      "type": "string"
+    },
+    "warnings": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Warnings",
+      "type": "array"
+    }
+  },
+  "required": [
+    "shot_id",
+    "shot_sequence",
+    "keyframe_role",
+    "visual_purpose",
+    "style_lock",
+    "visible_character_count",
+    "location_description",
+    "composition",
+    "shot_size",
+    "camera_angle",
+    "pose",
+    "primary_action",
+    "emotional_state"
+  ],
+  "title": "VisualIntent",
+  "type": "object"
+}

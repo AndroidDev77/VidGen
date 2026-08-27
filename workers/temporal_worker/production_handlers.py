@@ -17,9 +17,12 @@ from services.analysis.evidence_builder import build_evidence_package
 from services.analysis.fake_provider import FakeEpisodeAnalysisProvider
 from services.analysis.openai_adapter import OpenAIAnalysisConfig, OpenAIEpisodeAnalysisProvider
 from services.analysis.pipeline import EpisodeAnalysisPipeline
+from services.image_generation.fake_provider import DeterministicFakeImageProvider
+from services.image_generation.openai_image import OpenAIImageProvider
+from services.image_generation.pipeline import ImageGenerationPipeline
 from services.media_worker.pipeline import MediaPipeline
-from services.narration.fake_provider import FakeNarrationProvider
 from services.narration.alignment import OpenAIWhisperAligner
+from services.narration.fake_provider import FakeNarrationProvider
 from services.narration.openai_adapter import OpenAINarrationProvider
 from services.narration.pipeline import NarrationPipeline
 from services.script.fake_provider import FakeScriptGenerationProvider
@@ -68,6 +71,7 @@ def build_production_handlers(
         "script_generation": _with_session(configured, _generate_script),
         "narration": _with_session(configured, _generate_narration),
         "storyboard": _with_session(configured, _generate_storyboard),
+        "image_generation": _with_session(configured, _generate_keyframes),
     }
 
 
@@ -552,9 +556,7 @@ def _generate_storyboard(
     director: StoryboardDirector
     if settings.openai_api_key:
         director = OpenAIStoryboardDirector(
-            OpenAIStoryboardConfig(
-                api_key=settings.openai_api_key, model=settings.storyboard_model
-            )
+            OpenAIStoryboardConfig(api_key=settings.openai_api_key, model=settings.storyboard_model)
         )
     elif settings.temporal_allow_fake_providers:
         director = FakeStoryboardDirector()
@@ -577,4 +579,39 @@ def _generate_storyboard(
         entity_id=result.storyboard_run_id,
         asset_id=result.storyboard_asset_id,
         reused=False,
+    )
+
+
+def _generate_keyframes(
+    session: Session,
+    blob_store: FilesystemBlobStore,
+    settings: APISettings,
+    request: StageActivityInput,
+) -> StageActivityResult:
+    """T14. The activity receives IDs only and resumes database checkpoints."""
+    if settings.openai_api_key:
+        from openai import OpenAI
+
+        provider = OpenAIImageProvider(OpenAI(api_key=settings.openai_api_key))
+    elif settings.temporal_allow_fake_providers:
+        provider = DeterministicFakeImageProvider()
+    else:
+        raise ValueError("image generation provider is not configured")
+    result = asyncio.run(
+        ImageGenerationPipeline(
+            session,
+            blob_store,
+            provider,
+            model=settings.image_model,
+            cancellation_check=activity.is_cancelled,
+        ).process(project_id=request.project_id, idempotency_key=request.idempotency_key)
+    )
+    asset_id = next(
+        (item.candidate.asset_id for item in result.items if item.candidate is not None), None
+    )
+    return StageActivityResult(
+        stage=request.stage,
+        entity_id=result.run_id,
+        asset_id=asset_id,
+        reused=result.reused_count == result.requested_count,
     )

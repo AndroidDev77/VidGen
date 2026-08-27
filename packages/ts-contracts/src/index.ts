@@ -116,6 +116,21 @@ export interface CharacterState {
   props: string[];
 }
 
+// T14 image generation. Provider image bytes are deliberately absent.
+export type KeyframeRole = "FIRST_FRAME" | "LAST_FRAME";
+export type ImageQuality = "low" | "medium" | "high";
+export type ImageFormat = "png" | "jpeg" | "webp";
+export interface ImageReferenceBinding { schema_version: "1.0"; asset_id: UUID; sha256: string; semantic_role: "source" | "style" | "character" | "location" | "approved"; required: boolean; order: number; media_type: "image/png" | "image/jpeg" | "image/webp" }
+export interface VisualIntent { schema_version: "1.0"; shot_id: UUID; shot_sequence: number; keyframe_role: KeyframeRole; visual_purpose: string; style_lock: string; visible_character_count: number; character_descriptions: string[]; character_states: string[]; location_description: string; location_invariants: string[]; props_and_ownership: string[]; composition: string; shot_size: string; camera_angle: string; subject_priority: string[]; pose: string; primary_action: string; emotional_state: string; continuity_assumptions: string[]; required_source_evidence: UUID[]; positive_constraints: string[]; negative_constraints: string[]; warnings: string[] }
+export interface ImagePromptPackage { schema_version: "1.0"; visual_intent: VisualIntent; prompt: string; prompt_compiler_version: string; template_version: string; references: ImageReferenceBinding[]; diagnostics: string[]; prompt_hash: string; input_hash: string; provider_parameters: Record<string, unknown> }
+export interface ImageValidationDiagnostic { schema_version: "1.0"; code: string; severity: "error" | "warning"; message: string }
+export interface ImageValidationReport { schema_version: "1.0"; valid: boolean; actual_format: ImageFormat | null; mime_type: string | null; width: number | null; height: number | null; aspect_ratio: number | null; color_mode: string | null; has_alpha: boolean; byte_size: number; sha256: string | null; diagnostics: ImageValidationDiagnostic[] }
+export interface GeneratedImageCandidate { schema_version: "1.0"; generated_image_id: UUID; asset_id: UUID; shot_id: UUID; keyframe_role: KeyframeRole; selected: boolean; validation: ImageValidationReport }
+export interface ShotKeyframeResult { schema_version: "1.0"; shot_id: UUID; keyframe_role: KeyframeRole; status: "completed" | "reused" | "failed"; prompt_hash: string; candidate: GeneratedImageCandidate | null; error_code: string | null }
+export interface ImageGenerationRunRequest { schema_version: "1.0"; project_id: UUID; storyboard_id: UUID | null; idempotency_key: string; provider_configuration_version: string; shot_id: UUID | null; keyframe_role: KeyframeRole | null }
+export interface ImageGenerationRunResult { schema_version: "1.0"; run_id: UUID; storyboard_id: UUID; storyboard_version: number; requested_count: number; completed_count: number; reused_count: number; failed_count: number; status: string }
+export interface ImageGenerationResult extends ImageGenerationRunResult { items: ShotKeyframeResult[] }
+
 // ---------------------------------------------------------------------------
 // T13 storyboard generation and deterministic timing.
 // Canonical timing is exact integer microseconds; never a floating-point second.

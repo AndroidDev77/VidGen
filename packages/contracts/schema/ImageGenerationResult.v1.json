@@ -1,0 +1,355 @@
+{
+  "$defs": {
+    "GeneratedImageCandidate": {
+      "additionalProperties": false,
+      "properties": {
+        "asset_id": {
+          "format": "uuid",
+          "title": "Asset Id",
+          "type": "string"
+        },
+        "generated_image_id": {
+          "format": "uuid",
+          "title": "Generated Image Id",
+          "type": "string"
+        },
+        "keyframe_role": {
+          "$ref": "#/$defs/KeyframeRole"
+        },
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "selected": {
+          "title": "Selected",
+          "type": "boolean"
+        },
+        "shot_id": {
+          "format": "uuid",
+          "title": "Shot Id",
+          "type": "string"
+        },
+        "validation": {
+          "$ref": "#/$defs/ImageValidationReport"
+        }
+      },
+      "required": [
+        "generated_image_id",
+        "asset_id",
+        "shot_id",
+        "keyframe_role",
+        "selected",
+        "validation"
+      ],
+      "title": "GeneratedImageCandidate",
+      "type": "object"
+    },
+    "ImageFormat": {
+      "enum": [
+        "png",
+        "jpeg",
+        "webp"
+      ],
+      "title": "ImageFormat",
+      "type": "string"
+    },
+    "ImageValidationDiagnostic": {
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "title": "Code",
+          "type": "string"
+        },
+        "message": {
+          "title": "Message",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "severity": {
+          "enum": [
+            "error",
+            "warning"
+          ],
+          "title": "Severity",
+          "type": "string"
+        }
+      },
+      "required": [
+        "code",
+        "severity",
+        "message"
+      ],
+      "title": "ImageValidationDiagnostic",
+      "type": "object"
+    },
+    "ImageValidationReport": {
+      "additionalProperties": false,
+      "properties": {
+        "actual_format": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ImageFormat"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "aspect_ratio": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Aspect Ratio"
+        },
+        "byte_size": {
+          "minimum": 0,
+          "title": "Byte Size",
+          "type": "integer"
+        },
+        "color_mode": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Color Mode"
+        },
+        "diagnostics": {
+          "items": {
+            "$ref": "#/$defs/ImageValidationDiagnostic"
+          },
+          "title": "Diagnostics",
+          "type": "array"
+        },
+        "has_alpha": {
+          "default": false,
+          "title": "Has Alpha",
+          "type": "boolean"
+        },
+        "height": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Height"
+        },
+        "mime_type": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Mime Type"
+        },
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "sha256": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sha256"
+        },
+        "valid": {
+          "title": "Valid",
+          "type": "boolean"
+        },
+        "width": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Width"
+        }
+      },
+      "required": [
+        "valid",
+        "byte_size"
+      ],
+      "title": "ImageValidationReport",
+      "type": "object"
+    },
+    "KeyframeRole": {
+      "enum": [
+        "FIRST_FRAME",
+        "LAST_FRAME"
+      ],
+      "title": "KeyframeRole",
+      "type": "string"
+    },
+    "ShotKeyframeResult": {
+      "additionalProperties": false,
+      "properties": {
+        "candidate": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/GeneratedImageCandidate"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "error_code": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Error Code"
+        },
+        "keyframe_role": {
+          "$ref": "#/$defs/KeyframeRole"
+        },
+        "prompt_hash": {
+          "title": "Prompt Hash",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "shot_id": {
+          "format": "uuid",
+          "title": "Shot Id",
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "completed",
+            "reused",
+            "failed"
+          ],
+          "title": "Status",
+          "type": "string"
+        }
+      },
+      "required": [
+        "shot_id",
+        "keyframe_role",
+        "status",
+        "prompt_hash"
+      ],
+      "title": "ShotKeyframeResult",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "completed_count": {
+      "minimum": 0,
+      "title": "Completed Count",
+      "type": "integer"
+    },
+    "failed_count": {
+      "minimum": 0,
+      "title": "Failed Count",
+      "type": "integer"
+    },
+    "items": {
+      "items": {
+        "$ref": "#/$defs/ShotKeyframeResult"
+      },
+      "title": "Items",
+      "type": "array"
+    },
+    "requested_count": {
+      "minimum": 0,
+      "title": "Requested Count",
+      "type": "integer"
+    },
+    "reused_count": {
+      "minimum": 0,
+      "title": "Reused Count",
+      "type": "integer"
+    },
+    "run_id": {
+      "format": "uuid",
+      "title": "Run Id",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "status": {
+      "title": "Status",
+      "type": "string"
+    },
+    "storyboard_id": {
+      "format": "uuid",
+      "title": "Storyboard Id",
+      "type": "string"
+    },
+    "storyboard_version": {
+      "exclusiveMinimum": 0,
+      "title": "Storyboard Version",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "run_id",
+    "storyboard_id",
+    "storyboard_version",
+    "requested_count",
+    "completed_count",
+    "reused_count",
+    "failed_count",
+    "status"
+  ],
+  "title": "ImageGenerationResult",
+  "type": "object"
+}
