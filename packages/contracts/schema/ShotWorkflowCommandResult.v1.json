@@ -1,0 +1,51 @@
+{
+  "$defs": {
+    "ShotWorkflowStatus": {
+      "enum": [
+        "defined",
+        "prompting",
+        "keyframe_generating",
+        "keyframe_qa",
+        "animating",
+        "video_qa",
+        "locked",
+        "failed",
+        "cancelled"
+      ],
+      "title": "ShotWorkflowStatus",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "accepted": {
+      "title": "Accepted",
+      "type": "boolean"
+    },
+    "code": {
+      "title": "Code",
+      "type": "string"
+    },
+    "command_id": {
+      "title": "Command Id",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "state": {
+      "$ref": "#/$defs/ShotWorkflowStatus"
+    }
+  },
+  "required": [
+    "command_id",
+    "accepted",
+    "state",
+    "code"
+  ],
+  "title": "ShotWorkflowCommandResult",
+  "type": "object"
+}

@@ -6,7 +6,7 @@ The complete system architecture and T01-T26 implementation roadmap are maintain
 [`docs/TECHNICAL_DESIGN.md`](docs/TECHNICAL_DESIGN.md). Contributors and coding agents should
 read it together with `AGENTS.md` before planning the next roadmap task.
 
-This repository implements roadmap tasks T01 through T14 and T23, including subtitle-first transcript acquisition, restartable episode analysis, comedy script generation, measured narration, deterministic storyboard timing, reviewed keyframe generation, and cloud-neutral observability/cost controls. T15 is complete after implementation, fallback Codex review, and green CI:
+This repository implements roadmap tasks T01 through T16 and T23, including subtitle-first transcript acquisition, restartable episode analysis, comedy script generation, measured narration, deterministic storyboard timing, reviewed keyframe and video generation, per-shot orchestration, and cloud-neutral observability/cost controls:
 
 - Python monorepo, CI, and local infrastructure
 - Versioned Pydantic contracts plus exported JSON Schema
@@ -26,6 +26,43 @@ This repository implements roadmap tasks T01 through T14 and T23, including subt
   versioned prompt compiler, bounded technical image validation, content-addressable provenance
   projections, a network-free fake provider, and an OpenAI Image API adapter pinned by default to
   `gpt-image-2-2026-04-21`. T14 review and CI are complete.
+
+## T16 per-shot workflows
+
+T16 adds a deterministic child workflow for every canonical selected T13 shot. The parent resolves
+the authoritative ordered shot IDs through an activity and fans them out with a configurable limit
+of ten by default. Child IDs bind the project, storyboard and timing hashes, stable shot identity,
+T14 configuration, T15 capability profile, pipeline versions, and attempt-policy version. An
+unchanged input therefore reuses the same Temporal identity; a material change creates a new child
+without overwriting the locked result.
+
+Each child advances through `DEFINED`, `PROMPTING`, `KEYFRAME_GENERATING`, `KEYFRAME_QA`,
+`ANIMATING`, `VIDEO_QA`, and `LOCKED`, with explicit `FAILED` and `CANCELLED` outcomes. Workflow
+history contains compact IDs, hashes, states, durations, and failure codes only. Activities resolve
+lineage, invoke or resume the existing T14/T15 services, persist checkpoints, and query the T23
+ledger. Thus provider calls, media bytes, prompts, validation reports, storage, and database access
+remain outside workflow code. T15 polling resumes the persisted remote task rather than submitting
+another paid request.
+
+Failures remain local to a child and locked siblings are retained. Retry policies classify
+deterministic lineage, configuration, capability, hard budget, ambiguous submission, and
+cancellation outcomes as non-retryable; transient work has bounded backoff. Parent cancellation
+stops scheduling and requests cancellation of active children while durable outputs and remote task
+identities remain intact. Compact parent and child queries expose counts, stages, attempts, output
+references, failures, warnings, and cost totals. Idempotent per-shot status, retry, cancel, resume,
+outputs, and regenerate commands are supported; regenerate requires a new material input identity.
+
+Fake-provider development requires no paid credentials:
+
+```bash
+uv run python scripts/run_shot_workflow.py PROJECT_UUID \
+  --storyboard-run-id STORYBOARD_RUN_UUID --provider fake --concurrency 10
+uv run python scripts/inspect_shot_workflow.py PROJECT_UUID \
+  --storyboard-run-id STORYBOARD_RUN_UUID
+uv run python scripts/run_shot_workflow.py PROJECT_UUID \
+  --storyboard-run-id STORYBOARD_RUN_UUID --shot-id SHOT_UUID \
+  --child-workflow-id CHILD_WORKFLOW_ID --command retry
+```
 
 ## T15 Runway image-to-video generation
 

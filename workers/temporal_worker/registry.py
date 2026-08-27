@@ -10,8 +10,10 @@ from packages.workflows.activities import (
     run_upload_activity,
 )
 from packages.workflows.project import ProjectWorkflow
+from packages.workflows.shot import ProjectShotFanoutWorkflow, ShotWorkflow
+from packages.workflows.shot_activities import SHOT_ACTIVITIES
 
-WORKFLOWS = [ProjectWorkflow]
+WORKFLOWS = [ProjectWorkflow, ProjectShotFanoutWorkflow, ShotWorkflow]
 ACTIVITIES = [
     run_upload_activity,
     run_media_processing_activity,
@@ -22,4 +24,5 @@ ACTIVITIES = [
     run_script_generation_activity,
     run_narration_activity,
     run_storyboard_activity,
+    *SHOT_ACTIVITIES,
 ]
