@@ -21,6 +21,7 @@ from . import storyboard_models as storyboard_models
 from . import subtitle_models as subtitle_models
 from . import transcription_models as transcription_models
 from . import upload_models as upload_models
+from . import visual_qa_models as visual_qa_models
 from . import workflow_models as workflow_models
 
 __all__ = ["Base"]

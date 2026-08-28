@@ -1,0 +1,256 @@
+{
+  "$defs": {
+    "VisualQADeterministicMetric": {
+      "additionalProperties": false,
+      "description": "One measured deterministic check with its threshold and outcome.",
+      "properties": {
+        "code": {
+          "maxLength": 64,
+          "minLength": 1,
+          "title": "Code",
+          "type": "string"
+        },
+        "diagnostic_code": {
+          "maxLength": 64,
+          "minLength": 1,
+          "title": "Diagnostic Code",
+          "type": "string"
+        },
+        "evidence_sample_id": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Evidence Sample Id"
+        },
+        "evidence_timestamp_us": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Evidence Timestamp Us"
+        },
+        "measurement": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Measurement"
+        },
+        "message": {
+          "default": "",
+          "maxLength": 500,
+          "title": "Message",
+          "type": "string"
+        },
+        "outcome": {
+          "enum": [
+            "pass",
+            "warning",
+            "hard_failure",
+            "not_applicable"
+          ],
+          "title": "Outcome",
+          "type": "string"
+        },
+        "repair_code": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/VisualQARepairCode"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "threshold": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Threshold"
+        },
+        "tool": {
+          "maxLength": 64,
+          "minLength": 1,
+          "title": "Tool",
+          "type": "string"
+        },
+        "tool_version": {
+          "default": "",
+          "maxLength": 128,
+          "title": "Tool Version",
+          "type": "string"
+        }
+      },
+      "required": [
+        "code",
+        "outcome",
+        "tool",
+        "diagnostic_code"
+      ],
+      "title": "VisualQADeterministicMetric",
+      "type": "object"
+    },
+    "VisualQARepairCode": {
+      "description": "The bounded taxonomy T21 consumes. Adding a member is a version change.",
+      "enum": [
+        "WRONG_CHARACTER_IDENTITY",
+        "MISSING_PRIMARY_CHARACTER",
+        "EXTRA_CHARACTER",
+        "WRONG_CHARACTER_COUNT",
+        "WRONG_WARDROBE",
+        "WRONG_CHARACTER_STATE",
+        "WRONG_LOCATION",
+        "WRONG_LOCATION_STATE",
+        "MISSING_REQUIRED_PROP",
+        "WRONG_PROP_OWNERSHIP",
+        "MISSING_MANDATORY_ACTION",
+        "WRONG_ACTION",
+        "INSUFFICIENT_MOTION",
+        "EXCESSIVE_MOTION",
+        "CAMERA_PLAN_MISMATCH",
+        "COMPOSITION_MISMATCH",
+        "SCREEN_DIRECTION_CONTRADICTION",
+        "FACE_BREAKAGE",
+        "ANATOMY_BREAKAGE",
+        "UNINTENDED_TEXT",
+        "STYLE_DRIFT",
+        "CONTINUITY_BREAK",
+        "BLACK_VIDEO",
+        "EXCESSIVE_FREEZE",
+        "EXCESSIVE_FLICKER",
+        "DURATION_MISMATCH",
+        "DECODE_FAILURE",
+        "PROMPT_TOO_COMPLEX",
+        "TOO_MANY_CHARACTERS",
+        "TOO_MANY_REFERENCES",
+        "AMBIGUOUS_VISUAL_EVIDENCE",
+        "HUMAN_REVIEW_REQUIRED"
+      ],
+      "title": "VisualQARepairCode",
+      "type": "string"
+    },
+    "VisualQATargetType": {
+      "description": "Keyframe and video QA are independent identities, never one merged run.",
+      "enum": [
+        "keyframe",
+        "video"
+      ],
+      "title": "VisualQATargetType",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Everything measured before any paid visual-agent request.",
+  "properties": {
+    "check_version": {
+      "maxLength": 64,
+      "minLength": 1,
+      "title": "Check Version",
+      "type": "string"
+    },
+    "frame_rate": {
+      "default": "",
+      "maxLength": 32,
+      "title": "Frame Rate",
+      "type": "string"
+    },
+    "height": {
+      "anyOf": [
+        {
+          "exclusiveMinimum": 0,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Height"
+    },
+    "measured_duration_us": {
+      "anyOf": [
+        {
+          "minimum": 0,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Measured Duration Us"
+    },
+    "metrics": {
+      "items": {
+        "$ref": "#/$defs/VisualQADeterministicMetric"
+      },
+      "maxItems": 64,
+      "title": "Metrics",
+      "type": "array"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "target_type": {
+      "$ref": "#/$defs/VisualQATargetType"
+    },
+    "usable": {
+      "title": "Usable",
+      "type": "boolean"
+    },
+    "width": {
+      "anyOf": [
+        {
+          "exclusiveMinimum": 0,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Width"
+    }
+  },
+  "required": [
+    "check_version",
+    "target_type",
+    "usable"
+  ],
+  "title": "VisualQADeterministicReport",
+  "type": "object"
+}

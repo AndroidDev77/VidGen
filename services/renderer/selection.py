@@ -8,11 +8,20 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from vidgen.contracts.visual_qa import VisualQATargetType
 from vidgen.db.animation_models import AnimationGeneratedVideo, AnimationItem, AnimationRun
 from vidgen.db.models import Asset, Project
 from vidgen.db.narration_models import NarrationRun, NarrationSegment
 from vidgen.db.script_models import Script
 from vidgen.db.storyboard_models import StoryboardRun, StoryboardShotRecord
+from vidgen.db.visual_qa_models import VisualQARun
+from vidgen.db.visual_qa_repository import VisualQARepository
+
+#: The render-eligibility policy this selection enforces. It is recorded in the
+#: manifest provenance so an existing render stays readable and historical: a
+#: manifest written before T20 simply carries no visual-QA provenance, and its
+#: identity semantics are unchanged.
+VISUAL_QA_POLICY_VERSION = "visual-qa-render-policy/1.0"
 
 
 class RenderLineageError(ValueError):
@@ -29,6 +38,9 @@ class SelectedShotInput:
     animation_run: AnimationRun
     video: AnimationGeneratedVideo
     asset: Asset
+    #: The canonical passing T20 video-QA result, when the project is governed.
+    visual_qa_run_id: UUID | None = None
+    visual_qa_result_id: UUID | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -40,6 +52,9 @@ class AuthoritativeRenderSelection:
     storyboard: StoryboardRun
     timing_manifest_asset: Asset
     shots: tuple[SelectedShotInput, ...]
+    visual_qa_policy_version: str = VISUAL_QA_POLICY_VERSION
+    #: Empty for a legacy project that predates the T20 policy.
+    visual_qa_result_ids: tuple[UUID, ...] = ()
 
 
 def animation_run_for_video(
@@ -138,6 +153,14 @@ def select_authoritative_inputs(session: Session, project_id: UUID) -> Authorita
         raise RenderLineageError(
             "shot_coverage_missing", "storyboard shot count does not match canonical ordered shots"
         )
+    # A project is governed by the T20 render policy once any visual-QA run
+    # exists for it. Legacy projects that predate T20 keep rendering unchanged,
+    # and their historical renders stay readable.
+    qa = VisualQARepository(session)
+    governed = (
+        session.scalar(select(VisualQARun.id).where(VisualQARun.project_id == project_id))
+        is not None
+    )
     selected: list[SelectedShotInput] = []
     expected_start = 0
     for sequence, shot in enumerate(shot_rows):
@@ -180,7 +203,20 @@ def select_authoritative_inputs(session: Session, project_id: UUID) -> Authorita
                 "selected clip duration is incompatible with T13 canonical timing",
                 reference_id=video.id,
             )
-        selected.append(SelectedShotInput(shot=shot, animation_run=run, video=video, asset=asset))
+        qa_run_id: UUID | None = None
+        qa_result_id: UUID | None = None
+        if governed:
+            qa_run_id, qa_result_id = _require_visual_qa(qa, shot.id)
+        selected.append(
+            SelectedShotInput(
+                shot=shot,
+                animation_run=run,
+                video=video,
+                asset=asset,
+                visual_qa_run_id=qa_run_id,
+                visual_qa_result_id=qa_result_id,
+            )
+        )
     if (
         expected_start != storyboard.total_duration_us
         or narration.total_duration_seconds is None
@@ -191,6 +227,9 @@ def select_authoritative_inputs(session: Session, project_id: UUID) -> Authorita
             "visual, timing-manifest, and measured narration durations exceed tolerance",
         )
     return AuthoritativeRenderSelection(
+        visual_qa_result_ids=tuple(
+            item.visual_qa_result_id for item in selected if item.visual_qa_result_id is not None
+        ),
         project=project,
         script=script,
         narration=narration,
@@ -199,3 +238,55 @@ def select_authoritative_inputs(session: Session, project_id: UUID) -> Authorita
         timing_manifest_asset=timing_asset,
         shots=tuple(selected),
     )
+
+
+def _require_visual_qa(
+    repository: VisualQARepository, shot_id: UUID
+) -> tuple[UUID | None, UUID | None]:
+    """Block render eligibility unless this shot has a passing canonical video QA.
+
+    A hard failure blocks outright. A ``REVIEW`` result blocks automatic render
+    completion until a human resolves it. Both refusals are structured and
+    non-retryable, and neither deletes or rewrites an existing render.
+    """
+    passed, reason = repository.gate(shot_id, VisualQATargetType.VIDEO)
+    if not passed:
+        raise RenderLineageError(reason, _QA_MESSAGES[reason], reference_id=shot_id)
+    run = repository.canonical_run(shot_id, VisualQATargetType.VIDEO)
+    if run is None:  # pragma: no cover - gate already proved the run exists
+        raise RenderLineageError(
+            "visual_qa_missing", _QA_MESSAGES["visual_qa_missing"], reference_id=shot_id
+        )
+    result = repository.canonical_result(run.id)
+    return run.id, result.id if result is not None else None
+
+
+_QA_MESSAGES = {
+    "visual_qa_missing": "shot has no completed T20 video-QA result",
+    "visual_qa_failed": "shot is blocked by a failing T20 video-QA result",
+    "visual_qa_review_required": (
+        "shot has a T20 video-QA result awaiting human review; automatic render "
+        "completion is blocked until it is resolved"
+    ),
+}
+
+
+def visual_qa_provenance(selection: AuthoritativeRenderSelection) -> dict[str, object]:
+    """Manifest provenance naming the applicable QA results and policy version.
+
+    Recording this in ``provenance`` keeps existing manifest identity semantics
+    intact: a pre-T20 manifest simply has no ``visual_qa`` key.
+    """
+    if not selection.visual_qa_result_ids:
+        return {}
+    return {
+        "visual_qa": {
+            "policy_version": selection.visual_qa_policy_version,
+            "result_ids": [str(value) for value in selection.visual_qa_result_ids],
+            "run_ids": [
+                str(item.visual_qa_run_id)
+                for item in selection.shots
+                if item.visual_qa_run_id is not None
+            ],
+        }
+    }

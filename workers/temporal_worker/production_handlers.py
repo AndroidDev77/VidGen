@@ -41,6 +41,7 @@ from services.narration.fake_provider import FakeNarrationProvider
 from services.narration.openai_adapter import OpenAINarrationProvider
 from services.narration.pipeline import NarrationPipeline
 from services.narration.providers import NarrationProvider
+from services.qa.commands import VisualQACommandOptions, evaluate_shot_stage
 from services.script.fake_provider import FakeScriptGenerationProvider
 from services.script.openai_adapter import OpenAIScriptConfig, OpenAIScriptGenerationProvider
 from services.script.pipeline import ScriptGenerationPipeline
@@ -69,6 +70,7 @@ from vidgen.contracts.shot_workflow import (
     ShotWorkflowStatus,
 )
 from vidgen.contracts.transcription import TranscriptSegment, TranscriptWord
+from vidgen.contracts.visual_qa import VisualQATargetType
 from vidgen.contracts.workflow import StageActivityInput, StageActivityResult
 from vidgen.db.animation_models import AnimationGeneratedVideo
 from vidgen.db.image_generation_models import GeneratedKeyframeImage, ImageGenerationRun
@@ -260,6 +262,74 @@ def _run_shot_keyframe(
     )
 
 
+def _run_shot_visual_qa(
+    session: Session,
+    blob_store: FilesystemBlobStore,
+    settings: APISettings,
+    target_type: VisualQATargetType,
+    request: ShotWorkflowInput,
+) -> ShotWorkflowProgress:
+    """Run or resume one T20 gate. A completed run is reused, never repaid for."""
+    _, shot = _authoritative_shot(session, request)
+    options = VisualQACommandOptions(
+        provider="openai" if settings.openai_api_key else "fake",
+        openai_api_key=settings.openai_api_key,
+        first_pass_model=settings.visual_qa_first_pass_model,
+        adjudicator_model=settings.visual_qa_adjudicator_model,
+        idempotency_key=shot_activity_idempotency_key(
+            request.shot_input_hash, f"t20-{target_type.value}"
+        ),
+    )
+    result = asyncio.run(
+        evaluate_shot_stage(
+            session,
+            blob_store,
+            project_id=request.project_id,
+            shot_id=shot.id,
+            target_type=target_type,
+            options=options,
+        )
+    )
+    state = (
+        ShotWorkflowStatus.KEYFRAME_QA
+        if target_type is VisualQATargetType.KEYFRAME
+        else ShotWorkflowStatus.VIDEO_QA
+    )
+    return ShotWorkflowProgress(
+        state=state,
+        current_stage=f"t20_{target_type.value}_qa",
+        current_attempt=1,
+        # Only compact identifiers and codes enter Temporal history.
+        last_checkpoint=f"{target_type.value}_qa_pass:{result.qa_run_id}",
+        warning_codes=list(result.warning_codes)[:32],
+        cost_microusd=result.cost_microusd,
+    )
+
+
+def _run_shot_keyframe_qa(
+    session: Session,
+    blob_store: FilesystemBlobStore,
+    settings: APISettings,
+    _image_provider: ImageGenerationProvider,
+    _video_provider: VideoGenerationProvider,
+    raw_request: object,
+) -> ShotWorkflowProgress:
+    request = ShotWorkflowInput.model_validate(raw_request)
+    return _run_shot_visual_qa(session, blob_store, settings, VisualQATargetType.KEYFRAME, request)
+
+
+def _run_shot_video_qa(
+    session: Session,
+    blob_store: FilesystemBlobStore,
+    settings: APISettings,
+    _image_provider: ImageGenerationProvider,
+    _video_provider: VideoGenerationProvider,
+    raw_request: object,
+) -> ShotWorkflowProgress:
+    request = ShotWorkflowInput.model_validate(raw_request)
+    return _run_shot_visual_qa(session, blob_store, settings, VisualQATargetType.VIDEO, request)
+
+
 def _run_shot_animation(
     session: Session,
     blob_store: FilesystemBlobStore,
@@ -390,7 +460,9 @@ def build_shot_production_handlers(
         "resolve_shot_fanout": with_session(_resolve_shot_fanout),
         "resolve_shot_input": with_session(_resolve_shot_input),
         "run_shot_keyframe": with_session(_run_shot_keyframe),
+        "run_shot_keyframe_qa": with_session(_run_shot_keyframe_qa),
         "run_shot_animation": with_session(_run_shot_animation),
+        "run_shot_video_qa": with_session(_run_shot_video_qa),
         # T14/T15 rows are the durable shot checkpoints; these activities form
         # an explicit commit/query boundary without duplicating their tables.
         "persist_shot_checkpoint": lambda request: request,

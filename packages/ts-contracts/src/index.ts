@@ -1488,3 +1488,214 @@ export interface ReferenceWorkflowResult {
   affected_shot_ids: UUID[];
   cancelled: boolean;
 }
+
+// --- T20 semantic visual QA --------------------------------------------------
+// These mirror the strict Pydantic contracts in `vidgen.contracts.visual_qa` and
+// the bounded API projections in `apps/api/schemas/visual_qa.py`. No provider
+// payloads, signed URLs, or media bytes ever cross this boundary.
+
+export type VisualQATargetType = "keyframe" | "video";
+export type VisualQAOutcome = "PASS" | "FAIL" | "REVIEW";
+export type VisualQAShotImportance = "utility" | "normal" | "hero";
+export type VisualQARoutingRecommendation =
+  | "NONE"
+  | "TARGETED_REPAIR"
+  | "PROMPT_SIMPLIFICATION"
+  | "NEW_SEED"
+  | "COMPOSITION_SPLIT"
+  | "HUMAN_REVIEW";
+
+export type VisualQADimensionName =
+  | "character_identity"
+  | "character_count"
+  | "location"
+  | "wardrobe_and_state"
+  | "action_and_motion"
+  | "composition"
+  | "anatomy_and_artifacts"
+  | "continuity_and_style";
+
+export type VisualQARepairCode =
+  | "WRONG_CHARACTER_IDENTITY"
+  | "MISSING_PRIMARY_CHARACTER"
+  | "EXTRA_CHARACTER"
+  | "WRONG_CHARACTER_COUNT"
+  | "WRONG_WARDROBE"
+  | "WRONG_CHARACTER_STATE"
+  | "WRONG_LOCATION"
+  | "WRONG_LOCATION_STATE"
+  | "MISSING_REQUIRED_PROP"
+  | "WRONG_PROP_OWNERSHIP"
+  | "MISSING_MANDATORY_ACTION"
+  | "WRONG_ACTION"
+  | "INSUFFICIENT_MOTION"
+  | "EXCESSIVE_MOTION"
+  | "CAMERA_PLAN_MISMATCH"
+  | "COMPOSITION_MISMATCH"
+  | "SCREEN_DIRECTION_CONTRADICTION"
+  | "FACE_BREAKAGE"
+  | "ANATOMY_BREAKAGE"
+  | "UNINTENDED_TEXT"
+  | "STYLE_DRIFT"
+  | "CONTINUITY_BREAK"
+  | "BLACK_VIDEO"
+  | "EXCESSIVE_FREEZE"
+  | "EXCESSIVE_FLICKER"
+  | "DURATION_MISMATCH"
+  | "DECODE_FAILURE"
+  | "PROMPT_TOO_COMPLEX"
+  | "TOO_MANY_CHARACTERS"
+  | "TOO_MANY_REFERENCES"
+  | "AMBIGUOUS_VISUAL_EVIDENCE"
+  | "HUMAN_REVIEW_REQUIRED";
+
+export interface VisualQADimensionProjection {
+  dimension: VisualQADimensionName | string;
+  applicable: boolean;
+  raw_score: number;
+  weight: number;
+  effective_weight: number;
+  weighted_contribution: number;
+  confidence: number;
+  warning_codes: string[];
+  hard_failure_codes: string[];
+  repair_codes: string[];
+  finding_summaries: string[];
+}
+
+export interface VisualQADiagnosticProjection {
+  code: string;
+  outcome: "pass" | "warning" | "hard_failure" | "not_applicable" | string;
+  diagnostic_code: string;
+  measurement: number | null;
+  threshold: number | null;
+  evidence_timestamp_us: number | null;
+  repair_code: string | null;
+  message: string;
+}
+
+export interface VisualQASampleProjection {
+  sample_id: UUID;
+  sequence: number;
+  sample_type: string;
+  requested_timestamp_us: number;
+  actual_timestamp_us: number;
+  shot_relative_timestamp_us: number;
+  frame_asset_id: UUID | null;
+  frame_sha256: string;
+  selection_reason: string;
+  contact_sheet_position: number | null;
+}
+
+export interface VisualQABoundingBox {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+export interface VisualQAEvidenceProjection {
+  evidence_id: UUID;
+  finding_id: UUID;
+  evidence_type: string;
+  sample_id: UUID | null;
+  frame_asset_id: UUID | null;
+  shot_relative_timestamp_us: number | null;
+  source_relative_timestamp_us: number | null;
+  contact_sheet_position: number | null;
+  bounding_box: VisualQABoundingBox | null;
+  compared_reference_asset_id: UUID | null;
+  confidence: number;
+  explanation: string;
+}
+
+export interface VisualQARunProjection {
+  qa_run_id: UUID;
+  project_id: UUID;
+  shot_id: UUID;
+  target_type: VisualQATargetType | string;
+  status: string;
+  outcome: VisualQAOutcome | null;
+  score: number | null;
+  pass_threshold: number | null;
+  importance: VisualQAShotImportance | string;
+  hard_failure: boolean;
+  repair_recommendation: VisualQARoutingRecommendation | string | null;
+  repair_codes: string[];
+  warning_codes: string[];
+  confidence: number | null;
+  adjudicated: boolean;
+  human_review_decision: "approved" | "rejected" | null;
+  provider: string;
+  model: string;
+  cost_microusd: number;
+  rubric_version: string;
+  threshold_version: string;
+  sampling_version: string;
+  sample_count: number;
+  deterministic_warning_count: number;
+  row_version: number;
+  created_at: string;
+  completed_at: string | null;
+}
+
+export interface VisualQAAdjudicationProjection {
+  policy_version: string;
+  triggered_by: string[];
+  first_pass_provider: string;
+  first_pass_model: string;
+  adjudicator_provider: string;
+  adjudicator_model: string;
+  adjudicator_confidence: number;
+  decided: boolean;
+  disagreement_summary: string[];
+  resulting_outcome_hint: VisualQAOutcome;
+  attempts_used: number;
+}
+
+export interface VisualQARunDetailProjection extends VisualQARunProjection {
+  dimensions: VisualQADimensionProjection[];
+  diagnostics: VisualQADiagnosticProjection[];
+  samples: VisualQASampleProjection[];
+  compared_reference_asset_ids: UUID[];
+  contact_sheet_asset_id: UUID | null;
+  report_asset_id: UUID | null;
+  adjudication: VisualQAAdjudicationProjection | null;
+}
+
+export interface VisualQACollectionResponse {
+  project_id: UUID;
+  items: VisualQARunProjection[];
+}
+
+export interface VisualQAEvidenceResponse {
+  qa_run_id: UUID;
+  items: VisualQAEvidenceProjection[];
+  samples: VisualQASampleProjection[];
+}
+
+export interface VisualQARunRequest {
+  provider: "fake" | "openai";
+  targets: VisualQATargetType[];
+}
+
+export interface VisualQARunResponse {
+  status: "queued";
+  project_id: UUID;
+  shot_id: UUID | null;
+  targets: string[];
+  resource_id: UUID;
+  row_version: number;
+}
+
+export interface VisualQADecisionRequest {
+  reason: string;
+}
+
+export interface VisualQADecisionResponse {
+  qa_run_id: UUID;
+  review_id: UUID;
+  decision: "approved" | "rejected";
+  resulting_gate: string;
+  row_version: number;
+}

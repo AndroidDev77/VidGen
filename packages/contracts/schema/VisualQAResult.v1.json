@@ -1,0 +1,1464 @@
+{
+  "$defs": {
+    "VisualQAAdjudication": {
+      "additionalProperties": false,
+      "description": "The bounded second opinion. Both the original and this result persist.",
+      "properties": {
+        "adjudication_id": {
+          "format": "uuid",
+          "title": "Adjudication Id",
+          "type": "string"
+        },
+        "adjudicator_confidence": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Adjudicator Confidence",
+          "type": "number"
+        },
+        "adjudicator_model": {
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "Adjudicator Model",
+          "type": "string"
+        },
+        "adjudicator_provider": {
+          "maxLength": 64,
+          "minLength": 1,
+          "title": "Adjudicator Provider",
+          "type": "string"
+        },
+        "attempts_used": {
+          "maximum": 3,
+          "minimum": 1,
+          "title": "Attempts Used",
+          "type": "integer"
+        },
+        "decided": {
+          "title": "Decided",
+          "type": "boolean"
+        },
+        "disagreement_summary": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 16,
+          "title": "Disagreement Summary",
+          "type": "array"
+        },
+        "first_pass_model": {
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "First Pass Model",
+          "type": "string"
+        },
+        "first_pass_provider": {
+          "maxLength": 64,
+          "minLength": 1,
+          "title": "First Pass Provider",
+          "type": "string"
+        },
+        "policy_version": {
+          "maxLength": 64,
+          "minLength": 1,
+          "title": "Policy Version",
+          "type": "string"
+        },
+        "resulting_outcome_hint": {
+          "$ref": "#/$defs/VisualQAOutcome"
+        },
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "triggered_by": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 8,
+          "minItems": 1,
+          "title": "Triggered By",
+          "type": "array"
+        }
+      },
+      "required": [
+        "adjudication_id",
+        "policy_version",
+        "triggered_by",
+        "first_pass_provider",
+        "first_pass_model",
+        "adjudicator_provider",
+        "adjudicator_model",
+        "adjudicator_confidence",
+        "decided",
+        "resulting_outcome_hint",
+        "attempts_used"
+      ],
+      "title": "VisualQAAdjudication",
+      "type": "object"
+    },
+    "VisualQABoundingBox": {
+      "additionalProperties": false,
+      "properties": {
+        "height": {
+          "exclusiveMinimum": 0,
+          "maximum": 1,
+          "title": "Height",
+          "type": "number"
+        },
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "width": {
+          "exclusiveMinimum": 0,
+          "maximum": 1,
+          "title": "Width",
+          "type": "number"
+        },
+        "x": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "X",
+          "type": "number"
+        },
+        "y": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Y",
+          "type": "number"
+        }
+      },
+      "required": [
+        "x",
+        "y",
+        "width",
+        "height"
+      ],
+      "title": "VisualQABoundingBox",
+      "type": "object"
+    },
+    "VisualQADeterministicMetric": {
+      "additionalProperties": false,
+      "description": "One measured deterministic check with its threshold and outcome.",
+      "properties": {
+        "code": {
+          "maxLength": 64,
+          "minLength": 1,
+          "title": "Code",
+          "type": "string"
+        },
+        "diagnostic_code": {
+          "maxLength": 64,
+          "minLength": 1,
+          "title": "Diagnostic Code",
+          "type": "string"
+        },
+        "evidence_sample_id": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Evidence Sample Id"
+        },
+        "evidence_timestamp_us": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Evidence Timestamp Us"
+        },
+        "measurement": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Measurement"
+        },
+        "message": {
+          "default": "",
+          "maxLength": 500,
+          "title": "Message",
+          "type": "string"
+        },
+        "outcome": {
+          "enum": [
+            "pass",
+            "warning",
+            "hard_failure",
+            "not_applicable"
+          ],
+          "title": "Outcome",
+          "type": "string"
+        },
+        "repair_code": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/VisualQARepairCode"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "threshold": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Threshold"
+        },
+        "tool": {
+          "maxLength": 64,
+          "minLength": 1,
+          "title": "Tool",
+          "type": "string"
+        },
+        "tool_version": {
+          "default": "",
+          "maxLength": 128,
+          "title": "Tool Version",
+          "type": "string"
+        }
+      },
+      "required": [
+        "code",
+        "outcome",
+        "tool",
+        "diagnostic_code"
+      ],
+      "title": "VisualQADeterministicMetric",
+      "type": "object"
+    },
+    "VisualQADeterministicReport": {
+      "additionalProperties": false,
+      "description": "Everything measured before any paid visual-agent request.",
+      "properties": {
+        "check_version": {
+          "maxLength": 64,
+          "minLength": 1,
+          "title": "Check Version",
+          "type": "string"
+        },
+        "frame_rate": {
+          "default": "",
+          "maxLength": 32,
+          "title": "Frame Rate",
+          "type": "string"
+        },
+        "height": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Height"
+        },
+        "measured_duration_us": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Measured Duration Us"
+        },
+        "metrics": {
+          "items": {
+            "$ref": "#/$defs/VisualQADeterministicMetric"
+          },
+          "maxItems": 64,
+          "title": "Metrics",
+          "type": "array"
+        },
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "target_type": {
+          "$ref": "#/$defs/VisualQATargetType"
+        },
+        "usable": {
+          "title": "Usable",
+          "type": "boolean"
+        },
+        "width": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Width"
+        }
+      },
+      "required": [
+        "check_version",
+        "target_type",
+        "usable"
+      ],
+      "title": "VisualQADeterministicReport",
+      "type": "object"
+    },
+    "VisualQADimension": {
+      "enum": [
+        "character_identity",
+        "character_count",
+        "location",
+        "wardrobe_and_state",
+        "action_and_motion",
+        "composition",
+        "anatomy_and_artifacts",
+        "continuity_and_style"
+      ],
+      "title": "VisualQADimension",
+      "type": "string"
+    },
+    "VisualQADimensionResult": {
+      "additionalProperties": false,
+      "description": "One rubric dimension as validated by application code.",
+      "properties": {
+        "applicable": {
+          "default": true,
+          "title": "Applicable",
+          "type": "boolean"
+        },
+        "confidence": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Confidence",
+          "type": "number"
+        },
+        "dimension": {
+          "$ref": "#/$defs/VisualQADimension"
+        },
+        "effective_weight": {
+          "maximum": 100,
+          "minimum": 0,
+          "title": "Effective Weight",
+          "type": "number"
+        },
+        "evaluator": {
+          "maxLength": 64,
+          "minLength": 1,
+          "title": "Evaluator",
+          "type": "string"
+        },
+        "findings": {
+          "items": {
+            "$ref": "#/$defs/VisualQAFinding"
+          },
+          "maxItems": 16,
+          "title": "Findings",
+          "type": "array"
+        },
+        "hard_failure_codes": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 16,
+          "title": "Hard Failure Codes",
+          "type": "array"
+        },
+        "model": {
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "Model",
+          "type": "string"
+        },
+        "raw_score": {
+          "maximum": 100,
+          "minimum": 0,
+          "title": "Raw Score",
+          "type": "number"
+        },
+        "repair_codes": {
+          "items": {
+            "$ref": "#/$defs/VisualQARepairCode"
+          },
+          "maxItems": 8,
+          "title": "Repair Codes",
+          "type": "array"
+        },
+        "rubric_version": {
+          "maxLength": 64,
+          "minLength": 1,
+          "title": "Rubric Version",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "warning_codes": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 16,
+          "title": "Warning Codes",
+          "type": "array"
+        },
+        "weight": {
+          "maximum": 100,
+          "minimum": 0,
+          "title": "Weight",
+          "type": "number"
+        },
+        "weighted_contribution": {
+          "maximum": 100,
+          "minimum": 0,
+          "title": "Weighted Contribution",
+          "type": "number"
+        }
+      },
+      "required": [
+        "dimension",
+        "raw_score",
+        "weight",
+        "effective_weight",
+        "weighted_contribution",
+        "confidence",
+        "evaluator",
+        "model",
+        "rubric_version"
+      ],
+      "title": "VisualQADimensionResult",
+      "type": "object"
+    },
+    "VisualQAEvidence": {
+      "additionalProperties": false,
+      "description": "A concrete, replayable pointer to what a finding is based on.",
+      "properties": {
+        "bounding_box": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/VisualQABoundingBox"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "compared_reference_asset_id": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Compared Reference Asset Id"
+        },
+        "confidence": {
+          "default": 1.0,
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Confidence",
+          "type": "number"
+        },
+        "contact_sheet_position": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Contact Sheet Position"
+        },
+        "entity_id": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Entity Id"
+        },
+        "entity_kind": {
+          "default": "none",
+          "enum": [
+            "character",
+            "location",
+            "prop",
+            "state",
+            "none"
+          ],
+          "title": "Entity Kind",
+          "type": "string"
+        },
+        "evidence_id": {
+          "format": "uuid",
+          "title": "Evidence Id",
+          "type": "string"
+        },
+        "evidence_type": {
+          "$ref": "#/$defs/VisualQAEvidenceType"
+        },
+        "explanation": {
+          "default": "",
+          "maxLength": 500,
+          "title": "Explanation",
+          "type": "string"
+        },
+        "frame_asset_id": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Frame Asset Id"
+        },
+        "measurement": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Measurement"
+        },
+        "prop_reference": {
+          "anyOf": [
+            {
+              "maxLength": 128,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Prop Reference"
+        },
+        "sample_id": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sample Id"
+        },
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "shot_relative_timestamp_us": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Shot Relative Timestamp Us"
+        },
+        "source_asset_id": {
+          "format": "uuid",
+          "title": "Source Asset Id",
+          "type": "string"
+        },
+        "source_relative_timestamp_us": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Source Relative Timestamp Us"
+        }
+      },
+      "required": [
+        "evidence_id",
+        "evidence_type",
+        "source_asset_id"
+      ],
+      "title": "VisualQAEvidence",
+      "type": "object"
+    },
+    "VisualQAEvidenceType": {
+      "enum": [
+        "sample_frame",
+        "reference_comparison",
+        "deterministic_measurement",
+        "whole_file"
+      ],
+      "title": "VisualQAEvidenceType",
+      "type": "string"
+    },
+    "VisualQAFinding": {
+      "additionalProperties": false,
+      "description": "One actionable observation with its evidence and structured correction.",
+      "properties": {
+        "code": {
+          "maxLength": 64,
+          "minLength": 1,
+          "title": "Code",
+          "type": "string"
+        },
+        "confidence": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Confidence",
+          "type": "number"
+        },
+        "dimension": {
+          "$ref": "#/$defs/VisualQADimension"
+        },
+        "evidence": {
+          "items": {
+            "$ref": "#/$defs/VisualQAEvidence"
+          },
+          "maxItems": 16,
+          "title": "Evidence",
+          "type": "array"
+        },
+        "finding_id": {
+          "format": "uuid",
+          "title": "Finding Id",
+          "type": "string"
+        },
+        "proposed_correction": {
+          "default": "",
+          "maxLength": 500,
+          "title": "Proposed Correction",
+          "type": "string"
+        },
+        "repair_codes": {
+          "items": {
+            "$ref": "#/$defs/VisualQARepairCode"
+          },
+          "maxItems": 8,
+          "title": "Repair Codes",
+          "type": "array"
+        },
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "severity": {
+          "enum": [
+            "info",
+            "warning",
+            "hard_failure"
+          ],
+          "title": "Severity",
+          "type": "string"
+        },
+        "summary": {
+          "maxLength": 500,
+          "minLength": 1,
+          "title": "Summary",
+          "type": "string"
+        }
+      },
+      "required": [
+        "finding_id",
+        "dimension",
+        "severity",
+        "code",
+        "summary",
+        "confidence"
+      ],
+      "title": "VisualQAFinding",
+      "type": "object"
+    },
+    "VisualQAOutcome": {
+      "enum": [
+        "PASS",
+        "FAIL",
+        "REVIEW"
+      ],
+      "title": "VisualQAOutcome",
+      "type": "string"
+    },
+    "VisualQARepairCode": {
+      "description": "The bounded taxonomy T21 consumes. Adding a member is a version change.",
+      "enum": [
+        "WRONG_CHARACTER_IDENTITY",
+        "MISSING_PRIMARY_CHARACTER",
+        "EXTRA_CHARACTER",
+        "WRONG_CHARACTER_COUNT",
+        "WRONG_WARDROBE",
+        "WRONG_CHARACTER_STATE",
+        "WRONG_LOCATION",
+        "WRONG_LOCATION_STATE",
+        "MISSING_REQUIRED_PROP",
+        "WRONG_PROP_OWNERSHIP",
+        "MISSING_MANDATORY_ACTION",
+        "WRONG_ACTION",
+        "INSUFFICIENT_MOTION",
+        "EXCESSIVE_MOTION",
+        "CAMERA_PLAN_MISMATCH",
+        "COMPOSITION_MISMATCH",
+        "SCREEN_DIRECTION_CONTRADICTION",
+        "FACE_BREAKAGE",
+        "ANATOMY_BREAKAGE",
+        "UNINTENDED_TEXT",
+        "STYLE_DRIFT",
+        "CONTINUITY_BREAK",
+        "BLACK_VIDEO",
+        "EXCESSIVE_FREEZE",
+        "EXCESSIVE_FLICKER",
+        "DURATION_MISMATCH",
+        "DECODE_FAILURE",
+        "PROMPT_TOO_COMPLEX",
+        "TOO_MANY_CHARACTERS",
+        "TOO_MANY_REFERENCES",
+        "AMBIGUOUS_VISUAL_EVIDENCE",
+        "HUMAN_REVIEW_REQUIRED"
+      ],
+      "title": "VisualQARepairCode",
+      "type": "string"
+    },
+    "VisualQARepairRecommendation": {
+      "additionalProperties": false,
+      "description": "What T21 should consider. T20 never executes any of it.",
+      "properties": {
+        "executed": {
+          "const": false,
+          "default": false,
+          "title": "Executed",
+          "type": "boolean"
+        },
+        "rationale": {
+          "default": "",
+          "maxLength": 500,
+          "title": "Rationale",
+          "type": "string"
+        },
+        "repair_codes": {
+          "items": {
+            "$ref": "#/$defs/VisualQARepairCode"
+          },
+          "maxItems": 16,
+          "title": "Repair Codes",
+          "type": "array"
+        },
+        "routing": {
+          "$ref": "#/$defs/VisualQARoutingRecommendation"
+        },
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        }
+      },
+      "required": [
+        "routing"
+      ],
+      "title": "VisualQARepairRecommendation",
+      "type": "object"
+    },
+    "VisualQARoutingRecommendation": {
+      "description": "A recommendation only. T20 never executes a repair or a reroute.",
+      "enum": [
+        "NONE",
+        "TARGETED_REPAIR",
+        "PROMPT_SIMPLIFICATION",
+        "NEW_SEED",
+        "COMPOSITION_SPLIT",
+        "HUMAN_REVIEW"
+      ],
+      "title": "VisualQARoutingRecommendation",
+      "type": "string"
+    },
+    "VisualQASample": {
+      "additionalProperties": false,
+      "description": "One deterministically selected, decoded and hashed frame.",
+      "properties": {
+        "actual_timestamp_us": {
+          "minimum": 0,
+          "title": "Actual Timestamp Us",
+          "type": "integer"
+        },
+        "contact_sheet_position": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Contact Sheet Position"
+        },
+        "frame_asset_id": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Frame Asset Id"
+        },
+        "frame_sha256": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Frame Sha256",
+          "type": "string"
+        },
+        "measurements": {
+          "additionalProperties": {
+            "type": "number"
+          },
+          "title": "Measurements",
+          "type": "object"
+        },
+        "requested_timestamp_us": {
+          "minimum": 0,
+          "title": "Requested Timestamp Us",
+          "type": "integer"
+        },
+        "sample_id": {
+          "format": "uuid",
+          "title": "Sample Id",
+          "type": "string"
+        },
+        "sample_type": {
+          "$ref": "#/$defs/VisualQASampleType"
+        },
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "selection_reason": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Selection Reason",
+          "type": "string"
+        },
+        "sequence": {
+          "minimum": 0,
+          "title": "Sequence",
+          "type": "integer"
+        },
+        "shot_relative_timestamp_us": {
+          "minimum": 0,
+          "title": "Shot Relative Timestamp Us",
+          "type": "integer"
+        },
+        "source_asset_id": {
+          "format": "uuid",
+          "title": "Source Asset Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "sample_id",
+        "sequence",
+        "sample_type",
+        "requested_timestamp_us",
+        "actual_timestamp_us",
+        "shot_relative_timestamp_us",
+        "frame_sha256",
+        "source_asset_id",
+        "selection_reason"
+      ],
+      "title": "VisualQASample",
+      "type": "object"
+    },
+    "VisualQASampleType": {
+      "description": "Why the deterministic sampler selected a timestamp.",
+      "enum": [
+        "keyframe_image",
+        "first_frame",
+        "last_frame",
+        "midpoint",
+        "coverage",
+        "clause_boundary",
+        "action_boundary",
+        "camera_change",
+        "transition_boundary",
+        "action_window",
+        "high_motion",
+        "low_motion",
+        "deterministic_warning",
+        "face_track",
+        "ocr"
+      ],
+      "title": "VisualQASampleType",
+      "type": "string"
+    },
+    "VisualQASamplingManifest": {
+      "additionalProperties": false,
+      "description": "The complete, ordered, deduplicated sample plan bound into QA identity.",
+      "properties": {
+        "contact_sheet_asset_id": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Contact Sheet Asset Id"
+        },
+        "contact_sheet_columns": {
+          "default": 4,
+          "maximum": 8,
+          "minimum": 1,
+          "title": "Contact Sheet Columns",
+          "type": "integer"
+        },
+        "measured_duration_us": {
+          "minimum": 0,
+          "title": "Measured Duration Us",
+          "type": "integer"
+        },
+        "samples": {
+          "items": {
+            "$ref": "#/$defs/VisualQASample"
+          },
+          "maxItems": 64,
+          "title": "Samples",
+          "type": "array"
+        },
+        "sampling_version": {
+          "maxLength": 64,
+          "minLength": 1,
+          "title": "Sampling Version",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "source_asset_id": {
+          "format": "uuid",
+          "title": "Source Asset Id",
+          "type": "string"
+        },
+        "target_type": {
+          "$ref": "#/$defs/VisualQATargetType"
+        }
+      },
+      "required": [
+        "sampling_version",
+        "target_type",
+        "source_asset_id",
+        "measured_duration_us"
+      ],
+      "title": "VisualQASamplingManifest",
+      "type": "object"
+    },
+    "VisualQAScore": {
+      "additionalProperties": false,
+      "description": "The canonical recomputed score. Never a provider-supplied total.",
+      "properties": {
+        "applied_weight_total": {
+          "maximum": 100,
+          "minimum": 0,
+          "title": "Applied Weight Total",
+          "type": "number"
+        },
+        "confidence": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Confidence",
+          "type": "number"
+        },
+        "dimensions": {
+          "items": {
+            "$ref": "#/$defs/VisualQADimensionResult"
+          },
+          "maxItems": 16,
+          "minItems": 1,
+          "title": "Dimensions",
+          "type": "array"
+        },
+        "importance": {
+          "$ref": "#/$defs/VisualQAShotImportance"
+        },
+        "pass_threshold": {
+          "maximum": 100,
+          "minimum": 0,
+          "title": "Pass Threshold",
+          "type": "number"
+        },
+        "rubric_version": {
+          "maxLength": 64,
+          "minLength": 1,
+          "title": "Rubric Version",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "threshold_version": {
+          "maxLength": 64,
+          "minLength": 1,
+          "title": "Threshold Version",
+          "type": "string"
+        },
+        "total": {
+          "maximum": 100,
+          "minimum": 0,
+          "title": "Total",
+          "type": "number"
+        }
+      },
+      "required": [
+        "rubric_version",
+        "threshold_version",
+        "importance",
+        "pass_threshold",
+        "total",
+        "applied_weight_total",
+        "dimensions",
+        "confidence"
+      ],
+      "title": "VisualQAScore",
+      "type": "object"
+    },
+    "VisualQAShotImportance": {
+      "enum": [
+        "utility",
+        "normal",
+        "hero"
+      ],
+      "title": "VisualQAShotImportance",
+      "type": "string"
+    },
+    "VisualQATarget": {
+      "additionalProperties": false,
+      "description": "Exactly one evaluated asset with its authoritative lineage.",
+      "properties": {
+        "canonical_shot_hash": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Canonical Shot Hash",
+          "type": "string"
+        },
+        "character_identity_version_ids": {
+          "items": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "maxItems": 32,
+          "title": "Character Identity Version Ids",
+          "type": "array"
+        },
+        "character_reference_asset_ids": {
+          "items": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "maxItems": 64,
+          "title": "Character Reference Asset Ids",
+          "type": "array"
+        },
+        "character_state_snapshot_hashes": {
+          "items": {
+            "pattern": "^[a-f0-9]{64}$",
+            "type": "string"
+          },
+          "maxItems": 32,
+          "title": "Character State Snapshot Hashes",
+          "type": "array"
+        },
+        "importance": {
+          "$ref": "#/$defs/VisualQAShotImportance"
+        },
+        "location_identity_version_id": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Location Identity Version Id"
+        },
+        "location_reference_asset_ids": {
+          "items": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "maxItems": 32,
+          "title": "Location Reference Asset Ids",
+          "type": "array"
+        },
+        "location_state_snapshot_hash": {
+          "anyOf": [
+            {
+              "pattern": "^[a-f0-9]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Location State Snapshot Hash"
+        },
+        "media_type": {
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "Media Type",
+          "type": "string"
+        },
+        "project_id": {
+          "format": "uuid",
+          "title": "Project Id",
+          "type": "string"
+        },
+        "requested_generation_duration_us": {
+          "minimum": 0,
+          "title": "Requested Generation Duration Us",
+          "type": "integer"
+        },
+        "required_props": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 16,
+          "title": "Required Props",
+          "type": "array"
+        },
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "shot_reference_bundle_hash": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Shot Reference Bundle Hash",
+          "type": "string"
+        },
+        "shot_sequence": {
+          "minimum": 0,
+          "title": "Shot Sequence",
+          "type": "integer"
+        },
+        "shot_workflow_identity": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Shot Workflow Identity",
+          "type": "string"
+        },
+        "storyboard_run_id": {
+          "format": "uuid",
+          "title": "Storyboard Run Id",
+          "type": "string"
+        },
+        "storyboard_shot_id": {
+          "format": "uuid",
+          "title": "Storyboard Shot Id",
+          "type": "string"
+        },
+        "target_asset_id": {
+          "format": "uuid",
+          "title": "Target Asset Id",
+          "type": "string"
+        },
+        "target_asset_sha256": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Target Asset Sha256",
+          "type": "string"
+        },
+        "target_type": {
+          "$ref": "#/$defs/VisualQATargetType"
+        },
+        "usable_duration_us": {
+          "minimum": 0,
+          "title": "Usable Duration Us",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "project_id",
+        "storyboard_run_id",
+        "storyboard_shot_id",
+        "shot_sequence",
+        "target_type",
+        "target_asset_id",
+        "target_asset_sha256",
+        "media_type",
+        "shot_workflow_identity",
+        "canonical_shot_hash",
+        "shot_reference_bundle_hash",
+        "importance",
+        "usable_duration_us",
+        "requested_generation_duration_us"
+      ],
+      "title": "VisualQATarget",
+      "type": "object"
+    },
+    "VisualQATargetType": {
+      "description": "Keyframe and video QA are independent identities, never one merged run.",
+      "enum": [
+        "keyframe",
+        "video"
+      ],
+      "title": "VisualQATargetType",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "description": "The canonical, persisted outcome of one QA run.",
+  "properties": {
+    "adjudication": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/VisualQAAdjudication"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "contract_version": {
+      "const": "visual-qa/1.0",
+      "default": "visual-qa/1.0",
+      "title": "Contract Version",
+      "type": "string"
+    },
+    "cost_microusd": {
+      "default": 0,
+      "minimum": 0,
+      "title": "Cost Microusd",
+      "type": "integer"
+    },
+    "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+    },
+    "deterministic_report": {
+      "$ref": "#/$defs/VisualQADeterministicReport"
+    },
+    "first_pass_model": {
+      "maxLength": 128,
+      "minLength": 1,
+      "title": "First Pass Model",
+      "type": "string"
+    },
+    "first_pass_provider": {
+      "maxLength": 64,
+      "minLength": 1,
+      "title": "First Pass Provider",
+      "type": "string"
+    },
+    "hard_failure": {
+      "title": "Hard Failure",
+      "type": "boolean"
+    },
+    "hard_failure_codes": {
+      "items": {
+        "type": "string"
+      },
+      "maxItems": 32,
+      "title": "Hard Failure Codes",
+      "type": "array"
+    },
+    "human_review_decision": {
+      "anyOf": [
+        {
+          "enum": [
+            "approved",
+            "rejected"
+          ],
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Human Review Decision"
+    },
+    "human_reviewer": {
+      "anyOf": [
+        {
+          "maxLength": 255,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Human Reviewer"
+    },
+    "input_hash": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Input Hash",
+      "type": "string"
+    },
+    "outcome": {
+      "$ref": "#/$defs/VisualQAOutcome"
+    },
+    "pipeline_version": {
+      "maxLength": 64,
+      "minLength": 1,
+      "title": "Pipeline Version",
+      "type": "string"
+    },
+    "qa_identity": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Qa Identity",
+      "type": "string"
+    },
+    "qa_run_id": {
+      "format": "uuid",
+      "title": "Qa Run Id",
+      "type": "string"
+    },
+    "recommendation": {
+      "$ref": "#/$defs/VisualQARepairRecommendation"
+    },
+    "repair_codes": {
+      "items": {
+        "$ref": "#/$defs/VisualQARepairCode"
+      },
+      "maxItems": 16,
+      "title": "Repair Codes",
+      "type": "array"
+    },
+    "sampling_manifest": {
+      "$ref": "#/$defs/VisualQASamplingManifest"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "score": {
+      "$ref": "#/$defs/VisualQAScore"
+    },
+    "target": {
+      "$ref": "#/$defs/VisualQATarget"
+    },
+    "warning_codes": {
+      "items": {
+        "type": "string"
+      },
+      "maxItems": 32,
+      "title": "Warning Codes",
+      "type": "array"
+    }
+  },
+  "required": [
+    "qa_run_id",
+    "qa_identity",
+    "input_hash",
+    "target",
+    "outcome",
+    "score",
+    "hard_failure",
+    "recommendation",
+    "deterministic_report",
+    "sampling_manifest",
+    "first_pass_provider",
+    "first_pass_model",
+    "pipeline_version",
+    "created_at"
+  ],
+  "title": "VisualQAResult",
+  "type": "object"
+}

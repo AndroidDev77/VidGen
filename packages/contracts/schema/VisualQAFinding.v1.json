@@ -1,0 +1,371 @@
+{
+  "$defs": {
+    "VisualQABoundingBox": {
+      "additionalProperties": false,
+      "properties": {
+        "height": {
+          "exclusiveMinimum": 0,
+          "maximum": 1,
+          "title": "Height",
+          "type": "number"
+        },
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "width": {
+          "exclusiveMinimum": 0,
+          "maximum": 1,
+          "title": "Width",
+          "type": "number"
+        },
+        "x": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "X",
+          "type": "number"
+        },
+        "y": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Y",
+          "type": "number"
+        }
+      },
+      "required": [
+        "x",
+        "y",
+        "width",
+        "height"
+      ],
+      "title": "VisualQABoundingBox",
+      "type": "object"
+    },
+    "VisualQADimension": {
+      "enum": [
+        "character_identity",
+        "character_count",
+        "location",
+        "wardrobe_and_state",
+        "action_and_motion",
+        "composition",
+        "anatomy_and_artifacts",
+        "continuity_and_style"
+      ],
+      "title": "VisualQADimension",
+      "type": "string"
+    },
+    "VisualQAEvidence": {
+      "additionalProperties": false,
+      "description": "A concrete, replayable pointer to what a finding is based on.",
+      "properties": {
+        "bounding_box": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/VisualQABoundingBox"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "compared_reference_asset_id": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Compared Reference Asset Id"
+        },
+        "confidence": {
+          "default": 1.0,
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Confidence",
+          "type": "number"
+        },
+        "contact_sheet_position": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Contact Sheet Position"
+        },
+        "entity_id": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Entity Id"
+        },
+        "entity_kind": {
+          "default": "none",
+          "enum": [
+            "character",
+            "location",
+            "prop",
+            "state",
+            "none"
+          ],
+          "title": "Entity Kind",
+          "type": "string"
+        },
+        "evidence_id": {
+          "format": "uuid",
+          "title": "Evidence Id",
+          "type": "string"
+        },
+        "evidence_type": {
+          "$ref": "#/$defs/VisualQAEvidenceType"
+        },
+        "explanation": {
+          "default": "",
+          "maxLength": 500,
+          "title": "Explanation",
+          "type": "string"
+        },
+        "frame_asset_id": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Frame Asset Id"
+        },
+        "measurement": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Measurement"
+        },
+        "prop_reference": {
+          "anyOf": [
+            {
+              "maxLength": 128,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Prop Reference"
+        },
+        "sample_id": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sample Id"
+        },
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "shot_relative_timestamp_us": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Shot Relative Timestamp Us"
+        },
+        "source_asset_id": {
+          "format": "uuid",
+          "title": "Source Asset Id",
+          "type": "string"
+        },
+        "source_relative_timestamp_us": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Source Relative Timestamp Us"
+        }
+      },
+      "required": [
+        "evidence_id",
+        "evidence_type",
+        "source_asset_id"
+      ],
+      "title": "VisualQAEvidence",
+      "type": "object"
+    },
+    "VisualQAEvidenceType": {
+      "enum": [
+        "sample_frame",
+        "reference_comparison",
+        "deterministic_measurement",
+        "whole_file"
+      ],
+      "title": "VisualQAEvidenceType",
+      "type": "string"
+    },
+    "VisualQARepairCode": {
+      "description": "The bounded taxonomy T21 consumes. Adding a member is a version change.",
+      "enum": [
+        "WRONG_CHARACTER_IDENTITY",
+        "MISSING_PRIMARY_CHARACTER",
+        "EXTRA_CHARACTER",
+        "WRONG_CHARACTER_COUNT",
+        "WRONG_WARDROBE",
+        "WRONG_CHARACTER_STATE",
+        "WRONG_LOCATION",
+        "WRONG_LOCATION_STATE",
+        "MISSING_REQUIRED_PROP",
+        "WRONG_PROP_OWNERSHIP",
+        "MISSING_MANDATORY_ACTION",
+        "WRONG_ACTION",
+        "INSUFFICIENT_MOTION",
+        "EXCESSIVE_MOTION",
+        "CAMERA_PLAN_MISMATCH",
+        "COMPOSITION_MISMATCH",
+        "SCREEN_DIRECTION_CONTRADICTION",
+        "FACE_BREAKAGE",
+        "ANATOMY_BREAKAGE",
+        "UNINTENDED_TEXT",
+        "STYLE_DRIFT",
+        "CONTINUITY_BREAK",
+        "BLACK_VIDEO",
+        "EXCESSIVE_FREEZE",
+        "EXCESSIVE_FLICKER",
+        "DURATION_MISMATCH",
+        "DECODE_FAILURE",
+        "PROMPT_TOO_COMPLEX",
+        "TOO_MANY_CHARACTERS",
+        "TOO_MANY_REFERENCES",
+        "AMBIGUOUS_VISUAL_EVIDENCE",
+        "HUMAN_REVIEW_REQUIRED"
+      ],
+      "title": "VisualQARepairCode",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "description": "One actionable observation with its evidence and structured correction.",
+  "properties": {
+    "code": {
+      "maxLength": 64,
+      "minLength": 1,
+      "title": "Code",
+      "type": "string"
+    },
+    "confidence": {
+      "maximum": 1,
+      "minimum": 0,
+      "title": "Confidence",
+      "type": "number"
+    },
+    "dimension": {
+      "$ref": "#/$defs/VisualQADimension"
+    },
+    "evidence": {
+      "items": {
+        "$ref": "#/$defs/VisualQAEvidence"
+      },
+      "maxItems": 16,
+      "title": "Evidence",
+      "type": "array"
+    },
+    "finding_id": {
+      "format": "uuid",
+      "title": "Finding Id",
+      "type": "string"
+    },
+    "proposed_correction": {
+      "default": "",
+      "maxLength": 500,
+      "title": "Proposed Correction",
+      "type": "string"
+    },
+    "repair_codes": {
+      "items": {
+        "$ref": "#/$defs/VisualQARepairCode"
+      },
+      "maxItems": 8,
+      "title": "Repair Codes",
+      "type": "array"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "severity": {
+      "enum": [
+        "info",
+        "warning",
+        "hard_failure"
+      ],
+      "title": "Severity",
+      "type": "string"
+    },
+    "summary": {
+      "maxLength": 500,
+      "minLength": 1,
+      "title": "Summary",
+      "type": "string"
+    }
+  },
+  "required": [
+    "finding_id",
+    "dimension",
+    "severity",
+    "code",
+    "summary",
+    "confidence"
+  ],
+  "title": "VisualQAFinding",
+  "type": "object"
+}

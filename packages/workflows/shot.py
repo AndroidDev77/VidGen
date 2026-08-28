@@ -116,19 +116,31 @@ class ShotWorkflow:
             self._progress.state = ShotWorkflowStatus.KEYFRAME_GENERATING
             self._progress.current_stage = "t14"
             self._progress = await self._activity("run_shot_keyframe", ShotWorkflowProgress)  # type: ignore[assignment]
-            self._progress.state = ShotWorkflowStatus.KEYFRAME_QA
             self._progress.last_checkpoint = "selected_keyframe_persisted"
             if self._cancelled:
                 raise CancelledError()
+        # A keyframe must pass T20 before any animation spend.
+        self._progress.state = ShotWorkflowStatus.KEYFRAME_QA
+        self._progress.current_stage = "t20_keyframe_qa"
+        self._progress = await self._activity("run_shot_keyframe_qa", ShotWorkflowProgress)  # type: ignore[assignment]
+        if self._cancelled:
+            raise CancelledError()
         self._progress.state = ShotWorkflowStatus.ANIMATING
         self._progress.current_stage = "t15"
         result = await self._activity("run_shot_animation", ShotWorkflowResult)
         assert isinstance(result, ShotWorkflowResult)
         if self._cancelled:
             raise CancelledError()
+        # A canonical clip must pass T20 before the shot can lock.
         self._progress.state = ShotWorkflowStatus.VIDEO_QA
+        self._progress.current_stage = "t20_video_qa"
         self._progress.t15_run_id = result.t15_run_id
         self._progress.selected_video_asset_id = result.selected_video_asset_id
+        self._progress = await self._activity("run_shot_video_qa", ShotWorkflowProgress)  # type: ignore[assignment]
+        self._progress.t15_run_id = result.t15_run_id
+        self._progress.selected_video_asset_id = result.selected_video_asset_id
+        if self._cancelled:
+            raise CancelledError()
         self._progress.state = ShotWorkflowStatus.LOCKED
         self._progress.current_stage = "locked"
         self._progress.last_checkpoint = "authoritative_outputs_locked"
@@ -166,6 +178,12 @@ class ShotWorkflow:
                 False,
             ),
             "BudgetDenied": (ShotFailureClass.BUDGET_DENIAL, False),
+            # T20 outcomes: a blocked shot waits for T21 repair, and a
+            # review-required shot waits for a human decision. Neither is
+            # retried automatically, and neither reruns T14 or T15.
+            "VisualQABlocked": (ShotFailureClass.VISUAL_QA_FAILURE, False),
+            "VisualQAReviewRequired": (ShotFailureClass.VISUAL_QA_REVIEW_REQUIRED, False),
+            "VisualQALineageError": (ShotFailureClass.INVALID_LINEAGE, False),
             "BudgetExceededError": (ShotFailureClass.BUDGET_DENIAL, False),
             "UnsupportedCapability": (ShotFailureClass.UNSUPPORTED_CAPABILITY, False),
             "UnknownProviderOutcome": (ShotFailureClass.UNKNOWN_FAILURE, False),

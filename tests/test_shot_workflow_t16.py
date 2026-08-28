@@ -217,6 +217,26 @@ async def test_temporal_ten_shot_concurrency_and_targeted_retry() -> None:
             selected_video_asset_id=UUID(int=4000 + sequence),
         )
 
+    async def keyframe_qa(request: ShotWorkflowInput) -> ShotWorkflowProgress:
+        """T20 keyframe gate: this fixture's shots all pass."""
+        return ShotWorkflowProgress(
+            state=ShotWorkflowStatus.KEYFRAME_QA,
+            current_stage="t20_keyframe_qa",
+            current_attempt=1,
+            t14_run_id=UUID(int=1000 + request.workflow_identity.shot_sequence),
+            selected_keyframe_asset_id=UUID(int=2000 + request.workflow_identity.shot_sequence),
+            last_checkpoint="keyframe_qa_pass",
+        )
+
+    async def video_qa(request: ShotWorkflowInput) -> ShotWorkflowProgress:
+        """T20 video gate: this fixture's shots all pass."""
+        return ShotWorkflowProgress(
+            state=ShotWorkflowStatus.VIDEO_QA,
+            current_stage="t20_video_qa",
+            current_attempt=1,
+            last_checkpoint="video_qa_pass",
+        )
+
     async def checkpoint(value: ShotWorkflowProgress) -> ShotWorkflowProgress:
         return value
 
@@ -230,7 +250,9 @@ async def test_temporal_ten_shot_concurrency_and_targeted_retry() -> None:
         named("resolve_shot_fanout", resolve_fanout),
         named("resolve_shot_input", resolve_shot),
         named("run_shot_keyframe", keyframe),
+        named("run_shot_keyframe_qa", keyframe_qa),
         named("run_shot_animation", animation),
+        named("run_shot_video_qa", video_qa),
         named("persist_shot_checkpoint", checkpoint),
         named("persist_shot_fanout_checkpoint", fanout_checkpoint),
     ]

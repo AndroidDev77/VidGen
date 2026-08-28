@@ -92,7 +92,9 @@ def test_production_worker_configures_every_t16_activity(tmp_path: Path) -> None
         "resolve_shot_fanout",
         "resolve_shot_input",
         "run_shot_keyframe",
+        "run_shot_keyframe_qa",
         "run_shot_animation",
+        "run_shot_video_qa",
         "persist_shot_checkpoint",
         "persist_shot_fanout_checkpoint",
     }

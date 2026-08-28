@@ -1,0 +1,74 @@
+{
+  "$defs": {
+    "VisualQASampleType": {
+      "description": "Why the deterministic sampler selected a timestamp.",
+      "enum": [
+        "keyframe_image",
+        "first_frame",
+        "last_frame",
+        "midpoint",
+        "coverage",
+        "clause_boundary",
+        "action_boundary",
+        "camera_change",
+        "transition_boundary",
+        "action_window",
+        "high_motion",
+        "low_motion",
+        "deterministic_warning",
+        "face_track",
+        "ocr"
+      ],
+      "title": "VisualQASampleType",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "description": "A bounded pointer handed to the visual agent; bytes are fetched by the adapter.",
+  "properties": {
+    "frame_sha256": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Frame Sha256",
+      "type": "string"
+    },
+    "sample_id": {
+      "format": "uuid",
+      "title": "Sample Id",
+      "type": "string"
+    },
+    "sample_type": {
+      "$ref": "#/$defs/VisualQASampleType"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "sequence": {
+      "minimum": 0,
+      "title": "Sequence",
+      "type": "integer"
+    },
+    "shot_relative_timestamp_us": {
+      "minimum": 0,
+      "title": "Shot Relative Timestamp Us",
+      "type": "integer"
+    },
+    "source_relative_timestamp_us": {
+      "minimum": 0,
+      "title": "Source Relative Timestamp Us",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "sample_id",
+    "sequence",
+    "sample_type",
+    "shot_relative_timestamp_us",
+    "source_relative_timestamp_us",
+    "frame_sha256"
+  ],
+  "title": "VisualQASampleReference",
+  "type": "object"
+}

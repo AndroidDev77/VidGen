@@ -100,9 +100,7 @@ class ProviderReferenceGenerator:
     ) -> ReferenceGenerationResult:
         if request.provider != self.provider.name:
             raise ValueError("configured provider does not match reference request identity")
-        if not (
-            len(request.ordered_source_asset_ids) == len(source_hashes) == len(source_bytes)
-        ):
+        if not (len(request.ordered_source_asset_ids) == len(source_hashes) == len(source_bytes)):
             raise ValueError("ordered source IDs, hashes, and bytes must have identical lengths")
         identity = reference_identity(request, source_hashes)
         asset_key = f"continuity-reference:{identity}"

@@ -1,0 +1,42 @@
+{
+  "$defs": {
+    "VisualQADimension": {
+      "enum": [
+        "character_identity",
+        "character_count",
+        "location",
+        "wardrobe_and_state",
+        "action_and_motion",
+        "composition",
+        "anatomy_and_artifacts",
+        "continuity_and_style"
+      ],
+      "title": "VisualQADimension",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "dimension": {
+      "$ref": "#/$defs/VisualQADimension"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "weight": {
+      "maximum": 100,
+      "minimum": 0,
+      "title": "Weight",
+      "type": "number"
+    }
+  },
+  "required": [
+    "dimension",
+    "weight"
+  ],
+  "title": "VisualQARubricDimension",
+  "type": "object"
+}

@@ -1,0 +1,43 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "height": {
+      "exclusiveMinimum": 0,
+      "maximum": 1,
+      "title": "Height",
+      "type": "number"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "width": {
+      "exclusiveMinimum": 0,
+      "maximum": 1,
+      "title": "Width",
+      "type": "number"
+    },
+    "x": {
+      "maximum": 1,
+      "minimum": 0,
+      "title": "X",
+      "type": "number"
+    },
+    "y": {
+      "maximum": 1,
+      "minimum": 0,
+      "title": "Y",
+      "type": "number"
+    }
+  },
+  "required": [
+    "x",
+    "y",
+    "width",
+    "height"
+  ],
+  "title": "VisualQABoundingBox",
+  "type": "object"
+}

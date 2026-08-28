@@ -1,0 +1,239 @@
+{
+  "$defs": {
+    "VisualQABoundingBox": {
+      "additionalProperties": false,
+      "properties": {
+        "height": {
+          "exclusiveMinimum": 0,
+          "maximum": 1,
+          "title": "Height",
+          "type": "number"
+        },
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "width": {
+          "exclusiveMinimum": 0,
+          "maximum": 1,
+          "title": "Width",
+          "type": "number"
+        },
+        "x": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "X",
+          "type": "number"
+        },
+        "y": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Y",
+          "type": "number"
+        }
+      },
+      "required": [
+        "x",
+        "y",
+        "width",
+        "height"
+      ],
+      "title": "VisualQABoundingBox",
+      "type": "object"
+    },
+    "VisualQAEvidenceType": {
+      "enum": [
+        "sample_frame",
+        "reference_comparison",
+        "deterministic_measurement",
+        "whole_file"
+      ],
+      "title": "VisualQAEvidenceType",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "description": "A concrete, replayable pointer to what a finding is based on.",
+  "properties": {
+    "bounding_box": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/VisualQABoundingBox"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "compared_reference_asset_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Compared Reference Asset Id"
+    },
+    "confidence": {
+      "default": 1.0,
+      "maximum": 1,
+      "minimum": 0,
+      "title": "Confidence",
+      "type": "number"
+    },
+    "contact_sheet_position": {
+      "anyOf": [
+        {
+          "minimum": 0,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Contact Sheet Position"
+    },
+    "entity_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Entity Id"
+    },
+    "entity_kind": {
+      "default": "none",
+      "enum": [
+        "character",
+        "location",
+        "prop",
+        "state",
+        "none"
+      ],
+      "title": "Entity Kind",
+      "type": "string"
+    },
+    "evidence_id": {
+      "format": "uuid",
+      "title": "Evidence Id",
+      "type": "string"
+    },
+    "evidence_type": {
+      "$ref": "#/$defs/VisualQAEvidenceType"
+    },
+    "explanation": {
+      "default": "",
+      "maxLength": 500,
+      "title": "Explanation",
+      "type": "string"
+    },
+    "frame_asset_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Frame Asset Id"
+    },
+    "measurement": {
+      "anyOf": [
+        {
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Measurement"
+    },
+    "prop_reference": {
+      "anyOf": [
+        {
+          "maxLength": 128,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Prop Reference"
+    },
+    "sample_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Sample Id"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "shot_relative_timestamp_us": {
+      "anyOf": [
+        {
+          "minimum": 0,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Shot Relative Timestamp Us"
+    },
+    "source_asset_id": {
+      "format": "uuid",
+      "title": "Source Asset Id",
+      "type": "string"
+    },
+    "source_relative_timestamp_us": {
+      "anyOf": [
+        {
+          "minimum": 0,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Source Relative Timestamp Us"
+    }
+  },
+  "required": [
+    "evidence_id",
+    "evidence_type",
+    "source_asset_id"
+  ],
+  "title": "VisualQAEvidence",
+  "type": "object"
+}

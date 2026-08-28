@@ -15,6 +15,7 @@ import { newIdempotencyKey } from "../../api/client";
 import { listFailures, listProviderAttempts } from "../../api/costs";
 import { getCosts, getProjectStatus } from "../../api/projects";
 import { queryKeys } from "../../api/queryKeys";
+import { getProjectVisualQa } from "../../api/visualQa";
 import { cancelWorkflow, startWorkflow } from "../../api/workflows";
 import { useApiClient } from "../../app/apiContext";
 import { CostSummary } from "../../components/CostSummary";
@@ -52,6 +53,11 @@ export function ProjectDashboardPage(): JSX.Element {
     queryFn: ({ signal }) => getCosts(projectId, client, signal).then((r) => r.data),
     enabled: projectId !== "",
   });
+  const visualQa = useQuery({
+    queryKey: queryKeys.visualQa(projectId),
+    queryFn: ({ signal }) => getProjectVisualQa(projectId, client, signal).then((r) => r.data),
+    enabled: projectId !== "",
+  });
   const failures = useQuery({
     queryKey: queryKeys.failures(projectId),
     queryFn: ({ signal }) => listFailures(projectId, client, signal).then((r) => r.data),
@@ -81,6 +87,14 @@ export function ProjectDashboardPage(): JSX.Element {
 
   const workflowData = workflow.data;
   const started = workflowData !== undefined && workflowData.workflow_id !== null;
+
+  const visualQaSummary = {
+    total: visualQa.data?.items.length ?? 0,
+    passed: (visualQa.data?.items ?? []).filter((run) => run.outcome === "PASS").length,
+    failed: (visualQa.data?.items ?? []).filter((run) => run.outcome === "FAIL").length,
+    review: (visualQa.data?.items ?? []).filter((run) => run.outcome === "REVIEW").length,
+    hardFailures: (visualQa.data?.items ?? []).filter((run) => run.hard_failure).length,
+  };
 
   return (
     <div>
@@ -143,6 +157,27 @@ export function ProjectDashboardPage(): JSX.Element {
           {costs.isPending && <LoadingState label="Loading costs" rows={2} />}
           {costs.isError && <ErrorState error={costs.error} />}
           {costs.isSuccess && <CostSummary costs={costs.data} />}
+        </Card>
+        <Card>
+          <CardHeader header={<Subtitle2 as="h2">Visual QA</Subtitle2>} />
+          {visualQa.isPending && <LoadingState label="Loading visual QA" rows={2} />}
+          {visualQa.isSuccess && (
+            <div className={styles.links}>
+              <Caption1>
+                {visualQaSummary.total === 0
+                  ? "No visual-QA result has been recorded yet."
+                  : `${visualQaSummary.passed} passed · ${visualQaSummary.failed} blocked · ` +
+                    `${visualQaSummary.review} awaiting review`}
+              </Caption1>
+              {visualQaSummary.hardFailures > 0 && (
+                <Caption1>
+                  {visualQaSummary.hardFailures} shot
+                  {visualQaSummary.hardFailures === 1 ? "" : "s"} carry a hard failure and cannot
+                  be rendered.
+                </Caption1>
+              )}
+            </div>
+          )}
         </Card>
         <Card>
           {(failures.isPending || attempts.isPending) && (

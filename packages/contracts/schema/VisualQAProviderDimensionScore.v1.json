@@ -1,0 +1,61 @@
+{
+  "$defs": {
+    "VisualQADimension": {
+      "enum": [
+        "character_identity",
+        "character_count",
+        "location",
+        "wardrobe_and_state",
+        "action_and_motion",
+        "composition",
+        "anatomy_and_artifacts",
+        "continuity_and_style"
+      ],
+      "title": "VisualQADimension",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "description": "A proposal. Application code, not the provider, owns the canonical score.",
+  "properties": {
+    "applicable": {
+      "default": true,
+      "title": "Applicable",
+      "type": "boolean"
+    },
+    "confidence": {
+      "maximum": 1,
+      "minimum": 0,
+      "title": "Confidence",
+      "type": "number"
+    },
+    "dimension": {
+      "$ref": "#/$defs/VisualQADimension"
+    },
+    "raw_score": {
+      "maximum": 100,
+      "minimum": 0,
+      "title": "Raw Score",
+      "type": "number"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "summary": {
+      "default": "",
+      "maxLength": 500,
+      "title": "Summary",
+      "type": "string"
+    }
+  },
+  "required": [
+    "dimension",
+    "raw_score",
+    "confidence"
+  ],
+  "title": "VisualQAProviderDimensionScore",
+  "type": "object"
+}

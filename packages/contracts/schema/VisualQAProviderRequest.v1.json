@@ -1,0 +1,384 @@
+{
+  "$defs": {
+    "VisualQAAttemptType": {
+      "enum": [
+        "first_pass",
+        "adjudication"
+      ],
+      "title": "VisualQAAttemptType",
+      "type": "string"
+    },
+    "VisualQAReferenceDescriptor": {
+      "additionalProperties": false,
+      "description": "One approved T19 reference offered to the visual agent for comparison.",
+      "properties": {
+        "asset_id": {
+          "format": "uuid",
+          "title": "Asset Id",
+          "type": "string"
+        },
+        "entity_id": {
+          "format": "uuid",
+          "title": "Entity Id",
+          "type": "string"
+        },
+        "identity_version_id": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Identity Version Id"
+        },
+        "label": {
+          "default": "",
+          "maxLength": 128,
+          "title": "Label",
+          "type": "string"
+        },
+        "role": {
+          "enum": [
+            "character_identity",
+            "character_state",
+            "location_identity",
+            "location_state",
+            "prop"
+          ],
+          "title": "Role",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "sha256": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Sha256",
+          "type": "string"
+        }
+      },
+      "required": [
+        "asset_id",
+        "sha256",
+        "role",
+        "entity_id"
+      ],
+      "title": "VisualQAReferenceDescriptor",
+      "type": "object"
+    },
+    "VisualQASampleReference": {
+      "additionalProperties": false,
+      "description": "A bounded pointer handed to the visual agent; bytes are fetched by the adapter.",
+      "properties": {
+        "frame_sha256": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Frame Sha256",
+          "type": "string"
+        },
+        "sample_id": {
+          "format": "uuid",
+          "title": "Sample Id",
+          "type": "string"
+        },
+        "sample_type": {
+          "$ref": "#/$defs/VisualQASampleType"
+        },
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "sequence": {
+          "minimum": 0,
+          "title": "Sequence",
+          "type": "integer"
+        },
+        "shot_relative_timestamp_us": {
+          "minimum": 0,
+          "title": "Shot Relative Timestamp Us",
+          "type": "integer"
+        },
+        "source_relative_timestamp_us": {
+          "minimum": 0,
+          "title": "Source Relative Timestamp Us",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "sample_id",
+        "sequence",
+        "sample_type",
+        "shot_relative_timestamp_us",
+        "source_relative_timestamp_us",
+        "frame_sha256"
+      ],
+      "title": "VisualQASampleReference",
+      "type": "object"
+    },
+    "VisualQASampleType": {
+      "description": "Why the deterministic sampler selected a timestamp.",
+      "enum": [
+        "keyframe_image",
+        "first_frame",
+        "last_frame",
+        "midpoint",
+        "coverage",
+        "clause_boundary",
+        "action_boundary",
+        "camera_change",
+        "transition_boundary",
+        "action_window",
+        "high_motion",
+        "low_motion",
+        "deterministic_warning",
+        "face_track",
+        "ocr"
+      ],
+      "title": "VisualQASampleType",
+      "type": "string"
+    },
+    "VisualQATargetType": {
+      "description": "Keyframe and video QA are independent identities, never one merged run.",
+      "enum": [
+        "keyframe",
+        "video"
+      ],
+      "title": "VisualQATargetType",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Bounded, provider-neutral shot intent. Never a whole episode or project.",
+  "properties": {
+    "attempt_number": {
+      "minimum": 1,
+      "title": "Attempt Number",
+      "type": "integer"
+    },
+    "attempt_type": {
+      "$ref": "#/$defs/VisualQAAttemptType"
+    },
+    "camera_angle": {
+      "default": "",
+      "maxLength": 64,
+      "title": "Camera Angle",
+      "type": "string"
+    },
+    "camera_framing": {
+      "default": "",
+      "maxLength": 64,
+      "title": "Camera Framing",
+      "type": "string"
+    },
+    "camera_movement": {
+      "default": "",
+      "maxLength": 64,
+      "title": "Camera Movement",
+      "type": "string"
+    },
+    "character_state_summaries": {
+      "additionalProperties": {
+        "type": "string"
+      },
+      "title": "Character State Summaries",
+      "type": "object"
+    },
+    "composition_requirements": {
+      "items": {
+        "type": "string"
+      },
+      "maxItems": 16,
+      "title": "Composition Requirements",
+      "type": "array"
+    },
+    "contact_sheet_asset_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Contact Sheet Asset Id"
+    },
+    "contract_version": {
+      "const": "visual-qa/1.0",
+      "default": "visual-qa/1.0",
+      "title": "Contract Version",
+      "type": "string"
+    },
+    "deterministic_summary": {
+      "items": {
+        "type": "string"
+      },
+      "maxItems": 32,
+      "title": "Deterministic Summary",
+      "type": "array"
+    },
+    "incoming_continuity_summary": {
+      "default": "",
+      "maxLength": 2048,
+      "title": "Incoming Continuity Summary",
+      "type": "string"
+    },
+    "location_state_summary": {
+      "default": "",
+      "maxLength": 1024,
+      "title": "Location State Summary",
+      "type": "string"
+    },
+    "outgoing_continuity_summary": {
+      "default": "",
+      "maxLength": 2048,
+      "title": "Outgoing Continuity Summary",
+      "type": "string"
+    },
+    "project_id": {
+      "format": "uuid",
+      "title": "Project Id",
+      "type": "string"
+    },
+    "prompt_version": {
+      "maxLength": 64,
+      "minLength": 1,
+      "title": "Prompt Version",
+      "type": "string"
+    },
+    "qa_attempt_identity": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Qa Attempt Identity",
+      "type": "string"
+    },
+    "references": {
+      "items": {
+        "$ref": "#/$defs/VisualQAReferenceDescriptor"
+      },
+      "maxItems": 32,
+      "title": "References",
+      "type": "array"
+    },
+    "required_action": {
+      "default": "",
+      "maxLength": 1024,
+      "title": "Required Action",
+      "type": "string"
+    },
+    "required_character_count": {
+      "maximum": 16,
+      "minimum": 0,
+      "title": "Required Character Count",
+      "type": "integer"
+    },
+    "required_character_ids": {
+      "items": {
+        "format": "uuid",
+        "type": "string"
+      },
+      "maxItems": 16,
+      "title": "Required Character Ids",
+      "type": "array"
+    },
+    "required_location_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Required Location Id"
+    },
+    "required_props": {
+      "items": {
+        "type": "string"
+      },
+      "maxItems": 16,
+      "title": "Required Props",
+      "type": "array"
+    },
+    "rubric_version": {
+      "maxLength": 64,
+      "minLength": 1,
+      "title": "Rubric Version",
+      "type": "string"
+    },
+    "samples": {
+      "items": {
+        "$ref": "#/$defs/VisualQASampleReference"
+      },
+      "maxItems": 64,
+      "minItems": 1,
+      "title": "Samples",
+      "type": "array"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "secondary_action": {
+      "default": "",
+      "maxLength": 1024,
+      "title": "Secondary Action",
+      "type": "string"
+    },
+    "storyboard_objective": {
+      "maxLength": 2048,
+      "minLength": 1,
+      "title": "Storyboard Objective",
+      "type": "string"
+    },
+    "storyboard_shot_id": {
+      "format": "uuid",
+      "title": "Storyboard Shot Id",
+      "type": "string"
+    },
+    "target_type": {
+      "$ref": "#/$defs/VisualQATargetType"
+    },
+    "threshold_version": {
+      "maxLength": 64,
+      "minLength": 1,
+      "title": "Threshold Version",
+      "type": "string"
+    },
+    "trace_context": {
+      "additionalProperties": {
+        "type": "string"
+      },
+      "title": "Trace Context",
+      "type": "object"
+    }
+  },
+  "required": [
+    "qa_attempt_identity",
+    "attempt_number",
+    "attempt_type",
+    "project_id",
+    "storyboard_shot_id",
+    "target_type",
+    "storyboard_objective",
+    "required_character_count",
+    "samples",
+    "rubric_version",
+    "threshold_version",
+    "prompt_version"
+  ],
+  "title": "VisualQAProviderRequest",
+  "type": "object"
+}
