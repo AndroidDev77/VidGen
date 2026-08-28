@@ -108,6 +108,20 @@ def frame_interval_us(frame_rate: str) -> int:
     return round(1_000_000 / rate)
 
 
+def _frame_rate(video: dict[str, object]) -> str:
+    """The first ffprobe rate string that actually describes a usable rate.
+
+    ffprobe reports an unknown rate as the *truthy* string ``"0/0"``, so a plain
+    ``avg_frame_rate or r_frame_rate`` never falls back and the clip goes on to
+    be judged undecodable. Each candidate is parsed before it is accepted.
+    """
+    for key in ("avg_frame_rate", "r_frame_rate"):
+        candidate = str(video.get(key) or "")
+        if candidate and frame_interval_us(candidate) > 0:
+            return candidate
+    return ""
+
+
 @dataclass(slots=True)
 class MediaMeasurement:
     """The measured technical facts of one asset."""
@@ -328,7 +342,7 @@ def measure(path: Path, target_type: VisualQATargetType) -> MediaMeasurement:
         return measurement
     measurement.codec = str(video.get("codec_name", ""))
     measurement.pixel_format = str(video.get("pix_fmt", ""))
-    measurement.frame_rate = str(video.get("avg_frame_rate") or video.get("r_frame_rate") or "")
+    measurement.frame_rate = _frame_rate(video)
     raw_duration = video.get("duration") or fmt.get("duration")
     if target_type is VisualQATargetType.VIDEO:
         try:

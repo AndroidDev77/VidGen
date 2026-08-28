@@ -262,7 +262,12 @@ async def evaluate_shot_stage(
         target_type=target_type,
         idempotency_key=options.idempotency_key or f"visual-qa:{shot_id}:{target_type.value}",
     )
-    passed, reason = VisualQARepository(session).gate(shot_id, target_type)
+    # Gate on the shot the selector actually resolved, not the caller's argument:
+    # the selector also accepts a stable shot ID, and gating on that form would
+    # report visual_qa_missing for the shot that just passed.
+    passed, reason = VisualQARepository(session).gate(
+        result.target.storyboard_shot_id, target_type
+    )
     if passed:
         return result
     codes = tuple(code.value for code in result.repair_codes)

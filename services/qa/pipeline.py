@@ -17,6 +17,7 @@ T20 emits repair codes. It never submits a new image or video generation.
 from __future__ import annotations
 
 import json
+import logging
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -127,6 +128,9 @@ from vidgen.telemetry.metrics import Metrics
 from vidgen.telemetry.provider import instrument_provider_attempt
 
 QA_OPERATION = "visual_qa"
+
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
@@ -613,19 +617,21 @@ class VisualQAPipeline:
         report: VisualQADeterministicReport,
     ) -> VisualQASamplingManifest:
         rows = self.repository.samples(run.id)
-        duration = report.measured_duration_us or 0
+        # The manifest carries the *exact* decoded timestamps: clamping them to a
+        # container-reported duration destroyed the evidence timestamps the
+        # findings are anchored to, stopped the frames pairing with their samples,
+        # and could collapse two samples onto one timestamp. A container that
+        # under-reports its duration widens the recorded extent instead.
+        measured = report.measured_duration_us or 0
+        duration = max([measured, *(row.actual_timestamp_us for row in rows)]) if rows else measured
         samples = [
             VisualQASample(
                 sample_id=row.id,
                 sequence=row.sequence,
                 sample_type=row.sample_type,  # type: ignore[arg-type]
                 requested_timestamp_us=row.requested_timestamp_us,
-                actual_timestamp_us=min(row.actual_timestamp_us, duration)
-                if duration
-                else row.actual_timestamp_us,
-                shot_relative_timestamp_us=min(row.shot_relative_timestamp_us, duration)
-                if duration
-                else row.shot_relative_timestamp_us,
+                actual_timestamp_us=row.actual_timestamp_us,
+                shot_relative_timestamp_us=row.shot_relative_timestamp_us,
                 frame_asset_id=row.frame_asset_id,
                 frame_sha256=row.frame_sha256,
                 source_asset_id=row.source_asset_id,
@@ -1039,8 +1045,15 @@ class VisualQAPipeline:
             )
             run.report_asset_id = stored.id
         self.session.commit()
-        self._emit_event(run, outcome)
-        self._emit_metrics(run, outcome)
+        # The run is durable and canonical from here on. Observability must never
+        # be able to undo it: an exception raised while emitting would otherwise
+        # reach evaluate_shot's failure handler and relabel a committed PASS as
+        # visual_qa_failed, blocking the render on a metrics problem.
+        try:
+            self._emit_event(run, outcome)
+            self._emit_metrics(run, outcome)
+        except Exception:
+            logger.exception("visual QA observability failed after the result was committed")
         return result
 
     def _build_result(

@@ -26,6 +26,7 @@ from services.qa.deterministic import (
     LumaFrame,
     MotionSeries,
     RegionObservation,
+    _frame_rate,
     detect_region,
     detect_text,
     evaluate,
@@ -1187,3 +1188,47 @@ def test_more_provider_findings_than_the_contract_allows_are_bounded() -> None:
     outcome = decide(score, empty_report(), result, thresholds=THRESHOLDS)
     assert outcome.outcome is VisualQAOutcome.FAIL
     assert outcome.hard_failure is True
+
+
+def test_findings_on_a_non_applicable_dimension_are_bounded_too() -> None:
+    """A verbose provider must not fail the run by over-reporting a skipped dimension.
+
+    The applicable branch bounded its findings from the start; the non-applicable
+    branch passed the list through untouched, so more than ``max_length`` findings
+    for a dimension the provider itself marked non-applicable made the whole
+    result unconstructable.
+    """
+    dimensions, score = _score(
+        provider_result(
+            inapplicable={VisualQADimension.LOCATION},
+            findings=[
+                {
+                    "dimension": VisualQADimension.LOCATION,
+                    "code": f"location_{index}",
+                    "summary": f"location note {index}",
+                    "repair_codes": [VisualQARepairCode.WRONG_LOCATION],
+                    "sample_ids": [UUID(int=1)],
+                }
+                for index in range(24)
+            ],
+        )
+    )
+    location = next(item for item in dimensions if item.dimension is VisualQADimension.LOCATION)
+    assert location.applicable is False
+    assert len(location.findings) == 16
+    # The remaining dimensions still redistribute to exactly 100.
+    assert score.applied_weight_total == pytest.approx(100.0)
+
+
+def test_an_unusable_ffprobe_frame_rate_falls_back_to_the_real_one() -> None:
+    """ffprobe reports an unknown rate as the truthy string ``0/0``.
+
+    A plain ``avg_frame_rate or r_frame_rate`` therefore never falls back, and the
+    clip was measured with an unusable rate and hard-failed as undecodable — an
+    outcome no human review is allowed to clear.
+    """
+    assert _frame_rate({"avg_frame_rate": "0/0", "r_frame_rate": "24/1"}) == "24/1"
+    assert _frame_rate({"avg_frame_rate": "24000/1001"}) == "24000/1001"
+    # Nothing usable on either key stays empty rather than inventing a rate.
+    assert _frame_rate({"avg_frame_rate": "0/0", "r_frame_rate": "0/0"}) == ""
+    assert _frame_rate({}) == ""

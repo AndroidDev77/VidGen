@@ -795,3 +795,104 @@ def test_render_manifest_provenance_names_the_qa_results_without_changing_identi
     )
     governed = base.model_copy(update={"provenance": provenance})
     assert bound_manifest_identity(governed) == bound_manifest_identity(base)
+
+
+def test_sample_timestamps_survive_a_container_that_under_reports_its_duration(
+    graph: tuple[Session, FilesystemBlobStore, VisualQAFixture],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The manifest must keep the exact decoded timestamps.
+
+    Clamping them to the container-reported duration corrupted the evidence
+    timestamps a finding is anchored to, stopped a clamped sample pairing with
+    the frame that was decoded for it (so the provider was handed a sample with
+    no bytes), and could collapse two samples onto one timestamp and trip the
+    manifest's own uniqueness validator.
+    """
+    session, store, fixture = graph
+    original = VisualQAPipeline._measure_and_sample
+
+    def under_report(self, run, inputs, source):  # type: ignore[no-untyped-def]
+        report, decoded = original(self, run, inputs, source)
+        # Force the container duration below the last decoded frame, the case a
+        # real under-reporting container produces.
+        latest = max(item.actual_timestamp_us for item in decoded)
+        return report.model_copy(update={"measured_duration_us": latest - 1}), decoded
+
+    monkeypatch.setattr(VisualQAPipeline, "_measure_and_sample", under_report)
+    result = run_one(session, store, fixture, key="exact-timestamps")
+    repository = VisualQARepository(session)
+    run = repository.runs_for_shot(fixture.project_id, fixture.shot_ids[0])[0]
+    rows = repository.samples(run.id)
+    manifest = result.sampling_manifest
+    # Every persisted decode timestamp reaches the manifest unmodified.
+    assert [item.actual_timestamp_us for item in manifest.samples] == [
+        row.actual_timestamp_us for row in rows
+    ]
+    assert [item.shot_relative_timestamp_us for item in manifest.samples] == [
+        row.shot_relative_timestamp_us for row in rows
+    ]
+    # The recorded extent covers them, so the contract's own bound still holds.
+    assert manifest.measured_duration_us >= max(
+        item.actual_timestamp_us for item in manifest.samples
+    )
+    assert len({item.actual_timestamp_us for item in manifest.samples}) == len(manifest.samples)
+
+
+def test_a_failing_metrics_emit_cannot_undo_a_committed_pass(
+    graph: tuple[Session, FilesystemBlobStore, VisualQAFixture],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Observability runs after the commit and must never invalidate the result.
+
+    An exception raised while emitting used to reach ``evaluate_shot``'s failure
+    handler, which relabelled a committed, canonical PASS as ``visual_qa_failed``
+    and blocked the render on what was only a metrics problem.
+    """
+    session, store, fixture = graph
+
+    def explode(*_args: object, **_kwargs: object) -> None:
+        raise RuntimeError("metrics backend is down")
+
+    monkeypatch.setattr(VisualQAPipeline, "_emit_metrics", explode)
+    result = run_one(session, store, fixture, key="emit-failure")
+    assert result.outcome is VisualQAOutcome.PASS
+    run = VisualQARepository(session).runs_for_shot(fixture.project_id, fixture.shot_ids[0])[0]
+    assert run.status == "visual_qa_complete"
+    assert run.final_outcome == VisualQAOutcome.PASS.value
+    assert run.error_code is None
+    passed, reason = VisualQARepository(session).gate(
+        fixture.shot_ids[0], VisualQATargetType.VIDEO
+    )
+    assert passed and reason == "visual_qa_pass"
+
+
+def test_a_stage_addressed_by_stable_shot_id_gates_on_the_resolved_shot(
+    graph: tuple[Session, FilesystemBlobStore, VisualQAFixture],
+) -> None:
+    """The selector accepts either shot ID form; the gate must follow it.
+
+    ``evaluate_shot_stage`` gated on the caller's raw argument, so addressing a
+    stage by ``stable_shot_id`` looked up a run that does not exist under that
+    id and raised ``VisualQABlocked`` for a shot that had just passed.
+    """
+    session, store, fixture = graph
+    result = asyncio.run(
+        evaluate_shot_stage(
+            session,
+            store,
+            project_id=fixture.project_id,
+            shot_id=fixture.stable_shot_ids[0],
+            target_type=VisualQATargetType.VIDEO,
+            options=VisualQACommandOptions(provider="fake"),
+            identity_resolver=resolver,
+        )
+    )
+    assert result.outcome is VisualQAOutcome.PASS
+    # The result is bound to the canonical shot row, not the stable id it was
+    # addressed by, and the gate agrees.
+    assert result.target.storyboard_shot_id == fixture.shot_ids[0]
+    passed, reason = VisualQARepository(session).gate(
+        fixture.shot_ids[0], VisualQATargetType.VIDEO
+    )
+    assert passed and reason == "visual_qa_pass"

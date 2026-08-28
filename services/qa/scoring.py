@@ -218,7 +218,10 @@ def build_dimension_results(
                     effective_weight=0.0,
                     weighted_contribution=0.0,
                     confidence=proposal.confidence if proposal else 0.0,
-                    findings=findings,
+                    # Bounded on this branch too: a provider is free to report
+                    # findings for a dimension it marked non-applicable, and an
+                    # unbounded list would fail the whole run on validation.
+                    findings=_bounded(findings, "findings"),
                     evaluator=provider.provider,
                     model=provider.model,
                     rubric_version=rubric.rubric_version,
