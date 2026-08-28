@@ -25,6 +25,8 @@ export interface FakeApiState {
   approvals: number;
   downloads: string[];
   providerAttempts: number;
+  /** Recorded T20 human-review decisions, newest last. */
+  visualQaDecisions: string[];
 }
 
 export function shotId(index: number): string {
@@ -57,7 +59,176 @@ export function createFakeState(): FakeApiState {
     approvals: 0,
     downloads: [],
     providerAttempts: SHOT_COUNT,
+    visualQaDecisions: [],
   };
+}
+
+const QA_DIMENSIONS: readonly (readonly [string, number])[] = [
+  ["character_identity", 25],
+  ["character_count", 10],
+  ["location", 10],
+  ["wardrobe_and_state", 10],
+  ["action_and_motion", 15],
+  ["composition", 10],
+  ["anatomy_and_artifacts", 10],
+  ["continuity_and_style", 10],
+];
+
+export function visualQaRunId(index: number, target: "keyframe" | "video"): string {
+  const offset = target === "keyframe" ? 600 : 700;
+  return `99999999-2222-4222-8222-${String(offset + index).padStart(12, "0")}`;
+}
+
+function visualQaSampleId(index: number): string {
+  return `99999999-2222-4222-8222-${String(800 + index).padStart(12, "0")}`;
+}
+
+function visualQaFrameAssetId(index: number): string {
+  return `99999999-2222-4222-8222-${String(900 + index).padStart(12, "0")}`;
+}
+
+function visualQaReferenceAssetId(index: number): string {
+  return `99999999-2222-4222-8222-${String(950 + index).padStart(12, "0")}`;
+}
+
+/** One compact QA run. Shot 5 carries the blocking identity failure. */
+function visualQaRun(index: number, target: "keyframe" | "video") {
+  const blocking = target === "video" && index === 5;
+  return {
+    qa_run_id: visualQaRunId(index, target),
+    project_id: PROJECT_ID,
+    shot_id: shotId(index),
+    target_type: target,
+    status: "visual_qa_complete",
+    outcome: blocking ? "FAIL" : "PASS",
+    score: blocking ? 82.5 : 96,
+    pass_threshold: 85,
+    importance: "normal",
+    hard_failure: blocking,
+    repair_recommendation: blocking ? "NEW_SEED" : "NONE",
+    repair_codes: blocking ? ["WRONG_CHARACTER_IDENTITY"] : [],
+    warning_codes: blocking ? ["excessive_freeze"] : [],
+    confidence: 0.91,
+    adjudicated: blocking,
+    human_review_decision: null,
+    provider: "fake",
+    model: "fake-visual-qa/1",
+    cost_microusd: 24_000,
+    rubric_version: "visual-qa-rubric/1.0",
+    threshold_version: "visual-qa-thresholds/1.0",
+    sampling_version: "visual-qa-sampler/1.0",
+    sample_count: 12,
+    deterministic_warning_count: blocking ? 2 : 0,
+    row_version: 1,
+    created_at: "2026-08-02T11:00:00Z",
+    completed_at: "2026-08-02T11:01:00Z",
+  };
+}
+
+function visualQaSample(index: number) {
+  return {
+    sample_id: visualQaSampleId(index),
+    sequence: 0,
+    sample_type: "action_window",
+    requested_timestamp_us: 1_500_000,
+    actual_timestamp_us: 1_500_000,
+    shot_relative_timestamp_us: 1_500_000,
+    frame_asset_id: visualQaFrameAssetId(index),
+    frame_sha256: HASH,
+    selection_reason: "inside the required action window (1/3)",
+    contact_sheet_position: 0,
+  };
+}
+
+function visualQaDetail(index: number, target: "keyframe" | "video") {
+  const blocking = target === "video" && index === 5;
+  return {
+    ...visualQaRun(index, target),
+    dimensions: QA_DIMENSIONS.map(([dimension, weight]) => {
+      const raw = blocking && dimension === "character_identity" ? 40 : 95;
+      return {
+        dimension,
+        applicable: true,
+        raw_score: raw,
+        weight,
+        effective_weight: weight,
+        weighted_contribution: (raw * weight) / 100,
+        confidence: 0.9,
+        warning_codes: [],
+        hard_failure_codes:
+          blocking && dimension === "character_identity" ? ["WRONG_CHARACTER_IDENTITY"] : [],
+        repair_codes:
+          blocking && dimension === "character_identity" ? ["WRONG_CHARACTER_IDENTITY"] : [],
+        finding_summaries:
+          blocking && dimension === "character_identity"
+            ? ["The subject does not match the approved identity reference."]
+            : [],
+      };
+    }),
+    diagnostics: [
+      {
+        code: "freeze_ratio",
+        outcome: blocking ? "warning" : "pass",
+        diagnostic_code: blocking ? "excessive_freeze" : "freeze_ratio_ok",
+        measurement: blocking ? 0.51 : 0.02,
+        threshold: 0.35,
+        evidence_timestamp_us: 1_500_000,
+        repair_code: blocking ? "EXCESSIVE_FREEZE" : null,
+        message: "",
+      },
+    ],
+    samples: [visualQaSample(index)],
+    compared_reference_asset_ids: [visualQaReferenceAssetId(index)],
+    contact_sheet_asset_id: null,
+    report_asset_id: null,
+    adjudication: blocking
+      ? {
+          policy_version: "visual-qa-adjudication/1.0",
+          triggered_by: ["first-pass character_identity confidence 0.62 is below 0.70"],
+          first_pass_provider: "fake",
+          first_pass_model: "fake-visual-qa/1",
+          adjudicator_provider: "fake",
+          adjudicator_model: "fake-visual-qa-adjudicator/1",
+          adjudicator_confidence: 0.86,
+          decided: true,
+          disagreement_summary: [],
+          resulting_outcome_hint: "FAIL",
+          attempts_used: 1,
+        }
+      : null,
+  };
+}
+
+function visualQaEvidence(index: number) {
+  return {
+    qa_run_id: visualQaRunId(index, "video"),
+    items: [
+      {
+        evidence_id: `99999999-2222-4222-8222-${String(1000 + index).padStart(12, "0")}`,
+        finding_id: `99999999-2222-4222-8222-${String(1100 + index).padStart(12, "0")}`,
+        evidence_type: "reference_comparison",
+        sample_id: visualQaSampleId(index),
+        frame_asset_id: visualQaFrameAssetId(index),
+        shot_relative_timestamp_us: 1_500_000,
+        source_relative_timestamp_us: 1_500_000,
+        contact_sheet_position: 0,
+        bounding_box: { x: 0.1, y: 0.2, width: 0.3, height: 0.4 },
+        compared_reference_asset_id: visualQaReferenceAssetId(index),
+        confidence: 0.93,
+        explanation: "Face geometry does not match the approved identity version.",
+      },
+    ],
+    samples: [visualQaSample(index)],
+  };
+}
+
+function shotIndexFor(path: string): number {
+  const id = path.split("/shots/")[1]?.split("/")[0]?.split(":")[0] ?? "";
+  return (
+    Array.from({ length: SHOT_COUNT }, (_, value) => value).find(
+      (value) => shotId(value) === id,
+    ) ?? 0
+  );
 }
 
 function json(route: Route, body: unknown, status = 200) {
@@ -191,9 +362,6 @@ export async function installFakeApi(page: Page, state: FakeApiState): Promise<v
     if (path.endsWith("/storyboard")) {
       return json(route, storyboard(state));
     }
-    if (path.endsWith("/visual-qa") && method === "GET") {
-      return json(route, { items: [] });
-    }
     if (path.includes(":regenerate")) {
       const id = path.split("/").pop()?.replace(":regenerate", "") ?? "";
       state.regeneratedShots.push(id);
@@ -220,6 +388,58 @@ export async function installFakeApi(page: Page, state: FakeApiState): Promise<v
           ],
         },
         row_version: 2,
+      });
+    }
+    if (path.includes("/visual-qa") && method === "POST") {
+      const index = shotIndexFor(path);
+      if (path.endsWith(":approve") || path.endsWith(":reject")) {
+        const decision = path.endsWith(":approve") ? "approved" : "rejected";
+        state.visualQaDecisions.push(decision);
+        return json(route, {
+          qa_run_id: visualQaRunId(index, "video"),
+          review_id: "99999999-2222-4222-8222-000000009999",
+          decision,
+          resulting_gate:
+            decision === "approved" ? "visual_qa_human_approved" : "visual_qa_failed",
+          row_version: 2,
+        });
+      }
+      return json(
+        route,
+        {
+          status: "queued",
+          project_id: PROJECT_ID,
+          shot_id: shotId(index),
+          targets: ["keyframe", "video"],
+          resource_id: "99999999-2222-4222-8222-000000008888",
+          row_version: 1,
+        },
+        202,
+      );
+    }
+    if (path.endsWith("/evidence") && method === "GET") {
+      return json(route, visualQaEvidence(shotIndexFor(path)));
+    }
+    if (path.includes("/visual-qa/") && method === "GET") {
+      const index = shotIndexFor(path);
+      const runId = path.split("/").pop() ?? "";
+      const target = runId === visualQaRunId(index, "keyframe") ? "keyframe" : "video";
+      return json(route, visualQaDetail(index, target));
+    }
+    if (path.endsWith("/visual-qa") && method === "GET") {
+      if (path.includes("/shots/")) {
+        const index = shotIndexFor(path);
+        return json(route, {
+          project_id: PROJECT_ID,
+          items: [visualQaRun(index, "keyframe"), visualQaRun(index, "video")],
+        });
+      }
+      return json(route, {
+        project_id: PROJECT_ID,
+        items: Array.from({ length: SHOT_COUNT }, (_, index) => [
+          visualQaRun(index, "keyframe"),
+          visualQaRun(index, "video"),
+        ]).flat(),
       });
     }
     if (path.includes("/shots/") && method === "GET") {

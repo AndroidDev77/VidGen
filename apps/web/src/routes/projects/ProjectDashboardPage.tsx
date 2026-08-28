@@ -88,12 +88,15 @@ export function ProjectDashboardPage(): JSX.Element {
   const workflowData = workflow.data;
   const started = workflowData !== undefined && workflowData.workflow_id !== null;
 
+  // Every projection is read defensively: a dashboard must not be taken down by
+  // one unexpected response shape from a single panel's query.
+  const visualQaRuns = visualQa.data?.items ?? [];
   const visualQaSummary = {
-    total: visualQa.data?.items.length ?? 0,
-    passed: (visualQa.data?.items ?? []).filter((run) => run.outcome === "PASS").length,
-    failed: (visualQa.data?.items ?? []).filter((run) => run.outcome === "FAIL").length,
-    review: (visualQa.data?.items ?? []).filter((run) => run.outcome === "REVIEW").length,
-    hardFailures: (visualQa.data?.items ?? []).filter((run) => run.hard_failure).length,
+    total: visualQaRuns.length,
+    passed: visualQaRuns.filter((run) => run.outcome === "PASS").length,
+    failed: visualQaRuns.filter((run) => run.outcome === "FAIL").length,
+    review: visualQaRuns.filter((run) => run.outcome === "REVIEW").length,
+    hardFailures: visualQaRuns.filter((run) => run.hard_failure).length,
   };
 
   return (
