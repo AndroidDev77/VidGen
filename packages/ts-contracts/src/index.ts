@@ -1448,3 +1448,43 @@ export interface PipelineFailureListItem {
 export interface PipelineFailureListResponse {
   items: PipelineFailureListItem[];
 }
+
+export type ReferenceWorkflowStatus =
+  | "references_queued"
+  | "references_selecting"
+  | "references_building"
+  | "references_generating"
+  | "references_validating"
+  | "references_awaiting_approval"
+  | "references_binding"
+  | "references_complete"
+  | "references_failed"
+  | "references_cancelled";
+
+export interface ReferenceWorkflowInput {
+  schema_version: "1.0";
+  project_id: UUID;
+  episode_analysis_id: UUID;
+  storyboard_run_id: UUID;
+  reference_run_id: UUID;
+  idempotency_key: string;
+  trace_context: Record<string, string>;
+}
+
+export interface ReferenceApprovalSignal {
+  schema_version: "1.0";
+  project_id: UUID;
+  reference_run_id: UUID;
+  approval_id: UUID;
+  idempotency_key: string;
+}
+
+export interface ReferenceWorkflowResult {
+  schema_version: "1.0";
+  project_id: UUID;
+  reference_run_id: UUID;
+  status: ReferenceWorkflowStatus;
+  approved_version_ids: UUID[];
+  affected_shot_ids: UUID[];
+  cancelled: boolean;
+}

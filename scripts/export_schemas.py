@@ -199,6 +199,14 @@ from vidgen.contracts.continuity import (
     ReferenceValidationReport,
     ShotReferenceBundle,
 )
+from vidgen.contracts.continuity_workflow import (
+    ApplyReferencesCommand,
+    BuildReferencesCommand,
+    ReferenceApprovalSignal,
+    ReferenceDraftResult,
+    ReferenceWorkflowInput,
+    ReferenceWorkflowResult,
+)
 from vidgen.contracts.costs import (
     BudgetDecisionResult,
     BudgetPolicy,
@@ -263,6 +271,8 @@ from vidgen.contracts.telemetry import (
 ROOT = Path(__file__).resolve().parents[1]
 OUTPUT = ROOT / "packages" / "contracts" / "schema"
 CONTRACTS = (
+    ApplyReferencesCommand,
+    BuildReferencesCommand,
     CandidateScores,
     CharacterIdentityBible,
     CharacterIdentityVersion,
@@ -280,9 +290,13 @@ CONTRACTS = (
     LocationReferenceSet,
     LocationStateSnapshot,
     ReferenceApproval,
+    ReferenceApprovalSignal,
+    ReferenceDraftResult,
     ReferenceBundleItem,
     ReferenceGenerationRequest,
     ReferenceGenerationResult,
+    ReferenceWorkflowInput,
+    ReferenceWorkflowResult,
     ReferenceInvalidation,
     ReferenceValidationDiagnostic,
     ReferenceValidationReport,

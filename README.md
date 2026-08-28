@@ -16,8 +16,13 @@ T19 continuity references are in progress. The additive implementation defines e
 immutable character/location identity versions, interval-scoped temporary state, deterministic
 source-frame ranking and reference compaction, shot-bundle identities, owner-scoped review
 projections, and a `continuity_references_v1` T14 adapter. Projects without an approved bundle keep
-the unchanged legacy image-generation behavior. T19 remains incomplete until provider execution,
-durable approval orchestration, downstream stale transitions, and its acceptance fixture are green.
+the unchanged legacy image-generation behavior. T19 now also reuses the T14 provider boundary,
+technical validation and immutable `AssetService` writes with T23 attempt/budget accounting; waits
+durably for an idempotent human approval signal; and marks only affected T14/T15 outputs and the
+T17 render stale before dispatching content-bound T16 regeneration commands. The deterministic
+ten-shot acceptance fixture covers future-state isolation, anonymous identities, T14 injection,
+targeted regeneration, historical preservation and retry accounting. T19 remains in progress until
+review and required CI/integration checks are green.
 
 - Python monorepo, CI, and local infrastructure
 - Versioned Pydantic contracts plus exported JSON Schema

@@ -13,8 +13,11 @@ from uuid import UUID, uuid4
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
+from services.continuity.bindings import make_bundle
+from services.continuity.regeneration import ContinuityRegenerator
 from tests.review_fixtures import SHOT_COUNT, ProjectGraph, build_project_graph
 from vidgen.db.animation_models import AnimationGeneratedVideo, AnimationItem
 from vidgen.db.models import Project
@@ -134,6 +137,43 @@ def test_reference_build_requires_concurrency_and_is_idempotent(
     second = client.post(path, headers=mutation_headers, json=payload)
     assert first.status_code == second.status_code == 202
     assert first.json() == second.json()
+
+
+def test_reference_application_stales_and_regenerates_only_affected_shot(
+    graph: ProjectGraph,
+    review_client: tuple[TestClient, sessionmaker[Session], FakeWorkflowController],
+) -> None:
+    _, factory, _ = review_client
+    affected = graph.shot_ids[0]
+    calls: list[tuple[UUID, str, str]] = []
+    with factory() as session:
+        bundle = make_bundle(
+            project_id=graph.project_id,
+            storyboard_run_id=graph.storyboard_run_id,
+            shot_id=affected,
+            shot_sequence=0,
+            references=[],
+            provider_reference_limit=4,
+        )
+        report = ContinuityRegenerator(
+            session, lambda shot, digest, key: calls.append((shot, digest, key))
+        ).apply(
+            project_id=graph.project_id,
+            bundles=[bundle],
+            idempotency_key="apply-reference-v2",
+        )
+        session.commit()
+        selected_siblings = session.scalars(
+            select(AnimationGeneratedVideo.shot_id).where(
+                AnimationGeneratedVideo.project_id == graph.project_id,
+                AnimationGeneratedVideo.selected.is_(True),
+            )
+        ).all()
+    assert report.affected_shot_ids == [affected]
+    assert affected not in selected_siblings
+    assert set(selected_siblings) == set(graph.shot_ids[1:])
+    assert calls == [(affected, bundle.bundle_hash, calls[0][2])]
+    assert bundle.bundle_hash in calls[0][2]
 
 
 def test_asset_download_requires_project_ownership(client: TestClient, graph: ProjectGraph) -> None:
