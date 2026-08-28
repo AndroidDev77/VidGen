@@ -1,0 +1,65 @@
+{
+  "additionalProperties": false,
+  "description": "One approved T19 reference offered to the visual agent for comparison.",
+  "properties": {
+    "asset_id": {
+      "format": "uuid",
+      "title": "Asset Id",
+      "type": "string"
+    },
+    "entity_id": {
+      "format": "uuid",
+      "title": "Entity Id",
+      "type": "string"
+    },
+    "identity_version_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Identity Version Id"
+    },
+    "label": {
+      "default": "",
+      "maxLength": 128,
+      "title": "Label",
+      "type": "string"
+    },
+    "role": {
+      "enum": [
+        "character_identity",
+        "character_state",
+        "location_identity",
+        "location_state",
+        "prop"
+      ],
+      "title": "Role",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "sha256": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Sha256",
+      "type": "string"
+    }
+  },
+  "required": [
+    "asset_id",
+    "sha256",
+    "role",
+    "entity_id"
+  ],
+  "title": "VisualQAReferenceDescriptor",
+  "type": "object"
+}

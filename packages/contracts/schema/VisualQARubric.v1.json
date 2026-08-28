@@ -1,0 +1,75 @@
+{
+  "$defs": {
+    "VisualQADimension": {
+      "enum": [
+        "character_identity",
+        "character_count",
+        "location",
+        "wardrobe_and_state",
+        "action_and_motion",
+        "composition",
+        "anatomy_and_artifacts",
+        "continuity_and_style"
+      ],
+      "title": "VisualQADimension",
+      "type": "string"
+    },
+    "VisualQARubricDimension": {
+      "additionalProperties": false,
+      "properties": {
+        "dimension": {
+          "$ref": "#/$defs/VisualQADimension"
+        },
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "weight": {
+          "maximum": 100,
+          "minimum": 0,
+          "title": "Weight",
+          "type": "number"
+        }
+      },
+      "required": [
+        "dimension",
+        "weight"
+      ],
+      "title": "VisualQARubricDimension",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "The authoritative weighted rubric. Total weight is exactly 100.",
+  "properties": {
+    "dimensions": {
+      "items": {
+        "$ref": "#/$defs/VisualQARubricDimension"
+      },
+      "maxItems": 16,
+      "minItems": 1,
+      "title": "Dimensions",
+      "type": "array"
+    },
+    "rubric_version": {
+      "maxLength": 64,
+      "minLength": 1,
+      "title": "Rubric Version",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    }
+  },
+  "required": [
+    "rubric_version",
+    "dimensions"
+  ],
+  "title": "VisualQARubric",
+  "type": "object"
+}

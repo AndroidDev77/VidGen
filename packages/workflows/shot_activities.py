@@ -49,6 +49,18 @@ def run_shot_keyframe(request: ShotWorkflowInput) -> ShotWorkflowProgress:
     return cast(ShotWorkflowProgress, _run("run_shot_keyframe", request))
 
 
+@activity.defn(name="run_shot_keyframe_qa")
+def run_shot_keyframe_qa(request: ShotWorkflowInput) -> ShotWorkflowProgress:
+    """Invoke or resume T20 keyframe QA; a blocked keyframe never animates."""
+    return cast(ShotWorkflowProgress, _run("run_shot_keyframe_qa", request))
+
+
+@activity.defn(name="run_shot_video_qa")
+def run_shot_video_qa(request: ShotWorkflowInput) -> ShotWorkflowProgress:
+    """Invoke or resume T20 video QA; a blocked clip never reaches LOCKED."""
+    return cast(ShotWorkflowProgress, _run("run_shot_video_qa", request))
+
+
 @activity.defn(name="run_shot_animation")
 def run_shot_animation(request: ShotWorkflowInput) -> ShotWorkflowResult:
     """Invoke/resume T15, including polling an already persisted remote task."""
@@ -69,7 +81,9 @@ SHOT_ACTIVITIES = [
     resolve_shot_fanout,
     resolve_shot_input,
     run_shot_keyframe,
+    run_shot_keyframe_qa,
     run_shot_animation,
+    run_shot_video_qa,
     persist_shot_checkpoint,
     persist_shot_fanout_checkpoint,
 ]

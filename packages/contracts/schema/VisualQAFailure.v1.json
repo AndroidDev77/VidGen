@@ -1,0 +1,73 @@
+{
+  "$defs": {
+    "VisualQAFailureCode": {
+      "description": "Non-retryable structural failures raised before any paid request.",
+      "enum": [
+        "project_not_found",
+        "storyboard_not_selected",
+        "stale_storyboard_version",
+        "shot_not_found",
+        "cross_project_asset",
+        "stale_generation_attempt",
+        "unselected_generation_attempt",
+        "missing_keyframe",
+        "missing_canonical_video",
+        "incompatible_reference_version",
+        "missing_state_snapshot",
+        "missing_reference_bundle",
+        "asset_hash_mismatch",
+        "incomplete_shot_workflow",
+        "mixed_lineage",
+        "unsupported_media",
+        "missing_qa_configuration",
+        "identity_conflict",
+        "unvalidated_provider_output"
+      ],
+      "title": "VisualQAFailureCode",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "description": "A structured, non-retryable T20 lineage or configuration failure.",
+  "properties": {
+    "code": {
+      "$ref": "#/$defs/VisualQAFailureCode"
+    },
+    "message": {
+      "maxLength": 500,
+      "minLength": 1,
+      "title": "Message",
+      "type": "string"
+    },
+    "reference_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Reference Id"
+    },
+    "retryable": {
+      "default": false,
+      "title": "Retryable",
+      "type": "boolean"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    }
+  },
+  "required": [
+    "code",
+    "message"
+  ],
+  "title": "VisualQAFailure",
+  "type": "object"
+}

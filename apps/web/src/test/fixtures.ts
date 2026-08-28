@@ -12,6 +12,10 @@ import type {
   StoryboardProjection,
   StoryboardShotProjection,
   TranscriptProjection,
+  VisualQACollectionResponse,
+  VisualQAEvidenceResponse,
+  VisualQARunDetailProjection,
+  VisualQARunProjection,
   WorkflowStatusProjection,
 } from "@vidgen/contracts";
 import { PIPELINE_STAGE_ORDER } from "@vidgen/contracts";
@@ -389,5 +393,165 @@ export function projectEvent(
     failure_code: null,
     created_at: "2026-08-01T09:05:00Z",
     ...overrides,
+  };
+}
+
+
+// --- T20 visual QA -----------------------------------------------------------
+const QA_DIMENSIONS = [
+  ["character_identity", 25],
+  ["character_count", 10],
+  ["location", 10],
+  ["wardrobe_and_state", 10],
+  ["action_and_motion", 15],
+  ["composition", 10],
+  ["anatomy_and_artifacts", 10],
+  ["continuity_and_style", 10],
+] as const;
+
+export function visualQaRun(
+  index: number,
+  overrides: Partial<VisualQARunProjection> = {},
+): VisualQARunProjection {
+  return {
+    qa_run_id: uuid(700 + index, 9),
+    project_id: PROJECT_ID,
+    shot_id: uuid(index, 6),
+    target_type: "video",
+    status: "visual_qa_complete",
+    outcome: "FAIL",
+    score: 82.5,
+    pass_threshold: 85,
+    importance: "normal",
+    hard_failure: true,
+    repair_recommendation: "NEW_SEED",
+    repair_codes: ["WRONG_CHARACTER_IDENTITY"],
+    warning_codes: ["excessive_freeze"],
+    confidence: 0.91,
+    adjudicated: true,
+    human_review_decision: null,
+    provider: "fake",
+    model: "fake-visual-qa/1",
+    cost_microusd: 24_000,
+    rubric_version: "visual-qa-rubric/1.0",
+    threshold_version: "visual-qa-thresholds/1.0",
+    sampling_version: "visual-qa-sampler/1.0",
+    sample_count: 12,
+    deterministic_warning_count: 2,
+    row_version: 3,
+    created_at: "2026-08-02T11:00:00Z",
+    completed_at: "2026-08-02T11:01:00Z",
+    ...overrides,
+  };
+}
+
+export function visualQaDetail(
+  index: number,
+  overrides: Partial<VisualQARunDetailProjection> = {},
+): VisualQARunDetailProjection {
+  return {
+    ...visualQaRun(index),
+    dimensions: QA_DIMENSIONS.map(([dimension, weight]) => ({
+      dimension,
+      applicable: true,
+      raw_score: dimension === "character_identity" ? 40 : 95,
+      weight,
+      effective_weight: weight,
+      weighted_contribution:
+        ((dimension === "character_identity" ? 40 : 95) * weight) / 100,
+      confidence: 0.9,
+      warning_codes: [],
+      hard_failure_codes: dimension === "character_identity" ? ["WRONG_CHARACTER_IDENTITY"] : [],
+      repair_codes: dimension === "character_identity" ? ["WRONG_CHARACTER_IDENTITY"] : [],
+      finding_summaries:
+        dimension === "character_identity"
+          ? ["The subject does not match the approved identity reference."]
+          : [],
+    })),
+    diagnostics: [
+      {
+        code: "freeze_ratio",
+        outcome: "warning",
+        diagnostic_code: "excessive_freeze",
+        measurement: 0.51,
+        threshold: 0.35,
+        evidence_timestamp_us: 1_500_000,
+        repair_code: "EXCESSIVE_FREEZE",
+        message: "",
+      },
+    ],
+    samples: [
+      {
+        sample_id: uuid(800 + index, 9),
+        sequence: 0,
+        sample_type: "first_frame",
+        requested_timestamp_us: 0,
+        actual_timestamp_us: 0,
+        shot_relative_timestamp_us: 0,
+        frame_asset_id: uuid(900 + index, 6),
+        frame_sha256: HASH,
+        selection_reason: "first decodable frame",
+        contact_sheet_position: 0,
+      },
+    ],
+    compared_reference_asset_ids: [uuid(950 + index, 6)],
+    contact_sheet_asset_id: uuid(960 + index, 6),
+    report_asset_id: uuid(970 + index, 6),
+    adjudication: {
+      policy_version: "visual-qa-adjudication/1.0",
+      triggered_by: ["first-pass character_identity confidence 0.62 is below 0.70"],
+      first_pass_provider: "fake",
+      first_pass_model: "fake-visual-qa/1",
+      adjudicator_provider: "fake",
+      adjudicator_model: "fake-visual-qa-adjudicator/1",
+      adjudicator_confidence: 0.86,
+      decided: true,
+      disagreement_summary: [],
+      resulting_outcome_hint: "FAIL",
+      attempts_used: 1,
+    },
+    ...overrides,
+  };
+}
+
+export function visualQaCollection(index: number): VisualQACollectionResponse {
+  return {
+    project_id: PROJECT_ID,
+    items: [
+      visualQaRun(index, {
+        qa_run_id: uuid(600 + index, 9),
+        target_type: "keyframe",
+        outcome: "PASS",
+        score: 96,
+        hard_failure: false,
+        repair_codes: [],
+        repair_recommendation: "NONE",
+      }),
+      visualQaRun(index),
+    ],
+  };
+}
+
+export function visualQaEvidence(index: number): VisualQAEvidenceResponse {
+  const detail = visualQaDetail(index);
+  return {
+    qa_run_id: detail.qa_run_id,
+    items: [
+      {
+        evidence_id: uuid(1000 + index, 9),
+        finding_id: uuid(1100 + index, 9),
+        evidence_type: "reference_comparison",
+        sample_id: detail.samples[0]!.sample_id,
+        frame_asset_id: detail.samples[0]!.frame_asset_id,
+        shot_relative_timestamp_us: 1_500_000,
+        source_relative_timestamp_us: 1_500_000,
+        contact_sheet_position: 0,
+        bounding_box: { x: 0.1, y: 0.2, width: 0.3, height: 0.4 },
+        compared_reference_asset_id: detail.compared_reference_asset_ids[0]!,
+        confidence: 0.93,
+        explanation: "Face geometry does not match the approved identity version.",
+      },
+    ],
+    samples: detail.samples,
   };
 }

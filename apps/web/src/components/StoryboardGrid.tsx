@@ -10,7 +10,7 @@ import {
   tokens,
 } from "@fluentui/react-components";
 import type { JSX } from "react";
-import type { StoryboardShotProjection } from "@vidgen/contracts";
+import type { StoryboardShotProjection, VisualQARunProjection } from "@vidgen/contracts";
 
 import { formatMicroseconds, formatMoney, formatTimecode, humanize } from "../state/format";
 import { StatusBadge } from "./StatusBadge";
@@ -50,6 +50,8 @@ export interface StoryboardGridProps {
   readonly onSelect: (shotId: string) => void;
   /** Resolved keyframe previews, keyed by asset ID; requested just in time. */
   readonly previewUrls: ReadonlyMap<string, string>;
+  /** The canonical T20 visual-QA runs for this project, keyed by shot ID. */
+  readonly visualQaByShot?: ReadonlyMap<string, readonly VisualQARunProjection[]>;
 }
 
 /**
@@ -64,6 +66,7 @@ export function StoryboardGrid({
   selectedShotId,
   onSelect,
   previewUrls,
+  visualQaByShot,
 }: StoryboardGridProps): JSX.Element {
   const styles = useStyles();
   return (
@@ -108,6 +111,21 @@ export function StoryboardGrid({
                     {humanize(shot.warning_code)}
                   </Badge>
                 )}
+                {(visualQaByShot?.get(shot.shot_id) ?? []).map((run) => (
+                  <Badge
+                    key={run.qa_run_id}
+                    appearance={run.outcome === "PASS" ? "outline" : "filled"}
+                    color={
+                      run.outcome === "PASS"
+                        ? "success"
+                        : run.outcome === "REVIEW"
+                          ? "warning"
+                          : "danger"
+                    }
+                  >
+                    {`${humanize(run.target_type)} QA ${run.outcome ?? "pending"}`}
+                  </Badge>
+                ))}
               </div>
               <Body1>{shot.visual_objective}</Body1>
               <Caption1>

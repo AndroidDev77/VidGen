@@ -17,6 +17,7 @@ from apps.api.routes import (
     storyboards,
     transcripts,
     uploads,
+    visual_qa,
     workflows,
 )
 from apps.api.settings import get_settings
@@ -50,6 +51,7 @@ def create_app() -> FastAPI:
         shots,
         renders,
         reviews,
+        visual_qa,
     ):
         application.include_router(module.router, prefix="/api/v1")
     register_error_handlers(application)

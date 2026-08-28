@@ -1,0 +1,202 @@
+{
+  "$defs": {
+    "VisualQASample": {
+      "additionalProperties": false,
+      "description": "One deterministically selected, decoded and hashed frame.",
+      "properties": {
+        "actual_timestamp_us": {
+          "minimum": 0,
+          "title": "Actual Timestamp Us",
+          "type": "integer"
+        },
+        "contact_sheet_position": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Contact Sheet Position"
+        },
+        "frame_asset_id": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Frame Asset Id"
+        },
+        "frame_sha256": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Frame Sha256",
+          "type": "string"
+        },
+        "measurements": {
+          "additionalProperties": {
+            "type": "number"
+          },
+          "title": "Measurements",
+          "type": "object"
+        },
+        "requested_timestamp_us": {
+          "minimum": 0,
+          "title": "Requested Timestamp Us",
+          "type": "integer"
+        },
+        "sample_id": {
+          "format": "uuid",
+          "title": "Sample Id",
+          "type": "string"
+        },
+        "sample_type": {
+          "$ref": "#/$defs/VisualQASampleType"
+        },
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "selection_reason": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Selection Reason",
+          "type": "string"
+        },
+        "sequence": {
+          "minimum": 0,
+          "title": "Sequence",
+          "type": "integer"
+        },
+        "shot_relative_timestamp_us": {
+          "minimum": 0,
+          "title": "Shot Relative Timestamp Us",
+          "type": "integer"
+        },
+        "source_asset_id": {
+          "format": "uuid",
+          "title": "Source Asset Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "sample_id",
+        "sequence",
+        "sample_type",
+        "requested_timestamp_us",
+        "actual_timestamp_us",
+        "shot_relative_timestamp_us",
+        "frame_sha256",
+        "source_asset_id",
+        "selection_reason"
+      ],
+      "title": "VisualQASample",
+      "type": "object"
+    },
+    "VisualQASampleType": {
+      "description": "Why the deterministic sampler selected a timestamp.",
+      "enum": [
+        "keyframe_image",
+        "first_frame",
+        "last_frame",
+        "midpoint",
+        "coverage",
+        "clause_boundary",
+        "action_boundary",
+        "camera_change",
+        "transition_boundary",
+        "action_window",
+        "high_motion",
+        "low_motion",
+        "deterministic_warning",
+        "face_track",
+        "ocr"
+      ],
+      "title": "VisualQASampleType",
+      "type": "string"
+    },
+    "VisualQATargetType": {
+      "description": "Keyframe and video QA are independent identities, never one merged run.",
+      "enum": [
+        "keyframe",
+        "video"
+      ],
+      "title": "VisualQATargetType",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "description": "The complete, ordered, deduplicated sample plan bound into QA identity.",
+  "properties": {
+    "contact_sheet_asset_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Contact Sheet Asset Id"
+    },
+    "contact_sheet_columns": {
+      "default": 4,
+      "maximum": 8,
+      "minimum": 1,
+      "title": "Contact Sheet Columns",
+      "type": "integer"
+    },
+    "measured_duration_us": {
+      "minimum": 0,
+      "title": "Measured Duration Us",
+      "type": "integer"
+    },
+    "samples": {
+      "items": {
+        "$ref": "#/$defs/VisualQASample"
+      },
+      "maxItems": 64,
+      "title": "Samples",
+      "type": "array"
+    },
+    "sampling_version": {
+      "maxLength": 64,
+      "minLength": 1,
+      "title": "Sampling Version",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "source_asset_id": {
+      "format": "uuid",
+      "title": "Source Asset Id",
+      "type": "string"
+    },
+    "target_type": {
+      "$ref": "#/$defs/VisualQATargetType"
+    }
+  },
+  "required": [
+    "sampling_version",
+    "target_type",
+    "source_asset_id",
+    "measured_duration_us"
+  ],
+  "title": "VisualQASamplingManifest",
+  "type": "object"
+}

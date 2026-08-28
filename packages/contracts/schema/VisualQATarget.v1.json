@@ -1,0 +1,187 @@
+{
+  "$defs": {
+    "VisualQAShotImportance": {
+      "enum": [
+        "utility",
+        "normal",
+        "hero"
+      ],
+      "title": "VisualQAShotImportance",
+      "type": "string"
+    },
+    "VisualQATargetType": {
+      "description": "Keyframe and video QA are independent identities, never one merged run.",
+      "enum": [
+        "keyframe",
+        "video"
+      ],
+      "title": "VisualQATargetType",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Exactly one evaluated asset with its authoritative lineage.",
+  "properties": {
+    "canonical_shot_hash": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Canonical Shot Hash",
+      "type": "string"
+    },
+    "character_identity_version_ids": {
+      "items": {
+        "format": "uuid",
+        "type": "string"
+      },
+      "maxItems": 32,
+      "title": "Character Identity Version Ids",
+      "type": "array"
+    },
+    "character_reference_asset_ids": {
+      "items": {
+        "format": "uuid",
+        "type": "string"
+      },
+      "maxItems": 64,
+      "title": "Character Reference Asset Ids",
+      "type": "array"
+    },
+    "character_state_snapshot_hashes": {
+      "items": {
+        "pattern": "^[a-f0-9]{64}$",
+        "type": "string"
+      },
+      "maxItems": 32,
+      "title": "Character State Snapshot Hashes",
+      "type": "array"
+    },
+    "importance": {
+      "$ref": "#/$defs/VisualQAShotImportance"
+    },
+    "location_identity_version_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Location Identity Version Id"
+    },
+    "location_reference_asset_ids": {
+      "items": {
+        "format": "uuid",
+        "type": "string"
+      },
+      "maxItems": 32,
+      "title": "Location Reference Asset Ids",
+      "type": "array"
+    },
+    "location_state_snapshot_hash": {
+      "anyOf": [
+        {
+          "pattern": "^[a-f0-9]{64}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Location State Snapshot Hash"
+    },
+    "media_type": {
+      "maxLength": 128,
+      "minLength": 1,
+      "title": "Media Type",
+      "type": "string"
+    },
+    "project_id": {
+      "format": "uuid",
+      "title": "Project Id",
+      "type": "string"
+    },
+    "requested_generation_duration_us": {
+      "minimum": 0,
+      "title": "Requested Generation Duration Us",
+      "type": "integer"
+    },
+    "required_props": {
+      "items": {
+        "type": "string"
+      },
+      "maxItems": 16,
+      "title": "Required Props",
+      "type": "array"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "shot_reference_bundle_hash": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Shot Reference Bundle Hash",
+      "type": "string"
+    },
+    "shot_sequence": {
+      "minimum": 0,
+      "title": "Shot Sequence",
+      "type": "integer"
+    },
+    "shot_workflow_identity": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Shot Workflow Identity",
+      "type": "string"
+    },
+    "storyboard_run_id": {
+      "format": "uuid",
+      "title": "Storyboard Run Id",
+      "type": "string"
+    },
+    "storyboard_shot_id": {
+      "format": "uuid",
+      "title": "Storyboard Shot Id",
+      "type": "string"
+    },
+    "target_asset_id": {
+      "format": "uuid",
+      "title": "Target Asset Id",
+      "type": "string"
+    },
+    "target_asset_sha256": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Target Asset Sha256",
+      "type": "string"
+    },
+    "target_type": {
+      "$ref": "#/$defs/VisualQATargetType"
+    },
+    "usable_duration_us": {
+      "minimum": 0,
+      "title": "Usable Duration Us",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "project_id",
+    "storyboard_run_id",
+    "storyboard_shot_id",
+    "shot_sequence",
+    "target_type",
+    "target_asset_id",
+    "target_asset_sha256",
+    "media_type",
+    "shot_workflow_identity",
+    "canonical_shot_hash",
+    "shot_reference_bundle_hash",
+    "importance",
+    "usable_duration_us",
+    "requested_generation_duration_us"
+  ],
+  "title": "VisualQATarget",
+  "type": "object"
+}

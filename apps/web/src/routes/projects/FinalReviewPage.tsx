@@ -8,6 +8,7 @@ import {
   makeStyles,
   tokens,
 } from "@fluentui/react-components";
+import type { VisualQARunProjection } from "@vidgen/contracts";
 import { useEffect, useState, type JSX } from "react";
 import { useSearchParams } from "react-router-dom";
 
@@ -17,6 +18,7 @@ import { getRender } from "../../api/renders";
 import { approveRender } from "../../api/reviews";
 import { getDownloadUrl } from "../../api/uploads";
 import { useApiClient } from "../../app/apiContext";
+import { getProjectVisualQa } from "../../api/visualQa";
 import { ApprovalBar } from "../../components/ApprovalBar";
 import { AssetDownloadMenu } from "../../components/AssetDownloadMenu";
 import { CaptionControls } from "../../components/CaptionControls";
@@ -46,6 +48,11 @@ export function FinalReviewPage(): JSX.Element {
   const captionsEnabled = searchParams.get("captions") !== "off";
   const [downloadError, setDownloadError] = useState<unknown>(null);
 
+  const visualQa = useQuery({
+    queryKey: queryKeys.visualQa(projectId),
+    queryFn: ({ signal }) => getProjectVisualQa(projectId, client, signal).then((r) => r.data),
+    enabled: projectId !== "",
+  });
   const render = useQuery({
     queryKey: queryKeys.render(projectId),
     queryFn: ({ signal }) => getRender(projectId, client, signal).then((r) => r.data),
@@ -111,6 +118,25 @@ export function FinalReviewPage(): JSX.Element {
     setSearchParams(next, { replace: true });
   };
 
+  // A shot is render-eligible only with a passing canonical video-QA result, or
+  // a REVIEW result a human approved. Mirror the backend gate exactly: judge the
+  // most recent completed video run per shot, and count shots, not runs.
+  const latestVideoRunByShot = new Map<string, VisualQARunProjection>();
+  for (const run of visualQa.data?.items ?? []) {
+    if (run.target_type !== "video" || run.outcome === null) {
+      continue;
+    }
+    const previous = latestVideoRunByShot.get(run.shot_id);
+    if (previous === undefined || run.created_at >= previous.created_at) {
+      latestVideoRunByShot.set(run.shot_id, run);
+    }
+  }
+  const qaBlockers = [...latestVideoRunByShot.values()].filter(
+    (run) =>
+      run.outcome === "FAIL" ||
+      (run.outcome === "REVIEW" && run.human_review_decision !== "approved"),
+  );
+
   return (
     <div>
       <ProjectStatusHeader
@@ -141,6 +167,19 @@ export function FinalReviewPage(): JSX.Element {
 
       {render.isSuccess && render.data.status === "render_complete" && (
         <div className={styles.layout}>
+          {qaBlockers.length > 0 && (
+            <MessageBar intent="error">
+              <MessageBarBody>
+                <MessageBarTitle>Visual QA blocks a new render</MessageBarTitle>
+                {`${qaBlockers.length} shot${qaBlockers.length === 1 ? "" : "s"} `}
+                {qaBlockers.length === 1 ? "has " : "have "}
+                {"a blocking or unresolved T20 visual-QA result. This render is preserved "}
+                {"as a historical record; a new render cannot complete until every shot has a "}
+                {"passing canonical video-QA result."}
+              </MessageBarBody>
+            </MessageBar>
+          )}
+
           {render.data.stale && (
             <MessageBar intent="warning">
               <MessageBarBody>

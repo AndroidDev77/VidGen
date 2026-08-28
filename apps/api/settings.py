@@ -25,6 +25,13 @@ class APISettings(BaseSettings):
     script_editor_model: str = "gpt-5.6"
     storyboard_model: str = "gpt-5.6"
     image_model: str = "gpt-image-2-2026-04-21"
+    # T20 visual QA. The design names two roles - Luna for the first pass and
+    # Terra for adjudication - and the separation is a policy separation: an
+    # independent attempt, a different prompt, and a higher confidence bar. Both
+    # default to the model this repository already has configured and verified;
+    # check the provider's current official documentation before changing one.
+    visual_qa_first_pass_model: str = "gpt-5.6"
+    visual_qa_adjudicator_model: str = "gpt-5.6"
     runway_api_secret: str | None = None
     visual_capability_profile: str = "runway-gen4-turbo"
     # Provider names as bound into the T16 child-workflow identity.

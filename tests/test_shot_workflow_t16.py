@@ -168,6 +168,7 @@ async def test_temporal_ten_shot_concurrency_and_targeted_retry() -> None:
     active = 0
     maximum_active = 0
     all_started = asyncio.Event()
+    persisted_checkpoints: dict[UUID, ShotWorkflowProgress] = {}
 
     async def resolve_fanout(_: ProjectShotFanoutInput) -> ResolveShotFanoutResult:
         return ResolveShotFanoutResult(shots=shots)
@@ -217,7 +218,30 @@ async def test_temporal_ten_shot_concurrency_and_targeted_retry() -> None:
             selected_video_asset_id=UUID(int=4000 + sequence),
         )
 
+    async def keyframe_qa(request: ShotWorkflowInput) -> ShotWorkflowProgress:
+        """T20 keyframe gate: this fixture's shots all pass."""
+        return ShotWorkflowProgress(
+            state=ShotWorkflowStatus.KEYFRAME_QA,
+            current_stage="t20_keyframe_qa",
+            current_attempt=1,
+            t14_run_id=UUID(int=1000 + request.workflow_identity.shot_sequence),
+            selected_keyframe_asset_id=UUID(int=2000 + request.workflow_identity.shot_sequence),
+            last_checkpoint="keyframe_qa_pass",
+        )
+
+    async def video_qa(request: ShotWorkflowInput) -> ShotWorkflowProgress:
+        """T20 video gate: this fixture's shots all pass."""
+        return ShotWorkflowProgress(
+            state=ShotWorkflowStatus.VIDEO_QA,
+            current_stage="t20_video_qa",
+            current_attempt=1,
+            last_checkpoint="video_qa_pass",
+        )
+
     async def checkpoint(value: ShotWorkflowProgress) -> ShotWorkflowProgress:
+        assert value.selected_keyframe_asset_id is not None
+        assert value.selected_video_asset_id is not None
+        persisted_checkpoints[value.selected_keyframe_asset_id] = value
         return value
 
     async def fanout_checkpoint(value: ProjectShotFanoutResult) -> ProjectShotFanoutResult:
@@ -230,7 +254,9 @@ async def test_temporal_ten_shot_concurrency_and_targeted_retry() -> None:
         named("resolve_shot_fanout", resolve_fanout),
         named("resolve_shot_input", resolve_shot),
         named("run_shot_keyframe", keyframe),
+        named("run_shot_keyframe_qa", keyframe_qa),
         named("run_shot_animation", animation),
+        named("run_shot_video_qa", video_qa),
         named("persist_shot_checkpoint", checkpoint),
         named("persist_shot_fanout_checkpoint", fanout_checkpoint),
     ]
@@ -296,6 +322,9 @@ async def test_temporal_ten_shot_concurrency_and_targeted_retry() -> None:
             )
             result = await handle.result()
             assert result.status == "shot_generation_complete"
+            assert len(persisted_checkpoints) == 10
+            assert all(item.t14_run_id is not None for item in persisted_checkpoints.values())
+            assert all(item.t15_run_id is not None for item in persisted_checkpoints.values())
             assert result.locked_count == 10
             assert all(value == 1 for value in t14_calls.values())
             assert t15_calls[failed.storyboard_shot_id] == 2

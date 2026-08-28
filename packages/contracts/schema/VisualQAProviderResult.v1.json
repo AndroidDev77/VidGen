@@ -1,0 +1,370 @@
+{
+  "$defs": {
+    "VisualQAAttemptType": {
+      "enum": [
+        "first_pass",
+        "adjudication"
+      ],
+      "title": "VisualQAAttemptType",
+      "type": "string"
+    },
+    "VisualQABoundingBox": {
+      "additionalProperties": false,
+      "properties": {
+        "height": {
+          "exclusiveMinimum": 0,
+          "maximum": 1,
+          "title": "Height",
+          "type": "number"
+        },
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "width": {
+          "exclusiveMinimum": 0,
+          "maximum": 1,
+          "title": "Width",
+          "type": "number"
+        },
+        "x": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "X",
+          "type": "number"
+        },
+        "y": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Y",
+          "type": "number"
+        }
+      },
+      "required": [
+        "x",
+        "y",
+        "width",
+        "height"
+      ],
+      "title": "VisualQABoundingBox",
+      "type": "object"
+    },
+    "VisualQADimension": {
+      "enum": [
+        "character_identity",
+        "character_count",
+        "location",
+        "wardrobe_and_state",
+        "action_and_motion",
+        "composition",
+        "anatomy_and_artifacts",
+        "continuity_and_style"
+      ],
+      "title": "VisualQADimension",
+      "type": "string"
+    },
+    "VisualQAProviderDimensionScore": {
+      "additionalProperties": false,
+      "description": "A proposal. Application code, not the provider, owns the canonical score.",
+      "properties": {
+        "applicable": {
+          "default": true,
+          "title": "Applicable",
+          "type": "boolean"
+        },
+        "confidence": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Confidence",
+          "type": "number"
+        },
+        "dimension": {
+          "$ref": "#/$defs/VisualQADimension"
+        },
+        "raw_score": {
+          "maximum": 100,
+          "minimum": 0,
+          "title": "Raw Score",
+          "type": "number"
+        },
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "summary": {
+          "default": "",
+          "maxLength": 500,
+          "title": "Summary",
+          "type": "string"
+        }
+      },
+      "required": [
+        "dimension",
+        "raw_score",
+        "confidence"
+      ],
+      "title": "VisualQAProviderDimensionScore",
+      "type": "object"
+    },
+    "VisualQAProviderFinding": {
+      "additionalProperties": false,
+      "properties": {
+        "bounding_box": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/VisualQABoundingBox"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "code": {
+          "maxLength": 64,
+          "minLength": 1,
+          "title": "Code",
+          "type": "string"
+        },
+        "compared_reference_asset_id": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Compared Reference Asset Id"
+        },
+        "confidence": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Confidence",
+          "type": "number"
+        },
+        "dimension": {
+          "$ref": "#/$defs/VisualQADimension"
+        },
+        "proposed_correction": {
+          "default": "",
+          "maxLength": 500,
+          "title": "Proposed Correction",
+          "type": "string"
+        },
+        "repair_codes": {
+          "items": {
+            "$ref": "#/$defs/VisualQARepairCode"
+          },
+          "maxItems": 8,
+          "title": "Repair Codes",
+          "type": "array"
+        },
+        "sample_ids": {
+          "items": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "maxItems": 16,
+          "title": "Sample Ids",
+          "type": "array"
+        },
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "severity": {
+          "enum": [
+            "info",
+            "warning",
+            "hard_failure"
+          ],
+          "title": "Severity",
+          "type": "string"
+        },
+        "summary": {
+          "maxLength": 500,
+          "minLength": 1,
+          "title": "Summary",
+          "type": "string"
+        }
+      },
+      "required": [
+        "dimension",
+        "severity",
+        "code",
+        "summary",
+        "confidence"
+      ],
+      "title": "VisualQAProviderFinding",
+      "type": "object"
+    },
+    "VisualQARepairCode": {
+      "description": "The bounded taxonomy T21 consumes. Adding a member is a version change.",
+      "enum": [
+        "WRONG_CHARACTER_IDENTITY",
+        "MISSING_PRIMARY_CHARACTER",
+        "EXTRA_CHARACTER",
+        "WRONG_CHARACTER_COUNT",
+        "WRONG_WARDROBE",
+        "WRONG_CHARACTER_STATE",
+        "WRONG_LOCATION",
+        "WRONG_LOCATION_STATE",
+        "MISSING_REQUIRED_PROP",
+        "WRONG_PROP_OWNERSHIP",
+        "MISSING_MANDATORY_ACTION",
+        "WRONG_ACTION",
+        "INSUFFICIENT_MOTION",
+        "EXCESSIVE_MOTION",
+        "CAMERA_PLAN_MISMATCH",
+        "COMPOSITION_MISMATCH",
+        "SCREEN_DIRECTION_CONTRADICTION",
+        "FACE_BREAKAGE",
+        "ANATOMY_BREAKAGE",
+        "UNINTENDED_TEXT",
+        "STYLE_DRIFT",
+        "CONTINUITY_BREAK",
+        "BLACK_VIDEO",
+        "EXCESSIVE_FREEZE",
+        "EXCESSIVE_FLICKER",
+        "DURATION_MISMATCH",
+        "DECODE_FAILURE",
+        "PROMPT_TOO_COMPLEX",
+        "TOO_MANY_CHARACTERS",
+        "TOO_MANY_REFERENCES",
+        "AMBIGUOUS_VISUAL_EVIDENCE",
+        "HUMAN_REVIEW_REQUIRED"
+      ],
+      "title": "VisualQARepairCode",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Exactly what a visual agent may return. No overall score is accepted.",
+  "properties": {
+    "attempt_type": {
+      "$ref": "#/$defs/VisualQAAttemptType"
+    },
+    "contract_version": {
+      "const": "visual-qa/1.0",
+      "default": "visual-qa/1.0",
+      "title": "Contract Version",
+      "type": "string"
+    },
+    "dimension_scores": {
+      "items": {
+        "$ref": "#/$defs/VisualQAProviderDimensionScore"
+      },
+      "maxItems": 16,
+      "minItems": 1,
+      "title": "Dimension Scores",
+      "type": "array"
+    },
+    "findings": {
+      "items": {
+        "$ref": "#/$defs/VisualQAProviderFinding"
+      },
+      "maxItems": 64,
+      "title": "Findings",
+      "type": "array"
+    },
+    "model": {
+      "maxLength": 128,
+      "minLength": 1,
+      "title": "Model",
+      "type": "string"
+    },
+    "overall_confidence": {
+      "maximum": 1,
+      "minimum": 0,
+      "title": "Overall Confidence",
+      "type": "number"
+    },
+    "proposed_hard_failure_codes": {
+      "items": {
+        "type": "string"
+      },
+      "maxItems": 16,
+      "title": "Proposed Hard Failure Codes",
+      "type": "array"
+    },
+    "provider": {
+      "maxLength": 64,
+      "minLength": 1,
+      "title": "Provider",
+      "type": "string"
+    },
+    "provider_request_id": {
+      "anyOf": [
+        {
+          "maxLength": 255,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Provider Request Id"
+    },
+    "qa_attempt_identity": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Qa Attempt Identity",
+      "type": "string"
+    },
+    "redacted_metadata": {
+      "additionalProperties": {
+        "type": "string"
+      },
+      "title": "Redacted Metadata",
+      "type": "object"
+    },
+    "repair_codes": {
+      "items": {
+        "$ref": "#/$defs/VisualQARepairCode"
+      },
+      "maxItems": 16,
+      "title": "Repair Codes",
+      "type": "array"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "usage": {
+      "additionalProperties": {
+        "type": "number"
+      },
+      "title": "Usage",
+      "type": "object"
+    },
+    "warning_codes": {
+      "items": {
+        "type": "string"
+      },
+      "maxItems": 16,
+      "title": "Warning Codes",
+      "type": "array"
+    }
+  },
+  "required": [
+    "qa_attempt_identity",
+    "attempt_type",
+    "dimension_scores",
+    "overall_confidence",
+    "provider",
+    "model"
+  ],
+  "title": "VisualQAProviderResult",
+  "type": "object"
+}

@@ -22,6 +22,13 @@ export const queryKeys = {
     ["projects", projectId, "shots", shotId] as const,
   shotStatus: (projectId: string, shotId: string) =>
     ["projects", projectId, "shots", shotId, "status"] as const,
+  visualQa: (projectId: string) => ["projects", projectId, "visual-qa"] as const,
+  shotVisualQa: (projectId: string, shotId: string) =>
+    ["projects", projectId, "shots", shotId, "visual-qa"] as const,
+  visualQaRun: (projectId: string, shotId: string, qaRunId: string) =>
+    ["projects", projectId, "shots", shotId, "visual-qa", qaRunId] as const,
+  visualQaEvidence: (projectId: string, shotId: string, qaRunId: string) =>
+    ["projects", projectId, "shots", shotId, "visual-qa", qaRunId, "evidence"] as const,
   render: (projectId: string) => ["projects", projectId, "render"] as const,
   costs: (projectId: string) => ["projects", projectId, "costs"] as const,
   providerAttempts: (projectId: string) =>

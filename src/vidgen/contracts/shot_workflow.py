@@ -40,6 +40,10 @@ class ShotFailureClass(StrEnum):
     UNSUPPORTED_CAPABILITY = "unsupported_capability"
     CORRUPT_PROVIDER_OUTPUT = "corrupt_provider_output"
     TECHNICAL_VALIDATION_FAILURE = "technical_validation_failure"
+    # T20 semantic outcomes. A blocked shot is never retried automatically: T21
+    # owns repair, and a review-required shot waits for a human decision.
+    VISUAL_QA_FAILURE = "visual_qa_failure"
+    VISUAL_QA_REVIEW_REQUIRED = "visual_qa_review_required"
     CANCELLATION = "cancellation"
     UNKNOWN_FAILURE = "unknown_failure"
 

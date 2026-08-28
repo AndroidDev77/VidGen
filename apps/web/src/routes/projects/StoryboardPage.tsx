@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { MessageBar, MessageBarBody, MessageBarTitle, makeStyles, tokens } from "@fluentui/react-components";
-import type { InvalidationSet } from "@vidgen/contracts";
-import { useEffect, useState, type JSX } from "react";
+import type { InvalidationSet, VisualQARunProjection } from "@vidgen/contracts";
+import { useCallback, useEffect, useMemo, useState, type JSX } from "react";
 import { useSearchParams } from "react-router-dom";
 
 import { newIdempotencyKey } from "../../api/client";
@@ -15,12 +15,22 @@ import {
 } from "../../api/shots";
 import { getStoryboard } from "../../api/storyboards";
 import { getDownloadUrl } from "../../api/uploads";
+import {
+  decideVisualQa,
+  getProjectVisualQa,
+  getShotVisualQa,
+  getVisualQaEvidence,
+  getVisualQaRun,
+  runShotVisualQa,
+} from "../../api/visualQa";
 import { useApiClient } from "../../app/apiContext";
 import { ConfirmInvalidationDialog } from "../../components/ConfirmInvalidationDialog";
 import { ProjectStatusHeader } from "../../components/ProjectStatusHeader";
 import { ShotInspector } from "../../components/ShotInspector";
 import { StoryboardGrid } from "../../components/StoryboardGrid";
 import { TimelinePreview } from "../../components/TimelinePreview";
+import { VisualQAResultPanel } from "../../components/VisualQAResultPanel";
+import { VisualQAReviewDialog } from "../../components/VisualQAReviewDialog";
 import { EmptyState, ErrorState, LoadingState } from "../../components/states";
 import { useProjectContext } from "./useProjectContext";
 
@@ -52,6 +62,8 @@ export function StoryboardPage(): JSX.Element {
   const [pending, setPending] = useState<PendingAction>(null);
   const [invalidation, setInvalidation] = useState<InvalidationSet | null>(null);
   const [previewUrls, setPreviewUrls] = useState<ReadonlyMap<string, string>>(new Map());
+  const [selectedQaRunId, setSelectedQaRunId] = useState<string | null>(null);
+  const [qaDecision, setQaDecision] = useState<"approve" | "reject" | null>(null);
 
   const storyboard = useQuery({
     queryKey: queryKeys.storyboard(projectId),
@@ -65,6 +77,104 @@ export function StoryboardPage(): JSX.Element {
       getShot(projectId, selectedShotId ?? "", client, signal).then((r) => r.data),
     enabled: projectId !== "" && selectedShotId !== null,
   });
+
+  const visualQa = useQuery({
+    queryKey: queryKeys.shotVisualQa(projectId, selectedShotId ?? ""),
+    queryFn: ({ signal }) =>
+      getShotVisualQa(projectId, selectedShotId ?? "", client, signal).then((r) => r.data),
+    enabled: projectId !== "" && selectedShotId !== null,
+  });
+
+  const projectVisualQa = useQuery({
+    queryKey: queryKeys.visualQa(projectId),
+    queryFn: ({ signal }) =>
+      getProjectVisualQa(projectId, client, signal).then((r) => r.data),
+    enabled: projectId !== "",
+  });
+
+  const visualQaByShot = useMemo(() => {
+    const byShot = new Map<string, VisualQARunProjection[]>();
+    for (const run of projectVisualQa.data?.items ?? []) {
+      byShot.set(run.shot_id, [...(byShot.get(run.shot_id) ?? []), run]);
+    }
+    return byShot;
+  }, [projectVisualQa.data]);
+
+  const qaRun = useQuery({
+    queryKey: queryKeys.visualQaRun(projectId, selectedShotId ?? "", selectedQaRunId ?? ""),
+    queryFn: ({ signal }) =>
+      getVisualQaRun(projectId, selectedShotId ?? "", selectedQaRunId ?? "", client, signal).then(
+        (r) => r.data,
+      ),
+    enabled: projectId !== "" && selectedShotId !== null && selectedQaRunId !== null,
+  });
+
+  const qaEvidence = useQuery({
+    queryKey: queryKeys.visualQaEvidence(projectId, selectedShotId ?? "", selectedQaRunId ?? ""),
+    queryFn: ({ signal }) =>
+      getVisualQaEvidence(
+        projectId,
+        selectedShotId ?? "",
+        selectedQaRunId ?? "",
+        client,
+        signal,
+      ).then((r) => r.data),
+    enabled: projectId !== "" && selectedShotId !== null && selectedQaRunId !== null,
+  });
+
+  const invalidateVisualQa = (shotId: string) => {
+    void queryClient.invalidateQueries({ queryKey: queryKeys.shotVisualQa(projectId, shotId) });
+    void queryClient.invalidateQueries({ queryKey: queryKeys.visualQa(projectId) });
+  };
+
+  const startVisualQa = useMutation({
+    mutationFn: () =>
+      runShotVisualQa(
+        projectId,
+        selectedShotId ?? "",
+        shot.data?.shot.row_version ?? 1,
+        newIdempotencyKey(`visual-qa-run-${selectedShotId ?? ""}`),
+        ["keyframe", "video"],
+        client,
+      ),
+    onSuccess: () => invalidateVisualQa(selectedShotId ?? ""),
+  });
+
+  const decideQa = useMutation({
+    mutationFn: (input: { decision: "approve" | "reject"; reason: string }) =>
+      decideVisualQa(
+        projectId,
+        selectedShotId ?? "",
+        selectedQaRunId ?? "",
+        input.decision,
+        input.reason,
+        shot.data?.shot.row_version ?? 1,
+        newIdempotencyKey(`visual-qa-${input.decision}-${selectedQaRunId ?? ""}`),
+        client,
+      ),
+    onSuccess: () => {
+      setQaDecision(null);
+      invalidateVisualQa(selectedShotId ?? "");
+      invalidateShot(selectedShotId ?? "");
+    },
+    onError: () => setQaDecision(null),
+  });
+
+  // Evidence frames use the same short-lived signed URLs as the grid previews,
+  // requested only when a frame is about to be displayed.
+  // Memoised: the evidence viewer keys its fetch effect on this callback, so a
+  // new identity on every render would re-request signed URLs forever.
+  const resolveAssetUrl = useCallback(
+    async (assetId: string): Promise<string | null> => {
+      try {
+        const { data } = await getDownloadUrl(assetId, client);
+        return data.url;
+      } catch {
+        return null;
+      }
+    },
+    [client],
+  );
 
   // Keyframe previews use short-lived signed URLs, requested just before use
   // and held only in component state for this page view.
@@ -224,6 +334,7 @@ export function StoryboardPage(): JSX.Element {
               selectedShotId={selectedShotId}
               onSelect={selectShotId}
               previewUrls={previewUrls}
+              visualQaByShot={visualQaByShot}
             />
           </div>
           <aside className={styles.panel} aria-label="Shot inspector">
@@ -248,6 +359,20 @@ export function StoryboardPage(): JSX.Element {
                 onRefreshStatus={() => void shot.refetch()}
               />
             )}
+            {shot.isSuccess && selectedShotId !== null && (
+              <VisualQAResultPanel
+                runs={visualQa.data?.items ?? []}
+                selected={qaRun.data ?? null}
+                evidence={qaEvidence.data?.items ?? []}
+                evidenceSamples={qaEvidence.data?.samples ?? []}
+                busy={busy || startVisualQa.isPending || decideQa.isPending}
+                onSelectRun={setSelectedQaRunId}
+                onRunQa={() => startVisualQa.mutate()}
+                onApprove={() => setQaDecision("approve")}
+                onReject={() => setQaDecision("reject")}
+                resolveAssetUrl={resolveAssetUrl}
+              />
+            )}
           </aside>
         </div>
       )}
@@ -264,6 +389,17 @@ export function StoryboardPage(): JSX.Element {
         busy={regenerate.isPending}
         onCancel={() => setPending(null)}
         onConfirm={() => regenerate.mutate()}
+      />
+
+      <VisualQAReviewDialog
+        open={qaDecision !== null}
+        decision={qaDecision ?? "approve"}
+        busy={decideQa.isPending}
+        hardFailure={qaRun.data?.hard_failure ?? false}
+        onCancel={() => setQaDecision(null)}
+        onConfirm={(reason) =>
+          decideQa.mutate({ decision: qaDecision ?? "approve", reason })
+        }
       />
     </div>
   );

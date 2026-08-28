@@ -62,6 +62,44 @@ export const handlers: HttpHandler[] = [
     }
     return HttpResponse.json(fixtures.shotDetail(index));
   }),
+  http.get(`${project}/visual-qa`, () => HttpResponse.json(fixtures.visualQaCollection(0))),
+  http.get(`${project}/shots/:shotId/visual-qa`, ({ params }) => {
+    const index = fixtures.storyboard.shots.findIndex((shot) => shot.shot_id === params.shotId);
+    if (index < 0) {
+      return HttpResponse.json(apiError("not_found", "Shot not found."), { status: 404 });
+    }
+    return HttpResponse.json(fixtures.visualQaCollection(index));
+  }),
+  http.get(`${project}/shots/:shotId/visual-qa/:qaRunId`, () =>
+    HttpResponse.json(fixtures.visualQaDetail(0)),
+  ),
+  http.get(`${project}/shots/:shotId/visual-qa/:qaRunId/evidence`, () =>
+    HttpResponse.json(fixtures.visualQaEvidence(0)),
+  ),
+  http.post(`${project}/shots/:shotId/visual-qa:run`, ({ params }) =>
+    HttpResponse.json(
+      {
+        status: "queued",
+        project_id: fixtures.PROJECT_ID,
+        shot_id: params.shotId,
+        targets: ["keyframe", "video"],
+        resource_id: fixtures.uuid(1, 9),
+        row_version: 3,
+      },
+      { status: 202 },
+    ),
+  ),
+  // ``:approve`` and ``:reject`` are action suffixes on the run path, so the
+  // handler matches the raw URL rather than a path parameter.
+  http.post(/\/visual-qa\/[^/]+:(approve|reject)$/, ({ request }) =>
+    HttpResponse.json({
+      qa_run_id: new URL(request.url).pathname.split("/").at(-1)!.split(":")[0],
+      review_id: fixtures.uuid(2, 9),
+      decision: new URL(request.url).pathname.endsWith(":approve") ? "approved" : "rejected",
+      resulting_gate: "visual_qa_human_approved",
+      row_version: 4,
+    }),
+  ),
   http.get(`${project}/render`, () => HttpResponse.json(fixtures.render)),
   http.get(`${project}/costs`, () => HttpResponse.json(fixtures.costs)),
   http.get(`${project}/provider-attempts`, () => HttpResponse.json(fixtures.providerAttempts)),

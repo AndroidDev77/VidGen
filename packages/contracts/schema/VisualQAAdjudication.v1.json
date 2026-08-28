@@ -1,0 +1,109 @@
+{
+  "$defs": {
+    "VisualQAOutcome": {
+      "enum": [
+        "PASS",
+        "FAIL",
+        "REVIEW"
+      ],
+      "title": "VisualQAOutcome",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "description": "The bounded second opinion. Both the original and this result persist.",
+  "properties": {
+    "adjudication_id": {
+      "format": "uuid",
+      "title": "Adjudication Id",
+      "type": "string"
+    },
+    "adjudicator_confidence": {
+      "maximum": 1,
+      "minimum": 0,
+      "title": "Adjudicator Confidence",
+      "type": "number"
+    },
+    "adjudicator_model": {
+      "maxLength": 128,
+      "minLength": 1,
+      "title": "Adjudicator Model",
+      "type": "string"
+    },
+    "adjudicator_provider": {
+      "maxLength": 64,
+      "minLength": 1,
+      "title": "Adjudicator Provider",
+      "type": "string"
+    },
+    "attempts_used": {
+      "maximum": 3,
+      "minimum": 1,
+      "title": "Attempts Used",
+      "type": "integer"
+    },
+    "decided": {
+      "title": "Decided",
+      "type": "boolean"
+    },
+    "disagreement_summary": {
+      "items": {
+        "type": "string"
+      },
+      "maxItems": 16,
+      "title": "Disagreement Summary",
+      "type": "array"
+    },
+    "first_pass_model": {
+      "maxLength": 128,
+      "minLength": 1,
+      "title": "First Pass Model",
+      "type": "string"
+    },
+    "first_pass_provider": {
+      "maxLength": 64,
+      "minLength": 1,
+      "title": "First Pass Provider",
+      "type": "string"
+    },
+    "policy_version": {
+      "maxLength": 64,
+      "minLength": 1,
+      "title": "Policy Version",
+      "type": "string"
+    },
+    "resulting_outcome_hint": {
+      "$ref": "#/$defs/VisualQAOutcome"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "triggered_by": {
+      "items": {
+        "type": "string"
+      },
+      "maxItems": 8,
+      "minItems": 1,
+      "title": "Triggered By",
+      "type": "array"
+    }
+  },
+  "required": [
+    "adjudication_id",
+    "policy_version",
+    "triggered_by",
+    "first_pass_provider",
+    "first_pass_model",
+    "adjudicator_provider",
+    "adjudicator_model",
+    "adjudicator_confidence",
+    "decided",
+    "resulting_outcome_hint",
+    "attempts_used"
+  ],
+  "title": "VisualQAAdjudication",
+  "type": "object"
+}

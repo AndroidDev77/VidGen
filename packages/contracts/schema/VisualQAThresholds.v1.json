@@ -1,0 +1,79 @@
+{
+  "additionalProperties": false,
+  "description": "Versioned pass thresholds and the bounded adjudication policy.",
+  "properties": {
+    "adjudication_confidence_floor": {
+      "default": 0.7,
+      "maximum": 1,
+      "minimum": 0,
+      "title": "Adjudication Confidence Floor",
+      "type": "number"
+    },
+    "adjudication_decision_confidence": {
+      "default": 0.8,
+      "maximum": 1,
+      "minimum": 0,
+      "title": "Adjudication Decision Confidence",
+      "type": "number"
+    },
+    "hero_pass_score": {
+      "default": 90,
+      "maximum": 100,
+      "minimum": 0,
+      "title": "Hero Pass Score",
+      "type": "number"
+    },
+    "max_adjudication_attempts": {
+      "default": 1,
+      "maximum": 3,
+      "minimum": 0,
+      "title": "Max Adjudication Attempts",
+      "type": "integer"
+    },
+    "near_threshold_margin": {
+      "default": 2.0,
+      "maximum": 100,
+      "minimum": 0,
+      "title": "Near Threshold Margin",
+      "type": "number"
+    },
+    "normal_pass_score": {
+      "default": 85,
+      "maximum": 100,
+      "minimum": 0,
+      "title": "Normal Pass Score",
+      "type": "number"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "targeted_repair_floor": {
+      "default": 75,
+      "maximum": 100,
+      "minimum": 0,
+      "title": "Targeted Repair Floor",
+      "type": "number"
+    },
+    "threshold_version": {
+      "maxLength": 64,
+      "minLength": 1,
+      "title": "Threshold Version",
+      "type": "string"
+    },
+    "utility_pass_score": {
+      "default": 85,
+      "maximum": 100,
+      "minimum": 0,
+      "title": "Utility Pass Score",
+      "type": "number"
+    }
+  },
+  "required": [
+    "threshold_version"
+  ],
+  "title": "VisualQAThresholds",
+  "type": "object"
+}
