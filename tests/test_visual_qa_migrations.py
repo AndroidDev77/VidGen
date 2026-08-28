@@ -53,13 +53,13 @@ def test_upgrade_downgrade_upgrade_is_clean_with_no_drift(
     url = f"sqlite+pysqlite:///{tmp_path / 'visual-qa.db'}"
     monkeypatch.setenv("VIDGEN_DATABASE_URL", url)
     engine = create_engine(url)
-    command.upgrade(config(), "0016_visual_qa")
+    command.upgrade(config(), "head")
     assert T20_TABLES <= set(inspect(engine).get_table_names())
     # No schema drift between the ORM models and the migration chain.
     command.check(config())
     command.downgrade(config(), "0015_continuity_references")
     assert not T20_TABLES & set(inspect(engine).get_table_names())
-    command.upgrade(config(), "0016_visual_qa")
+    command.upgrade(config(), "head")
     assert T20_TABLES <= set(inspect(engine).get_table_names())
 
 

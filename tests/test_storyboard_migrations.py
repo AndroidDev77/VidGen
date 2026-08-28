@@ -45,7 +45,9 @@ def test_storyboard_migration_follows_the_narration_head() -> None:
     script = ScriptDirectory.from_config(_config())
     revision = script.get_revision("0010_storyboard")
     assert revision.down_revision == "0009_narration"
-    assert list(script.get_heads()) == ["0016_visual_qa"]
+    # The chain always has exactly one head; its name moves with each
+    # roadmap task, so assert the invariant rather than the current name.
+    assert len(script.get_heads()) == 1
 
 
 def test_storyboard_migration_up_down_up(tmp_path: Path, monkeypatch: MonkeyPatch) -> None:

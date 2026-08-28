@@ -63,6 +63,7 @@ from services.qa.repair_classifier import (
 from services.qa.repair_planner import (
     DeterministicRepairPlanner,
     PromptRepairRequest,
+    RepairPlanningError,
     RepairPromptPlanner,
     extract_constraints,
     prompt_hash,
@@ -288,11 +289,16 @@ class VisualRepairPipeline:
                 self._lock(run, attempt, current)
                 break
             attempt.status = RepairAttemptStatus.FAILED.value
-            attempt.output_qa_result_id = self._result_id(current)
             attempt.completed_at = datetime.now(UTC)
-            attempt.failure_category = classify(
-                current, context=self._classification_context(run, inputs)
-            ).category.value
+            if attempt.generated_video_id is not None:
+                # The attempt produced an output and T20 rejected it. An attempt
+                # that failed before producing anything already recorded its own
+                # failure code, and must not be credited with a QA result it
+                # never earned.
+                attempt.output_qa_result_id = self._result_id(current)
+                attempt.failure_category = classify(
+                    current, context=self._classification_context(run, inputs)
+                ).category.value
             self.session.commit()
         return self._outcome(run)
 
@@ -488,7 +494,8 @@ class VisualRepairPipeline:
                 completed_at=datetime.now(UTC),
             )
         )
-        run.total_attempt_count = 1
+        self.session.flush()
+        self._refresh_counters(run)
         self.session.flush()
 
     # --- routing ----------------------------------------------------------
@@ -559,7 +566,30 @@ class VisualRepairPipeline:
             self.session.commit()
             return None
         self.repository.mark_state(run, decision.state)
-        plan, attempt = self._plan(run, inputs, classification, decision.attempt_kind, estimate)
+        try:
+            plan, attempt = self._plan(run, inputs, classification, decision.attempt_kind, estimate)
+        except RepairPlanningError as error:
+            # A plan that cannot be validated is never submitted. The run stops
+            # for a human rather than spending an attempt on an unvalidated one.
+            self.session.rollback()
+            self.session.refresh(run)
+            self.repository.record_decision(
+                run,
+                route=RepairRoute.HUMAN_REVIEW_REQUIRED,
+                rationale=(f"no validated repair plan could be produced: {error}",),
+                planner_version=self.planner.version,
+                source_qa_result_id=self._result_id(result),
+                failure_category=classification.category.value,
+                human_review_reason=HumanReviewReason.DETERMINISTIC_FAILURE,
+            )
+            self.repository.mark_state(
+                run,
+                RepairRunState.HUMAN_REVIEW_REQUIRED,
+                human_review_reason=HumanReviewReason.DETERMINISTIC_FAILURE,
+                error_code="repair_plan_invalid",
+            )
+            self.session.commit()
+            return None
         self.session.commit()
         return plan, attempt
 
@@ -674,9 +704,22 @@ class VisualRepairPipeline:
         )
         self.session.add(attempt)
         self.session.flush()
-        run.total_attempt_count = len(self.repository.attempts(run.id))
+        self._refresh_counters(run)
         plan = self._plan_from(run, inputs, classification, attempt, estimate)
         return plan, attempt
+
+    def _refresh_counters(self, run: RepairRun) -> None:
+        """Keep the run's per-route counters in step with its attempts.
+
+        The counters are a projection of ``repair_attempts``, not a second source
+        of truth: the router always counts the rows. They exist so the dashboard
+        can show "two of two same-provider repairs spent" without re-deriving it.
+        """
+        counts = self.repository.counts(run.id)
+        run.total_attempt_count = sum(counts.values())
+        run.same_provider_repairs_used = counts[RepairAttemptKind.SAME_PROVIDER_REPAIR]
+        run.alternate_provider_attempts_used = counts[RepairAttemptKind.ALTERNATE_PROVIDER]
+        run.fallback_renders_used = counts[RepairAttemptKind.DETERMINISTIC_FALLBACK]
 
     def _plan_from(
         self,

@@ -453,13 +453,12 @@ class DeterministicRepairPlanner:
             else:
                 rewritten.append((constraint.clause, edit))
         added.extend(self._additions(classification))
-        seed_changed = structural or code in SEED_SENSITIVE
+        # A structural repair always redraws the sample, and so does a diagnostic
+        # whose cause is the draw rather than the wording. A diagnostic that
+        # implicates no clause at all - a provider timeout, say - is repaired by
+        # the new seed alone, so a valid minimal delta always exists.
+        seed_changed = structural or code in SEED_SENSITIVE or not (added or removed or rewritten)
         new_seed = derive_seed(request.attempt_identity) if seed_changed else None
-        if not (added or removed or rewritten) and not seed_changed:
-            # A repair that changes nothing would burn an attempt for free.
-            raise RepairPlanningError(
-                f"no bounded prompt repair exists for {code.value}; route it instead"
-            )
         repaired = apply_edits(
             request.constraints, added=added, removed=removed, rewritten=rewritten
         )

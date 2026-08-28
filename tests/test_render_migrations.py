@@ -22,7 +22,9 @@ def test_t17_is_single_head_and_upgrade_downgrade_upgrade(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     script = ScriptDirectory.from_config(config())
-    assert script.get_heads() == ["0016_visual_qa"]
+    # The chain always has exactly one head; its name moves with each
+    # roadmap task, so assert the invariant rather than the current name.
+    assert len(script.get_heads()) == 1
     assert script.get_revision("0013_render").down_revision == "0012_animation"
     url = f"sqlite+pysqlite:///{tmp_path / 'render.db'}"
     monkeypatch.setenv("VIDGEN_DATABASE_URL", url)
