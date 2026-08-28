@@ -169,7 +169,14 @@ async def run_visual_qa(
     failures: list[tuple[UUID, VisualQATargetType, str]] = []
     for shot in shots:
         for target in options.targets:
-            key = options.idempotency_key or f"visual-qa:{shot.id}:{target.value}"
+            # A supplied key scopes the whole request, so it is still qualified
+            # per shot and target: one key reused verbatim across shots would
+            # bind shot 2's inputs to shot 1's run and fail as a conflict.
+            key = (
+                f"{options.idempotency_key}:{shot.id}:{target.value}"
+                if options.idempotency_key
+                else f"visual-qa:{shot.id}:{target.value}"
+            )
             try:
                 results.append(
                     await pipeline.evaluate_shot(

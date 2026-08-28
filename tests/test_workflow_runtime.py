@@ -1,7 +1,7 @@
 from collections.abc import Awaitable, Callable
 from pathlib import Path
 from time import sleep
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 from pydantic import ValidationError
@@ -193,3 +193,67 @@ async def test_cancellation_during_final_activity_is_not_reported_as_success() -
             result = await handle.result()
             assert result.cancelled
             assert result.status == "cancelled"
+
+
+def test_a_keyless_worker_refuses_to_run_visual_qa_with_the_fake_agent(
+    tmp_path: Path,
+) -> None:
+    """The deterministic fake always passes, so it must never be a silent default.
+
+    Without a configured provider and without ``temporal_allow_fake_providers``,
+    the T20 gate must fail loudly rather than persist fabricated PASS rows as
+    canonical provenance.
+    """
+    from unittest.mock import patch
+
+    strict = APISettings(
+        database_url=f"sqlite:///{tmp_path / 'keyless.db'}",
+        blob_root=tmp_path / "blobs",
+        temporal_allow_fake_providers=False,
+        openai_api_key=None,
+    )
+    from workers.temporal_worker import production_handlers as module
+
+    with patch.object(module, "_authoritative_shot", return_value=(None, None)):
+        with pytest.raises(ValueError, match="visual-QA provider is not configured"):
+            module._run_shot_video_qa(
+                None,  # type: ignore[arg-type]
+                None,  # type: ignore[arg-type]
+                strict,
+                None,  # type: ignore[arg-type]
+                None,  # type: ignore[arg-type]
+                _shot_workflow_input().model_dump(mode="json"),
+            )
+
+
+def _shot_workflow_input() -> object:
+    """A minimal valid T16 input for the keyless-worker guard test."""
+    from packages.workflows.shot_policy import identity_hash
+    from vidgen.contracts.shot_workflow import ShotWorkflowIdentity, ShotWorkflowInput
+
+    material = {
+        "project_id": str(UUID(int=1)),
+        "storyboard_run_id": str(UUID(int=2)),
+        "storyboard_input_hash": "a" * 64,
+        "storyboard_shot_id": str(UUID(int=3)),
+        "canonical_shot_hash": "b" * 64,
+        "shot_sequence": 0,
+        "timing_manifest_hash": "c" * 64,
+        "t14_configuration_identity": "fake:image:1",
+        "t15_capability_profile_identity": "fake:video:1",
+        "t14_pipeline_version": "image-generation/1.0.0",
+        "t15_pipeline_version": "animation/1.0.0",
+        "t16_workflow_version": "t16/1",
+        "attempt_policy_version": "shot-attempt/1",
+    }
+    identity = ShotWorkflowIdentity.model_validate(
+        {**material, "identity_hash": identity_hash(material)}
+    )
+    return ShotWorkflowInput(
+        project_id=identity.project_id,
+        storyboard_run_id=identity.storyboard_run_id,
+        storyboard_shot_id=identity.storyboard_shot_id,
+        shot_input_hash=identity.identity_hash,
+        workflow_identity=identity,
+        idempotency_key="keyless-guard",
+    )

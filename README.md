@@ -849,9 +849,10 @@ completed QA results are reused after a worker restart, and a failed shot never 
 T17 render eligibility requires a passing canonical video-QA result for every shot of a project
 governed by the policy - a project is governed once any visual-QA run exists for it, so legacy
 projects and their historical renders are unaffected. A hard failure blocks outright and a `REVIEW`
-result blocks automatic completion until it is resolved. The manifest records the applicable QA
-result IDs and the policy version in `provenance`, which leaves existing manifest identity
-semantics unchanged.
+result blocks automatic completion until it is resolved. A manifest builder records the applicable
+QA result IDs, run IDs and the policy version in `provenance` through
+`services.renderer.selection.visual_qa_provenance`; because manifest identity excludes
+`provenance`, an existing render's identity is unchanged.
 
 The T18 shot inspector gains a visual-QA panel: keyframe and video outcomes, the recomputed score
 and applicable threshold, a hard-failure indicator, the dimension scorecard, confidence,

@@ -61,6 +61,12 @@ def graph(tmp_path: Path) -> Iterator[tuple[Session, FilesystemBlobStore, Visual
         yield session, store, fixture
 
 
+def session_for(
+    graph: tuple[Session, FilesystemBlobStore, VisualQAFixture],
+) -> Session:
+    return graph[0]
+
+
 def run_one(
     session: Session,
     store: FilesystemBlobStore,
@@ -198,27 +204,61 @@ def test_changing_a_material_input_produces_a_new_qa_identity(
     assert first.qa_identity != second.qa_identity
 
 
-def test_reusing_an_idempotency_key_for_different_inputs_is_rejected(
+def test_a_supplied_idempotency_key_is_scoped_per_shot_and_target(
     graph: tuple[Session, FilesystemBlobStore, VisualQAFixture],
 ) -> None:
+    """One CLI key must not bind every shot to the first shot's run."""
     session, store, fixture = graph
-    run_one(session, store, fixture, index=0, key="shared-key")
-    outcome = asyncio.run(
-        run_visual_qa(
-            session,
-            store,
+    results = []
+    for index in range(2):
+        outcome = asyncio.run(
+            run_visual_qa(
+                session,
+                store,
+                project_id=fixture.project_id,
+                options=VisualQACommandOptions(
+                    provider="fake",
+                    shot_id=fixture.shot_ids[index],
+                    targets=(VisualQATargetType.KEYFRAME, VisualQATargetType.VIDEO),
+                    idempotency_key="one-key-for-the-run",
+                ),
+                identity_resolver=resolver,
+            )
+        )
+        assert outcome.failures == (), outcome.failures
+        results.extend(outcome.results)
+    assert len(results) == 4
+    # Four distinct runs: the shared key is qualified per shot and target.
+    assert len({item.qa_run_id for item in results}) == 4
+    assert len({item.qa_identity for item in results}) == 4
+
+
+def test_one_key_bound_to_different_material_inputs_is_rejected(
+    graph: tuple[Session, FilesystemBlobStore, VisualQAFixture],
+) -> None:
+    """The pipeline still refuses to rebind a key to different material inputs."""
+    session, store, fixture = graph
+    pipeline = VisualQAPipeline(
+        session, store, FakeVisualAgent(), shot_workflow_identity_resolver=resolver
+    )
+    asyncio.run(
+        pipeline.evaluate_shot(
             project_id=fixture.project_id,
-            options=VisualQACommandOptions(
-                provider="fake",
-                shot_id=fixture.shot_ids[1],
-                targets=(VisualQATargetType.VIDEO,),
-                idempotency_key="shared-key",
-            ),
-            identity_resolver=resolver,
+            shot_id=fixture.shot_ids[0],
+            target_type=VisualQATargetType.VIDEO,
+            idempotency_key="exact-key",
         )
     )
-    assert outcome.results == ()
-    assert [code for _, _, code in outcome.failures] == [VisualQAFailureCode.IDENTITY_CONFLICT]
+    with pytest.raises(VisualQALineageError) as error:
+        asyncio.run(
+            pipeline.evaluate_shot(
+                project_id=fixture.project_id,
+                shot_id=fixture.shot_ids[1],
+                target_type=VisualQATargetType.VIDEO,
+                idempotency_key="exact-key",
+            )
+        )
+    assert error.value.code is VisualQAFailureCode.IDENTITY_CONFLICT
 
 
 def test_a_completed_run_is_reused_without_a_second_provider_call(
@@ -620,3 +660,138 @@ def test_a_run_row_cannot_record_a_hard_failure_without_failing(
             .values(hard_failure=True, final_outcome="PASS")
         )
     session.rollback()
+
+
+def test_render_manifest_provenance_names_the_qa_results_without_changing_identity(
+    graph: tuple[Session, FilesystemBlobStore, VisualQAFixture],
+) -> None:
+    """The documented compatibility rule, proved on a real manifest.
+
+    A manifest builder records the applicable QA result IDs and the policy
+    version through ``visual_qa_provenance``. Because manifest identity excludes
+    ``provenance``, adding it leaves an existing render's identity untouched.
+    """
+    from datetime import UTC, datetime
+
+    from services.renderer.manifest import bound_manifest_identity
+    from services.renderer.selection import (
+        VISUAL_QA_POLICY_VERSION,
+        AuthoritativeRenderSelection,
+        SelectedShotInput,
+        visual_qa_provenance,
+    )
+    from vidgen.contracts.render import (
+        RenderAudioEntry,
+        RenderInputReference,
+        RenderManifest,
+        RenderShotEntry,
+    )
+
+    session, store, fixture = graph
+    result = run_one(session, store, fixture, key="manifest-provenance")
+    repository = VisualQARepository(session)
+    run = repository.run_by_identity(result.qa_identity)
+    assert run is not None
+    canonical = repository.canonical_result(run.id)
+    assert canonical is not None
+
+    shot = SelectedShotInput(
+        shot=object(),  # type: ignore[arg-type]
+        animation_run=object(),  # type: ignore[arg-type]
+        video=object(),  # type: ignore[arg-type]
+        asset=object(),  # type: ignore[arg-type]
+        visual_qa_run_id=run.id,
+        visual_qa_result_id=canonical.id,
+    )
+    selection = AuthoritativeRenderSelection(
+        project=object(),  # type: ignore[arg-type]
+        script=object(),  # type: ignore[arg-type]
+        narration=object(),  # type: ignore[arg-type]
+        narration_segments=(),
+        storyboard=object(),  # type: ignore[arg-type]
+        timing_manifest_asset=object(),  # type: ignore[arg-type]
+        shots=(shot,),
+        visual_qa_result_ids=(canonical.id,),
+    )
+    provenance = visual_qa_provenance(selection)
+    assert provenance["visual_qa"] == {
+        "policy_version": VISUAL_QA_POLICY_VERSION,
+        "result_ids": [str(canonical.id)],
+        "run_ids": [str(run.id)],
+    }
+
+    reference = RenderInputReference(
+        asset_id=uuid4(), sha256="a" * 64, media_type="video/mp4", role="shot_video"
+    )
+    base = RenderManifest(
+        manifest_id=uuid4(),
+        render_identity="0" * 64,
+        project_id=fixture.project_id,
+        approved_script_id=uuid4(),
+        approved_script_version=1,
+        approved_script_hash="a" * 64,
+        narration_run_id=uuid4(),
+        narration_assets=[
+            RenderInputReference(
+                asset_id=uuid4(),
+                sha256="b" * 64,
+                media_type="audio/wav",
+                role="narration_preview",
+            )
+        ],
+        narration_word_timing_hash="c" * 64,
+        narration_duration_us=3_000_000,
+        storyboard_run_id=fixture.storyboard_run_id,
+        storyboard_hash="d" * 64,
+        timing_manifest_id=uuid4(),
+        timing_manifest_hash="e" * 64,
+        t16_result_id="fixture-locked",
+        shots=[
+            RenderShotEntry(
+                shot_id=fixture.shot_ids[0],
+                sequence=0,
+                shot_workflow_identity="f" * 64,
+                animation_run_id=uuid4(),
+                video=reference,
+                source_width=320,
+                source_height=180,
+                source_frame_rate="24/1",
+                source_codec="h264",
+                measured_source_duration_us=3_000_000,
+                global_start_us=0,
+                global_end_us=3_000_000,
+                exact_usable_duration_us=3_000_000,
+                trim_end_us=3_000_000,
+            )
+        ],
+        caption_track_id=uuid4(),
+        caption_identity="1" * 64,
+        caption_assets=[
+            RenderInputReference(
+                asset_id=uuid4(),
+                sha256="2" * 64,
+                media_type="application/x-subrip",
+                role="caption_srt",
+            ),
+            RenderInputReference(
+                asset_id=uuid4(), sha256="3" * 64, media_type="text/vtt", role="caption_webvtt"
+            ),
+        ],
+        audio_entries=[
+            RenderAudioEntry(
+                role="narration",
+                asset=RenderInputReference(
+                    asset_id=uuid4(),
+                    sha256="4" * 64,
+                    media_type="audio/wav",
+                    role="narration",
+                ),
+                duration_us=3_000_000,
+            )
+        ],
+        input_hash="5" * 64,
+        idempotency_key="manifest-provenance",
+        created_at=datetime.now(UTC),
+    )
+    governed = base.model_copy(update={"provenance": provenance})
+    assert bound_manifest_identity(governed) == bound_manifest_identity(base)

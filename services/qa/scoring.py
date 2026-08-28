@@ -13,6 +13,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass
+from typing import Any
 from uuid import UUID
 
 from services.qa.evidence import (
@@ -45,6 +46,7 @@ from vidgen.contracts.visual_qa import (
     VisualQAShotImportance,
     VisualQAThresholds,
 )
+from vidgen.contracts.visual_qa import VisualQADimensionResult as _DimensionResult
 
 
 @dataclass(frozen=True, slots=True)
@@ -64,6 +66,24 @@ class ScoringOutcome:
         return bool(self.hard_failure_codes)
 
 
+def _limit(field: str) -> int:
+    """The contract's own bound for one ``VisualQADimensionResult`` collection."""
+    metadata = _DimensionResult.model_fields[field].metadata
+    for entry in metadata:
+        limit = getattr(entry, "max_length", None)
+        if limit is not None:
+            return int(limit)
+    raise KeyError(field)  # pragma: no cover - every bounded field declares one
+
+
+def _bounded(values: list[Any], field: str) -> list[Any]:
+    return values[: _limit(field)]
+
+
+def _severity_rank(finding: VisualQAFinding) -> int:
+    return {"hard_failure": 0, "warning": 1, "info": 2}[finding.severity]
+
+
 def _dimension_findings(
     provider: VisualQAProviderResult,
     dimension: VisualQADimension,
@@ -72,7 +92,7 @@ def _dimension_findings(
 ) -> list[VisualQAFinding]:
     by_id = {sample.sample_id: sample for sample in samples}
     findings: list[VisualQAFinding] = []
-    for item in provider.findings:
+    for ordinal, item in enumerate(provider.findings):
         if item.dimension is not dimension:
             continue
         evidence: list[VisualQAEvidence] = []
@@ -87,7 +107,7 @@ def _dimension_findings(
                     confidence=item.confidence,
                     bounding_box=item.bounding_box,
                     compared_reference_asset_id=item.compared_reference_asset_id,
-                    finding_code=item.code,
+                    finding_code=f"{item.code}:{ordinal}",
                 )
             )
         severity = item.severity
@@ -100,7 +120,11 @@ def _dimension_findings(
             repair_codes = [DIMENSION_DEFAULT_REPAIR[dimension]]
         findings.append(
             VisualQAFinding(
-                finding_id=deterministic_id("finding", evaluator, dimension.value, item.code),
+                # The ordinal keeps two findings that share a dimension, a code
+                # and a cited frame from collapsing onto one primary key.
+                finding_id=deterministic_id(
+                    "finding", evaluator, dimension.value, item.code, ordinal
+                ),
                 dimension=dimension,
                 severity=severity,
                 code=item.code,
@@ -183,6 +207,7 @@ def build_dimension_results(
         proposal = proposals.get(dimension)
         findings = _dimension_findings(provider, dimension, samples, provider.model)
         findings.extend(_deterministic_findings(report, dimension, samples, source_asset_id))
+        findings.sort(key=_severity_rank)
         if not applicable[dimension]:
             results.append(
                 VisualQADimensionResult(
@@ -229,10 +254,15 @@ def build_dimension_results(
                 effective_weight=effective,
                 weighted_contribution=raw * effective / 100,
                 confidence=proposal.confidence if proposal else 0.0,
-                findings=findings,
-                warning_codes=warning_codes,
-                hard_failure_codes=[code.value for code in hard_codes],
-                repair_codes=repair_codes,
+                # A provider may return more findings than one dimension result
+                # may carry. Blocking findings are kept first, so truncation can
+                # never drop the evidence that fails the shot.
+                findings=_bounded(findings, "findings"),
+                warning_codes=_bounded(warning_codes, "warning_codes"),
+                hard_failure_codes=_bounded(
+                    [code.value for code in hard_codes], "hard_failure_codes"
+                ),
+                repair_codes=_bounded(repair_codes, "repair_codes"),
                 evaluator=provider.provider,
                 model=provider.model,
                 rubric_version=rubric.rubric_version,

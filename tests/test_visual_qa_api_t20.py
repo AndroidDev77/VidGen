@@ -232,3 +232,53 @@ def test_a_stale_if_match_is_a_conflict(
         headers={**OWNER, "Idempotency-Key": "reject-1", "If-Match": "99"},
     )
     assert response.status_code == 409
+
+
+def test_evidence_bounding_boxes_project_only_their_coordinates(
+    qa_client: tuple[TestClient, sessionmaker[Session], VisualQAFixture],
+) -> None:
+    """The stored payload carries a schema version, which is not a coordinate."""
+    from vidgen.db.visual_qa_models import VisualQAEvidenceRecord
+
+    client, factory, fixture = qa_client
+    with factory() as session:
+        repository = VisualQARepository(session)
+        run = repository.runs_for_shot(fixture.project_id, fixture.shot_ids[1])[0]
+        result = repository.canonical_result(run.id)
+        assert result is not None
+        from datetime import UTC, datetime
+        from uuid import uuid4
+
+        session.add(
+            VisualQAEvidenceRecord(
+                id=uuid4(),
+                qa_result_id=result.id,
+                finding_id=uuid4(),
+                sample_id=repository.samples(run.id)[0].id,
+                shot_relative_timestamp_us=1_500_000,
+                source_relative_timestamp_us=1_500_000,
+                # As persisted by the contract: coordinates plus a schema version.
+                bounding_box={
+                    "schema_version": "1.0",
+                    "x": 0.1,
+                    "y": 0.2,
+                    "width": 0.3,
+                    "height": 0.4,
+                },
+                evidence_type="sample_frame",
+                confidence=0.9,
+                explanation="",
+                created_at=datetime.now(UTC),
+            )
+        )
+        session.commit()
+        run_id = run.id
+
+    response = client.get(
+        f"/api/v1/projects/{fixture.project_id}/shots/{fixture.shot_ids[1]}"
+        f"/visual-qa/{run_id}/evidence",
+        headers=OWNER,
+    )
+    assert response.status_code == 200
+    boxes = [item["bounding_box"] for item in response.json()["items"] if item["bounding_box"]]
+    assert boxes == [{"x": 0.1, "y": 0.2, "width": 0.3, "height": 0.4}]

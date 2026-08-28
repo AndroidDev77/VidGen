@@ -271,8 +271,17 @@ def _run_shot_visual_qa(
 ) -> ShotWorkflowProgress:
     """Run or resume one T20 gate. A completed run is reused, never repaid for."""
     _, shot = _authoritative_shot(session, request)
+    if settings.openai_api_key:
+        provider = "openai"
+    elif settings.temporal_allow_fake_providers:
+        provider = "fake"
+    else:
+        # The deterministic fake always passes. Falling back to it silently would
+        # turn the whole gate into a no-op and persist fabricated PASS rows as
+        # canonical provenance, so a keyless worker fails loudly instead.
+        raise ValueError("T20 visual-QA provider is not configured")
     options = VisualQACommandOptions(
-        provider="openai" if settings.openai_api_key else "fake",
+        provider=provider,
         openai_api_key=settings.openai_api_key,
         first_pass_model=settings.visual_qa_first_pass_model,
         adjudicator_model=settings.visual_qa_adjudicator_model,

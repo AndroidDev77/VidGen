@@ -308,9 +308,11 @@ class VisualQAPipeline:
                     report,
                     manifest,
                     VisualQAAttemptType.ADJUDICATION,
-                    attempt_number=self.repository.next_attempt_number(
-                        run.id, VisualQAAttemptType.ADJUDICATION
-                    ),
+                    # Fixed, not "next": the attempt number is part of the
+                    # attempt identity, so deriving it from the row count would
+                    # mint a new identity on every resume and buy a second paid
+                    # adjudication. The policy allows one, so it is always one.
+                    attempt_number=1,
                     disagreements=triggers.disagreements,
                 )
                 adjudicated, attempt = await self._evaluate(
@@ -800,15 +802,10 @@ class VisualQAPipeline:
             self.session.commit()  # durable pre-call checkpoint
             call = VisualAgentCall(
                 request=request,
-                frames=tuple(
-                    EvidenceFrame(
-                        sample_id=sample.sample_id,
-                        sequence=sample.sequence,
-                        shot_relative_timestamp_us=sample.shot_relative_timestamp_us,
-                        content=frame.content,
-                    )
-                    for sample, frame in zip(request.samples, decoded, strict=False)
-                ),
+                # Pair by decoded timestamp, never by position: a resumed run can
+                # decode a different frame count, and a positional zip would
+                # attach the wrong sample ID to a frame.
+                frames=_evidence_frames(request.samples, decoded),
                 references=tuple(self._reference_images(inputs)),
                 first_pass=first_pass,
             )
@@ -1151,8 +1148,9 @@ class VisualQAPipeline:
     def _prior_outcome(
         self, inputs: AuthoritativeQAInputs, run: VisualQARun
     ) -> VisualQAOutcome | None:
-        """A previous completed QA result for the same target, if one exists."""
-        for previous in self.repository.runs_for_shot(inputs.project.id, run.shot_id):
+        """The most recent completed QA result for the same target, if one exists."""
+        history = self.repository.runs_for_shot(inputs.project.id, run.shot_id)
+        for previous in reversed(history):
             if (
                 previous.id != run.id
                 and previous.target_type == run.target_type
@@ -1232,6 +1230,27 @@ class _MaterializedAsset:
 
     def cleanup(self) -> None:
         self._directory.cleanup()
+
+
+def _evidence_frames(
+    samples: Sequence[VisualQASampleReference], decoded: Sequence[DecodedSample]
+) -> tuple[EvidenceFrame, ...]:
+    """Attach frame bytes to the samples they were actually decoded for."""
+    by_timestamp = {frame.actual_timestamp_us: frame for frame in decoded}
+    frames: list[EvidenceFrame] = []
+    for sample in samples:
+        frame = by_timestamp.get(sample.source_relative_timestamp_us)
+        if frame is None:
+            continue
+        frames.append(
+            EvidenceFrame(
+                sample_id=sample.sample_id,
+                sequence=sample.sequence,
+                shot_relative_timestamp_us=sample.shot_relative_timestamp_us,
+                content=frame.content,
+            )
+        )
+    return tuple(frames)
 
 
 def _aware(value: datetime | None) -> datetime:

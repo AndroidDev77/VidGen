@@ -1128,3 +1128,62 @@ def test_contracts_reject_credentials_and_unbounded_payloads() -> None:
 
 def test_result_timestamps_must_be_timezone_aware() -> None:
     assert datetime.now(UTC).tzinfo is not None
+
+
+# --- regressions from review -------------------------------------------------
+def test_two_findings_sharing_a_dimension_code_and_frame_stay_distinct() -> None:
+    """Colliding IDs would insert two evidence rows on one primary key."""
+    result = provider_result(
+        findings=[
+            {
+                "dimension": VisualQADimension.CHARACTER_IDENTITY,
+                "severity": "warning",
+                "code": "identity_drift",
+                "summary": "the face drifts",
+                "sample_ids": [UUID(int=1)],
+            },
+            {
+                "dimension": VisualQADimension.CHARACTER_IDENTITY,
+                "severity": "warning",
+                "code": "identity_drift",
+                "summary": "the hair drifts",
+                "sample_ids": [UUID(int=1)],
+            },
+        ]
+    )
+    dimensions, _ = _score(result)
+    identity = next(
+        item for item in dimensions if item.dimension is VisualQADimension.CHARACTER_IDENTITY
+    )
+    assert len(identity.findings) == 2
+    assert len({finding.finding_id for finding in identity.findings}) == 2
+    evidence_ids = [item.evidence_id for finding in identity.findings for item in finding.evidence]
+    assert len(set(evidence_ids)) == len(evidence_ids)
+
+
+def test_more_provider_findings_than_the_contract_allows_are_bounded() -> None:
+    """A verbose provider must not make the dimension result unconstructable."""
+    result = provider_result(
+        findings=[
+            {
+                "dimension": VisualQADimension.ANATOMY_AND_ARTIFACTS,
+                "severity": "hard_failure" if index == 20 else "warning",
+                "code": f"artifact_{index}",
+                "summary": f"artifact {index}",
+                "repair_codes": [VisualQARepairCode.ANATOMY_BREAKAGE],
+                "sample_ids": [UUID(int=1)],
+            }
+            for index in range(24)
+        ]
+    )
+    dimensions, score = _score(result)
+    anatomy = next(
+        item for item in dimensions if item.dimension is VisualQADimension.ANATOMY_AND_ARTIFACTS
+    )
+    assert len(anatomy.findings) == 16
+    assert len(anatomy.repair_codes) <= 8
+    # Truncation keeps the blocking finding: it is ordered first.
+    assert anatomy.findings[0].severity == "hard_failure"
+    outcome = decide(score, empty_report(), result, thresholds=THRESHOLDS)
+    assert outcome.outcome is VisualQAOutcome.FAIL
+    assert outcome.hard_failure is True

@@ -84,6 +84,12 @@ class OpenAIVisualAgent:
             )
         return self._client
 
+    async def aclose(self) -> None:
+        """Release the HTTP connection pool this adapter opened, if any."""
+        if self._client is not None:
+            await self._client.aclose()
+            self._client = None
+
     async def evaluate(self, call: VisualAgentCall) -> VisualQAProviderResult:
         response = await self.client.post(
             "/responses",

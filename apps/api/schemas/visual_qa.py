@@ -60,6 +60,16 @@ class VisualQADiagnosticProjection(StrictContract):
     message: str = ""
 
 
+class VisualQABoundingBoxProjection(StrictContract):
+    """Normalized box coordinates only. The stored payload also carries a schema
+    version, which is deliberately dropped rather than coerced into a number."""
+
+    x: float = Field(ge=0, le=1)
+    y: float = Field(ge=0, le=1)
+    width: float = Field(gt=0, le=1)
+    height: float = Field(gt=0, le=1)
+
+
 class VisualQAEvidenceProjection(StrictContract):
     evidence_id: UUID
     finding_id: UUID
@@ -69,7 +79,7 @@ class VisualQAEvidenceProjection(StrictContract):
     shot_relative_timestamp_us: int | None = None
     source_relative_timestamp_us: int | None = None
     contact_sheet_position: int | None = None
-    bounding_box: dict[str, float] | None = None
+    bounding_box: VisualQABoundingBoxProjection | None = None
     compared_reference_asset_id: UUID | None = None
     confidence: float = Field(ge=0, le=1)
     explanation: str = ""

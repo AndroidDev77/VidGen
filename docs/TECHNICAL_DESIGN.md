@@ -1606,9 +1606,10 @@ projects and renders that predate T20 are unaffected and their historical render
 For a governed project, `select_authoritative_inputs` requires a passing canonical video-QA result
 for every shot: a hard failure blocks outright, and a `REVIEW` result blocks automatic render
 completion until a human resolves it. Refusals are structured, non-retryable
-`visual_qa_missing` / `visual_qa_failed` / `visual_qa_review_required` lineage errors. The manifest
-records the applicable QA result IDs, run IDs and the policy version under `provenance`, which
-leaves existing manifest identity semantics unchanged rather than reshaping them in place.
+`visual_qa_missing` / `visual_qa_failed` / `visual_qa_review_required` lineage errors. A manifest
+builder records the applicable QA result IDs, run IDs and the policy version under `provenance`
+through `visual_qa_provenance`; manifest identity excludes `provenance`, so an existing render's
+identity is unchanged rather than reshaped in place.
 
 ## 8.10 Prompt repair after QA failure
 

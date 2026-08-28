@@ -8,6 +8,7 @@ cross-project IDs return the same ``404`` as a missing one.
 
 from __future__ import annotations
 
+from typing import Any
 from uuid import UUID, uuid5
 
 from fastapi import APIRouter, Response, status
@@ -24,6 +25,7 @@ from apps.api.routes._common import (
     versions_for,
 )
 from apps.api.schemas.visual_qa import (
+    VisualQABoundingBoxProjection,
     VisualQACollectionResponse,
     VisualQADecisionRequest,
     VisualQADecisionResponse,
@@ -110,6 +112,18 @@ def _projection(session: SessionDep, run: VisualQARun) -> VisualQARunProjection:
         row_version=_row_version(session, run.project_id, run.shot_id),
         created_at=run.created_at,
         completed_at=run.completed_at,
+    )
+
+
+def _bounding_box(stored: dict[str, Any] | None) -> VisualQABoundingBoxProjection | None:
+    """Project only the coordinates; the stored schema version is not a number."""
+    if not stored:
+        return None
+    return VisualQABoundingBoxProjection(
+        x=float(stored["x"]),
+        y=float(stored["y"]),
+        width=float(stored["width"]),
+        height=float(stored["height"]),
     )
 
 
@@ -265,7 +279,7 @@ def get_visual_qa_evidence(
                 contact_sheet_position=positions.get(row.sample_id)
                 if row.sample_id is not None
                 else None,
-                bounding_box=row.bounding_box,
+                bounding_box=_bounding_box(row.bounding_box),
                 compared_reference_asset_id=row.compared_reference_asset_id,
                 confidence=row.confidence,
                 explanation=row.explanation,
