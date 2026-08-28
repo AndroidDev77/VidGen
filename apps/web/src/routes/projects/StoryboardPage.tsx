@@ -161,6 +161,13 @@ export function StoryboardPage(): JSX.Element {
           queryKey: queryKeys.shotRepairs(projectId, selectedShotId),
         });
         void queryClient.invalidateQueries({ queryKey: queryKeys.shot(projectId, selectedShotId) });
+        // The detail query carries the row version the next action echoes back
+        // in If-Match, so a stale one would make a second action conflict.
+        if (selectedRepairRunId !== null) {
+          void queryClient.invalidateQueries({
+            queryKey: queryKeys.repairRun(projectId, selectedShotId, selectedRepairRunId),
+          });
+        }
       }
     },
   });

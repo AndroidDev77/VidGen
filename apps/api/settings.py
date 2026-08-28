@@ -38,7 +38,11 @@ class APISettings(BaseSettings):
     # model is pinned by a versioned capability profile rather than named at
     # each call site. Set ``repair_alternate_provider`` to "none" to disable the
     # alternate-provider route entirely.
-    repair_alternate_provider: str = "veo"
+    # "none" by default: an unconfigured deployment keeps its same-provider
+    # repairs and the free deterministic fallback instead of failing every
+    # repair on a missing Google credential. Set to "veo" to enable the single
+    # bounded alternate-provider attempt.
+    repair_alternate_provider: str = "none"
     repair_max_same_provider_repairs: int = 2
     repair_allow_parallax_fallback: bool = True
     #: A configured per-shot repair spend limit, on top of the project budget.

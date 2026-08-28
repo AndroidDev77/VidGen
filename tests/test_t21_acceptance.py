@@ -399,6 +399,93 @@ def test_reservations_are_reconciled_and_never_charged_twice(
     assert budget.committed_amount >= alternate.actual_cost
 
 
+def test_a_run_that_never_locks_restores_the_original_selected_clip(
+    repair_project: tuple[Session, FilesystemBlobStore, VisualQAFixture],
+) -> None:
+    """A repair selects each candidate so T20 can see it, and puts it back.
+
+    The T20 selector only ever evaluates the shot's *selected* clip, so every
+    candidate is selected in turn. When the run ends without a passing output,
+    leaving the last rejected candidate selected would make the shot's
+    authoritative clip one T20 refused.
+    """
+    session, store, fixture = repair_project
+    shot_id = fixture.shot_ids[FAILING_INDEX]
+    original = session.scalar(
+        select(AnimationGeneratedVideo).where(
+            AnimationGeneratedVideo.shot_id == shot_id,
+            AnimationGeneratedVideo.selected.is_(True),
+        )
+    )
+    assert original is not None
+    original_id = original.id
+    _require_physical_action(session, fixture)
+
+    outcome = _repair(session, store, fixture, [failing_profile()])
+
+    assert outcome.state is RepairRunState.HUMAN_REVIEW_REQUIRED
+    selected = session.scalars(
+        select(AnimationGeneratedVideo).where(
+            AnimationGeneratedVideo.shot_id == shot_id,
+            AnimationGeneratedVideo.selected.is_(True),
+        )
+    ).all()
+    assert [item.id for item in selected] == [original_id]
+    # The rejected candidates remain as immutable historical rows.
+    assert (
+        len(
+            session.scalars(
+                select(AnimationGeneratedVideo).where(AnimationGeneratedVideo.shot_id == shot_id)
+            ).all()
+        )
+        > 1
+    )
+
+
+def test_a_second_repair_run_can_render_its_own_fallback(
+    repair_project: tuple[Session, FilesystemBlobStore, VisualQAFixture],
+) -> None:
+    """The render identity is content-derived, so two runs legitimately share one."""
+    session, store, fixture = repair_project
+    profiles = [failing_profile(), failing_profile(), failing_profile(), failing_profile()]
+    first = _repair(session, store, fixture, profiles, options=_options(idempotency_key="run-a"))
+    assert first.state is RepairRunState.HUMAN_REVIEW_REQUIRED
+    second = _repair(session, store, fixture, profiles, options=_options(idempotency_key="run-b"))
+    assert second.repair_run_id != first.repair_run_id
+    renders = session.scalars(select(RepairFallbackRender)).all()
+    assert len(renders) == 2
+    # Both runs rendered the same shot from the same still, so the identity is
+    # shared; the attempt is what makes each stored render unique.
+    assert renders[0].render_identity == renders[1].render_identity
+    assert renders[0].repair_attempt_id != renders[1].repair_attempt_id
+
+
+def test_an_injected_provider_is_used_instead_of_building_a_second_one(
+    repair_project: tuple[Session, FilesystemBlobStore, VisualQAFixture],
+) -> None:
+    """The T16 worker hands in its configured T15 provider; T21 must use it."""
+    session, store, fixture = repair_project
+    from services.animation.fake_provider import FakeVideoProvider
+
+    injected = FakeVideoProvider()
+    revalidate, _agent = scripted_revalidator(
+        session, store, [failing_profile()], width=WIDTH, height=HEIGHT
+    )
+    asyncio.run(
+        run_visual_repair(
+            session,
+            store,
+            project_id=fixture.project_id,
+            shot_id=fixture.shot_ids[FAILING_INDEX],
+            options=_options(alternate_provider="none"),
+            identity_resolver=identity_resolver,
+            revalidate=revalidate,
+            same_provider=injected,
+        )
+    )
+    assert injected.submissions >= 1
+
+
 def test_a_passing_shot_is_never_repaired(
     repair_project: tuple[Session, FilesystemBlobStore, VisualQAFixture],
 ) -> None:

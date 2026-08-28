@@ -338,6 +338,78 @@ def test_an_upstream_reference_correction_never_spends() -> None:
     assert not decision.consumes_attempt
 
 
+def test_a_corrected_reference_is_not_a_permanent_dead_end() -> None:
+    """Reference integrity comes from T20's findings, not a hash comparison.
+
+    An upstream correction necessarily changes the approved bundle, so judging
+    integrity by comparing the current bundle hash against the one the QA result
+    recorded would make every corrected reference look permanently stale - and
+    a restarted repair would route straight back to human review forever.
+    """
+    corrected = classify(
+        qa_result(
+            repair_codes=(VisualQARepairCode.WRONG_CHARACTER_IDENTITY,),
+            finding_repair_codes=(VisualQARepairCode.WRONG_CHARACTER_IDENTITY,),
+        ),
+        context=ClassificationContext(reference_integrity=ReferenceIntegrity.VALID),
+    )
+    assert not corrected.requires_upstream_reference_correction
+    decision = next_route(_context(classification=corrected))
+    assert decision.attempt_kind is RepairAttemptKind.SAME_PROVIDER_REPAIR
+
+
+def test_a_diagnostic_with_no_editable_clause_is_repaired_by_a_new_seed() -> None:
+    """A provider timeout implicates no clause, so the retry redraws the sample."""
+    request = _request(
+        classification_score=80.0,
+    )
+    timed_out = classify(
+        qa_result(score=80.0),
+        context=ClassificationContext(technical_signals=(TechnicalSignal.PROVIDER_TIMEOUT,)),
+    )
+    request = PromptRepairRequest(
+        classification=timed_out,
+        constraints=request.constraints,
+        base_prompt=request.base_prompt,
+        base_prompt_hash=request.base_prompt_hash,
+        previous_seed=None,
+        attempt_ordinal=1,
+        attempt_identity=request.attempt_identity,
+    )
+    delta = DeterministicRepairPlanner().plan(request)
+    validate_delta(delta, request)
+    assert delta.seed_changed and delta.new_seed is not None
+    assert delta.touched_constraint_ids == []
+
+
+def test_a_cloud_storage_output_location_is_refused_rather_than_mis_fetched() -> None:
+    """T21 never sets ``storageUri``, so a gs:// handle means a foreign request."""
+    import asyncio
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "name": "operations/op-1",
+                "done": True,
+                "response": {"videos": [{"gcsUri": "gs://bucket/clip.mp4"}]},
+            },
+        )
+
+    provider = GoogleVeoProvider(
+        project="p", access_token=lambda: "token", transport=httpx.MockTransport(handler)
+    )
+
+    async def drive() -> None:
+        try:
+            await provider.download("operations/op-1", Path("/tmp/unused.mp4"))
+        finally:
+            await provider.aclose()
+
+    with pytest.raises(ValueError, match="veo_unsupported_output_location"):
+        asyncio.run(drive())
+
+
 def test_a_generation_that_ignored_a_valid_reference_still_earns_a_repair() -> None:
     """Only an invalid reference is escalated; a missed one is repairable."""
     classification = classify(

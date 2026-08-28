@@ -71,7 +71,12 @@ from services.qa.repair_planner import (
     validate_delta,
 )
 from services.qa.repair_policy import RouteContext, default_policy, next_route
-from services.renderer.parallax import ParallaxInputs, manifest_bytes, render_parallax
+from services.renderer.parallax import (
+    ParallaxInputs,
+    RenderedParallax,
+    manifest_bytes,
+    render_parallax,
+)
 from services.renderer.parallax_manifest import (
     RENDERER_VERSION,
     ParallaxRequest,
@@ -114,7 +119,6 @@ from vidgen.contracts.visual_qa import (
     VisualQATargetType,
 )
 from vidgen.db.animation_models import AnimationGeneratedVideo, AnimationItem, AnimationRun
-from vidgen.db.continuity_models import shot_reference_bindings
 from vidgen.db.cost_models import ProjectBudget
 from vidgen.db.cost_repository import CostRepository
 from vidgen.db.image_generation_models import GeneratedKeyframeImage, ImageGenerationItem
@@ -300,6 +304,10 @@ class VisualRepairPipeline:
                     current, context=self._classification_context(run, inputs)
                 ).category.value
             self.session.commit()
+        # Whatever ended the loop, a run that did not lock leaves the shot's
+        # selected clip exactly as T20 left it.
+        self._restore_original_selection(run, inputs)
+        self.session.commit()
         return self._outcome(run)
 
     async def _finish_interrupted_revalidation(
@@ -507,7 +515,12 @@ class VisualRepairPipeline:
         run.classification = classification.model_dump(mode="json")
         run.classifier_version = classification.classifier_version
         counts = self.repository.counts(run.id)
-        prospective = _prospective_kind(counts, self.options.policy)
+        # The budget question is asked about the route the policy would take
+        # next, so the prospective kind has to account for an alternate provider
+        # that is not configured at all.
+        prospective = _prospective_kind(
+            counts, self.options.policy, alternate_available=self.alternate_provider is not None
+        )
         estimate = self._estimate(inputs, prospective)
         allowed, denial, remaining = self._budget_state(run, estimate)
         eligibility = self._eligibility(inputs, result)
@@ -563,11 +576,18 @@ class VisualRepairPipeline:
                 decision.state,
                 human_review_reason=decision.human_review_reason,
             )
+            self._restore_original_selection(run, inputs)
             self.session.commit()
             return None
         self.repository.mark_state(run, decision.state)
+        # Price the route actually chosen. It can differ from the prospective
+        # one - a free fallback taken because no alternate provider is
+        # configured - and a plan must carry its own route's cost.
+        planned_estimate = self._estimate(inputs, decision.attempt_kind)
         try:
-            plan, attempt = self._plan(run, inputs, classification, decision.attempt_kind, estimate)
+            plan, attempt = self._plan(
+                run, inputs, classification, decision.attempt_kind, planned_estimate, result
+            )
         except RepairPlanningError as error:
             # A plan that cannot be validated is never submitted. The run stops
             # for a human rather than spending an attempt on an unvalidated one.
@@ -588,6 +608,7 @@ class VisualRepairPipeline:
                 human_review_reason=HumanReviewReason.DETERMINISTIC_FAILURE,
                 error_code="repair_plan_invalid",
             )
+            self._restore_original_selection(run, inputs)
             self.session.commit()
             return None
         self.session.commit()
@@ -610,17 +631,24 @@ class VisualRepairPipeline:
         )
 
     def _reference_integrity(self, inputs: _Inputs) -> ReferenceIntegrity:
-        """Ask the repository whether the approved references are still valid.
+        """Ask whether the approved T19 references themselves are the problem.
 
-        T21 never mutates an approved T19 reference. It only reports that one is
-        missing, stale or incompatible so the correction happens upstream.
+        T21 never mutates an approved reference. It only reports that one is
+        missing or in conflict, so the correction happens upstream.
+
+        The judgement comes from what T20 actually selected and found, not from
+        comparing the current bundle hash against the one the QA result
+        recorded. Those hashes differ whenever the bundle has been corrected
+        since, which is exactly the case an upstream correction is supposed to
+        unblock - treating it as a conflict would make a corrected reference a
+        permanent dead end.
         """
-        bundle_hash = inputs.qa_result.target.shot_reference_bundle_hash
-        current = _current_bundle_hash(self.session, inputs.shot_record.id)
-        if current is None:
+        required = bool(inputs.shot.character_reference_ids or inputs.shot.location_reference_id)
+        if required and not inputs.authoritative.references:
+            # The storyboard names identities the approved bundle resolved
+            # nothing for. A shot that legitimately needs no reference - no
+            # characters, no named location - is not a reference failure.
             return ReferenceIntegrity.MISSING
-        if current != bundle_hash:
-            return ReferenceIntegrity.STALE
         flagged = any(
             finding.code in _REFERENCE_CONFLICT_CODES
             for dimension in inputs.qa_result.score.dimensions
@@ -636,6 +664,7 @@ class VisualRepairPipeline:
         classification: RepairClassification,
         kind: RepairAttemptKind,
         estimate: Decimal,
+        source: VisualQAResult,
     ) -> tuple[RepairPlan, RepairAttemptRecord]:
         ordinal = self.repository.next_ordinal(run.id)
         predecessor = self.repository.latest_attempt(run.id)
@@ -697,7 +726,9 @@ class VisualRepairPipeline:
             previous_seed=predecessor.seed if predecessor is not None else None,
             reference_asset_ids=[str(item.asset_id) for item in inputs.authoritative.references],
             reference_asset_hashes=[item.sha256 for item in inputs.authoritative.references],
-            source_qa_result_id=self._result_id(inputs.qa_result),
+            # The QA verdict that motivated *this* attempt, which is the
+            # previous attempt's output once the repair is under way.
+            source_qa_result_id=self._result_id(source),
             status=RepairAttemptStatus.PLANNED.value,
             estimated_cost=estimate,
             started_at=datetime.now(UTC),
@@ -707,6 +738,31 @@ class VisualRepairPipeline:
         self._refresh_counters(run)
         plan = self._plan_from(run, inputs, classification, attempt, estimate)
         return plan, attempt
+
+    def _restore_original_selection(self, run: RepairRun, inputs: _Inputs) -> None:
+        """Put the shot's selected T15 clip back the way T20 left it.
+
+        A repair selects each candidate so T20 can evaluate it - the selector
+        only ever looks at the selected clip. When the run ends without a
+        passing output, leaving the last *failed* candidate selected would make
+        the shot's authoritative clip one that T20 rejected. The original is
+        restored; every repair attempt stays as an immutable historical row.
+        """
+        if self.repository.is_terminal(run) and run.state == RepairRunState.LOCKED.value:
+            return
+        self.session.execute(
+            update(AnimationGeneratedVideo)
+            .where(
+                AnimationGeneratedVideo.shot_id == inputs.shot_record.id,
+                AnimationGeneratedVideo.id != inputs.root_video.id,
+                AnimationGeneratedVideo.selected,
+            )
+            .values(selected=False)
+        )
+        original = self.session.get(AnimationGeneratedVideo, inputs.root_video.id)
+        if original is not None:
+            original.selected = True
+        self.session.flush()
 
     def _refresh_counters(self, run: RepairRun) -> None:
         """Keep the run's per-route counters in step with its attempts.
@@ -979,7 +1035,10 @@ class VisualRepairPipeline:
         if checkpoint.submission_ambiguous:
             raise _AttemptFailed("ambiguous_submission", RepairFailureCategory.PROVIDER_ISSUE)
         operation_name = checkpoint.operation_name
-        assert operation_name is not None
+        if operation_name is None:
+            # A checkpoint with no confirmed operation is reconciled, never
+            # polled and never resubmitted.
+            raise _AttemptFailed("veo_missing_operation_name", RepairFailureCategory.PROVIDER_ISSUE)
         result = await self._poll_alternate(provider, checkpoint, operation_name)
         if result.state is not VeoOperationState.SUCCEEDED:
             self._reconcile(attempt, Decimal("0"), billable=False)
@@ -1121,10 +1180,13 @@ class VisualRepairPipeline:
         if not eligibility.eligible:
             raise _AttemptFailed("fallback_ineligible", RepairFailureCategory.IMPOSSIBLE_SHOT)
         render_plan = build_plan(request)
-        existing = self.repository.fallback_render_by_identity(render_plan.render_identity)
-        if existing is not None and existing.repair_attempt_id == attempt.id:
+        # The render identity is content-derived, so two repair runs for the
+        # same shot legitimately share one. The attempt is what makes a stored
+        # render unique, so a resume is detected by the attempt.
+        if self.repository.fallback_render(attempt.id) is not None:
             return
         workspace = TemporaryDirectory(prefix="vidgen-parallax-run-")
+        rendered: RenderedParallax | None = None
         try:
             still = Path(workspace.name) / "source.png"
             still.write_bytes(self._asset_bytes(inputs.keyframe_asset.id))
@@ -1143,7 +1205,10 @@ class VisualRepairPipeline:
                 media_type="application/json",
                 project_id=run.project_id,
                 parent_asset_ids=(inputs.keyframe_asset.id,),
-                idempotency_key=f"t21-parallax-manifest:{render_plan.render_identity}",
+                # The manifest documents one attempt's render, and it names that
+                # attempt, so it is keyed by the attempt rather than by the
+                # content-derived render identity two runs can share.
+                idempotency_key=f"t21-parallax-manifest:{attempt.attempt_identity}",
                 generation_parameters={"renderer_version": RENDERER_VERSION},
             )
             video = self._persist_generated_output(
@@ -1182,6 +1247,10 @@ class VisualRepairPipeline:
             self.session.add(record)
             self.session.commit()
         finally:
+            # ``render_parallax`` trims into its own temporary file, outside the
+            # workspace it cleans up, so the caller owns that one.
+            if rendered is not None:
+                rendered.path.unlink(missing_ok=True)
             workspace.cleanup()
 
     def _parallax_request(self, inputs: _Inputs, attempt_id: UUID) -> ParallaxRequest:
@@ -1757,32 +1826,22 @@ _REFERENCE_CONFLICT_CODES = frozenset(
 
 
 def _prospective_kind(
-    counts: dict[RepairAttemptKind, int], policy: RepairPolicy
+    counts: dict[RepairAttemptKind, int],
+    policy: RepairPolicy,
+    *,
+    alternate_available: bool = True,
 ) -> RepairAttemptKind | None:
     """The attempt kind the policy would choose next, ignoring budget."""
     if counts[RepairAttemptKind.SAME_PROVIDER_REPAIR] < policy.max_same_provider_repairs:
         return RepairAttemptKind.SAME_PROVIDER_REPAIR
-    if counts[RepairAttemptKind.ALTERNATE_PROVIDER] < policy.max_alternate_provider_attempts:
+    if (
+        alternate_available
+        and counts[RepairAttemptKind.ALTERNATE_PROVIDER] < policy.max_alternate_provider_attempts
+    ):
         return RepairAttemptKind.ALTERNATE_PROVIDER
     if counts[RepairAttemptKind.DETERMINISTIC_FALLBACK] < policy.max_fallback_renders:
         return RepairAttemptKind.DETERMINISTIC_FALLBACK
     return None
-
-
-def _current_bundle_hash(session: Session, shot_id: UUID) -> str | None:
-    row = session.execute(
-        select(shot_reference_bindings.c.bundle_hash)
-        .where(shot_reference_bindings.c.storyboard_shot_id == shot_id)
-        .where(shot_reference_bindings.c.status == "approved")
-        .order_by(shot_reference_bindings.c.created_at.desc())
-        .limit(1)
-    ).first()
-    return str(row[0]) if row is not None else None
-
-
-def _probe(path: Path) -> Any:
-
-    return probe_video(path)
 
 
 def _hash(value: object) -> str:

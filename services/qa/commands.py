@@ -322,7 +322,11 @@ def build_same_provider(options: VisualRepairCommandOptions) -> VideoGenerationP
     return build_provider(
         AnimationCommandOptions(
             provider=options.provider,
-            runway_api_key=os.getenv("RUNWAYML_API_SECRET"),
+            # The same secret T15 reads, under both the name the SDK documents
+            # and the repository's own prefixed setting.
+            runway_api_key=(
+                os.getenv("RUNWAYML_API_SECRET") or os.getenv("VIDGEN_RUNWAY_API_SECRET")
+            ),
         )
     )
 
@@ -408,9 +412,15 @@ async def run_visual_repair(
     options: VisualRepairCommandOptions,
     identity_resolver: Callable[..., str] | None = None,
     revalidate: Revalidator | None = None,
+    same_provider: VideoGenerationProvider | None = None,
 ) -> RepairOutcome:
-    """Run or resume the bounded T21 repair for exactly one failed shot."""
-    same = build_same_provider(options)
+    """Run or resume the bounded T21 repair for exactly one failed shot.
+
+    ``same_provider`` lets a caller that already holds a configured T15 provider
+    - the T16 worker does - hand it straight in, so a repair never builds a
+    second, differently credentialed route to the same provider.
+    """
+    same = same_provider or build_same_provider(options)
     alternate = build_alternate_provider(options)
     policy = default_policy(
         max_same_provider_repairs=options.max_same_provider_repairs,

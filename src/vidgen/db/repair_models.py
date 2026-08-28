@@ -309,7 +309,9 @@ class RepairFallbackRender(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         ForeignKey("repair_attempts.id", ondelete="CASCADE"), unique=True
     )
     shot_id: Mapped[UUID] = mapped_column(ForeignKey("storyboard_shots.id", ondelete="CASCADE"))
-    render_identity: Mapped[str] = mapped_column(String(64), unique=True)
+    #: Content-derived, so two repair runs for the same shot legitimately share
+    #: one. Uniqueness belongs to ``repair_attempt_id``; this is only an index.
+    render_identity: Mapped[str] = mapped_column(String(64), index=True)
     renderer_version: Mapped[str] = mapped_column(String(64))
     input_asset_ids: Mapped[list[str]] = mapped_column(JSON, default=list)
     input_asset_hashes: Mapped[list[str]] = mapped_column(JSON, default=list)

@@ -374,10 +374,18 @@ class GoogleVeoProvider:
         inline = video.get("bytesBase64Encoded")
         if inline is not None:
             return await _consume(destination, _decode_base64(str(inline)))
-        uri = video.get("gcsUri") or video.get("uri")
+        uri = str(video.get("gcsUri") or video.get("uri") or "")
         if not uri:
             raise ValueError("veo_missing_output: no inline bytes and no download URI")
-        return await self._stream(str(uri), destination)
+        if uri.startswith("gs://"):
+            # T21 never sets ``storageUri``, so Veo returns inline bytes. A
+            # Cloud Storage handle means the request was built elsewhere, and
+            # this adapter has no Cloud Storage client to fetch it with.
+            raise ValueError(
+                "veo_unsupported_output_location: the operation wrote to Cloud Storage, "
+                "which this adapter does not read; T21 requests inline output"
+            )
+        return await self._stream(uri, destination)
 
     async def _stream(self, uri: str, destination: Path) -> DownloadedMedia:
         # The URI itself is a short-lived credentialed handle and is never

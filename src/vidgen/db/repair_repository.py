@@ -251,13 +251,6 @@ class RepairRepository:
             )
         )
 
-    def fallback_render_by_identity(self, render_identity: str) -> RepairFallbackRender | None:
-        return self._session.scalar(
-            select(RepairFallbackRender).where(
-                RepairFallbackRender.render_identity == render_identity
-            )
-        )
-
     # --- Veo operations ---------------------------------------------------
     def veo_operation(self, repair_attempt_id: UUID) -> VeoOperationRecord | None:
         return self._session.scalar(

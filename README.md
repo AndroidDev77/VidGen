@@ -1180,7 +1180,8 @@ The production command uses the configured providers:
 RUNWAYML_API_SECRET=... VIDGEN_GOOGLE_CLOUD_PROJECT=... VIDGEN_GOOGLE_ACCESS_TOKEN=... VIDGEN_OPENAI_API_KEY=... VIDGEN_DATABASE_URL=... VIDGEN_BLOB_ROOT=... VIDGEN_BLOB_SIGNING_SECRET=... uv run python scripts/run_visual_repair.py PROJECT_UUID SHOT_UUID     --provider runway --alternate-provider veo --qa-provider openai
 ```
 
-Relevant settings are `VIDGEN_REPAIR_ALTERNATE_PROVIDER` (`veo` or `none`),
+Relevant settings are `VIDGEN_REPAIR_ALTERNATE_PROVIDER` (`none` by default, `veo` to enable the
+single bounded alternate-provider attempt once Google credentials are configured),
 `VIDGEN_REPAIR_MAX_SAME_PROVIDER_REPAIRS`, `VIDGEN_REPAIR_ALLOW_PARALLAX_FALLBACK`,
 `VIDGEN_REPAIR_PER_SHOT_COST_LIMIT`, `VIDGEN_VEO_MODEL` and `VIDGEN_VEO_LOCATION`.
 
@@ -1197,6 +1198,11 @@ Relevant settings are `VIDGEN_REPAIR_ALTERNATE_PROVIDER` (`veo` or `none`),
   passes the same deterministic validation.
 - Routing to `HUMAN_REVIEW_REQUIRED` on a budget denial happens even when the free deterministic
   fallback is still available, because the policy requires a structured budget stop.
+- The alternate-provider route is off by default. An unconfigured deployment keeps its
+  same-provider repairs and the free 2.5D fallback rather than failing every repair on a missing
+  Google credential; set `VIDGEN_REPAIR_ALTERNATE_PROVIDER=veo` to turn it on.
+- The Veo adapter reads inline output only. T21 never sets `storageUri`, so a Cloud Storage handle
+  in a completed operation is refused rather than fetched with a client this adapter does not have.
 - FFmpeg and ffprobe must be on `PATH`; every T21 media test synthesises its fixtures with them.
 
 T21 persistence adds `repair_runs`, `repair_attempts`, `repair_decisions`,
