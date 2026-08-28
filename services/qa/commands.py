@@ -6,16 +6,24 @@ identity, restart safety and persistence - stays inside the pipeline.
 
 from __future__ import annotations
 
+import os
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from decimal import Decimal
 from uuid import UUID
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from services.animation.providers import VideoGenerationProvider
+from services.animation.veo import DEFAULT_VEO_LOCATION
+from services.animation.veo_adapter import AlternateVideoProvider
 from services.qa.fake_visual_agent import FakeDefect, FakeVisualAgent
 from services.qa.pipeline import VisualQAOptions, VisualQAPipeline
+from services.qa.repair import RepairOptions, Revalidator, VisualRepairPipeline
+from services.qa.repair_policy import default_policy
 from services.qa.visual_agent import VisualAgent, VisualQARole
+from vidgen.contracts.repair import RepairOutcome
 from vidgen.contracts.visual_qa import VisualQAResult, VisualQATargetType
 from vidgen.db.storyboard_models import StoryboardRun, StoryboardShotRecord
 from vidgen.db.visual_qa_repository import VisualQARepository
@@ -265,12 +273,182 @@ async def evaluate_shot_stage(
     # Gate on the shot the selector actually resolved, not the caller's argument:
     # the selector also accepts a stable shot ID, and gating on that form would
     # report visual_qa_missing for the shot that just passed.
-    passed, reason = VisualQARepository(session).gate(
-        result.target.storyboard_shot_id, target_type
-    )
+    passed, reason = VisualQARepository(session).gate(result.target.storyboard_shot_id, target_type)
     if passed:
         return result
     codes = tuple(code.value for code in result.repair_codes)
     if reason == "visual_qa_review_required":
         raise VisualQAReviewRequired(target_type, result.qa_run_id, codes)
     raise VisualQABlocked(target_type, result.qa_run_id, codes)
+
+
+# --- T21 repair and fallback routing -----------------------------------------
+@dataclass(frozen=True, slots=True)
+class VisualRepairCommandOptions:
+    """Everything the CLI, the API worker and the T16 activity can choose."""
+
+    provider: str = "fake"
+    alternate_provider: str | None = "fake"
+    idempotency_key: str | None = None
+    max_same_provider_repairs: int = 2
+    allow_parallax_fallback: bool = True
+    resume: bool = False
+    width: int = 1280
+    height: int = 720
+    frame_rate: int = 24
+    per_shot_repair_cost_limit: Decimal | None = None
+    per_run_repair_cost_limit: Decimal | None = None
+    provider_configuration_version: str = "runway/2024-11-06"
+    alternate_provider_model: str | None = None
+    #: Fake alternate provider only. Deterministic fixtures use small media, and
+    #: a real Veo model renders only 720p and 1080p, so tests pin the geometry
+    #: here rather than pretending the model supports it.
+    alternate_fake_geometry: tuple[int, int] | None = None
+    qa: VisualQACommandOptions = field(default_factory=VisualQACommandOptions)
+    #: Injected by tests so a repaired output can be scored deterministically.
+    qa_defects_by_attempt: tuple[dict[UUID, FakeDefect], ...] = ()
+
+
+def build_same_provider(options: VisualRepairCommandOptions) -> VideoGenerationProvider:
+    """The T15 provider a same-provider repair reuses.
+
+    A repair never introduces a second way to reach the animation provider: it
+    builds the same provider T15 builds, from the same configuration.
+    """
+    from services.animation.commands import AnimationCommandOptions, build_provider
+
+    if options.provider not in {"fake", "runway"}:
+        raise VisualQAConfigurationError(f"unknown repair provider {options.provider!r}")
+    return build_provider(
+        AnimationCommandOptions(
+            provider=options.provider,
+            # The same secret T15 reads, under both the name the SDK documents
+            # and the repository's own prefixed setting.
+            runway_api_key=(
+                os.getenv("RUNWAYML_API_SECRET") or os.getenv("VIDGEN_RUNWAY_API_SECRET")
+            ),
+        )
+    )
+
+
+def build_alternate_provider(
+    options: VisualRepairCommandOptions,
+) -> AlternateVideoProvider | None:
+    """The single bounded alternate provider, or ``None`` to skip that route."""
+    if options.alternate_provider in {None, "none"}:
+        return None
+    if options.alternate_provider == "fake":
+        from services.animation.veo_fake import FakeVeoProvider
+
+        geometry = options.alternate_fake_geometry
+        return FakeVeoProvider(
+            model=options.alternate_provider_model,
+            output_width=geometry[0] if geometry else None,
+            output_height=geometry[1] if geometry else None,
+        )
+    if options.alternate_provider in {"veo", "google_veo"}:
+        from services.animation.veo_adapter import GoogleVeoProvider
+
+        project = os.getenv("VIDGEN_GOOGLE_CLOUD_PROJECT")
+        token = os.getenv("VIDGEN_GOOGLE_ACCESS_TOKEN")
+        if not project or not token:
+            raise VisualQAConfigurationError(
+                "the Veo provider requires a Google Cloud project and an access token"
+            )
+        return GoogleVeoProvider(
+            project=project,
+            access_token=lambda: token,
+            location=os.getenv("VIDGEN_VEO_LOCATION", DEFAULT_VEO_LOCATION),
+            model=options.alternate_provider_model,
+        )
+    raise VisualQAConfigurationError(f"unknown alternate provider {options.alternate_provider!r}")
+
+
+def build_revalidator(
+    session: Session,
+    blob_store: BlobStore,
+    options: VisualRepairCommandOptions,
+    *,
+    identity_resolver: Callable[..., str] | None = None,
+) -> Revalidator:
+    """Run T20 video QA over whatever output the repair just selected.
+
+    Every repaired or fallback result is revalidated through the real T20
+    pipeline, so nothing is ever selected on the strength of the repair alone.
+    """
+    resolver = identity_resolver or shot_workflow_identity_resolver
+
+    async def revalidate(
+        *, project_id: UUID, shot_id: UUID, idempotency_key: str
+    ) -> VisualQAResult:
+        first, second = build_agents(options.qa)
+        pipeline = VisualQAPipeline(
+            session,
+            blob_store,
+            first,
+            adjudicator=second,
+            shot_workflow_identity_resolver=resolver,
+            options=VisualQAOptions(
+                expected_width=options.qa.expected_width or options.width,
+                expected_height=options.qa.expected_height or options.height,
+            ),
+        )
+        return await pipeline.evaluate_shot(
+            project_id=project_id,
+            shot_id=shot_id,
+            target_type=VisualQATargetType.VIDEO,
+            idempotency_key=idempotency_key,
+        )
+
+    return revalidate
+
+
+async def run_visual_repair(
+    session: Session,
+    blob_store: BlobStore,
+    *,
+    project_id: UUID,
+    shot_id: UUID,
+    options: VisualRepairCommandOptions,
+    identity_resolver: Callable[..., str] | None = None,
+    revalidate: Revalidator | None = None,
+    same_provider: VideoGenerationProvider | None = None,
+) -> RepairOutcome:
+    """Run or resume the bounded T21 repair for exactly one failed shot.
+
+    ``same_provider`` lets a caller that already holds a configured T15 provider
+    - the T16 worker does - hand it straight in, so a repair never builds a
+    second, differently credentialed route to the same provider.
+    """
+    same = same_provider or build_same_provider(options)
+    alternate = build_alternate_provider(options)
+    policy = default_policy(
+        max_same_provider_repairs=options.max_same_provider_repairs,
+        allow_parallax_fallback=options.allow_parallax_fallback,
+        per_shot_repair_cost_limit=options.per_shot_repair_cost_limit,
+        per_run_repair_cost_limit=options.per_run_repair_cost_limit,
+    )
+    pipeline = VisualRepairPipeline(
+        session,
+        blob_store,
+        same_provider=same,
+        alternate_provider=alternate,
+        revalidate=revalidate
+        or build_revalidator(session, blob_store, options, identity_resolver=identity_resolver),
+        shot_workflow_identity_resolver=identity_resolver or shot_workflow_identity_resolver,
+        options=RepairOptions(
+            policy=policy,
+            width=options.width,
+            height=options.height,
+            frame_rate=options.frame_rate,
+            provider_configuration_version=options.provider_configuration_version,
+            alternate_provider_model=options.alternate_provider_model,
+        ),
+    )
+    key = options.idempotency_key or f"t21-repair:{shot_id}"
+    try:
+        return await pipeline.repair(project_id=project_id, shot_id=shot_id, idempotency_key=key)
+    finally:
+        closer = getattr(alternate, "aclose", None)
+        if closer is not None:
+            await closer()

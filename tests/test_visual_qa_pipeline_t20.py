@@ -861,9 +861,7 @@ def test_a_failing_metrics_emit_cannot_undo_a_committed_pass(
     assert run.status == "visual_qa_complete"
     assert run.final_outcome == VisualQAOutcome.PASS.value
     assert run.error_code is None
-    passed, reason = VisualQARepository(session).gate(
-        fixture.shot_ids[0], VisualQATargetType.VIDEO
-    )
+    passed, reason = VisualQARepository(session).gate(fixture.shot_ids[0], VisualQATargetType.VIDEO)
     assert passed and reason == "visual_qa_pass"
 
 
@@ -892,7 +890,5 @@ def test_a_stage_addressed_by_stable_shot_id_gates_on_the_resolved_shot(
     # The result is bound to the canonical shot row, not the stable id it was
     # addressed by, and the gate agrees.
     assert result.target.storyboard_shot_id == fixture.shot_ids[0]
-    passed, reason = VisualQARepository(session).gate(
-        fixture.shot_ids[0], VisualQATargetType.VIDEO
-    )
+    passed, reason = VisualQARepository(session).gate(fixture.shot_ids[0], VisualQATargetType.VIDEO)
     assert passed and reason == "visual_qa_pass"

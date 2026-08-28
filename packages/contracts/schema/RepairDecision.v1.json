@@ -1,0 +1,567 @@
+{
+  "$defs": {
+    "HumanReviewReason": {
+      "description": "Why a shot stopped costing money and started waiting for a person.",
+      "enum": [
+        "repair_budget_exhausted",
+        "project_budget_denied",
+        "attempt_limit_reached",
+        "fallback_ineligible",
+        "impossible_shot",
+        "upstream_reference_correction",
+        "deterministic_failure",
+        "cancelled_before_paid_attempt"
+      ],
+      "title": "HumanReviewReason",
+      "type": "string"
+    },
+    "RepairClassification": {
+      "additionalProperties": false,
+      "description": "Why one shot failed, derived from one persisted T20 result.\n\n``deterministic_only`` marks a failure that a paid generation cannot fix -\ncorrupt media, an invalid lineage, an unsupported capability - so the router\nis forbidden from spending money on it.",
+      "properties": {
+        "category": {
+          "$ref": "#/$defs/RepairFailureCategory"
+        },
+        "classifier_version": {
+          "maxLength": 64,
+          "minLength": 1,
+          "title": "Classifier Version",
+          "type": "string"
+        },
+        "confidence": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Confidence",
+          "type": "number"
+        },
+        "contract_version": {
+          "const": "repair/1.0",
+          "default": "repair/1.0",
+          "title": "Contract Version",
+          "type": "string"
+        },
+        "deterministic_only": {
+          "default": false,
+          "title": "Deterministic Only",
+          "type": "boolean"
+        },
+        "diagnostics": {
+          "items": {
+            "$ref": "#/$defs/RepairDiagnostic"
+          },
+          "maxItems": 32,
+          "minItems": 1,
+          "title": "Diagnostics",
+          "type": "array"
+        },
+        "hard_failure": {
+          "title": "Hard Failure",
+          "type": "boolean"
+        },
+        "importance": {
+          "enum": [
+            "utility",
+            "normal",
+            "hero"
+          ],
+          "title": "Importance",
+          "type": "string"
+        },
+        "pass_threshold": {
+          "maximum": 100,
+          "minimum": 0,
+          "title": "Pass Threshold",
+          "type": "number"
+        },
+        "primary_code": {
+          "$ref": "#/$defs/RepairDiagnosticCode"
+        },
+        "qa_score": {
+          "maximum": 100,
+          "minimum": 0,
+          "title": "Qa Score",
+          "type": "number"
+        },
+        "rationale": {
+          "default": "",
+          "maxLength": 500,
+          "title": "Rationale",
+          "type": "string"
+        },
+        "requires_upstream_reference_correction": {
+          "default": false,
+          "title": "Requires Upstream Reference Correction",
+          "type": "boolean"
+        },
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "severity": {
+          "$ref": "#/$defs/RepairSeverity"
+        },
+        "shot_id": {
+          "format": "uuid",
+          "title": "Shot Id",
+          "type": "string"
+        },
+        "source_qa_result_id": {
+          "format": "uuid",
+          "title": "Source Qa Result Id",
+          "type": "string"
+        },
+        "target_type": {
+          "enum": [
+            "keyframe",
+            "video"
+          ],
+          "title": "Target Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "classifier_version",
+        "source_qa_result_id",
+        "shot_id",
+        "target_type",
+        "category",
+        "severity",
+        "primary_code",
+        "diagnostics",
+        "hard_failure",
+        "qa_score",
+        "pass_threshold",
+        "importance",
+        "confidence"
+      ],
+      "title": "RepairClassification",
+      "type": "object"
+    },
+    "RepairDiagnostic": {
+      "additionalProperties": false,
+      "description": "One structured reason a shot failed, tied to the T20 evidence for it.",
+      "properties": {
+        "bounding_box": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/VisualQABoundingBox"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "code": {
+          "$ref": "#/$defs/RepairDiagnosticCode"
+        },
+        "confidence": {
+          "default": 1.0,
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Confidence",
+          "type": "number"
+        },
+        "dimension": {
+          "default": "",
+          "maxLength": 64,
+          "title": "Dimension",
+          "type": "string"
+        },
+        "evidence_timestamp_us": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Evidence Timestamp Us"
+        },
+        "repair_codes": {
+          "items": {
+            "$ref": "#/$defs/VisualQARepairCode"
+          },
+          "maxItems": 8,
+          "title": "Repair Codes",
+          "type": "array"
+        },
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "severity": {
+          "enum": [
+            "warning",
+            "hard_failure"
+          ],
+          "title": "Severity",
+          "type": "string"
+        },
+        "source_finding_ids": {
+          "items": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "maxItems": 16,
+          "title": "Source Finding Ids",
+          "type": "array"
+        },
+        "summary": {
+          "default": "",
+          "maxLength": 500,
+          "title": "Summary",
+          "type": "string"
+        }
+      },
+      "required": [
+        "code",
+        "severity"
+      ],
+      "title": "RepairDiagnostic",
+      "type": "object"
+    },
+    "RepairDiagnosticCode": {
+      "description": "The bounded distinctions the classifier must be able to make.\n\nAdding a member is a contract version change: the planner, the policy and\nthe dashboard all switch on this enum.",
+      "enum": [
+        "wrong_character_identity",
+        "wrong_character_count",
+        "wrong_location",
+        "wrong_wardrobe_or_state",
+        "missing_or_incorrect_action",
+        "weak_motion",
+        "composition_failure",
+        "anatomy_or_artifact_failure",
+        "continuity_failure",
+        "style_mismatch",
+        "prompt_overconstraint",
+        "prompt_ambiguity",
+        "reference_conflict",
+        "provider_safety_rejection",
+        "provider_timeout_or_service_failure",
+        "unsupported_provider_capability",
+        "impossible_duration_or_motion",
+        "corrupt_or_incomplete_media"
+      ],
+      "title": "RepairDiagnosticCode",
+      "type": "string"
+    },
+    "RepairFailureCategory": {
+      "description": "The five strict categories every failed shot is classified into.",
+      "enum": [
+        "prompt_issue",
+        "reference_issue",
+        "seed_issue",
+        "provider_issue",
+        "impossible_shot"
+      ],
+      "title": "RepairFailureCategory",
+      "type": "string"
+    },
+    "RepairRoute": {
+      "description": "Exactly one bounded next action for a repair run.",
+      "enum": [
+        "same_provider_repair",
+        "alternate_provider",
+        "deterministic_fallback",
+        "resume_provider_operation",
+        "upstream_reference_correction",
+        "human_review_required",
+        "select_passing_attempt"
+      ],
+      "title": "RepairRoute",
+      "type": "string"
+    },
+    "RepairSeverity": {
+      "description": "How much of the shot the T20 score says has to change.\n\nThe bands mirror T20 exactly: at or above the applicable pass threshold the\nshot is not repaired at all, ``75`` to below the threshold earns a targeted\nrepair, and below ``75`` earns a structural one. A hard failure is severe\nregardless of score.",
+      "enum": [
+        "targeted",
+        "structural",
+        "unrecoverable"
+      ],
+      "title": "RepairSeverity",
+      "type": "string"
+    },
+    "VisualQABoundingBox": {
+      "additionalProperties": false,
+      "properties": {
+        "height": {
+          "exclusiveMinimum": 0,
+          "maximum": 1,
+          "title": "Height",
+          "type": "number"
+        },
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "width": {
+          "exclusiveMinimum": 0,
+          "maximum": 1,
+          "title": "Width",
+          "type": "number"
+        },
+        "x": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "X",
+          "type": "number"
+        },
+        "y": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Y",
+          "type": "number"
+        }
+      },
+      "required": [
+        "x",
+        "y",
+        "width",
+        "height"
+      ],
+      "title": "VisualQABoundingBox",
+      "type": "object"
+    },
+    "VisualQARepairCode": {
+      "description": "The bounded taxonomy T21 consumes. Adding a member is a version change.",
+      "enum": [
+        "WRONG_CHARACTER_IDENTITY",
+        "MISSING_PRIMARY_CHARACTER",
+        "EXTRA_CHARACTER",
+        "WRONG_CHARACTER_COUNT",
+        "WRONG_WARDROBE",
+        "WRONG_CHARACTER_STATE",
+        "WRONG_LOCATION",
+        "WRONG_LOCATION_STATE",
+        "MISSING_REQUIRED_PROP",
+        "WRONG_PROP_OWNERSHIP",
+        "MISSING_MANDATORY_ACTION",
+        "WRONG_ACTION",
+        "INSUFFICIENT_MOTION",
+        "EXCESSIVE_MOTION",
+        "CAMERA_PLAN_MISMATCH",
+        "COMPOSITION_MISMATCH",
+        "SCREEN_DIRECTION_CONTRADICTION",
+        "FACE_BREAKAGE",
+        "ANATOMY_BREAKAGE",
+        "UNINTENDED_TEXT",
+        "STYLE_DRIFT",
+        "CONTINUITY_BREAK",
+        "BLACK_VIDEO",
+        "EXCESSIVE_FREEZE",
+        "EXCESSIVE_FLICKER",
+        "DURATION_MISMATCH",
+        "DECODE_FAILURE",
+        "PROMPT_TOO_COMPLEX",
+        "TOO_MANY_CHARACTERS",
+        "TOO_MANY_REFERENCES",
+        "AMBIGUOUS_VISUAL_EVIDENCE",
+        "HUMAN_REVIEW_REQUIRED"
+      ],
+      "title": "VisualQARepairCode",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "description": "One recorded routing decision, with everything it was based on.",
+  "properties": {
+    "alternate_provider_attempts_used": {
+      "default": 0,
+      "maximum": 1,
+      "minimum": 0,
+      "title": "Alternate Provider Attempts Used",
+      "type": "integer"
+    },
+    "budget_remaining": {
+      "anyOf": [
+        {
+          "minimum": 0.0,
+          "type": "number"
+        },
+        {
+          "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Budget Remaining"
+    },
+    "capability_profile_hash": {
+      "anyOf": [
+        {
+          "pattern": "^[a-f0-9]{64}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Capability Profile Hash"
+    },
+    "classification": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/RepairClassification"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "contract_version": {
+      "const": "repair/1.0",
+      "default": "repair/1.0",
+      "title": "Contract Version",
+      "type": "string"
+    },
+    "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+    },
+    "decision_id": {
+      "format": "uuid",
+      "title": "Decision Id",
+      "type": "string"
+    },
+    "estimated_next_cost": {
+      "anyOf": [
+        {
+          "minimum": 0.0,
+          "type": "number"
+        },
+        {
+          "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+          "type": "string"
+        }
+      ],
+      "default": "0",
+      "title": "Estimated Next Cost"
+    },
+    "fallback_renders_used": {
+      "default": 0,
+      "maximum": 1,
+      "minimum": 0,
+      "title": "Fallback Renders Used",
+      "type": "integer"
+    },
+    "human_review_reason": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/HumanReviewReason"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "planner_version": {
+      "maxLength": 64,
+      "minLength": 1,
+      "title": "Planner Version",
+      "type": "string"
+    },
+    "policy_version": {
+      "maxLength": 64,
+      "minLength": 1,
+      "title": "Policy Version",
+      "type": "string"
+    },
+    "rationale": {
+      "items": {
+        "type": "string"
+      },
+      "maxItems": 16,
+      "title": "Rationale",
+      "type": "array"
+    },
+    "repair_codes": {
+      "items": {
+        "$ref": "#/$defs/VisualQARepairCode"
+      },
+      "maxItems": 16,
+      "title": "Repair Codes",
+      "type": "array"
+    },
+    "repair_run_id": {
+      "format": "uuid",
+      "title": "Repair Run Id",
+      "type": "string"
+    },
+    "route": {
+      "$ref": "#/$defs/RepairRoute"
+    },
+    "same_provider_repairs_used": {
+      "default": 0,
+      "maximum": 2,
+      "minimum": 0,
+      "title": "Same Provider Repairs Used",
+      "type": "integer"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "sequence": {
+      "maximum": 16,
+      "minimum": 0,
+      "title": "Sequence",
+      "type": "integer"
+    },
+    "source_attempt_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Source Attempt Id"
+    },
+    "source_qa_result_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Source Qa Result Id"
+    }
+  },
+  "required": [
+    "decision_id",
+    "repair_run_id",
+    "sequence",
+    "route",
+    "planner_version",
+    "policy_version",
+    "created_at"
+  ],
+  "title": "RepairDecision",
+  "type": "object"
+}

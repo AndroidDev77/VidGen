@@ -1,0 +1,85 @@
+{
+  "$defs": {
+    "PromptConstraintKind": {
+      "description": "Every constraint class a repaired prompt has to account for.",
+      "enum": [
+        "character_identity",
+        "character_count",
+        "character_state",
+        "location",
+        "action",
+        "camera",
+        "timing",
+        "continuity",
+        "reference_binding",
+        "safety",
+        "provider_capability",
+        "negative",
+        "style"
+      ],
+      "title": "PromptConstraintKind",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "description": "One constraint the original prompt asserted, and whether it may move.",
+  "properties": {
+    "clause": {
+      "maxLength": 500,
+      "minLength": 1,
+      "title": "Clause",
+      "type": "string"
+    },
+    "constraint_id": {
+      "maxLength": 64,
+      "minLength": 1,
+      "title": "Constraint Id",
+      "type": "string"
+    },
+    "entity_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Entity Id"
+    },
+    "kind": {
+      "$ref": "#/$defs/PromptConstraintKind"
+    },
+    "mutable": {
+      "default": false,
+      "title": "Mutable",
+      "type": "boolean"
+    },
+    "rendered": {
+      "default": true,
+      "title": "Rendered",
+      "type": "boolean"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "source": {
+      "default": "",
+      "maxLength": 64,
+      "title": "Source",
+      "type": "string"
+    }
+  },
+  "required": [
+    "constraint_id",
+    "kind",
+    "clause"
+  ],
+  "title": "PromptConstraint",
+  "type": "object"
+}

@@ -6,7 +6,7 @@ The complete system architecture and T01-T26 implementation roadmap are maintain
 [`docs/TECHNICAL_DESIGN.md`](docs/TECHNICAL_DESIGN.md). Contributors and coding agents should
 read it together with `AGENTS.md` before planning the next roadmap task.
 
-This repository implements roadmap tasks T01 through T20 and T23, so the pipeline now runs end to
+This repository implements roadmap tasks T01 through T21 and T23, so the pipeline now runs end to
 end behind a customer-facing web application. The foundations include subtitle-first transcript
 acquisition, restartable episode analysis, comedy script generation, measured narration,
 deterministic storyboard timing, reviewed keyframe and video generation, deterministic captioned
@@ -30,6 +30,14 @@ code from validated dimension values, a hard failure always blocks the shot, eve
 finding cites an exact frame and timestamp, and every non-pass result carries structured repair
 codes. T20 identifies repairs; T21 owns repair and fallback routing.
 
+T21 repair and fallback routing is complete. A failed T20 video-QA result is classified into one of
+five strict categories, repaired with a minimal validated prompt delta, and driven through a bounded
+policy: at most two same-provider repair generations, then one Google Veo alternate-provider
+generation, then a free deterministic 2.5D parallax render when the shot is eligible, and otherwise
+`HUMAN_REVIEW_REQUIRED`. Every repaired or fallback output is revalidated by T20 before it can be
+selected, the complete attempt lineage and its costs are persisted, and only the failed shot is
+touched.
+
 - Python monorepo, CI, and local infrastructure
 - Versioned Pydantic contracts plus exported JSON Schema
 - PostgreSQL data model and Alembic migration
@@ -52,6 +60,9 @@ codes. T20 identifies repairs; T21 owns repair and fallback routing.
 - T20 semantic visual QA: deterministic sampling and media checks, a versioned weighted rubric,
   application-side score recomputation, bounded adjudication, evidence-linked findings, structured
   repair codes, T16 gating, T17 render eligibility, and review-UI panels
+- T21 repair and fallback routing: bounded failure classification, minimal validated prompt repair,
+  two same-provider repairs, one Google Veo alternate-provider attempt, a free deterministic 2.5D
+  parallax fallback, T20 revalidation before any selection, complete attempt lineage and costs
 
 ## T18 MVP review UI and control-plane APIs
 
@@ -723,7 +734,7 @@ continues trace and bounded-metric propagation without fabricated provider costs
 
 Local entry points are `uv run python scripts/render_project.py PROJECT_UUID` and
 `uv run python scripts/inspect_render.py PROJECT_UUID` once a project has completed and locked T16
-outputs. T21 and later roadmap stages remain unfinished.
+outputs. T22 and later roadmap stages remain unfinished.
 
 The required synthetic acceptance test generates ten copyright-free clips and narration with
 FFmpeg at test time, persists SRT/WebVTT, renders and fully decodes a 1920x1080 H.264/yuv420p MP4
@@ -912,4 +923,288 @@ configured and verified for its other agent roles), plus the usual `VIDGEN_BLOB_
 
 T20 persistence adds `visual_qa_runs`, `visual_qa_samples`, `visual_qa_attempts`,
 `visual_qa_results`, `visual_qa_evidence` and `visual_qa_human_reviews` in Alembic revision
-`0016_visual_qa`, the repository's single current head.
+`0016_visual_qa`.
+
+## T21 repair and fallback routing
+
+T20 decides whether a shot passes. T21 decides what to do about a shot that did not, and it does
+so within a policy that cannot spend unbounded money. It consumes one failed T20 result, classifies
+why the shot failed, and drives the safest, least expensive valid recovery path to a terminal
+state: a revalidated, selected output, or `HUMAN_REVIEW_REQUIRED`.
+
+T21 never reinterprets a T20 decision. The score, the applicable threshold and the hard-failure
+flag are read from the persisted T20 report and copied through unchanged; the only thing derived
+from them is *how much* has to change.
+
+### Architecture
+
+Each concern lives in its own module, and the boundaries are deliberate:
+
+| Module | Responsibility |
+| --- | --- |
+| `services/qa/repair_classifier.py` | Why the shot failed, from T20 evidence alone |
+| `services/qa/repair_planner.py` | The minimal prompt delta, and its deterministic validation |
+| `services/qa/repair_policy.py` | The bounded route order and its attempt ceilings |
+| `services/qa/repair.py` | Restartable orchestration, persistence, spend and revalidation |
+| `services/animation/veo.py` | Every Veo model, capability and price, in exactly one place |
+| `services/animation/veo_adapter.py` | The provider-neutral alternate-provider boundary |
+| `services/animation/veo_fake.py` | A deterministic, credential-free stand-in |
+| `services/renderer/parallax_manifest.py` | Deterministic 2.5D planning and eligibility |
+| `services/renderer/parallax.py` | The FFmpeg execution of one plan |
+
+### Failure classification
+
+Every failed shot is classified into exactly one of five strict categories - `prompt_issue`,
+`reference_issue`, `seed_issue`, `provider_issue`, `impossible_shot` - with a decisive diagnostic
+code drawn from a bounded taxonomy. The classifier distinguishes wrong character identity, wrong
+character count, wrong location, wrong wardrobe or character state, missing or incorrect action,
+weak motion, composition failure, anatomy or visual-artifact failure, continuity failure, style
+mismatch, prompt overconstraint, prompt ambiguity, reference conflict, provider safety rejection,
+provider timeout or service failure, unsupported provider capability, impossible duration or motion
+request, and corrupt or incomplete downloaded media.
+
+Every T20 repair code maps to exactly one diagnostic; an unmapped code raises rather than being
+silently ignored, so the two taxonomies cannot drift apart unnoticed. Deterministic input, lineage,
+configuration and media-processing failures are marked `deterministic_only`, and the router is
+forbidden from spending money on them.
+
+### Score-aware severity
+
+The bands mirror T20 exactly:
+
+| T20 score | Severity |
+| --- | --- |
+| at or above the applicable threshold (85 normal, 90 hero) | not repaired; T20 already passed it |
+| 75 to below the threshold | targeted repair |
+| below 75 | structural repair - simplification, a new seed, reduced composition complexity |
+
+A hard failure always fails regardless of score, so it always earns at least a targeted repair, and
+a hard failure in a categorical dimension - the wrong person, the wrong place, the wrong number of
+people - is always structural.
+
+### The bounded repair policy
+
+```
+T20 QA failure
+-> classify failure
+-> same-provider repair 1        -> T20 QA
+-> same-provider repair 2        -> T20 QA
+-> one alternate-provider attempt -> T20 QA
+-> deterministic 2.5D fallback when eligible -> T20 QA
+-> otherwise HUMAN_REVIEW_REQUIRED
+```
+
+The original failed generation is recorded as attempt ordinal `0` and is **not** one of the two
+repair attempts. One shot therefore costs at most one original generation, two same-provider repair
+generations, one alternate-provider generation, and one deterministic fallback render, which costs
+no provider charge at all. There is no loop back and no unbounded retry: `repair_attempts` caps its
+ordinal in the database, and the route order is a total function of the attempts already spent.
+
+Network polling, media download, normalization and storage retries are not routes. When a durable
+provider operation already exists the router returns `resume_provider_operation`, which consumes no
+attempt and starts no new paid generation. An attempt interrupted between persisting its clip and
+running T20 on it is revalidated on resume rather than regenerated.
+
+### Minimal prompt repair
+
+A repaired prompt is a delta, never a rewrite. `extract_constraints` derives the ordered, stably
+identified constraints the original prompt asserted - required identities, character count,
+appearance and state, location, action, camera framing and movement, shot timing, continuity,
+approved T19 reference bindings, safety limits, provider capability limits, negative constraints and
+style - and marks which of them may move. Only the clauses a diagnostic actually implicates are
+touched; every other constraint is carried through and listed by name.
+
+Some constraints are enforced by the request rather than by prose. Shot timing, the capability
+profile and the reference bundle are carried by the request's duration parameter, its capability
+validation and its attached reference assets, so they are preserved and recorded but not written
+into the prompt text.
+
+The persisted `PromptDelta` records added, removed and rewritten clauses, preserved and touched
+constraint IDs, the repair reason and codes, the source QA finding IDs, the before and after prompt
+hashes, the seed change, and the planner version. `validate_delta` runs for *every* planner before
+any provider request: a delta that drops a required constraint, touches an immutable one, edits a
+clause its diagnostic never mentioned, or whose hash does not match the rendered prompt is rejected
+and costs nothing.
+
+`DeterministicRepairPlanner` is the default and the test planner; the same classification always
+produces the same delta. `LanguageModelRepairPlanner` is the production option: a configured model
+may *propose* a `RepairPlannerProposal`, and its proposal goes through exactly the same
+deterministic validation. There is no path from model prose to a provider request, and the bounded
+brief the model receives contains only the editable clauses.
+
+### Reference failures
+
+T21 never mutates an approved T19 character or location reference. When T20 evidence shows the
+approved reference itself is missing, stale, incompatible or in conflict, the shot is classified as
+a `reference_issue`, the evidence explaining the conflict is preserved, no replacement is
+fabricated, and the run is routed to `upstream_reference_correction` and `HUMAN_REVIEW_REQUIRED`.
+Money is never spent regenerating against a reference already known to be invalid. A generation that
+merely *failed to follow* a valid reference is a prompt issue and still earns its targeted repairs.
+
+### Attempt lineage
+
+Every attempt links to its immediate predecessor and to the root generation, and records the shot,
+the attempt ordinal and kind, the provider and model, the provider task or operation ID, the prompt
+hash and delta, the seed, the reference asset IDs and hashes, the capability-profile hash, the
+repair classification and code, the source QA result, the output assets, the output QA result, the
+estimated and actual cost, the status, the failure classification, trace context, and the created,
+started and completed timestamps.
+
+Attempt identities hash the ordinal together with every material input, so two attempts cannot
+collide. Only one attempt per shot may be `selected`, the database enforces it with a partial unique
+index, and selection is impossible without the attempt's own passing T20 result. Previous attempts
+stay in place as immutable historical records.
+
+### Google Veo as the alternate provider
+
+Every Veo fact lives in `services/animation/veo.py`: the supported model IDs, the fast and quality
+variants, durations, aspect ratios, resolutions, image-to-video, first- and last-frame control,
+reference-image support, native-audio behaviour, regional availability, request limits, polling
+behaviour and pricing identifiers. No other module names a Veo model.
+
+Capabilities are versioned and every attempt persists the profile hash it was generated under.
+Capability enforcement reads the profile, never the family: `veo-3.0-fast-generate-001` has no
+last-frame or reference-image control, and handing it one raises before any paid call rather than
+being silently dropped. The cost-controlled default is `veo-3.1-fast-generate-001`. Veo offers a
+small set of whole-second durations, so a shot whose canonical length is not one of them is
+generated at the smallest covering duration and trimmed by the same deterministic T15 trimmer.
+
+The adapter drives Vertex AI's long-running operation correctly. The operation name is persisted in
+the same transaction as the pre-call checkpoint, before the first poll, so an interrupted worker
+resumes the operation it already paid for. A transport failure that leaves the submission outcome
+unknown raises `VeoSubmissionAmbiguous`, which is routed to human review and **never** resubmitted.
+Output is streamed to temporary storage in bounded chunks, validated with ffprobe, normalized and
+trimmed through the existing T15 media infrastructure, and stored through `AssetService` with full
+provider and model provenance. Credentials, prompts, signed URLs and raw provider payloads are never
+logged or persisted.
+
+Veo 3 models generate native audio. T17 remains responsible for combining final visuals with
+approved narration, so T21 requests silent video wherever the model allows it.
+
+The application and the deterministic test suite work with no Google credentials, and no test or CI
+run makes a paid Veo call.
+
+### Deterministic 2.5D parallax fallback
+
+When every paid attempt is spent, a shot whose purpose can be conveyed through controlled
+still-image motion falls back to a deterministic 2.5D render of its approved keyframe. It needs no
+provider, no credential and no network.
+
+Layer transforms are derived from a stable render identity over the shot, the source asset and its
+hash, the geometry and the canonical duration, so the same shot always produces the same camera move
+and two shots never accidentally produce the same one. A second plane is added only when a real mask
+or depth map exists; without depth separation the render stays an honest single-plane camera move.
+The move is large and its easing is linear on purpose: a gentle eased move is nearly static at both
+ends, and T20's deterministic freeze check counts exactly those frames.
+
+The renderer invokes FFmpeg and FFprobe through argument arrays, never a shell command string, and
+never loads a whole video into memory. Output is repository-standard H.264 `yuv420p` MP4 at the
+shot's exact canonical duration, pinned by the same trimmer T15 applies to provider output. A
+versioned manifest recording every input asset, every transformation, the filter graph, both
+argument arrays and both tool versions is persisted as its own asset.
+
+Eligibility is decided deterministically and conservatively. A shot is rejected when it needs
+motion a 2.5D render cannot truthfully represent - essential complex character interaction or a
+mandatory physical action - and when its source keyframe already carries a T20 hard identity or
+location failure. Parallax is never used to conceal an invalid source image.
+
+### Budget and cost limits
+
+Every paid repair generation goes through the existing T23 infrastructure: a durable provider
+attempt is created or reused, cost is estimated from the active pricing catalog, budget is reserved
+transactionally, the pre-call checkpoint is persisted, and trace context is propagated. After
+completion the provider operation identity and actual usage are recorded, the reservation is
+reconciled and any unused amount released, failures are classified with the T23 taxonomy, and
+bounded, redacted metrics are emitted.
+
+There is no hard-coded numeric repair budget. The project's configured T23 hard cap is the money
+limit, with optional configured per-shot and per-repair-run limits on top. If the next attempt would
+exceed an applicable hard limit the provider is not called at all: the shot is routed to
+`HUMAN_REVIEW_REQUIRED` with a structured budget reason. Idempotent retries create no duplicate
+provider attempts, reservations, reconciliation events, ledger entries or charges.
+
+### Temporal integration
+
+A failed T20 video QA result starts or resumes T21 for that shot through the `run_shot_repair`
+activity. The child workflow adds `REPAIR_PLANNING`, `REPAIRING`, `ALTERNATE_PROVIDER`,
+`FALLBACK_RENDERING`, `REVALIDATING`, `HUMAN_REVIEW_REQUIRED` and `REPAIR_FAILED` alongside the
+existing states, and only reaches `LOCKED` when the selected output has passed its own T20
+evaluation.
+
+Messages are compact, versioned and ID-only in both directions. Prompts, QA evidence, video bytes,
+provider responses, fallback manifests and image payloads are not representable in the contracts the
+workflow passes. Activity idempotency keys are stable and stage-isolated, existing provider
+operations are resumed rather than resubmitted, cancellation is honoured between paid attempts, and
+a repair touches only the failed shot: siblings keep their locked results and their passing QA.
+
+Concurrent workers cannot advance the same repair run twice. `repair_runs.advance_token` is taken
+with a conditional update, so the loser is told to re-read rather than driving the same route again.
+
+T17 consumes only the selected passing animation output.
+
+### API and dashboard
+
+The owner-scoped control plane exposes the repair runs for a project and for a shot, and a detail
+projection with the failure classification, the T20 score and hard-failure reason, the repair code,
+the full attempt lineage with provider and model per attempt, prompt changes as a structured delta,
+output asset and QA-result links, estimated and actual cost, the current budget state, the fallback
+render and the human-review reason. Projections carry no prompts, provider payloads or signed URLs.
+
+`POST .../repairs/{id}:act` records one owner decision: `retry` resumes a durable technical
+operation (never a new paid generation), `cancel` stops the run before the next paid attempt,
+`acknowledge` and `resolve` record a human decision on a review state, and
+`restart_after_reference_correction` reopens a run whose upstream reference has been corrected. No
+action can mark a hard-failing visual as passed - selection requires a new valid T20 result, and only
+a repair attempt can produce one. The T18 shot inspector renders all of it in a repair panel beside
+the existing visual-QA panel.
+
+### Local commands
+
+Fake mode is fully deterministic and needs no credential:
+
+```bash
+uv run python scripts/run_visual_repair.py PROJECT_UUID SHOT_UUID     --provider fake --alternate-provider fake
+```
+
+Supported flags are `--provider`, `--alternate-provider`, `--idempotency-key`,
+`--max-same-provider-repairs`, `--allow-parallax-fallback` / `--no-parallax-fallback`, `--resume`,
+`--per-shot-repair-cost-limit`, `--width`, `--height`, `--qa-provider` and `--json`. The command
+prints the repair-run ID, the root animation-attempt ID, the current attempt and route, the failure
+classification and repair code, the provider and model, the provider operation ID where one applies,
+the QA score and decision, the selected output asset ID, the attempt lineage, a cost summary and the
+final status.
+
+The production command uses the configured providers:
+
+```bash
+RUNWAYML_API_SECRET=... VIDGEN_GOOGLE_CLOUD_PROJECT=... VIDGEN_GOOGLE_ACCESS_TOKEN=... VIDGEN_OPENAI_API_KEY=... VIDGEN_DATABASE_URL=... VIDGEN_BLOB_ROOT=... VIDGEN_BLOB_SIGNING_SECRET=... uv run python scripts/run_visual_repair.py PROJECT_UUID SHOT_UUID     --provider runway --alternate-provider veo --qa-provider openai
+```
+
+Relevant settings are `VIDGEN_REPAIR_ALTERNATE_PROVIDER` (`none` by default, `veo` to enable the
+single bounded alternate-provider attempt once Google credentials are configured),
+`VIDGEN_REPAIR_MAX_SAME_PROVIDER_REPAIRS`, `VIDGEN_REPAIR_ALLOW_PARALLAX_FALLBACK`,
+`VIDGEN_REPAIR_PER_SHOT_COST_LIMIT`, `VIDGEN_VEO_MODEL` and `VIDGEN_VEO_LOCATION`.
+
+### Known limitations
+
+- The Veo capability profile and pricing are verified against Google's published documentation on a
+  recorded date. Google has changed Veo model IDs and per-second prices more than once; re-check the
+  official documentation before changing a value, because a stale entry silently mis-estimates every
+  alternate-provider repair.
+- Without a mask or depth map the fallback is a single-plane camera move rather than true parallax.
+  The repository does not yet generate depth maps.
+- The deterministic planner's repair clauses are English and tuned for the current prompt compiler;
+  a project in another language should configure the language-model planner, whose output still
+  passes the same deterministic validation.
+- Routing to `HUMAN_REVIEW_REQUIRED` on a budget denial happens even when the free deterministic
+  fallback is still available, because the policy requires a structured budget stop.
+- The alternate-provider route is off by default. An unconfigured deployment keeps its
+  same-provider repairs and the free 2.5D fallback rather than failing every repair on a missing
+  Google credential; set `VIDGEN_REPAIR_ALTERNATE_PROVIDER=veo` to turn it on.
+- The Veo adapter reads inline output only. T21 never sets `storageUri`, so a Cloud Storage handle
+  in a completed operation is refused rather than fetched with a client this adapter does not have.
+- FFmpeg and ffprobe must be on `PATH`; every T21 media test synthesises its fixtures with them.
+
+T21 persistence adds `repair_runs`, `repair_attempts`, `repair_decisions`,
+`repair_fallback_renders` and `repair_veo_operations` in Alembic revision `0017_repair_fallback`,
+the repository's single current head.

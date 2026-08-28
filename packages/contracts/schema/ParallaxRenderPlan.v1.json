@@ -1,0 +1,237 @@
+{
+  "$defs": {
+    "ParallaxEasing": {
+      "enum": [
+        "linear",
+        "ease_in_out"
+      ],
+      "title": "ParallaxEasing",
+      "type": "string"
+    },
+    "ParallaxLayer": {
+      "additionalProperties": false,
+      "description": "One deterministic transform applied to one approved still image.",
+      "properties": {
+        "depth_map_asset_id": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Depth Map Asset Id"
+        },
+        "easing": {
+          "$ref": "#/$defs/ParallaxEasing",
+          "default": "ease_in_out"
+        },
+        "end_offset_x": {
+          "maximum": 1,
+          "minimum": -1,
+          "title": "End Offset X",
+          "type": "number"
+        },
+        "end_offset_y": {
+          "maximum": 1,
+          "minimum": -1,
+          "title": "End Offset Y",
+          "type": "number"
+        },
+        "end_scale": {
+          "exclusiveMinimum": 0,
+          "maximum": 4,
+          "title": "End Scale",
+          "type": "number"
+        },
+        "mask_asset_id": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Mask Asset Id"
+        },
+        "opacity": {
+          "default": 1.0,
+          "exclusiveMinimum": 0,
+          "maximum": 1,
+          "title": "Opacity",
+          "type": "number"
+        },
+        "role": {
+          "$ref": "#/$defs/ParallaxLayerRole"
+        },
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "source_asset_id": {
+          "format": "uuid",
+          "title": "Source Asset Id",
+          "type": "string"
+        },
+        "source_sha256": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Source Sha256",
+          "type": "string"
+        },
+        "start_offset_x": {
+          "maximum": 1,
+          "minimum": -1,
+          "title": "Start Offset X",
+          "type": "number"
+        },
+        "start_offset_y": {
+          "maximum": 1,
+          "minimum": -1,
+          "title": "Start Offset Y",
+          "type": "number"
+        },
+        "start_scale": {
+          "exclusiveMinimum": 0,
+          "maximum": 4,
+          "title": "Start Scale",
+          "type": "number"
+        }
+      },
+      "required": [
+        "role",
+        "source_asset_id",
+        "source_sha256",
+        "start_scale",
+        "end_scale",
+        "start_offset_x",
+        "start_offset_y",
+        "end_offset_x",
+        "end_offset_y"
+      ],
+      "title": "ParallaxLayer",
+      "type": "object"
+    },
+    "ParallaxLayerRole": {
+      "enum": [
+        "background",
+        "foreground"
+      ],
+      "title": "ParallaxLayerRole",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "description": "A deterministic, fully specified 2.5D render, derived from stable inputs.",
+  "properties": {
+    "container": {
+      "const": "mp4",
+      "default": "mp4",
+      "title": "Container",
+      "type": "string"
+    },
+    "contract_version": {
+      "const": "repair/1.0",
+      "default": "repair/1.0",
+      "title": "Contract Version",
+      "type": "string"
+    },
+    "exact_duration_us": {
+      "minimum": 0,
+      "title": "Exact Duration Us",
+      "type": "integer"
+    },
+    "frame_rate": {
+      "exclusiveMinimum": 0,
+      "maximum": 120,
+      "title": "Frame Rate",
+      "type": "integer"
+    },
+    "height": {
+      "exclusiveMinimum": 0,
+      "maximum": 4320,
+      "title": "Height",
+      "type": "integer"
+    },
+    "layers": {
+      "items": {
+        "$ref": "#/$defs/ParallaxLayer"
+      },
+      "maxItems": 4,
+      "minItems": 1,
+      "title": "Layers",
+      "type": "array"
+    },
+    "pixel_format": {
+      "const": "yuv420p",
+      "default": "yuv420p",
+      "title": "Pixel Format",
+      "type": "string"
+    },
+    "plan_id": {
+      "format": "uuid",
+      "title": "Plan Id",
+      "type": "string"
+    },
+    "render_identity": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Render Identity",
+      "type": "string"
+    },
+    "renderer_version": {
+      "maxLength": 64,
+      "minLength": 1,
+      "title": "Renderer Version",
+      "type": "string"
+    },
+    "repair_attempt_id": {
+      "format": "uuid",
+      "title": "Repair Attempt Id",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "shot_id": {
+      "format": "uuid",
+      "title": "Shot Id",
+      "type": "string"
+    },
+    "video_codec": {
+      "const": "h264",
+      "default": "h264",
+      "title": "Video Codec",
+      "type": "string"
+    },
+    "width": {
+      "exclusiveMinimum": 0,
+      "maximum": 7680,
+      "title": "Width",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "plan_id",
+    "renderer_version",
+    "repair_attempt_id",
+    "shot_id",
+    "render_identity",
+    "layers",
+    "width",
+    "height",
+    "frame_rate",
+    "exact_duration_us"
+  ],
+  "title": "ParallaxRenderPlan",
+  "type": "object"
+}

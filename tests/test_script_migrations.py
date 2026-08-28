@@ -51,6 +51,6 @@ def test_single_alembic_head_after_t23_and_t11_merge(
     from alembic.script import ScriptDirectory
 
     script = ScriptDirectory.from_config(config)
-    heads = script.get_heads()
-    assert len(heads) == 1
-    assert heads[0] == "0016_visual_qa"
+    # The chain always has exactly one head; its name moves with each roadmap
+    # task, so assert the invariant rather than the current name.
+    assert len(script.get_heads()) == 1

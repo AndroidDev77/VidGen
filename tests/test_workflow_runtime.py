@@ -95,6 +95,8 @@ def test_production_worker_configures_every_t16_activity(tmp_path: Path) -> None
         "run_shot_keyframe_qa",
         "run_shot_animation",
         "run_shot_video_qa",
+        # T21 repair for a shot T20 blocked.
+        "run_shot_repair",
         "persist_shot_checkpoint",
         "persist_shot_fanout_checkpoint",
     }

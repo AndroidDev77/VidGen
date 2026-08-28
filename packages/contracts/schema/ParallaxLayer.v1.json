@@ -1,0 +1,129 @@
+{
+  "$defs": {
+    "ParallaxEasing": {
+      "enum": [
+        "linear",
+        "ease_in_out"
+      ],
+      "title": "ParallaxEasing",
+      "type": "string"
+    },
+    "ParallaxLayerRole": {
+      "enum": [
+        "background",
+        "foreground"
+      ],
+      "title": "ParallaxLayerRole",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "description": "One deterministic transform applied to one approved still image.",
+  "properties": {
+    "depth_map_asset_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Depth Map Asset Id"
+    },
+    "easing": {
+      "$ref": "#/$defs/ParallaxEasing",
+      "default": "ease_in_out"
+    },
+    "end_offset_x": {
+      "maximum": 1,
+      "minimum": -1,
+      "title": "End Offset X",
+      "type": "number"
+    },
+    "end_offset_y": {
+      "maximum": 1,
+      "minimum": -1,
+      "title": "End Offset Y",
+      "type": "number"
+    },
+    "end_scale": {
+      "exclusiveMinimum": 0,
+      "maximum": 4,
+      "title": "End Scale",
+      "type": "number"
+    },
+    "mask_asset_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Mask Asset Id"
+    },
+    "opacity": {
+      "default": 1.0,
+      "exclusiveMinimum": 0,
+      "maximum": 1,
+      "title": "Opacity",
+      "type": "number"
+    },
+    "role": {
+      "$ref": "#/$defs/ParallaxLayerRole"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "source_asset_id": {
+      "format": "uuid",
+      "title": "Source Asset Id",
+      "type": "string"
+    },
+    "source_sha256": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Source Sha256",
+      "type": "string"
+    },
+    "start_offset_x": {
+      "maximum": 1,
+      "minimum": -1,
+      "title": "Start Offset X",
+      "type": "number"
+    },
+    "start_offset_y": {
+      "maximum": 1,
+      "minimum": -1,
+      "title": "Start Offset Y",
+      "type": "number"
+    },
+    "start_scale": {
+      "exclusiveMinimum": 0,
+      "maximum": 4,
+      "title": "Start Scale",
+      "type": "number"
+    }
+  },
+  "required": [
+    "role",
+    "source_asset_id",
+    "source_sha256",
+    "start_scale",
+    "end_scale",
+    "start_offset_x",
+    "start_offset_y",
+    "end_offset_x",
+    "end_offset_y"
+  ],
+  "title": "ParallaxLayer",
+  "type": "object"
+}

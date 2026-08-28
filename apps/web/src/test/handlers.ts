@@ -63,6 +63,30 @@ export const handlers: HttpHandler[] = [
     return HttpResponse.json(fixtures.shotDetail(index));
   }),
   http.get(`${project}/visual-qa`, () => HttpResponse.json(fixtures.visualQaCollection(0))),
+  http.get(`${project}/repairs`, () => HttpResponse.json(fixtures.repairCollection(0))),
+  http.get(`${project}/shots/:shotId/repairs`, ({ params }) => {
+    const index = fixtures.storyboard.shots.findIndex((shot) => shot.shot_id === params.shotId);
+    if (index < 0) {
+      return HttpResponse.json(apiError("not_found", "Shot not found."), { status: 404 });
+    }
+    return HttpResponse.json(fixtures.repairCollection(index));
+  }),
+  http.get(`${project}/shots/:shotId/repairs/:repairRunId`, () =>
+    HttpResponse.json(fixtures.repairDetail(0)),
+  ),
+  // ``:act`` is an action suffix on the run path, so the handler matches the
+  // raw URL rather than a path parameter.
+  http.post(/\/repairs\/[^/]+:act$/, async ({ request }) => {
+    const body = (await request.json()) as { action: string };
+    return HttpResponse.json({
+      repair_run_id: new URL(request.url).pathname.split("/").at(-1)!.split(":")[0],
+      action: body.action,
+      accepted: true,
+      state: "REPAIR_PLANNING",
+      code: "restarted_after_upstream_correction",
+      row_version: 4,
+    });
+  }),
   http.get(`${project}/shots/:shotId/visual-qa`, ({ params }) => {
     const index = fixtures.storyboard.shots.findIndex((shot) => shot.shot_id === params.shotId);
     if (index < 0) {

@@ -17,6 +17,7 @@
         "technical_validation_failure",
         "visual_qa_failure",
         "visual_qa_review_required",
+        "repair_exhausted",
         "cancellation",
         "unknown_failure"
       ],
@@ -84,6 +85,19 @@
           "title": "Current Stage",
           "type": "string"
         },
+        "human_review_reason": {
+          "anyOf": [
+            {
+              "maxLength": 64,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Human Review Reason"
+        },
         "last_checkpoint": {
           "anyOf": [
             {
@@ -106,6 +120,19 @@
             }
           ],
           "default": null
+        },
+        "repair_run_id": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Repair Run Id"
         },
         "retryable": {
           "default": false,
@@ -130,6 +157,19 @@
           ],
           "default": null,
           "title": "Selected Keyframe Asset Id"
+        },
+        "selected_repair_attempt_id": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Selected Repair Attempt Id"
         },
         "selected_video_asset_id": {
           "anyOf": [
@@ -224,6 +264,13 @@
         "keyframe_qa",
         "animating",
         "video_qa",
+        "repair_planning",
+        "repairing",
+        "alternate_provider",
+        "fallback_rendering",
+        "revalidating",
+        "human_review_required",
+        "repair_failed",
         "locked",
         "failed",
         "cancelled"

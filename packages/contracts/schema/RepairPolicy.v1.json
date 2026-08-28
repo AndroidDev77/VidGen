@@ -1,0 +1,90 @@
+{
+  "additionalProperties": false,
+  "description": "The bounded routing policy. Every limit is explicit and small.",
+  "properties": {
+    "allow_parallax_fallback": {
+      "default": true,
+      "title": "Allow Parallax Fallback",
+      "type": "boolean"
+    },
+    "max_alternate_provider_attempts": {
+      "default": 1,
+      "maximum": 1,
+      "minimum": 0,
+      "title": "Max Alternate Provider Attempts",
+      "type": "integer"
+    },
+    "max_fallback_renders": {
+      "default": 1,
+      "maximum": 1,
+      "minimum": 0,
+      "title": "Max Fallback Renders",
+      "type": "integer"
+    },
+    "max_same_provider_repairs": {
+      "default": 2,
+      "maximum": 2,
+      "minimum": 0,
+      "title": "Max Same Provider Repairs",
+      "type": "integer"
+    },
+    "per_run_repair_cost_limit": {
+      "anyOf": [
+        {
+          "minimum": 0.0,
+          "type": "number"
+        },
+        {
+          "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Per Run Repair Cost Limit"
+    },
+    "per_shot_repair_cost_limit": {
+      "anyOf": [
+        {
+          "minimum": 0.0,
+          "type": "number"
+        },
+        {
+          "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Per Shot Repair Cost Limit"
+    },
+    "policy_version": {
+      "maxLength": 64,
+      "minLength": 1,
+      "title": "Policy Version",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "targeted_repair_floor": {
+      "default": 75,
+      "maximum": 100,
+      "minimum": 0,
+      "title": "Targeted Repair Floor",
+      "type": "number"
+    }
+  },
+  "required": [
+    "policy_version"
+  ],
+  "title": "RepairPolicy",
+  "type": "object"
+}

@@ -12,6 +12,10 @@ import type {
   StoryboardProjection,
   StoryboardShotProjection,
   TranscriptProjection,
+  RepairAttemptProjection,
+  RepairCollectionResponse,
+  RepairRunDetailProjection,
+  RepairRunProjection,
   VisualQACollectionResponse,
   VisualQAEvidenceResponse,
   VisualQARunDetailProjection,
@@ -554,4 +558,161 @@ export function visualQaEvidence(index: number): VisualQAEvidenceResponse {
     ],
     samples: detail.samples,
   };
+}
+
+
+/* --- T21 repair and fallback ---------------------------------------------- */
+
+export function repairRun(
+  index: number,
+  overrides: Partial<RepairRunProjection> = {},
+): RepairRunProjection {
+  return {
+    repair_run_id: uuid(1100 + index, 9),
+    project_id: PROJECT_ID,
+    shot_id: uuid(index, 6),
+    state: "HUMAN_REVIEW_REQUIRED",
+    root_animation_attempt_id: uuid(1200 + index, 6),
+    triggering_qa_result_id: uuid(700 + index, 9),
+    failure_category: "prompt_issue",
+    failure_severity: "structural",
+    repair_code: "wrong_character_identity",
+    qa_score: 62.5,
+    pass_threshold: 85,
+    hard_failure: true,
+    hard_failure_reason: "WRONG_CHARACTER_IDENTITY",
+    total_attempt_count: 5,
+    same_provider_repairs_used: 2,
+    alternate_provider_attempts_used: 1,
+    fallback_renders_used: 1,
+    selected_attempt_id: null,
+    selected_asset_id: null,
+    final_qa_result_id: null,
+    final_qa_score: null,
+    human_review_reason: "attempt_limit_reached",
+    human_review_resolved: false,
+    policy_version: "t21-repair-policy/1.0",
+    planner_version: "t21-repair-planner-deterministic/1.0",
+    row_version: 3,
+    created_at: "2026-08-02T11:05:00Z",
+    updated_at: "2026-08-02T11:20:00Z",
+    ...overrides,
+  };
+}
+
+function repairAttempt(
+  index: number,
+  ordinal: number,
+  kind: RepairAttemptProjection["attempt_kind"],
+  overrides: Partial<RepairAttemptProjection> = {},
+): RepairAttemptProjection {
+  return {
+    attempt_id: uuid(1300 + index * 10 + ordinal, 9),
+    attempt_ordinal: ordinal,
+    attempt_kind: kind,
+    status: "failed",
+    predecessor_attempt_id: ordinal === 0 ? null : uuid(1300 + index * 10 + ordinal - 1, 9),
+    root_animation_attempt_id: uuid(1200 + index, 6),
+    provider: kind === "alternate_provider" ? "google_veo" : "fake",
+    model: kind === "alternate_provider" ? "veo-3.1-fast-generate-001" : "gen4_turbo",
+    provider_operation_id: kind === "alternate_provider" ? "operations/abc123" : null,
+    capability_profile_hash: null,
+    prompt_hash: ordinal === 0 ? null : HASH,
+    prompt_delta:
+      ordinal === 1
+        ? {
+            planner_version: "t21-repair-planner-deterministic/1.0",
+            repair_reason: "repair wrong_character_identity",
+            added_clauses: ["Match the referenced character's face, hair and skin tone exactly."],
+            removed_clauses: [],
+            rewritten_clauses: [],
+            preserved_constraint_ids: ["character-identity-0", "location", "timing"],
+            touched_constraint_ids: [],
+            before_prompt_hash: HASH,
+            after_prompt_hash: HASH,
+            seed_changed: true,
+            previous_seed: null,
+            new_seed: 12345,
+          }
+        : null,
+    seed: ordinal === 0 ? null : 12345,
+    output_asset_ids: [],
+    output_qa_result_id: null,
+    qa_score: 62.5,
+    qa_outcome: "FAIL",
+    estimated_cost: "0.200000",
+    actual_cost: "0.200000",
+    currency: "USD",
+    failure_category: "prompt_issue",
+    failure_code: null,
+    selected: false,
+    created_at: "2026-08-02T11:06:00Z",
+    completed_at: "2026-08-02T11:08:00Z",
+    ...overrides,
+  };
+}
+
+export function repairDetail(
+  index: number,
+  overrides: Partial<RepairRunDetailProjection> = {},
+): RepairRunDetailProjection {
+  return {
+    ...repairRun(index),
+    attempts: [
+      repairAttempt(index, 0, "original"),
+      repairAttempt(index, 1, "same_provider_repair"),
+      repairAttempt(index, 2, "same_provider_repair"),
+      repairAttempt(index, 3, "alternate_provider"),
+      repairAttempt(index, 4, "deterministic_fallback", {
+        provider: "parallax",
+        model: "parallax-renderer/1.0",
+        estimated_cost: "0.000000",
+        actual_cost: "0.000000",
+      }),
+    ],
+    decisions: [
+      {
+        decision_id: uuid(1400 + index, 9),
+        sequence: 0,
+        route: "same_provider_repair",
+        rationale: ["same-provider repair 1 of 2"],
+        failure_category: "prompt_issue",
+        repair_codes: ["WRONG_CHARACTER_IDENTITY"],
+        human_review_reason: null,
+        estimated_next_cost: "0.200000",
+        budget_remaining: "9.000000",
+        planner_version: "t21-repair-planner-deterministic/1.0",
+        policy_version: "t21-repair-policy/1.0",
+        created_at: "2026-08-02T11:06:00Z",
+      },
+    ],
+    fallback: {
+      repair_attempt_id: uuid(1300 + index * 10 + 4, 9),
+      renderer_version: "parallax-renderer/1.0",
+      render_identity: HASH,
+      input_asset_ids: [uuid(1500 + index, 6)],
+      exact_duration_us: 3_000_000,
+      width: 1280,
+      height: 720,
+      frame_rate: "24/1",
+      pixel_format: "yuv420p",
+      video_codec: "h264",
+      output_asset_id: uuid(1600 + index, 6),
+      manifest_asset_id: uuid(1700 + index, 6),
+      qa_result_id: null,
+    },
+    budget: {
+      currency: "USD",
+      total_repair_cost: "0.800000",
+      estimated_repair_cost: "0.800000",
+      per_shot_repair_cost_limit: null,
+      project_hard_cap: "10.000000",
+      project_remaining: "9.200000",
+    },
+    ...overrides,
+  };
+}
+
+export function repairCollection(index: number): RepairCollectionResponse {
+  return { project_id: PROJECT_ID, items: [repairRun(index)] };
 }

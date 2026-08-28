@@ -1,0 +1,217 @@
+{
+  "additionalProperties": false,
+  "description": "A provider-neutral pipeline request rendered for one Veo model.",
+  "properties": {
+    "application_idempotency_key": {
+      "maxLength": 255,
+      "minLength": 1,
+      "title": "Application Idempotency Key",
+      "type": "string"
+    },
+    "aspect_ratio": {
+      "pattern": "^\\d{1,2}:\\d{1,2}$",
+      "title": "Aspect Ratio",
+      "type": "string"
+    },
+    "attempt_ordinal": {
+      "maximum": 4,
+      "minimum": 0,
+      "title": "Attempt Ordinal",
+      "type": "integer"
+    },
+    "capability_profile_hash": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Capability Profile Hash",
+      "type": "string"
+    },
+    "capability_profile_version": {
+      "maxLength": 64,
+      "minLength": 1,
+      "title": "Capability Profile Version",
+      "type": "string"
+    },
+    "contract_version": {
+      "const": "repair/1.0",
+      "default": "repair/1.0",
+      "title": "Contract Version",
+      "type": "string"
+    },
+    "duration_seconds": {
+      "exclusiveMinimum": 0,
+      "maximum": 60,
+      "title": "Duration Seconds",
+      "type": "integer"
+    },
+    "first_frame_asset_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "First Frame Asset Id"
+    },
+    "first_frame_sha256": {
+      "anyOf": [
+        {
+          "pattern": "^[a-f0-9]{64}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "First Frame Sha256"
+    },
+    "generate_audio": {
+      "default": false,
+      "title": "Generate Audio",
+      "type": "boolean"
+    },
+    "last_frame_asset_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Last Frame Asset Id"
+    },
+    "last_frame_sha256": {
+      "anyOf": [
+        {
+          "pattern": "^[a-f0-9]{64}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Last Frame Sha256"
+    },
+    "model": {
+      "maxLength": 128,
+      "minLength": 1,
+      "title": "Model",
+      "type": "string"
+    },
+    "negative_prompt": {
+      "default": "",
+      "maxLength": 2000,
+      "title": "Negative Prompt",
+      "type": "string"
+    },
+    "person_generation": {
+      "default": "allow_adult",
+      "enum": [
+        "allow_adult",
+        "allow_all",
+        "dont_allow"
+      ],
+      "title": "Person Generation",
+      "type": "string"
+    },
+    "project_id": {
+      "format": "uuid",
+      "title": "Project Id",
+      "type": "string"
+    },
+    "prompt": {
+      "maxLength": 4000,
+      "minLength": 1,
+      "title": "Prompt",
+      "type": "string"
+    },
+    "prompt_hash": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Prompt Hash",
+      "type": "string"
+    },
+    "reference_asset_ids": {
+      "items": {
+        "format": "uuid",
+        "type": "string"
+      },
+      "maxItems": 3,
+      "title": "Reference Asset Ids",
+      "type": "array"
+    },
+    "repair_attempt_id": {
+      "format": "uuid",
+      "title": "Repair Attempt Id",
+      "type": "string"
+    },
+    "repair_run_id": {
+      "format": "uuid",
+      "title": "Repair Run Id",
+      "type": "string"
+    },
+    "resolution": {
+      "enum": [
+        "720p",
+        "1080p"
+      ],
+      "title": "Resolution",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "seed": {
+      "anyOf": [
+        {
+          "minimum": 0,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Seed"
+    },
+    "shot_id": {
+      "format": "uuid",
+      "title": "Shot Id",
+      "type": "string"
+    },
+    "trace_context": {
+      "additionalProperties": {
+        "type": "string"
+      },
+      "title": "Trace Context",
+      "type": "object"
+    }
+  },
+  "required": [
+    "application_idempotency_key",
+    "project_id",
+    "repair_run_id",
+    "repair_attempt_id",
+    "shot_id",
+    "attempt_ordinal",
+    "model",
+    "capability_profile_version",
+    "capability_profile_hash",
+    "prompt",
+    "prompt_hash",
+    "duration_seconds",
+    "aspect_ratio",
+    "resolution"
+  ],
+  "title": "VeoGenerationRequest",
+  "type": "object"
+}

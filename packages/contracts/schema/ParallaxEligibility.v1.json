@@ -1,0 +1,49 @@
+{
+  "additionalProperties": false,
+  "description": "The deterministic decision about whether a shot may use the fallback.",
+  "properties": {
+    "eligible": {
+      "title": "Eligible",
+      "type": "boolean"
+    },
+    "policy_version": {
+      "maxLength": 64,
+      "minLength": 1,
+      "title": "Policy Version",
+      "type": "string"
+    },
+    "reasons": {
+      "items": {
+        "type": "string"
+      },
+      "maxItems": 16,
+      "title": "Reasons",
+      "type": "array"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "source_keyframe_asset_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Source Keyframe Asset Id"
+    }
+  },
+  "required": [
+    "eligible",
+    "policy_version"
+  ],
+  "title": "ParallaxEligibility",
+  "type": "object"
+}
