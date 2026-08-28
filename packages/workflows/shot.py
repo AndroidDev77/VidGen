@@ -122,7 +122,14 @@ class ShotWorkflow:
         # A keyframe must pass T20 before any animation spend.
         self._progress.state = ShotWorkflowStatus.KEYFRAME_QA
         self._progress.current_stage = "t20_keyframe_qa"
+        t14_run_id = self._progress.t14_run_id
+        selected_keyframe_asset_id = self._progress.selected_keyframe_asset_id
         self._progress = await self._activity("run_shot_keyframe_qa", ShotWorkflowProgress)  # type: ignore[assignment]
+        # QA activities intentionally return only compact QA status. Preserve
+        # the durable T14 checkpoint so a later T15/T20 failure still reports
+        # the selected keyframe and can resume without regenerating it.
+        self._progress.t14_run_id = t14_run_id
+        self._progress.selected_keyframe_asset_id = selected_keyframe_asset_id
         if self._cancelled:
             raise CancelledError()
         self._progress.state = ShotWorkflowStatus.ANIMATING
@@ -137,6 +144,8 @@ class ShotWorkflow:
         self._progress.t15_run_id = result.t15_run_id
         self._progress.selected_video_asset_id = result.selected_video_asset_id
         self._progress = await self._activity("run_shot_video_qa", ShotWorkflowProgress)  # type: ignore[assignment]
+        self._progress.t14_run_id = result.t14_run_id
+        self._progress.selected_keyframe_asset_id = result.selected_keyframe_asset_id
         self._progress.t15_run_id = result.t15_run_id
         self._progress.selected_video_asset_id = result.selected_video_asset_id
         if self._cancelled:
