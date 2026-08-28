@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from decimal import Decimal
 from functools import lru_cache
 from pathlib import Path
 
@@ -33,6 +34,21 @@ class APISettings(BaseSettings):
     visual_qa_first_pass_model: str = "gpt-5.6"
     visual_qa_adjudicator_model: str = "gpt-5.6"
     runway_api_secret: str | None = None
+    # T21 repair and fallback routing. The alternate provider is Google Veo; the
+    # model is pinned by a versioned capability profile rather than named at
+    # each call site. Set ``repair_alternate_provider`` to "none" to disable the
+    # alternate-provider route entirely.
+    repair_alternate_provider: str = "veo"
+    repair_max_same_provider_repairs: int = 2
+    repair_allow_parallax_fallback: bool = True
+    #: A configured per-shot repair spend limit, on top of the project budget.
+    #: There is no hard-coded numeric default: leaving it unset means the
+    #: project's T23 hard cap is the only money limit.
+    repair_per_shot_cost_limit: Decimal | None = None
+    veo_model: str | None = None
+    google_cloud_project: str | None = None
+    google_access_token: str | None = None
+    veo_location: str = "us-central1"
     visual_capability_profile: str = "runway-gen4-turbo"
     # Provider names as bound into the T16 child-workflow identity.
     image_provider_name: str = "openai"

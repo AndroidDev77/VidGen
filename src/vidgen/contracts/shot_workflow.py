@@ -21,9 +21,29 @@ class ShotWorkflowStatus(StrEnum):
     KEYFRAME_QA = "keyframe_qa"
     ANIMATING = "animating"
     VIDEO_QA = "video_qa"
+    # T21 repair and fallback routing. A failed T20 video QA result starts or
+    # resumes a bounded repair for that one shot; siblings are untouched.
+    REPAIR_PLANNING = "repair_planning"
+    REPAIRING = "repairing"
+    ALTERNATE_PROVIDER = "alternate_provider"
+    FALLBACK_RENDERING = "fallback_rendering"
+    REVALIDATING = "revalidating"
+    HUMAN_REVIEW_REQUIRED = "human_review_required"
+    REPAIR_FAILED = "repair_failed"
     LOCKED = "locked"
     FAILED = "failed"
     CANCELLED = "cancelled"
+
+
+#: The T21 states a repair run can leave a shot in. A shot only reaches
+#: ``LOCKED`` when the selected output passed its own T20 evaluation.
+REPAIR_TERMINAL_STATES = frozenset(
+    {
+        ShotWorkflowStatus.LOCKED,
+        ShotWorkflowStatus.HUMAN_REVIEW_REQUIRED,
+        ShotWorkflowStatus.REPAIR_FAILED,
+    }
+)
 
 
 class ShotFailureClass(StrEnum):
@@ -44,6 +64,8 @@ class ShotFailureClass(StrEnum):
     # owns repair, and a review-required shot waits for a human decision.
     VISUAL_QA_FAILURE = "visual_qa_failure"
     VISUAL_QA_REVIEW_REQUIRED = "visual_qa_review_required"
+    # T21 exhausted its bounded policy without a passing output.
+    REPAIR_EXHAUSTED = "repair_exhausted"
     CANCELLATION = "cancellation"
     UNKNOWN_FAILURE = "unknown_failure"
 
@@ -144,6 +166,11 @@ class ShotWorkflowProgress(StrictContract):
     updated_at: datetime | None = None
     cost_microusd: int = Field(default=0, ge=0)
     warning_codes: list[str] = Field(default_factory=list, max_length=32)
+    # T21 carries IDs only. Prompts, QA evidence, provider responses, fallback
+    # manifests and media never enter Temporal history.
+    repair_run_id: UUID | None = None
+    selected_repair_attempt_id: UUID | None = None
+    human_review_reason: str | None = Field(default=None, max_length=64)
 
     @field_validator("started_at", "updated_at")
     @classmethod
@@ -197,6 +224,9 @@ class ShotWorkflowResult(StrictContract):
     exact_usable_duration_us: int | None = Field(default=None, ge=0)
     provider_generation_duration_us: int | None = Field(default=None, ge=0)
     trim_instructions_asset_id: UUID | None = None
+    repair_run_id: UUID | None = None
+    selected_repair_attempt_id: UUID | None = None
+    human_review_reason: str | None = Field(default=None, max_length=64)
     failure: ShotWorkflowFailure | None = None
     warning_codes: list[str] = Field(default_factory=list, max_length=32)
 

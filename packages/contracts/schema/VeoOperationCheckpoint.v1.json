@@ -1,0 +1,142 @@
+{
+  "$defs": {
+    "VeoOperationState": {
+      "enum": [
+        "submitted",
+        "running",
+        "succeeded",
+        "failed",
+        "cancelled"
+      ],
+      "title": "VeoOperationState",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "description": "The durable record that makes a Veo operation resumable.\n\nThe operation name is persisted immediately after submission. A worker that\ndies mid-poll re-reads this row and continues polling; it never resubmits.",
+  "properties": {
+    "application_idempotency_key": {
+      "maxLength": 255,
+      "minLength": 1,
+      "title": "Application Idempotency Key",
+      "type": "string"
+    },
+    "completed_at": {
+      "anyOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Completed At"
+    },
+    "contract_version": {
+      "const": "repair/1.0",
+      "default": "repair/1.0",
+      "title": "Contract Version",
+      "type": "string"
+    },
+    "failure_code": {
+      "anyOf": [
+        {
+          "maxLength": 128,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Failure Code"
+    },
+    "failure_message": {
+      "default": "",
+      "maxLength": 500,
+      "title": "Failure Message",
+      "type": "string"
+    },
+    "last_polled_at": {
+      "anyOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Last Polled At"
+    },
+    "model": {
+      "maxLength": 128,
+      "minLength": 1,
+      "title": "Model",
+      "type": "string"
+    },
+    "operation_name": {
+      "anyOf": [
+        {
+          "maxLength": 512,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Operation Name"
+    },
+    "poll_count": {
+      "default": 0,
+      "maximum": 10000,
+      "minimum": 0,
+      "title": "Poll Count",
+      "type": "integer"
+    },
+    "redacted_metadata": {
+      "additionalProperties": {
+        "type": "string"
+      },
+      "title": "Redacted Metadata",
+      "type": "object"
+    },
+    "repair_attempt_id": {
+      "format": "uuid",
+      "title": "Repair Attempt Id",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "state": {
+      "$ref": "#/$defs/VeoOperationState"
+    },
+    "submission_ambiguous": {
+      "default": false,
+      "title": "Submission Ambiguous",
+      "type": "boolean"
+    },
+    "submitted_at": {
+      "format": "date-time",
+      "title": "Submitted At",
+      "type": "string"
+    }
+  },
+  "required": [
+    "repair_attempt_id",
+    "application_idempotency_key",
+    "model",
+    "state",
+    "submitted_at"
+  ],
+  "title": "VeoOperationCheckpoint",
+  "type": "object"
+}

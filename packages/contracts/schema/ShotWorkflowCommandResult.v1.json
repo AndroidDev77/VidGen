@@ -8,6 +8,13 @@
         "keyframe_qa",
         "animating",
         "video_qa",
+        "repair_planning",
+        "repairing",
+        "alternate_provider",
+        "fallback_rendering",
+        "revalidating",
+        "human_review_required",
+        "repair_failed",
         "locked",
         "failed",
         "cancelled"

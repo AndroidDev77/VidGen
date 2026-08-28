@@ -61,6 +61,17 @@ def run_shot_video_qa(request: ShotWorkflowInput) -> ShotWorkflowProgress:
     return cast(ShotWorkflowProgress, _run("run_shot_video_qa", request))
 
 
+@activity.defn(name="run_shot_repair")
+def run_shot_repair(request: ShotWorkflowInput) -> ShotWorkflowProgress:
+    """Start or resume T21 for one shot whose T20 video QA failed.
+
+    ID-only in both directions: the activity returns the repair run's terminal
+    state, its IDs and its cost, never a prompt, QA evidence, a provider
+    response, a fallback manifest or any media.
+    """
+    return cast(ShotWorkflowProgress, _run("run_shot_repair", request))
+
+
 @activity.defn(name="run_shot_animation")
 def run_shot_animation(request: ShotWorkflowInput) -> ShotWorkflowResult:
     """Invoke/resume T15, including polling an already persisted remote task."""
@@ -84,6 +95,7 @@ SHOT_ACTIVITIES = [
     run_shot_keyframe_qa,
     run_shot_animation,
     run_shot_video_qa,
+    run_shot_repair,
     persist_shot_checkpoint,
     persist_shot_fanout_checkpoint,
 ]

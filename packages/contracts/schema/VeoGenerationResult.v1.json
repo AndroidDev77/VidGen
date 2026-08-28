@@ -1,0 +1,157 @@
+{
+  "$defs": {
+    "VeoOperationState": {
+      "enum": [
+        "submitted",
+        "running",
+        "succeeded",
+        "failed",
+        "cancelled"
+      ],
+      "title": "VeoOperationState",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "description": "A terminal Veo operation. Provider metadata stays out of the canon.",
+  "properties": {
+    "application_idempotency_key": {
+      "maxLength": 255,
+      "minLength": 1,
+      "title": "Application Idempotency Key",
+      "type": "string"
+    },
+    "contract_version": {
+      "const": "repair/1.0",
+      "default": "repair/1.0",
+      "title": "Contract Version",
+      "type": "string"
+    },
+    "failure_code": {
+      "anyOf": [
+        {
+          "maxLength": 128,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Failure Code"
+    },
+    "failure_message": {
+      "default": "",
+      "maxLength": 500,
+      "title": "Failure Message",
+      "type": "string"
+    },
+    "generated_duration_seconds": {
+      "default": 0,
+      "minimum": 0,
+      "title": "Generated Duration Seconds",
+      "type": "number"
+    },
+    "has_audio": {
+      "default": false,
+      "title": "Has Audio",
+      "type": "boolean"
+    },
+    "height": {
+      "anyOf": [
+        {
+          "exclusiveMinimum": 0,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Height"
+    },
+    "latency_ms": {
+      "default": 0,
+      "minimum": 0,
+      "title": "Latency Ms",
+      "type": "integer"
+    },
+    "model": {
+      "maxLength": 128,
+      "minLength": 1,
+      "title": "Model",
+      "type": "string"
+    },
+    "operation_name": {
+      "maxLength": 512,
+      "minLength": 1,
+      "title": "Operation Name",
+      "type": "string"
+    },
+    "output_count": {
+      "default": 0,
+      "maximum": 4,
+      "minimum": 0,
+      "title": "Output Count",
+      "type": "integer"
+    },
+    "poll_count": {
+      "default": 0,
+      "maximum": 10000,
+      "minimum": 0,
+      "title": "Poll Count",
+      "type": "integer"
+    },
+    "rai_filtered_count": {
+      "default": 0,
+      "maximum": 4,
+      "minimum": 0,
+      "title": "Rai Filtered Count",
+      "type": "integer"
+    },
+    "redacted_metadata": {
+      "additionalProperties": {
+        "type": "string"
+      },
+      "title": "Redacted Metadata",
+      "type": "object"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "state": {
+      "$ref": "#/$defs/VeoOperationState"
+    },
+    "usage": {
+      "additionalProperties": {
+        "type": "number"
+      },
+      "title": "Usage",
+      "type": "object"
+    },
+    "width": {
+      "anyOf": [
+        {
+          "exclusiveMinimum": 0,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Width"
+    }
+  },
+  "required": [
+    "application_idempotency_key",
+    "operation_name",
+    "model",
+    "state"
+  ],
+  "title": "VeoGenerationResult",
+  "type": "object"
+}

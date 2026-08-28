@@ -17,6 +17,7 @@
         "technical_validation_failure",
         "visual_qa_failure",
         "visual_qa_review_required",
+        "repair_exhausted",
         "cancellation",
         "unknown_failure"
       ],

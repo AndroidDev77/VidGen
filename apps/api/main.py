@@ -11,6 +11,7 @@ from apps.api.routes import (
     projects,
     references,
     renders,
+    repair,
     reviews,
     scripts,
     shots,
@@ -50,6 +51,7 @@ def create_app() -> FastAPI:
         storyboards,
         shots,
         renders,
+        repair,
         reviews,
         visual_qa,
     ):

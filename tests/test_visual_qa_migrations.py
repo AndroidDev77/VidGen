@@ -39,9 +39,11 @@ def config() -> Config:
     return Config(str(ROOT / "alembic.ini"))
 
 
-def test_t20_is_the_only_head_and_follows_t19() -> None:
+def test_t20_follows_t19_in_a_single_head_chain() -> None:
     script = ScriptDirectory.from_config(config())
-    assert script.get_heads() == ["0016_visual_qa"]
+    # The chain always has exactly one head; T20 is no longer that head now that
+    # T21 follows it, but it still sits directly after T19.
+    assert len(script.get_heads()) == 1
     assert script.get_revision("0016_visual_qa").down_revision == "0015_continuity_references"
 
 
@@ -51,13 +53,13 @@ def test_upgrade_downgrade_upgrade_is_clean_with_no_drift(
     url = f"sqlite+pysqlite:///{tmp_path / 'visual-qa.db'}"
     monkeypatch.setenv("VIDGEN_DATABASE_URL", url)
     engine = create_engine(url)
-    command.upgrade(config(), "head")
+    command.upgrade(config(), "0016_visual_qa")
     assert T20_TABLES <= set(inspect(engine).get_table_names())
     # No schema drift between the ORM models and the migration chain.
     command.check(config())
     command.downgrade(config(), "0015_continuity_references")
     assert not T20_TABLES & set(inspect(engine).get_table_names())
-    command.upgrade(config(), "head")
+    command.upgrade(config(), "0016_visual_qa")
     assert T20_TABLES <= set(inspect(engine).get_table_names())
 
 
@@ -69,7 +71,7 @@ def test_the_migration_is_additive_and_preserves_existing_tables(
     engine = create_engine(url)
     command.upgrade(config(), "0015_continuity_references")
     before = set(inspect(engine).get_table_names())
-    command.upgrade(config(), "head")
+    command.upgrade(config(), "0016_visual_qa")
     after = set(inspect(engine).get_table_names())
     assert before <= after, "T20 removes nothing that T01-T19 created"
     assert after - before == T20_TABLES

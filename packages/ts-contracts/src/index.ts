@@ -1699,3 +1699,210 @@ export interface VisualQADecisionResponse {
   resulting_gate: string;
   row_version: number;
 }
+
+/* --- T21 repair and fallback routing ------------------------------------- */
+
+export type RepairFailureCategory =
+  | "prompt_issue"
+  | "reference_issue"
+  | "seed_issue"
+  | "provider_issue"
+  | "impossible_shot";
+
+export type RepairSeverity = "targeted" | "structural" | "unrecoverable";
+
+export type RepairAttemptKind =
+  | "original"
+  | "same_provider_repair"
+  | "alternate_provider"
+  | "deterministic_fallback";
+
+export type RepairAttemptStatus =
+  | "planned"
+  | "submitted"
+  | "polling"
+  | "downloading"
+  | "revalidating"
+  | "passed"
+  | "failed"
+  | "cancelled";
+
+export type RepairRunState =
+  | "REPAIR_PLANNING"
+  | "REPAIRING"
+  | "ALTERNATE_PROVIDER"
+  | "FALLBACK_RENDERING"
+  | "REVALIDATING"
+  | "HUMAN_REVIEW_REQUIRED"
+  | "LOCKED"
+  | "REPAIR_FAILED";
+
+export type RepairRoute =
+  | "same_provider_repair"
+  | "alternate_provider"
+  | "deterministic_fallback"
+  | "resume_provider_operation"
+  | "upstream_reference_correction"
+  | "human_review_required"
+  | "select_passing_attempt";
+
+export type HumanReviewReason =
+  | "repair_budget_exhausted"
+  | "project_budget_denied"
+  | "attempt_limit_reached"
+  | "fallback_ineligible"
+  | "impossible_shot"
+  | "upstream_reference_correction"
+  | "deterministic_failure"
+  | "cancelled_before_paid_attempt";
+
+export type RepairAction =
+  | "retry"
+  | "cancel"
+  | "acknowledge"
+  | "resolve"
+  | "restart_after_reference_correction";
+
+/**
+ * A safe structured view of what one repair changed in the prompt. The prompt
+ * itself never crosses the API boundary; only the classified delta does.
+ */
+export interface RepairPromptDeltaProjection {
+  planner_version: string;
+  repair_reason: string;
+  added_clauses: string[];
+  removed_clauses: string[];
+  rewritten_clauses: string[][];
+  preserved_constraint_ids: string[];
+  touched_constraint_ids: string[];
+  before_prompt_hash: string;
+  after_prompt_hash: string;
+  seed_changed: boolean;
+  previous_seed: number | null;
+  new_seed: number | null;
+}
+
+export interface RepairAttemptProjection {
+  attempt_id: UUID;
+  attempt_ordinal: number;
+  attempt_kind: RepairAttemptKind;
+  status: RepairAttemptStatus;
+  predecessor_attempt_id: UUID | null;
+  root_animation_attempt_id: UUID;
+  provider: string;
+  model: string;
+  provider_operation_id: string | null;
+  capability_profile_hash: string | null;
+  prompt_hash: string | null;
+  prompt_delta: RepairPromptDeltaProjection | null;
+  seed: number | null;
+  output_asset_ids: UUID[];
+  output_qa_result_id: UUID | null;
+  qa_score: number | null;
+  qa_outcome: string | null;
+  estimated_cost: string;
+  actual_cost: string;
+  currency: string;
+  failure_category: RepairFailureCategory | null;
+  failure_code: string | null;
+  selected: boolean;
+  created_at: string;
+  completed_at: string | null;
+}
+
+export interface RepairDecisionProjection {
+  decision_id: UUID;
+  sequence: number;
+  route: RepairRoute;
+  rationale: string[];
+  failure_category: RepairFailureCategory | null;
+  repair_codes: string[];
+  human_review_reason: HumanReviewReason | null;
+  estimated_next_cost: string;
+  budget_remaining: string | null;
+  planner_version: string;
+  policy_version: string;
+  created_at: string;
+}
+
+export interface RepairFallbackProjection {
+  repair_attempt_id: UUID;
+  renderer_version: string;
+  render_identity: string;
+  input_asset_ids: UUID[];
+  exact_duration_us: number;
+  width: number;
+  height: number;
+  frame_rate: string;
+  pixel_format: string;
+  video_codec: string;
+  output_asset_id: UUID;
+  manifest_asset_id: UUID;
+  qa_result_id: UUID | null;
+}
+
+export interface RepairBudgetProjection {
+  currency: string;
+  total_repair_cost: string;
+  estimated_repair_cost: string;
+  per_shot_repair_cost_limit: string | null;
+  project_hard_cap: string | null;
+  project_remaining: string | null;
+}
+
+export interface RepairRunProjection {
+  repair_run_id: UUID;
+  project_id: UUID;
+  shot_id: UUID;
+  state: RepairRunState;
+  root_animation_attempt_id: UUID;
+  triggering_qa_result_id: UUID;
+  failure_category: RepairFailureCategory | null;
+  failure_severity: RepairSeverity | null;
+  repair_code: string | null;
+  qa_score: number | null;
+  pass_threshold: number | null;
+  hard_failure: boolean;
+  hard_failure_reason: string | null;
+  total_attempt_count: number;
+  same_provider_repairs_used: number;
+  alternate_provider_attempts_used: number;
+  fallback_renders_used: number;
+  selected_attempt_id: UUID | null;
+  selected_asset_id: UUID | null;
+  final_qa_result_id: UUID | null;
+  final_qa_score: number | null;
+  human_review_reason: HumanReviewReason | null;
+  human_review_resolved: boolean;
+  policy_version: string;
+  planner_version: string;
+  row_version: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface RepairRunDetailProjection extends RepairRunProjection {
+  attempts: RepairAttemptProjection[];
+  decisions: RepairDecisionProjection[];
+  fallback: RepairFallbackProjection | null;
+  budget: RepairBudgetProjection;
+}
+
+export interface RepairCollectionResponse {
+  project_id: UUID;
+  items: RepairRunProjection[];
+}
+
+export interface RepairActionRequest {
+  action: RepairAction;
+  reason: string;
+}
+
+export interface RepairActionResponse {
+  repair_run_id: UUID;
+  action: RepairAction;
+  accepted: boolean;
+  state: RepairRunState;
+  code: string;
+  row_version: number;
+}

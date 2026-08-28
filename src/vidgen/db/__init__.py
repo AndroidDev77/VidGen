@@ -15,6 +15,7 @@ from . import image_generation_models as image_generation_models
 from . import models as models
 from . import narration_models as narration_models
 from . import render_models as render_models
+from . import repair_models as repair_models
 from . import review_models as review_models
 from . import script_models as script_models
 from . import storyboard_models as storyboard_models

@@ -1,11 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { MessageBar, MessageBarBody, MessageBarTitle, makeStyles, tokens } from "@fluentui/react-components";
-import type { InvalidationSet, VisualQARunProjection } from "@vidgen/contracts";
+import type { InvalidationSet, RepairAction, VisualQARunProjection } from "@vidgen/contracts";
 import { useCallback, useEffect, useMemo, useState, type JSX } from "react";
 import { useSearchParams } from "react-router-dom";
 
 import { newIdempotencyKey } from "../../api/client";
 import { queryKeys } from "../../api/queryKeys";
+import { actOnRepairRun, getRepairRun, getShotRepairs } from "../../api/repair";
 import {
   cancelShot,
   getShot,
@@ -26,6 +27,7 @@ import {
 import { useApiClient } from "../../app/apiContext";
 import { ConfirmInvalidationDialog } from "../../components/ConfirmInvalidationDialog";
 import { ProjectStatusHeader } from "../../components/ProjectStatusHeader";
+import { RepairLineagePanel } from "../../components/RepairLineagePanel";
 import { ShotInspector } from "../../components/ShotInspector";
 import { StoryboardGrid } from "../../components/StoryboardGrid";
 import { TimelinePreview } from "../../components/TimelinePreview";
@@ -64,6 +66,7 @@ export function StoryboardPage(): JSX.Element {
   const [previewUrls, setPreviewUrls] = useState<ReadonlyMap<string, string>>(new Map());
   const [selectedQaRunId, setSelectedQaRunId] = useState<string | null>(null);
   const [qaDecision, setQaDecision] = useState<"approve" | "reject" | null>(null);
+  const [selectedRepairRunId, setSelectedRepairRunId] = useState<string | null>(null);
 
   const storyboard = useQuery({
     queryKey: queryKeys.storyboard(projectId),
@@ -120,6 +123,46 @@ export function StoryboardPage(): JSX.Element {
         signal,
       ).then((r) => r.data),
     enabled: projectId !== "" && selectedShotId !== null && selectedQaRunId !== null,
+  });
+
+  // T21 repair visibility. A repair belongs to exactly one shot, so both
+  // queries are shot-scoped and a repair action invalidates that shot only.
+  const repairs = useQuery({
+    queryKey: queryKeys.shotRepairs(projectId, selectedShotId ?? ""),
+    queryFn: ({ signal }) =>
+      getShotRepairs(projectId, selectedShotId ?? "", client, signal).then((r) => r.data),
+    enabled: projectId !== "" && selectedShotId !== null,
+  });
+
+  const repairRun = useQuery({
+    queryKey: queryKeys.repairRun(projectId, selectedShotId ?? "", selectedRepairRunId ?? ""),
+    queryFn: ({ signal }) =>
+      getRepairRun(projectId, selectedShotId ?? "", selectedRepairRunId ?? "", client, signal).then(
+        (r) => r.data,
+      ),
+    enabled: projectId !== "" && selectedShotId !== null && selectedRepairRunId !== null,
+  });
+
+  const actOnRepair = useMutation({
+    mutationFn: (action: RepairAction) =>
+      actOnRepairRun(
+        projectId,
+        selectedShotId ?? "",
+        selectedRepairRunId ?? "",
+        action,
+        "",
+        repairRun.data?.row_version ?? shot.data?.shot.row_version ?? 1,
+        newIdempotencyKey("repair-action"),
+        client,
+      ),
+    onSuccess: () => {
+      if (selectedShotId !== null) {
+        void queryClient.invalidateQueries({
+          queryKey: queryKeys.shotRepairs(projectId, selectedShotId),
+        });
+        void queryClient.invalidateQueries({ queryKey: queryKeys.shot(projectId, selectedShotId) });
+      }
+    },
   });
 
   const invalidateVisualQa = (shotId: string) => {
@@ -371,6 +414,15 @@ export function StoryboardPage(): JSX.Element {
                 onApprove={() => setQaDecision("approve")}
                 onReject={() => setQaDecision("reject")}
                 resolveAssetUrl={resolveAssetUrl}
+              />
+            )}
+            {shot.isSuccess && selectedShotId !== null && (
+              <RepairLineagePanel
+                runs={repairs.data?.items ?? []}
+                selected={repairRun.data ?? null}
+                busy={busy || actOnRepair.isPending}
+                onSelectRun={setSelectedRepairRunId}
+                onAct={(action) => actOnRepair.mutate(action)}
               />
             )}
           </aside>

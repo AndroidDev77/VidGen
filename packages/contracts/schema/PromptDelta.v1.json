@@ -1,0 +1,195 @@
+{
+  "$defs": {
+    "VisualQARepairCode": {
+      "description": "The bounded taxonomy T21 consumes. Adding a member is a version change.",
+      "enum": [
+        "WRONG_CHARACTER_IDENTITY",
+        "MISSING_PRIMARY_CHARACTER",
+        "EXTRA_CHARACTER",
+        "WRONG_CHARACTER_COUNT",
+        "WRONG_WARDROBE",
+        "WRONG_CHARACTER_STATE",
+        "WRONG_LOCATION",
+        "WRONG_LOCATION_STATE",
+        "MISSING_REQUIRED_PROP",
+        "WRONG_PROP_OWNERSHIP",
+        "MISSING_MANDATORY_ACTION",
+        "WRONG_ACTION",
+        "INSUFFICIENT_MOTION",
+        "EXCESSIVE_MOTION",
+        "CAMERA_PLAN_MISMATCH",
+        "COMPOSITION_MISMATCH",
+        "SCREEN_DIRECTION_CONTRADICTION",
+        "FACE_BREAKAGE",
+        "ANATOMY_BREAKAGE",
+        "UNINTENDED_TEXT",
+        "STYLE_DRIFT",
+        "CONTINUITY_BREAK",
+        "BLACK_VIDEO",
+        "EXCESSIVE_FREEZE",
+        "EXCESSIVE_FLICKER",
+        "DURATION_MISMATCH",
+        "DECODE_FAILURE",
+        "PROMPT_TOO_COMPLEX",
+        "TOO_MANY_CHARACTERS",
+        "TOO_MANY_REFERENCES",
+        "AMBIGUOUS_VISUAL_EVIDENCE",
+        "HUMAN_REVIEW_REQUIRED"
+      ],
+      "title": "VisualQARepairCode",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Exactly what changed between the original and the repaired prompt.",
+  "properties": {
+    "added_clauses": {
+      "items": {
+        "maxLength": 500,
+        "minLength": 1,
+        "type": "string"
+      },
+      "maxItems": 16,
+      "title": "Added Clauses",
+      "type": "array"
+    },
+    "after_prompt_hash": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "After Prompt Hash",
+      "type": "string"
+    },
+    "before_prompt_hash": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Before Prompt Hash",
+      "type": "string"
+    },
+    "contract_version": {
+      "const": "repair/1.0",
+      "default": "repair/1.0",
+      "title": "Contract Version",
+      "type": "string"
+    },
+    "new_seed": {
+      "anyOf": [
+        {
+          "minimum": 0,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "New Seed"
+    },
+    "planner_version": {
+      "maxLength": 64,
+      "minLength": 1,
+      "title": "Planner Version",
+      "type": "string"
+    },
+    "preserved_constraint_ids": {
+      "items": {
+        "type": "string"
+      },
+      "maxItems": 64,
+      "title": "Preserved Constraint Ids",
+      "type": "array"
+    },
+    "previous_seed": {
+      "anyOf": [
+        {
+          "minimum": 0,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Previous Seed"
+    },
+    "removed_clauses": {
+      "items": {
+        "maxLength": 500,
+        "minLength": 1,
+        "type": "string"
+      },
+      "maxItems": 16,
+      "title": "Removed Clauses",
+      "type": "array"
+    },
+    "repair_codes": {
+      "items": {
+        "$ref": "#/$defs/VisualQARepairCode"
+      },
+      "maxItems": 16,
+      "title": "Repair Codes",
+      "type": "array"
+    },
+    "repair_reason": {
+      "maxLength": 500,
+      "minLength": 1,
+      "title": "Repair Reason",
+      "type": "string"
+    },
+    "rewritten_clauses": {
+      "items": {
+        "maxItems": 2,
+        "minItems": 2,
+        "prefixItems": [
+          {
+            "maxLength": 500,
+            "minLength": 1,
+            "type": "string"
+          },
+          {
+            "maxLength": 500,
+            "minLength": 1,
+            "type": "string"
+          }
+        ],
+        "type": "array"
+      },
+      "maxItems": 16,
+      "title": "Rewritten Clauses",
+      "type": "array"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "seed_changed": {
+      "default": false,
+      "title": "Seed Changed",
+      "type": "boolean"
+    },
+    "source_finding_ids": {
+      "items": {
+        "format": "uuid",
+        "type": "string"
+      },
+      "maxItems": 32,
+      "title": "Source Finding Ids",
+      "type": "array"
+    },
+    "touched_constraint_ids": {
+      "items": {
+        "type": "string"
+      },
+      "maxItems": 16,
+      "title": "Touched Constraint Ids",
+      "type": "array"
+    }
+  },
+  "required": [
+    "planner_version",
+    "repair_reason",
+    "before_prompt_hash",
+    "after_prompt_hash"
+  ],
+  "title": "PromptDelta",
+  "type": "object"
+}

@@ -1,0 +1,54 @@
+{
+  "additionalProperties": false,
+  "description": "Where one attempt sits in the chain, and what materially produced it.",
+  "properties": {
+    "attempt_identity": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Attempt Identity",
+      "type": "string"
+    },
+    "attempt_ordinal": {
+      "maximum": 4,
+      "minimum": 0,
+      "title": "Attempt Ordinal",
+      "type": "integer"
+    },
+    "predecessor_attempt_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Predecessor Attempt Id"
+    },
+    "root_animation_attempt_id": {
+      "format": "uuid",
+      "title": "Root Animation Attempt Id",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "shot_id": {
+      "format": "uuid",
+      "title": "Shot Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "root_animation_attempt_id",
+    "shot_id",
+    "attempt_ordinal",
+    "attempt_identity"
+  ],
+  "title": "RepairAttemptLineage",
+  "type": "object"
+}

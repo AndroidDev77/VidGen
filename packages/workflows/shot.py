@@ -143,11 +143,35 @@ class ShotWorkflow:
         self._progress.current_stage = "t20_video_qa"
         self._progress.t15_run_id = result.t15_run_id
         self._progress.selected_video_asset_id = result.selected_video_asset_id
-        self._progress = await self._activity("run_shot_video_qa", ShotWorkflowProgress)  # type: ignore[assignment]
+        repair_run_id: UUID | None = None
+        selected_repair_attempt_id: UUID | None = None
+        selected_video_asset_id = result.selected_video_asset_id
+        try:
+            self._progress = await self._activity("run_shot_video_qa", ShotWorkflowProgress)  # type: ignore[assignment]
+        except Exception as exc:
+            # T20 blocked the clip. T21 owns the recovery, and it is bounded, so
+            # this is not a retry: at most two same-provider repairs, one
+            # alternate-provider attempt and one free deterministic fallback.
+            if self._classify_failure(exc).classification is not (
+                ShotFailureClass.VISUAL_QA_FAILURE
+            ):
+                raise
+            repaired = await self._repair(request, child_id, result)
+            if repaired is not None:
+                return repaired
+            # The repair produced a revalidated, passing output. It - not the
+            # original clip - is what the shot locks on and what T17 consumes.
+            repair_run_id = self._progress.repair_run_id
+            selected_repair_attempt_id = self._progress.selected_repair_attempt_id
+            selected_video_asset_id = (
+                self._progress.selected_video_asset_id or selected_video_asset_id
+            )
         self._progress.t14_run_id = result.t14_run_id
         self._progress.selected_keyframe_asset_id = result.selected_keyframe_asset_id
         self._progress.t15_run_id = result.t15_run_id
-        self._progress.selected_video_asset_id = result.selected_video_asset_id
+        self._progress.selected_video_asset_id = selected_video_asset_id
+        self._progress.repair_run_id = repair_run_id
+        self._progress.selected_repair_attempt_id = selected_repair_attempt_id
         if self._cancelled:
             raise CancelledError()
         self._progress.state = ShotWorkflowStatus.LOCKED
@@ -165,10 +189,55 @@ class ShotWorkflow:
             update={
                 "child_workflow_id": child_id,
                 "final_state": ShotWorkflowStatus.LOCKED,
+                "selected_video_asset_id": self._progress.selected_video_asset_id,
+                "repair_run_id": self._progress.repair_run_id,
+                "selected_repair_attempt_id": self._progress.selected_repair_attempt_id,
             }
         )
         await self._report(locked)
         return locked
+
+    async def _repair(
+        self, request: ShotWorkflowInput, child_id: str, animation: ShotWorkflowResult
+    ) -> ShotWorkflowResult | None:
+        """Run or resume T21 for this shot, and stop unless it locked.
+
+        Returning ``None`` means the repair produced a revalidated, passing
+        output and the normal locking path continues. Any other terminal repair
+        state - human review, or a bounded policy that ran out - ends the shot
+        here without touching a sibling.
+        """
+        self._progress.state = ShotWorkflowStatus.REPAIR_PLANNING
+        self._progress.current_stage = "t21_repair"
+        self._progress = await self._activity("run_shot_repair", ShotWorkflowProgress)  # type: ignore[assignment]
+        self._progress.t14_run_id = animation.t14_run_id
+        self._progress.selected_keyframe_asset_id = animation.selected_keyframe_asset_id
+        self._progress.t15_run_id = animation.t15_run_id
+        if self._progress.state is ShotWorkflowStatus.LOCKED:
+            return None
+        result = animation.model_copy(
+            update={
+                "child_workflow_id": child_id,
+                "final_state": self._progress.state,
+                "selected_video_asset_id": self._progress.selected_video_asset_id,
+                "repair_run_id": self._progress.repair_run_id,
+                "selected_repair_attempt_id": self._progress.selected_repair_attempt_id,
+                "human_review_reason": self._progress.human_review_reason,
+                "failure": ShotWorkflowFailure(
+                    classification=ShotFailureClass.REPAIR_EXHAUSTED,
+                    code=self._progress.human_review_reason or "repair_exhausted",
+                    retryable=False,
+                    attempt=max(1, self._progress.current_attempt),
+                    message=(
+                        "T21 finished in "
+                        f"{self._progress.state.value} without a revalidated passing output"
+                    ),
+                ),
+            }
+        )
+        del request
+        await self._report(result)
+        return result
 
     async def _report(self, result: ShotWorkflowResult) -> None:
         if self._request is None or self._request.parent_workflow_id is None:
@@ -191,6 +260,11 @@ class ShotWorkflow:
             # review-required shot waits for a human decision. Neither is
             # retried automatically, and neither reruns T14 or T15.
             "VisualQABlocked": (ShotFailureClass.VISUAL_QA_FAILURE, False),
+            "RepairLineageError": (
+                ShotFailureClass.DETERMINISTIC_CONFIGURATION_FAILURE,
+                False,
+            ),
+            "RepairConcurrencyError": (ShotFailureClass.WORKER_INTERRUPTION, True),
             "VisualQAReviewRequired": (ShotFailureClass.VISUAL_QA_REVIEW_REQUIRED, False),
             "VisualQALineageError": (ShotFailureClass.INVALID_LINEAGE, False),
             "BudgetExceededError": (ShotFailureClass.BUDGET_DENIAL, False),
