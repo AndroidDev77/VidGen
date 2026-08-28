@@ -849,10 +849,10 @@ completed QA results are reused after a worker restart, and a failed shot never 
 T17 render eligibility requires a passing canonical video-QA result for every shot of a project
 governed by the policy - a project is governed once any visual-QA run exists for it, so legacy
 projects and their historical renders are unaffected. A hard failure blocks outright and a `REVIEW`
-result blocks automatic completion until it is resolved. `services.renderer.selection.
-visual_qa_provenance` turns a selection into the applicable QA result IDs, run IDs and policy
-version for a manifest builder to record under `provenance`; because manifest identity excludes
-`provenance`, adding it leaves an existing render's identity unchanged. This repository has no
+result blocks automatic completion until it is resolved. The selection helper
+`visual_qa_provenance` (in `services.renderer.selection`) turns a selection into the applicable QA
+result IDs, run IDs and policy version for a manifest builder to record under `provenance`; because
+manifest identity excludes `provenance`, adding it leaves an existing render's identity unchanged. This repository has no
 production manifest builder yet — `RenderManifest` is assembled by the T17 render tests — so the
 helper is currently exercised there rather than from a shipping code path.
 
