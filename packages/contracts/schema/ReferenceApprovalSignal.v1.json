@@ -1,0 +1,40 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "approval_id": {
+      "format": "uuid",
+      "title": "Approval Id",
+      "type": "string"
+    },
+    "idempotency_key": {
+      "maxLength": 255,
+      "minLength": 1,
+      "title": "Idempotency Key",
+      "type": "string"
+    },
+    "project_id": {
+      "format": "uuid",
+      "title": "Project Id",
+      "type": "string"
+    },
+    "reference_run_id": {
+      "format": "uuid",
+      "title": "Reference Run Id",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    }
+  },
+  "required": [
+    "project_id",
+    "reference_run_id",
+    "approval_id",
+    "idempotency_key"
+  ],
+  "title": "ReferenceApprovalSignal",
+  "type": "object"
+}

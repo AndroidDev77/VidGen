@@ -1,0 +1,110 @@
+{
+  "characters": [
+    {
+      "id": "mira",
+      "name": "Mira",
+      "anonymous": false
+    },
+    {
+      "id": "jon",
+      "name": "Jon",
+      "anonymous": false
+    },
+    {
+      "id": "speaker_unknown_1",
+      "name": "Speaker 1",
+      "anonymous": true
+    }
+  ],
+  "locations": [
+    "kitchen",
+    "alley"
+  ],
+  "states": {
+    "wardrobe_change": 5,
+    "persistent_prop": "red notebook",
+    "injury_start": 7,
+    "injury_end": 8,
+    "night_start": 5
+  },
+  "source_frames": {
+    "mira": 3,
+    "jon": 3,
+    "speaker_unknown_1": 2,
+    "kitchen": 3,
+    "alley": 3
+  },
+  "shots": [
+    {
+      "sequence": 0,
+      "characters": [
+        "mira"
+      ],
+      "location": "kitchen"
+    },
+    {
+      "sequence": 1,
+      "characters": [
+        "jon"
+      ],
+      "location": "kitchen"
+    },
+    {
+      "sequence": 2,
+      "characters": [
+        "mira"
+      ],
+      "location": "kitchen"
+    },
+    {
+      "sequence": 3,
+      "characters": [
+        "jon",
+        "speaker_unknown_1"
+      ],
+      "location": "kitchen"
+    },
+    {
+      "sequence": 4,
+      "characters": [
+        "mira"
+      ],
+      "location": "kitchen"
+    },
+    {
+      "sequence": 5,
+      "characters": [
+        "jon"
+      ],
+      "location": "alley"
+    },
+    {
+      "sequence": 6,
+      "characters": [
+        "mira"
+      ],
+      "location": "alley"
+    },
+    {
+      "sequence": 7,
+      "characters": [
+        "jon"
+      ],
+      "location": "alley"
+    },
+    {
+      "sequence": 8,
+      "characters": [
+        "mira"
+      ],
+      "location": "alley"
+    },
+    {
+      "sequence": 9,
+      "characters": [
+        "jon"
+      ],
+      "location": "alley"
+    }
+  ]
+}

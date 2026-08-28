@@ -13,8 +13,11 @@ from uuid import UUID, uuid4
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
+from services.continuity.bindings import make_bundle
+from services.continuity.regeneration import ContinuityRegenerator
 from tests.review_fixtures import SHOT_COUNT, ProjectGraph, build_project_graph
 from vidgen.db.animation_models import AnimationGeneratedVideo, AnimationItem
 from vidgen.db.models import Project
@@ -90,7 +93,18 @@ def test_project_list_carries_status_cost_and_failure_indicators(
 
 @pytest.mark.parametrize(
     "suffix",
-    ["", "/transcript", "/script", "/storyboard", "/shots", "/render", "/workflow", "/costs"],
+    [
+        "",
+        "/transcript",
+        "/script",
+        "/storyboard",
+        "/shots",
+        "/render",
+        "/workflow",
+        "/costs",
+        "/references",
+        "/references/invalidation",
+    ],
 )
 def test_cross_owner_reads_are_indistinguishable_from_missing(
     client: TestClient, graph: ProjectGraph, suffix: str
@@ -110,6 +124,56 @@ def test_cross_project_nested_resources_are_rejected(
         other = build_project_graph(session, owner_subject="owner-a", name="Other")
     response = client.get(api(other.project_id, f"/shots/{graph.shot_ids[0]}"), headers=OWNER)
     assert response.status_code == 404
+
+
+def test_reference_build_requires_concurrency_and_is_idempotent(
+    client: TestClient, graph: ProjectGraph
+) -> None:
+    path = api(graph.project_id, "/references:build")
+    payload = {"provider": "fake", "model": "fake-v1"}
+    assert client.post(path, headers=OWNER, json=payload).status_code in {409, 428}
+    mutation_headers = headers(if_match=1, key="reference-build-1")
+    first = client.post(path, headers=mutation_headers, json=payload)
+    second = client.post(path, headers=mutation_headers, json=payload)
+    assert first.status_code == second.status_code == 202
+    assert first.json() == second.json()
+
+
+def test_reference_application_stales_and_regenerates_only_affected_shot(
+    graph: ProjectGraph,
+    review_client: tuple[TestClient, sessionmaker[Session], FakeWorkflowController],
+) -> None:
+    _, factory, _ = review_client
+    affected = graph.shot_ids[0]
+    calls: list[tuple[UUID, str, str]] = []
+    with factory() as session:
+        bundle = make_bundle(
+            project_id=graph.project_id,
+            storyboard_run_id=graph.storyboard_run_id,
+            shot_id=affected,
+            shot_sequence=0,
+            references=[],
+            provider_reference_limit=4,
+        )
+        report = ContinuityRegenerator(
+            session, lambda shot, digest, key: calls.append((shot, digest, key))
+        ).apply(
+            project_id=graph.project_id,
+            bundles=[bundle],
+            idempotency_key="apply-reference-v2",
+        )
+        session.commit()
+        selected_siblings = session.scalars(
+            select(AnimationGeneratedVideo.shot_id).where(
+                AnimationGeneratedVideo.project_id == graph.project_id,
+                AnimationGeneratedVideo.selected.is_(True),
+            )
+        ).all()
+    assert report.affected_shot_ids == [affected]
+    assert affected not in selected_siblings
+    assert set(selected_siblings) == set(graph.shot_ids[1:])
+    assert calls == [(affected, bundle.bundle_hash, calls[0][2])]
+    assert bundle.bundle_hash in calls[0][2]
 
 
 def test_asset_download_requires_project_ownership(client: TestClient, graph: ProjectGraph) -> None:
@@ -985,3 +1049,47 @@ def test_concurrent_event_appends_take_distinct_sequences(
         )
         second.commit()
         assert event.sequence == 2
+
+
+def test_bump_refuses_a_writer_whose_precondition_went_stale(
+    review_client: tuple[TestClient, sessionmaker[Session], FakeWorkflowController],
+    graph: ProjectGraph,
+) -> None:
+    """A stale writer must lose the race rather than overwrite the winner.
+
+    Both editors satisfy the same ``If-Match``, so a check-then-write increment
+    would apply both changes. The compare-and-swap in ``bump`` refuses the
+    second one, which is what turns into a ``409`` for that caller.
+    """
+    from vidgen.review.errors import ReviewError
+    from vidgen.review.versions import RowVersionService
+
+    _, factory, _ = review_client
+    # Materialise version 1 up front: racing that first insert is a different
+    # case, already covered above.
+    with factory() as seed:
+        RowVersionService(seed).current(graph.project_id, "project", graph.project_id)
+        seed.commit()
+
+    with factory() as first, factory() as second:
+        winner = RowVersionService(first)
+        loser = RowVersionService(second)
+
+        # Both read version 1 and both pass the precondition.
+        assert winner.require(graph.project_id, "project", graph.project_id, "1") == 1
+        assert loser.require(graph.project_id, "project", graph.project_id, "1") == 1
+
+        assert winner.bump(graph.project_id, "project", graph.project_id) == 2
+        first.commit()
+
+        with pytest.raises(ReviewError) as conflict:
+            loser.bump(graph.project_id, "project", graph.project_id)
+        assert conflict.value.status_code == 409
+        assert conflict.value.error.code == "version_conflict"
+        # The conflict reports the version the loser must rebase onto.
+        assert conflict.value.error.current_version == 2
+        second.rollback()
+
+    # The winner's increment stands; the loser applied nothing.
+    with factory() as check:
+        assert RowVersionService(check).current(graph.project_id, "project", graph.project_id) == 2

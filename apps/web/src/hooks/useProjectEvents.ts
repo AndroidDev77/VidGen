@@ -29,6 +29,20 @@ export function backoffDelay(attempt: number): number {
   return Math.min(BASE_BACKOFF_MS * 2 ** attempt, MAX_BACKOFF_MS);
 }
 
+/**
+ * How long to wait before reopening a stream the server closed cleanly.
+ *
+ * A stream that delivered events is reopened promptly. One that closed without
+ * delivering anything backs off, so an endpoint that closes immediately is not
+ * reopened ten times a second.
+ */
+export function cleanReconnectDelay(consecutiveEmptyCloses: number): number {
+  if (consecutiveEmptyCloses < 2) {
+    return CLEAN_RECONNECT_MS;
+  }
+  return backoffDelay(consecutiveEmptyCloses - 2);
+}
+
 /** One parsed `text/event-stream` frame. */
 export interface StreamFrame {
   readonly id: number | null;
@@ -81,6 +95,24 @@ export interface UseProjectEventsOptions {
 }
 
 /**
+ * Apply a connection change, returning the previous state when nothing differs.
+ *
+ * Reopening a stream must not allocate a fresh state object, or a server that
+ * closes the stream immediately would re-render every subscribed page on a
+ * timer and replace its DOM nodes for no visible reason.
+ */
+function withConnection(
+  previous: ProjectEventsState,
+  connection: ConnectionState,
+  reconnectAttempts: number = previous.reconnectAttempts,
+): ProjectEventsState {
+  if (previous.connection === connection && previous.reconnectAttempts === reconnectAttempts) {
+    return previous;
+  }
+  return { ...previous, connection, reconnectAttempts };
+}
+
+/**
  * Subscribe to bounded project progress events.
  *
  * Events invalidate only the queries they affect, so an event about the render
@@ -124,17 +156,20 @@ export function useProjectEvents(
 
   useEffect(() => {
     if (!enabled) {
-      setState((previous) => ({ ...previous, connection: "closed" }));
+      setState((previous) => withConnection(previous, "closed"));
       return;
     }
     let disposed = false;
     let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
     let pollTimer: ReturnType<typeof setInterval> | undefined;
     let attempts = 0;
+    // Consecutive clean closes that delivered nothing. A server that ends the
+    // stream immediately would otherwise be reopened ten times a second.
+    let emptyCloses = 0;
     const controller = new AbortController();
 
     const startPolling = () => {
-      setState((previous) => ({ ...previous, connection: "polling" }));
+      setState((previous) => withConnection(previous, "polling"));
       const tick = () => {
         void pollEvents(projectId, lastIdRef.current, client)
           .then(({ data }) => {
@@ -162,11 +197,9 @@ export function useProjectEvents(
       }
       attempts += 1;
       const exhausted = attempts >= MAX_SSE_ATTEMPTS;
-      setState((previous) => ({
-        ...previous,
-        connection: exhausted ? "polling" : "reconnecting",
-        reconnectAttempts: attempts,
-      }));
+      setState((previous) =>
+        withConnection(previous, exhausted ? "polling" : "reconnecting", attempts),
+      );
       if (exhausted) {
         startPolling();
         return;
@@ -190,9 +223,10 @@ export function useProjectEvents(
         return;
       }
       attempts = 0;
-      setState((previous) => ({ ...previous, connection: "streaming", reconnectAttempts: 0 }));
+      setState((previous) => withConnection(previous, "streaming", 0));
       const decoder = new TextDecoder();
       let buffer = "";
+      let delivered = false;
       // A stream the server closed cleanly is a reconnect, not a failure: it
       // must not count toward the polling-fallback budget.
       let closedCleanly = false;
@@ -212,6 +246,7 @@ export function useProjectEvents(
           for (const frame of frames) {
             try {
               ingest(JSON.parse(frame.data) as ProjectEventProjection);
+              delivered = true;
             } catch {
               // A malformed frame is dropped; the next one still arrives.
             }
@@ -224,9 +259,11 @@ export function useProjectEvents(
         return;
       }
       if (closedCleanly) {
-        reconnectTimer = setTimeout(() => void connect(), CLEAN_RECONNECT_MS);
+        emptyCloses = delivered ? 0 : emptyCloses + 1;
+        reconnectTimer = setTimeout(() => void connect(), cleanReconnectDelay(emptyCloses));
         return;
       }
+      emptyCloses = 0;
       fail();
     };
 

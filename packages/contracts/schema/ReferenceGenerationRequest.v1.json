@@ -1,0 +1,82 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "entity_kind": {
+      "enum": [
+        "character",
+        "location"
+      ],
+      "title": "Entity Kind",
+      "type": "string"
+    },
+    "generation_parameters": {
+      "additionalProperties": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "integer"
+          },
+          {
+            "type": "number"
+          },
+          {
+            "type": "boolean"
+          }
+        ]
+      },
+      "title": "Generation Parameters",
+      "type": "object"
+    },
+    "idempotency_key": {
+      "minLength": 1,
+      "title": "Idempotency Key",
+      "type": "string"
+    },
+    "identity_version_id": {
+      "format": "uuid",
+      "title": "Identity Version Id",
+      "type": "string"
+    },
+    "model": {
+      "title": "Model",
+      "type": "string"
+    },
+    "ordered_source_asset_ids": {
+      "items": {
+        "format": "uuid",
+        "type": "string"
+      },
+      "minItems": 1,
+      "title": "Ordered Source Asset Ids",
+      "type": "array"
+    },
+    "project_id": {
+      "format": "uuid",
+      "title": "Project Id",
+      "type": "string"
+    },
+    "provider": {
+      "title": "Provider",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    }
+  },
+  "required": [
+    "project_id",
+    "identity_version_id",
+    "entity_kind",
+    "ordered_source_asset_ids",
+    "provider",
+    "model",
+    "idempotency_key"
+  ],
+  "title": "ReferenceGenerationRequest",
+  "type": "object"
+}

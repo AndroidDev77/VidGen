@@ -16,7 +16,7 @@ def config() -> Config:
 
 def test_t15_is_the_only_head_and_follows_t14() -> None:
     script = ScriptDirectory.from_config(config())
-    assert script.get_heads() == ["0014_review_ui"]
+    assert script.get_heads() == ["0015_continuity_references"]
     assert script.get_revision("0012_animation").down_revision == "0011_image_generation"
 
 

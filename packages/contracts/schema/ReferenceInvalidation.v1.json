@@ -1,0 +1,67 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "affected_shot_ids": {
+      "items": {
+        "format": "uuid",
+        "type": "string"
+      },
+      "title": "Affected Shot Ids",
+      "type": "array"
+    },
+    "estimated_cost_microusd": {
+      "default": 0,
+      "minimum": 0,
+      "title": "Estimated Cost Microusd",
+      "type": "integer"
+    },
+    "preserved_shot_ids": {
+      "items": {
+        "format": "uuid",
+        "type": "string"
+      },
+      "title": "Preserved Shot Ids",
+      "type": "array"
+    },
+    "project_id": {
+      "format": "uuid",
+      "title": "Project Id",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "stale_keyframe_ids": {
+      "items": {
+        "format": "uuid",
+        "type": "string"
+      },
+      "title": "Stale Keyframe Ids",
+      "type": "array"
+    },
+    "stale_render_ids": {
+      "items": {
+        "format": "uuid",
+        "type": "string"
+      },
+      "title": "Stale Render Ids",
+      "type": "array"
+    },
+    "stale_video_ids": {
+      "items": {
+        "format": "uuid",
+        "type": "string"
+      },
+      "title": "Stale Video Ids",
+      "type": "array"
+    }
+  },
+  "required": [
+    "project_id"
+  ],
+  "title": "ReferenceInvalidation",
+  "type": "object"
+}

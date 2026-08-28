@@ -1,0 +1,253 @@
+{
+  "$defs": {
+    "EvidenceLink": {
+      "additionalProperties": false,
+      "properties": {
+        "evidence_id": {
+          "format": "uuid",
+          "title": "Evidence Id",
+          "type": "string"
+        },
+        "scene_id": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Scene Id"
+        },
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "source_timestamp_ms": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Source Timestamp Ms"
+        }
+      },
+      "required": [
+        "evidence_id"
+      ],
+      "title": "EvidenceLink",
+      "type": "object"
+    },
+    "Interval": {
+      "additionalProperties": false,
+      "properties": {
+        "end_sequence": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "End Sequence"
+        },
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "start_sequence": {
+          "minimum": 0,
+          "title": "Start Sequence",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "start_sequence"
+      ],
+      "title": "Interval",
+      "type": "object"
+    },
+    "LocationEnvironmentState": {
+      "additionalProperties": false,
+      "properties": {
+        "active_hazards": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Active Hazards",
+          "type": "array"
+        },
+        "confidence": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Confidence",
+          "type": "number"
+        },
+        "conflicts": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Conflicts",
+          "type": "array"
+        },
+        "crowd_state": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Crowd State"
+        },
+        "damage": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Damage",
+          "type": "array"
+        },
+        "door_window_state": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Door Window State",
+          "type": "array"
+        },
+        "evidence": {
+          "items": {
+            "$ref": "#/$defs/EvidenceLink"
+          },
+          "title": "Evidence",
+          "type": "array"
+        },
+        "interval": {
+          "$ref": "#/$defs/Interval"
+        },
+        "lighting": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Lighting"
+        },
+        "prop_placement": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "title": "Prop Placement",
+          "type": "object"
+        },
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "time_of_day": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Time Of Day"
+        },
+        "weather": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Weather"
+        }
+      },
+      "required": [
+        "interval",
+        "confidence"
+      ],
+      "title": "LocationEnvironmentState",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "format": "uuid",
+      "title": "Id",
+      "type": "string"
+    },
+    "identity_version_id": {
+      "format": "uuid",
+      "title": "Identity Version Id",
+      "type": "string"
+    },
+    "location_id": {
+      "format": "uuid",
+      "title": "Location Id",
+      "type": "string"
+    },
+    "resolver_version": {
+      "title": "Resolver Version",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "shot_id": {
+      "format": "uuid",
+      "title": "Shot Id",
+      "type": "string"
+    },
+    "snapshot_hash": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Snapshot Hash",
+      "type": "string"
+    },
+    "state": {
+      "$ref": "#/$defs/LocationEnvironmentState"
+    }
+  },
+  "required": [
+    "id",
+    "shot_id",
+    "location_id",
+    "identity_version_id",
+    "state",
+    "snapshot_hash",
+    "resolver_version"
+  ],
+  "title": "LocationStateSnapshot",
+  "type": "object"
+}

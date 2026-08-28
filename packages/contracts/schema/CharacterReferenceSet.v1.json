@@ -1,0 +1,78 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "character_id": {
+      "format": "uuid",
+      "title": "Character Id",
+      "type": "string"
+    },
+    "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+    },
+    "id": {
+      "format": "uuid",
+      "title": "Id",
+      "type": "string"
+    },
+    "identity_version_id": {
+      "format": "uuid",
+      "title": "Identity Version Id",
+      "type": "string"
+    },
+    "ordered_asset_ids": {
+      "items": {
+        "format": "uuid",
+        "type": "string"
+      },
+      "minItems": 1,
+      "title": "Ordered Asset Ids",
+      "type": "array"
+    },
+    "primary_asset_id": {
+      "format": "uuid",
+      "title": "Primary Asset Id",
+      "type": "string"
+    },
+    "project_id": {
+      "format": "uuid",
+      "title": "Project Id",
+      "type": "string"
+    },
+    "reference_identity": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Reference Identity",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "status": {
+      "default": "draft",
+      "enum": [
+        "draft",
+        "approved",
+        "rejected",
+        "stale"
+      ],
+      "title": "Status",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id",
+    "project_id",
+    "identity_version_id",
+    "reference_identity",
+    "ordered_asset_ids",
+    "primary_asset_id",
+    "created_at",
+    "character_id"
+  ],
+  "title": "CharacterReferenceSet",
+  "type": "object"
+}

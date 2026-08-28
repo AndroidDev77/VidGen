@@ -21,24 +21,39 @@ const BASE = "http://localhost";
 const { PROJECT_ID } = fixtures;
 
 /**
- * Click a control, re-querying it on each attempt until its dialog opens.
+ * Wait until no query is in flight.
  *
- * Queries resolve at different times and re-render the page, so a node captured
- * before the click can already be detached by the time it lands. Opening a
- * dialog is idempotent, so retrying the click is safe; the confirm click that
- * follows is issued once, against a freshly resolved node.
+ * Queries resolve at different times, and each resolution re-renders the page
+ * and replaces its DOM nodes. Interacting before the page is quiescent lets an
+ * event land on a node that has already been detached, where React's root
+ * listener never sees it. Settling first removes that race at its source.
+ *
+ * The interactions that follow use `fireEvent` rather than `userEvent`, because
+ * `userEvent` awaits a macrotask between the query that finds an element and
+ * the event it dispatches, reopening exactly that window; `fireEvent`
+ * dispatches synchronously inside the same `act`.
  */
-async function openDialog(
-  user: ReturnType<typeof userEvent.setup>,
-  name: string,
-): Promise<HTMLElement> {
-  await waitFor(() => expect(screen.getAllByRole("button", { name })[0]!).toBeEnabled());
-  let dialog: HTMLElement | null = null;
-  await waitFor(async () => {
-    await user.click(screen.getAllByRole("button", { name })[0]!);
-    dialog = screen.getByRole("alertdialog");
-  });
-  return dialog!;
+async function settle(queryClient: QueryClient): Promise<void> {
+  await waitFor(() => expect(queryClient.isFetching()).toBe(0));
+}
+
+/**
+ * Open a confirmation dialog and return its surface.
+ *
+ * Fluent's focus manager puts `aria-hidden` on the dialog surface while it
+ * activates the modal trap, and under jsdom the attribute is intermittently
+ * still there when the assertion runs. Role queries skip `aria-hidden`
+ * subtrees, so these queries opt into hidden elements; real screen-reader
+ * behaviour is covered by the Playwright suite, which runs against a browser.
+ */
+async function openDialog(name: string): Promise<HTMLElement> {
+  fireEvent.click(screen.getAllByRole("button", { name })[0]!);
+  return screen.findByRole("alertdialog", { hidden: true });
+}
+
+/** Find a button inside an open confirmation dialog. See {@link openDialog}. */
+function dialogButton(dialog: HTMLElement, name: string): HTMLElement {
+  return within(dialog).getByRole("button", { name, hidden: true });
 }
 
 function renderProjectRoute(element: JSX.Element, route: string) {
@@ -175,7 +190,6 @@ describe("TranscriptPage", () => {
   });
 
   it("confirms before saving an edit that invalidates downstream work", async () => {
-    const user = userEvent.setup();
     let received: unknown = null;
     server.use(
       http.patch(
@@ -190,17 +204,20 @@ describe("TranscriptPage", () => {
         },
       ),
     );
-    renderProjectRoute(<TranscriptPage />, `/projects/${PROJECT_ID}/transcript`);
+    const { queryClient } = renderProjectRoute(
+      <TranscriptPage />,
+      `/projects/${PROJECT_ID}/transcript`,
+    );
     const textarea = await screen.findByLabelText("Transcript text for segment 1");
+    await settle(queryClient);
     fireEvent.change(textarea, { target: { value: "Fixed." } });
-    const dialog = await openDialog(user, "Save segment");
+    const dialog = await openDialog("Save segment");
     expect(within(dialog).getByText(/Editing the transcript makes/)).toBeVisible();
-    await user.click(await screen.findByRole("button", { name: "Save the segment" }));
+    fireEvent.click(dialogButton(dialog, "Save the segment"));
     await waitFor(() => expect(received).toMatchObject({ text: "Fixed." }));
   });
 
   it("keeps the unsaved draft when the save conflicts", async () => {
-    const user = userEvent.setup();
     server.use(
       http.patch(`${BASE}/api/v1/projects/:projectId/transcript/segments/:segmentId`, () =>
         HttpResponse.json(
@@ -211,11 +228,14 @@ describe("TranscriptPage", () => {
         ),
       ),
     );
-    renderProjectRoute(<TranscriptPage />, `/projects/${PROJECT_ID}/transcript`);
+    const { queryClient } = renderProjectRoute(
+      <TranscriptPage />,
+      `/projects/${PROJECT_ID}/transcript`,
+    );
     const textarea = await screen.findByLabelText("Transcript text for segment 1");
+    await settle(queryClient);
     fireEvent.change(textarea, { target: { value: "My local edit." } });
-    await openDialog(user, "Save segment");
-    await user.click(await screen.findByRole("button", { name: "Save the segment" }));
+    fireEvent.click(dialogButton(await openDialog("Save segment"), "Save the segment"));
     expect(await screen.findByText("It changed while you were editing.")).toBeVisible();
     // The local text survives the conflict for comparison.
     expect(screen.getByLabelText("Transcript text for segment 1")).toHaveValue("My local edit.");
@@ -231,7 +251,6 @@ describe("ScriptPage", () => {
   });
 
   it("shows the downstream invalidation preview after a saved change", async () => {
-    const user = userEvent.setup();
     server.use(
       http.patch(`${BASE}/api/v1/projects/:projectId/script-segments/:segmentId`, () =>
         HttpResponse.json({
@@ -254,12 +273,13 @@ describe("ScriptPage", () => {
         }),
       ),
     );
-    renderProjectRoute(<ScriptPage />, `/projects/${PROJECT_ID}/script`);
+    const { queryClient } = renderProjectRoute(<ScriptPage />, `/projects/${PROJECT_ID}/script`);
     const textarea = await screen.findByLabelText("Narration text for beat 1");
+    await settle(queryClient);
     fireEvent.change(textarea, { target: { value: "Funnier." } });
-    const dialog = await openDialog(user, "Save beat");
+    const dialog = await openDialog("Save beat");
     expect(within(dialog).getByText(/creates a new script version/)).toBeVisible();
-    await user.click(await screen.findByRole("button", { name: "Save the beat" }));
+    fireEvent.click(dialogButton(dialog, "Save the beat"));
     expect(await screen.findByText("Downstream work is now stale")).toBeVisible();
     expect(screen.getByText(/Verified render attempt 1/)).toBeVisible();
   });
@@ -294,7 +314,6 @@ describe("StoryboardPage", () => {
   });
 
   it("confirms a regeneration and shows the exact invalidation set", async () => {
-    const user = userEvent.setup();
     const shot = fixtures.storyboard.shots[5]!;
     let requests = 0;
     server.use(
@@ -347,9 +366,14 @@ describe("StoryboardPage", () => {
     const siblingKey = ["projects", PROJECT_ID, "shots", fixtures.storyboard.shots[2]!.shot_id];
     queryClient.setQueryData(siblingKey, fixtures.shotDetail(2));
 
-    const dialog = await openDialog(user, "Regenerate this shot");
+    // The keyframe previews are fetched outside React Query, so wait for the
+    // images themselves as well before interacting.
+    await screen.findByRole("button", { name: "Regenerate this shot" });
+    await settle(queryClient);
+    await screen.findAllByRole("img", { name: /^Selected keyframe for shot/ });
+    const dialog = await openDialog("Regenerate this shot");
     expect(within(dialog).getByText(/Sibling shots keep their locked results/)).toBeVisible();
-    await user.click(await screen.findByRole("button", { name: "Regenerate the shot" }));
+    fireEvent.click(dialogButton(dialog, "Regenerate the shot"));
 
     expect(await screen.findByText("Regeneration started")).toBeVisible();
     expect(screen.getByText(/Shot 6, Verified render attempt 1/)).toBeVisible();

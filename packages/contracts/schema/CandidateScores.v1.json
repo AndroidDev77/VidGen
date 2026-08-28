@@ -1,0 +1,64 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "diversity": {
+      "maximum": 1,
+      "minimum": 0,
+      "title": "Diversity",
+      "type": "number"
+    },
+    "evidence": {
+      "maximum": 1,
+      "minimum": 0,
+      "title": "Evidence",
+      "type": "number"
+    },
+    "exposure": {
+      "maximum": 1,
+      "minimum": 0,
+      "title": "Exposure",
+      "type": "number"
+    },
+    "obstruction": {
+      "maximum": 1,
+      "minimum": 0,
+      "title": "Obstruction",
+      "type": "number"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "sharpness": {
+      "maximum": 1,
+      "minimum": 0,
+      "title": "Sharpness",
+      "type": "number"
+    },
+    "state_relevance": {
+      "maximum": 1,
+      "minimum": 0,
+      "title": "State Relevance",
+      "type": "number"
+    },
+    "visibility": {
+      "maximum": 1,
+      "minimum": 0,
+      "title": "Visibility",
+      "type": "number"
+    }
+  },
+  "required": [
+    "evidence",
+    "visibility",
+    "sharpness",
+    "exposure",
+    "obstruction",
+    "state_relevance",
+    "diversity"
+  ],
+  "title": "CandidateScores",
+  "type": "object"
+}

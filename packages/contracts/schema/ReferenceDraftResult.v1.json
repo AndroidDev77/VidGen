@@ -1,0 +1,41 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "draft_version_ids": {
+      "items": {
+        "format": "uuid",
+        "type": "string"
+      },
+      "title": "Draft Version Ids",
+      "type": "array"
+    },
+    "project_id": {
+      "format": "uuid",
+      "title": "Project Id",
+      "type": "string"
+    },
+    "reference_run_id": {
+      "format": "uuid",
+      "title": "Reference Run Id",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "status": {
+      "const": "references_awaiting_approval",
+      "default": "references_awaiting_approval",
+      "title": "Status",
+      "type": "string"
+    }
+  },
+  "required": [
+    "project_id",
+    "reference_run_id"
+  ],
+  "title": "ReferenceDraftResult",
+  "type": "object"
+}

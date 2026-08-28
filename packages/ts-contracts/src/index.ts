@@ -1,4 +1,11 @@
 export type UUID = string;
+export interface ContinuityEvidenceLink { schema_version: "1.0"; evidence_id: UUID; scene_id?: UUID | null; source_timestamp_ms?: number | null }
+export interface ContinuityInterval { schema_version: "1.0"; start_sequence: number; end_sequence?: number | null }
+export interface CharacterIdentityBible { schema_version: "1.0"; character_id: UUID; display_name: string; anonymous_speaker_label?: string | null; aliases: string[]; role?: string | null; stable_traits: Record<string, string | string[] | null>; evidence: ContinuityEvidenceLink[]; confidence: number; ambiguities: Array<{ field: string; alternatives: string[] }> }
+export interface LocationIdentityBible { schema_version: "1.0"; location_id: UUID; display_name: string; location_type?: string | null; stable_traits: Record<string, string | string[] | null>; evidence: ContinuityEvidenceLink[]; confidence: number; ambiguities: Array<{ field: string; alternatives: string[] }> }
+export interface CharacterAppearanceStateV1 { schema_version: "1.0"; interval: ContinuityInterval; wardrobe: string[]; hairstyle?: string | null; injuries: string[]; carried_props: string[]; emotional_state?: string | null; action_state?: string | null; evidence: ContinuityEvidenceLink[]; confidence: number; unresolved_conflicts: string[] }
+export interface LocationEnvironmentState { schema_version: "1.0"; interval: ContinuityInterval; time_of_day?: string | null; weather?: string | null; lighting?: string | null; damage: string[]; crowd_state?: string | null; evidence: ContinuityEvidenceLink[]; confidence: number; conflicts: string[] }
+export interface ShotReferenceBundle { schema_version: "1.0"; id: UUID; project_id: UUID; storyboard_run_id: UUID; shot_id: UUID; shot_sequence: number; character_identity_version_ids: UUID[]; character_state_snapshot_ids: UUID[]; location_identity_version_id?: UUID | null; location_state_snapshot_id?: UUID | null; references: Array<{ asset_id: UUID; sha256: string; role: string; entity_id: UUID; required: boolean; priority: number }>; required_props: string[]; continuity_warnings: string[]; omitted_references: string[]; provider_reference_limit: number; bundle_hash: string; resolver_version: string; created_at: string }
 export interface VoiceProfile { schema_version: "1.0"; voice_profile_id: UUID; project_id?: UUID | null; account_scope?: string | null; provider: string; provider_voice_id: string; model: string; language: string; default_speaking_instructions: string; default_pace: number; pronunciation_dictionary: Record<string,string>; output_format: string; sample_rate_hz: number; channels: 1 | 2; profile_version: number; configuration_hash: string; created_at: string; updated_at: string }
 export interface NarrationWordTiming { schema_version: "1.0"; word_index: number; word: string; comparison_token: string; punctuation: string; start_seconds: number; end_seconds: number; confidence: number }
 export interface NarrationAlignment { schema_version: "1.0"; timings: NarrationWordTiming[]; coverage: number; insertions: string[]; omissions: string[]; substitutions: string[]; diagnostics: string[] }
@@ -1440,4 +1447,44 @@ export interface PipelineFailureListItem {
 
 export interface PipelineFailureListResponse {
   items: PipelineFailureListItem[];
+}
+
+export type ReferenceWorkflowStatus =
+  | "references_queued"
+  | "references_selecting"
+  | "references_building"
+  | "references_generating"
+  | "references_validating"
+  | "references_awaiting_approval"
+  | "references_binding"
+  | "references_complete"
+  | "references_failed"
+  | "references_cancelled";
+
+export interface ReferenceWorkflowInput {
+  schema_version: "1.0";
+  project_id: UUID;
+  episode_analysis_id: UUID;
+  storyboard_run_id: UUID;
+  reference_run_id: UUID;
+  idempotency_key: string;
+  trace_context: Record<string, string>;
+}
+
+export interface ReferenceApprovalSignal {
+  schema_version: "1.0";
+  project_id: UUID;
+  reference_run_id: UUID;
+  approval_id: UUID;
+  idempotency_key: string;
+}
+
+export interface ReferenceWorkflowResult {
+  schema_version: "1.0";
+  project_id: UUID;
+  reference_run_id: UUID;
+  status: ReferenceWorkflowStatus;
+  approved_version_ids: UUID[];
+  affected_shot_ids: UUID[];
+  cancelled: boolean;
 }
