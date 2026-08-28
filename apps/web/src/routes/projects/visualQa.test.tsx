@@ -32,6 +32,8 @@ async function openVisualQa(index = 5): Promise<HTMLElement> {
   renderProjectRoute(<StoryboardPage />, storyboardRoute(index));
   const panel = await screen.findByRole("region", { name: "Visual QA" });
   await userEvent.click(within(panel).getAllByRole("button", { name: "Inspect" })[0]!);
+  // Wait for the selected run to render before any assertion touches it.
+  await within(panel).findByRole("region", { name: "Dimension scorecard" });
   return panel;
 }
 
@@ -96,13 +98,15 @@ describe("VisualQAEvidenceViewer", () => {
   it("shows each evidence frame at its exact timestamp with its bounding box", async () => {
     const panel = await openVisualQa();
     const viewer = await within(panel).findByRole("region", { name: "Evidence frames" });
-    expect(within(viewer).getByText("Timestamp 1.500s")).toBeVisible();
+    expect(await within(viewer).findByText("Timestamp 1.500s")).toBeVisible();
     const evidence = fixtures.visualQaEvidence(0).items[0]!;
     await waitFor(() =>
       expect(screen.getByTestId(`bounding-box-${evidence.evidence_id}`)).toBeVisible(),
     );
     expect(
-      within(viewer).getByText(/Face geometry does not match the approved identity version/),
+      await within(viewer).findByText(
+        /Face geometry does not match the approved identity version/,
+      ),
     ).toBeVisible();
   });
 
@@ -170,11 +174,16 @@ describe("VisualQAReviewDialog", () => {
     await userEvent.click(
       await within(panel).findByRole("button", { name: "Approve after review" }),
     );
-    const dialog = await screen.findByRole("dialog");
+    // Fluent marks the rest of the page aria-hidden once the modal opens, which
+    // takes the dialog out of the queried accessibility tree. The repository's
+    // other dialog assertions pass `hidden` for the same reason.
+    const dialog = await screen.findByRole("dialog", { hidden: true });
     expect(
       within(dialog).getByText(/hard failure is a measured fact and cannot be cleared/),
     ).toBeVisible();
-    expect(within(dialog).getByRole("button", { name: "Record approval" })).toBeDisabled();
+    expect(
+      within(dialog).getByRole("button", { name: "Record approval", hidden: true }),
+    ).toBeDisabled();
   });
 });
 
