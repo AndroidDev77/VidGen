@@ -1049,3 +1049,47 @@ def test_concurrent_event_appends_take_distinct_sequences(
         )
         second.commit()
         assert event.sequence == 2
+
+
+def test_bump_refuses_a_writer_whose_precondition_went_stale(
+    review_client: tuple[TestClient, sessionmaker[Session], FakeWorkflowController],
+    graph: ProjectGraph,
+) -> None:
+    """A stale writer must lose the race rather than overwrite the winner.
+
+    Both editors satisfy the same ``If-Match``, so a check-then-write increment
+    would apply both changes. The compare-and-swap in ``bump`` refuses the
+    second one, which is what turns into a ``409`` for that caller.
+    """
+    from vidgen.review.errors import ReviewError
+    from vidgen.review.versions import RowVersionService
+
+    _, factory, _ = review_client
+    # Materialise version 1 up front: racing that first insert is a different
+    # case, already covered above.
+    with factory() as seed:
+        RowVersionService(seed).current(graph.project_id, "project", graph.project_id)
+        seed.commit()
+
+    with factory() as first, factory() as second:
+        winner = RowVersionService(first)
+        loser = RowVersionService(second)
+
+        # Both read version 1 and both pass the precondition.
+        assert winner.require(graph.project_id, "project", graph.project_id, "1") == 1
+        assert loser.require(graph.project_id, "project", graph.project_id, "1") == 1
+
+        assert winner.bump(graph.project_id, "project", graph.project_id) == 2
+        first.commit()
+
+        with pytest.raises(ReviewError) as conflict:
+            loser.bump(graph.project_id, "project", graph.project_id)
+        assert conflict.value.status_code == 409
+        assert conflict.value.error.code == "version_conflict"
+        # The conflict reports the version the loser must rebase onto.
+        assert conflict.value.error.current_version == 2
+        second.rollback()
+
+    # The winner's increment stands; the loser applied nothing.
+    with factory() as check:
+        assert RowVersionService(check).current(graph.project_id, "project", graph.project_id) == 2
