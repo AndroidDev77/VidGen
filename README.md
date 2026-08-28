@@ -6,13 +6,13 @@ The complete system architecture and T01-T26 implementation roadmap are maintain
 [`docs/TECHNICAL_DESIGN.md`](docs/TECHNICAL_DESIGN.md). Contributors and coding agents should
 read it together with `AGENTS.md` before planning the next roadmap task.
 
-This repository implements roadmap tasks T01 through T18 and T23, so the pipeline now runs end to
+This repository implements roadmap tasks T01 through T20 and T23, so the pipeline now runs end to
 end behind a customer-facing web application. The foundations include subtitle-first transcript
 acquisition, restartable episode analysis, comedy script generation, measured narration,
 deterministic storyboard timing, reviewed keyframe and video generation, deterministic captioned
 rendering, an owner-scoped review UI, and cloud-neutral observability/cost controls:
 
-T19 continuity references are in progress. The additive implementation defines evidence-linked
+T19 continuity references are complete and merged. The additive implementation defines evidence-linked
 immutable character/location identity versions, interval-scoped temporary state, deterministic
 source-frame ranking and reference compaction, shot-bundle identities, owner-scoped review
 projections, and a `continuity_references_v1` T14 adapter. Projects without an approved bundle keep
@@ -21,8 +21,14 @@ technical validation and immutable `AssetService` writes with T23 attempt/budget
 durably for an idempotent human approval signal; and marks only affected T14/T15 outputs and the
 T17 render stale before dispatching content-bound T16 regeneration commands. The deterministic
 ten-shot acceptance fixture covers future-state isolation, anonymous identities, T14 injection,
-targeted regeneration, historical preservation and retry accounting. T19 remains in progress until
-review and required CI/integration checks are green.
+targeted regeneration, historical preservation and retry accounting.
+
+T20 semantic visual QA is complete. Generated keyframes and canonical clips are evaluated against
+their approved storyboard intent, the exact approved T19 identity and location versions, T13
+continuity state and deterministic media thresholds. The score is always recomputed by application
+code from validated dimension values, a hard failure always blocks the shot, every actionable
+finding cites an exact frame and timestamp, and every non-pass result carries structured repair
+codes. T20 identifies repairs; T21 owns repair and fallback routing.
 
 - Python monorepo, CI, and local infrastructure
 - Versioned Pydantic contracts plus exported JSON Schema
@@ -43,6 +49,9 @@ review and required CI/integration checks are green.
   projections, a network-free fake provider, and an OpenAI Image API adapter pinned by default to
   `gpt-image-2-2026-04-21`. T14 review and CI are complete.
 - A customer-facing React review application and the owner-scoped control-plane APIs behind it
+- T20 semantic visual QA: deterministic sampling and media checks, a versioned weighted rubric,
+  application-side score recomputation, bounded adjudication, evidence-linked findings, structured
+  repair codes, T16 gating, T17 render eligibility, and review-UI panels
 
 ## T18 MVP review UI and control-plane APIs
 
@@ -203,7 +212,7 @@ float. No second cost system is introduced.
 
 ```bash
 make verify                          # ruff, mypy --strict, pytest, schema export
-uv run pytest -q                     # backend, including the T18 API suite
+uv run pytest -q                     # backend, including the T18 API and T20 visual-QA suites
 pnpm lint                            # workspace lint
 pnpm typecheck                       # workspace strict TypeScript
 pnpm test                            # workspace unit tests
@@ -714,11 +723,190 @@ continues trace and bounded-metric propagation without fabricated provider costs
 
 Local entry points are `uv run python scripts/render_project.py PROJECT_UUID` and
 `uv run python scripts/inspect_render.py PROJECT_UUID` once a project has completed and locked T16
-outputs. T19 and later roadmap stages remain unfinished.
+outputs. T21 and later roadmap stages remain unfinished.
 
 The required synthetic acceptance test generates ten copyright-free clips and narration with
 FFmpeg at test time, persists SRT/WebVTT, renders and fully decodes a 1920x1080 H.264/yuv420p MP4
 with AAC 48 kHz audio and selectable `mov_text` subtitles, persists a reproducibility report, then
 proves that a second identical identity performs zero FFmpeg executions. T17 persistence extends
 the existing render-job placeholder and adds render-attempt and caption-track projections in
-Alembic revision `0013_render`, the repository's single current head.
+Alembic revision `0013_render`.
+
+## T20 semantic visual QA
+
+T20 answers one question per generated asset: does this keyframe or clip actually show what the
+approved storyboard asked for, with the approved characters and location? It is a separate
+identity per target - keyframe QA and video QA have their own attempts, evidence, scores and
+outcomes - and it never regenerates anything.
+
+### Pipeline stages
+
+Each stage lives in its own module under `services/qa/`, and the boundaries are deliberate:
+
+| Stage | Module | Responsibility |
+| --- | --- | --- |
+| Authoritative input selection | `contracts.py` | Load and prove the project, selected T13 storyboard and shot, selected T14/T15 attempt, T16 identity, approved T19 versions, references, state snapshots and bundle. Every rejection is structured and non-retryable. |
+| Deterministic sampling | `sampler.py` | Exact integer/rational frame selection with a recorded reason per sample. |
+| Deterministic checks | `deterministic.py` | Probe, complete decode, geometry, duration, timestamps, black/freeze/flicker/exposure, plus frame-level text, face-region and style measurements. |
+| Identity comparison | `identity.py` | Build the expectations for the exact approved T19 identity version. |
+| Continuity comparison | `continuity.py` | Build the T13 incoming/outgoing and T19 state expectations, and the previous *passing* shot baseline. |
+| Visual agent | `visual_agent.py`, `openai_adapter.py`, `fake_visual_agent.py` | The provider-neutral evaluation boundary and its two adapters. |
+| Rubric and thresholds | `rubric.py` | Versioned weights, thresholds, deterministic limits and the repair-code taxonomy. |
+| Score recomputation | `scoring.py` | Rebuild every weighted contribution, derive the outcome and the routing recommendation. |
+| Adjudication | `adjudication.py` | The bounded second opinion and its confidence policy. |
+| Evidence | `evidence.py` | Frame evidence and the contact-sheet mapping. |
+| Orchestration | `pipeline.py`, `commands.py` | Restartable execution, persistence, T23 accounting and the T16 gates. |
+
+### Rubric and thresholds
+
+| Dimension | Weight |
+| --- | ---: |
+| Character identity | 25 |
+| Character count | 10 |
+| Location | 10 |
+| Wardrobe and state | 10 |
+| Action and motion | 15 |
+| Composition | 10 |
+| Anatomy and artifacts | 10 |
+| Continuity and style | 10 |
+
+The total is exactly 100, and the contract refuses any other total. Utility and normal shots pass
+at 85 or higher; hero shots pass at 90 or higher. A score from 75 up to the applicable threshold
+recommends `TARGETED_REPAIR`; below 75 the recommendation is a structural family
+(`NEW_SEED`, `COMPOSITION_SPLIT` or `PROMPT_SIMPLIFICATION`) chosen from the worst-scoring
+dimension. A genuinely non-applicable dimension redistributes its weight proportionally across the
+applicable ones, so an absent dimension can never hand the shot free credit.
+
+### Score recomputation and hard failures
+
+The provider contract has no overall-score field at all. `services/qa/scoring.py` rebuilds every
+dimension's `raw_score * effective_weight / 100`, sums the applicable contributions, and the
+`VisualQAScore` contract re-validates that arithmetic. A hard failure - deterministic or
+evidenced - forces `FAIL` regardless of the number, and both the contract and a database check
+constraint refuse to record a hard failure as anything else. A provider may *propose* a hard
+failure, but only a code in the bounded taxonomy that a dimension actually evidenced can block a
+shot; an unevidenced proposal becomes a warning and triggers adjudication instead.
+
+### Deterministic checks and warning thresholds
+
+Deterministic measurement runs before any paid request, so a corrupt, mis-sized, black, frozen or
+wrong-length asset is rejected without spending money. Defaults (all versioned in `rubric.py`):
+more than two black frames warns and an effectively black clip hard-fails; freeze ratio above 35%
+warns unless the storyboard explicitly expects stillness; duplicate-frame ratio above 50% warns;
+mean inter-frame luma delta above 26 warns as flicker; unintended readable text at or above 0.80
+detector confidence hard-fails; face-track continuity below 0.75 warns; style distance above 0.35
+warns; duration drift over 200 ms hard-fails and drift over 150 ms warns.
+
+The text, face-region and style measurements are documented Pillow-based proxies rather than
+trained detectors. They produce a measurement; the rubric decides what it means, and a deployment
+can configure a stronger representation without changing the pipeline or the thresholds.
+
+### Sampling
+
+Video sampling covers the first and final decodable frames, the midpoint, evenly spaced coverage,
+T13 clause, action, camera-change and transition boundaries, the required action window,
+measured high- and low-motion frames, frames a deterministic warning flagged, face-track
+checkpoints and an OCR frame. Timestamps are exact integers in microseconds, clamped to the
+measured duration, deduplicated, and ordered chronologically; each sample records why it was
+selected and both its requested and actual decoded timestamp. The final sample backs off by the
+configured margin or two measured frame intervals, whichever is larger, so it always lands on a
+real frame. Sampling is deterministic: identical inputs and configuration always produce identical
+timestamps.
+
+### Evidence and repair codes
+
+Every actionable finding carries a sample ID, the source-relative and shot-relative timestamps, the
+frame SHA-256, the contact-sheet tile, an optional bounding box, the compared approved reference,
+and a bounded explanation. A finding without evidence cannot become a hard failure unless it is a
+whole-file deterministic failure such as a decode failure. The repair-code taxonomy is bounded and
+every code maps to a failure category, severity, suggested T21 repair family, evidence requirement,
+retryability classification and whether it is a hard failure.
+
+### First pass, adjudication and human review
+
+The first pass uses the configured *Luna* role and adjudication the *Terra* role. The separation is
+a policy separation: an independent attempt, a different prompt, and a higher confidence bar.
+Adjudication is requested when identity or continuity confidence is below 0.70, when the
+deterministic report and the agent materially disagree, when a hard failure is proposed without
+resolvable evidence, when the score is near the threshold, when the approved evidence is itself
+ambiguous, or when a prior QA result for the same target disagrees. Terra decides only at or above
+0.80 confidence; below it the outcome is `REVIEW`. Adjudication is bounded and cannot loop, and a
+hard failure is never softened by low confidence. Both results persist.
+
+Human review resolves ambiguous `REVIEW` outcomes only. It is owner-scoped, requires `If-Match`
+and an `Idempotency-Key`, records the reviewer, decision, bounded reason and timestamp, emits a
+project event, never changes the generated asset, never rewrites the automated result, and can
+never clear a hard failure or a deterministic corruption.
+
+### T16, T17 and T18 integration
+
+The T16 child workflow now runs `DEFINED -> PROMPTING -> KEYFRAME_GENERATING -> KEYFRAME_QA ->
+ANIMATING -> VIDEO_QA -> LOCKED`. A keyframe must pass before animation begins and a clip must pass
+before the shot locks; a blocked or review-required shot stops the child with structured repair
+codes and is never regenerated automatically. Only compact IDs and codes enter Temporal history,
+completed QA results are reused after a worker restart, and a failed shot never touches a sibling.
+
+T17 render eligibility requires a passing canonical video-QA result for every shot of a project
+governed by the policy - a project is governed once any visual-QA run exists for it, so legacy
+projects and their historical renders are unaffected. A hard failure blocks outright and a `REVIEW`
+result blocks automatic completion until it is resolved. The manifest records the applicable QA
+result IDs and the policy version in `provenance`, which leaves existing manifest identity
+semantics unchanged.
+
+The T18 shot inspector gains a visual-QA panel: keyframe and video outcomes, the recomputed score
+and applicable threshold, a hard-failure indicator, the dimension scorecard, confidence,
+deterministic diagnostics, repair codes, first-pass and adjudication status, human-review status,
+evidence frames with exact timestamps beside the compared approved references, and provider, model,
+cost and version details. The recommended repair family is shown as information only - there is no
+button that regenerates anything. Visual-QA status also appears in the storyboard grid, the project
+dashboard, the final-review eligibility banner and the project event stream.
+
+### Cost and observability
+
+Every production visual-agent and adjudication call goes through the existing T23 infrastructure:
+a provider attempt is created or reused, cost is estimated, budget is reserved transactionally
+before a durable pre-call checkpoint, usage and actual cost are reconciled afterwards, failures are
+classified with the T23 taxonomy, and metrics stay bounded (rubric version, outcome, repair code -
+never a project ID, shot ID, asset ID, prompt or signed URL). An idempotent retry creates no
+duplicate attempt, reservation or ledger entry.
+
+### Local commands
+
+```bash
+# Deterministic, offline, no paid credential required.
+uv run python scripts/run_visual_qa.py PROJECT_UUID --provider fake
+
+# One shot, one target, resumed by its idempotency key.
+uv run python scripts/run_visual_qa.py PROJECT_UUID --provider fake \
+    --shot-id SHOT_UUID --video-only --idempotency-key my-key
+
+# The configured production provider.
+VIDGEN_OPENAI_API_KEY=... uv run python scripts/run_visual_qa.py PROJECT_UUID --provider openai
+
+# Inspect persisted results without loading media or provider payloads.
+uv run python scripts/inspect_visual_qa.py PROJECT_UUID --json
+```
+
+Relevant configuration: `VIDGEN_OPENAI_API_KEY`, `VIDGEN_VISUAL_QA_FIRST_PASS_MODEL` and
+`VIDGEN_VISUAL_QA_ADJUDICATOR_MODEL` (both default to the model this repository already has
+configured and verified for its other agent roles), plus the usual `VIDGEN_BLOB_ROOT`,
+`VIDGEN_BLOB_SIGNING_SECRET` and `VIDGEN_DATABASE_URL`.
+
+### Troubleshooting
+
+- `missing_canonical_video` or `missing_keyframe`: the shot has no *selected* T14/T15 attempt. Run
+  T14/T15 first; T20 never generates an asset.
+- `incompatible_reference_version`: the shot-reference bundle names an identity version or asset
+  that is not approved. Approve the T19 reference set, which creates a new bundle.
+- `asset_hash_mismatch`: the stored asset no longer matches the generation record. Regenerate the
+  asset through T14/T15 rather than editing the row.
+- `mixed_lineage`: the persisted canonical shot contract does not validate. The storyboard is stale;
+  re-run T13.
+- `identity_conflict`: an idempotency key was reused for different material inputs. Use a new key.
+- A `DECODE_FAILURE` with no samples means deterministic validation proved the asset unusable, so
+  no paid request was made. Fix the upstream generation.
+- FFmpeg and ffprobe must be on `PATH`; every T20 media test synthesises its fixtures with them.
+
+T20 persistence adds `visual_qa_runs`, `visual_qa_samples`, `visual_qa_attempts`,
+`visual_qa_results`, `visual_qa_evidence` and `visual_qa_human_reviews` in Alembic revision
+`0016_visual_qa`, the repository's single current head.

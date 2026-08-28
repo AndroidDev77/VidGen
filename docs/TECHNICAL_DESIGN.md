@@ -26,8 +26,9 @@ example conflicts with an implemented interface.
 | T16 | Complete | Deterministic per-shot Temporal children coordinate restartable T14 keyframe and T15 animation work with bounded ten-shot fan-out, isolated failure/cancellation, compact queries and commands, durable checkpoints, and T23-aware idempotency. |
 | T17 | Complete | Implements strict caption/render contracts, deterministic caption reflow, canonical manifests and identities, bounded FFmpeg argument plans, media verification, immutable asset provenance, and restartable relational projections. |
 | T18 | Complete | The MVP review UI (`apps/web`) and its owner-scoped FastAPI control plane add workflow start/cancel/status, Server-Sent Events progress, transcript and script editing with versioned revisions, a read-only T13-timed storyboard grid and shot inspector, single-shot regeneration that leaves siblings locked, final render preview with a selectable WebVTT track, versioned approval, and authorized asset downloads. Optimistic concurrency uses `If-Match` row versions and replayable `Idempotency-Key` records. Review and CI succeeded. |
-| T19 | In progress | PR 19 includes strict continuity contracts, deterministic candidate selection, stable-versus-temporary bibles, interval state resolution, bundle compaction/hashing, additive T14 projection, relational persistence, owner-scoped API/UI projections and CLI inspection. Reference generation now reuses T14 providers/validation and AssetService with T23 attempts, reservation and reconciliation. An ID-only Temporal workflow durably waits for replay-safe approval; application marks exactly the affected T14/T15 selections and T17 render stale and dispatches content-bound T16 regeneration while preserving siblings and historical assets. The mandatory deterministic ten-shot acceptance fixture covers the complete continuity behavior. Review and required CI/integration checks must be green before marking T19 complete. |
-| T20-T22, T24-T26 | Planned | Do not begin a later task until its dependencies and the current implementation are reconciled. |
+| T19 | Complete | PR 19 includes strict continuity contracts, deterministic candidate selection, stable-versus-temporary bibles, interval state resolution, bundle compaction/hashing, additive T14 projection, relational persistence, owner-scoped API/UI projections and CLI inspection. Reference generation now reuses T14 providers/validation and AssetService with T23 attempts, reservation and reconciliation. An ID-only Temporal workflow durably waits for replay-safe approval; application marks exactly the affected T14/T15 selections and T17 render stale and dispatches content-bound T16 regeneration while preserving siblings and historical assets. The mandatory deterministic ten-shot acceptance fixture covers the complete continuity behavior. Review and CI succeeded. |
+| T20 | Complete | Restartable semantic visual QA evaluates selected T14 keyframes and T15 canonical clips against approved storyboard intent, the exact approved T19 identity/location versions and state snapshots, T13 continuity, and versioned deterministic media thresholds. Deterministic sampling and media checks run before any paid request; the weighted score is recomputed by application code from validated dimension values; hard failures always block; findings carry exact frame evidence and structured repair codes; adjudication is bounded; results resume without duplicate provider calls, T23 attempts, reservations or ledger entries; T16 gates keyframe and video QA; T17 render eligibility requires a passing canonical video-QA result; and the T18 inspector exposes the scorecard, diagnostics and evidence. T20 identifies repairs and never executes one. |
+| T21-T22, T24-T26 | Planned | Do not begin a later task until its dependencies and the current implementation are reconciled. |
 
 When a roadmap task is completed, update this table, `README.md`, and any affected design section in
 the same pull request.
@@ -286,10 +287,10 @@ All public outputs use the repository's snake-case Pydantic contracts, including
 ## Visual QA Agent
 
 - **Responsibility:** Compare sampled video frames and motion evidence with the shot contract and canonical references.
-- **Input schema:** `VisualQARequest {shotDefinition, frames[], motionSummary, characterReferences[], locationReference, adjacentFrameRefs[]}`.
-- **Output schema:** `QAResult` from section 5.
+- **Input schema:** `VisualQAProviderRequest` (`vidgen.contracts.visual_qa`): the stable QA-attempt identity, project and shot IDs, target type, storyboard objective, required character identities and count, required location, character/location state summaries, required and secondary action, camera plan, composition requirements, required props, incoming/outgoing continuity summaries, bounded sample references, the contact-sheet reference, approved T19 reference descriptors, the deterministic diagnostic summary, and the rubric, threshold and prompt versions.
+- **Output schema:** `VisualQAProviderResult`: dimension scores with confidence and applicability, findings with sample references, proposed hard-failure codes, repair codes, warnings, provider metadata and usage. The result deliberately has **no** overall-score field; `VisualQAScore` is recomputed by application code.
 - **System prompt responsibilities:** Score only visible evidence; identify exact frame times; distinguish uncertain from wrong; emit machine-actionable failure codes and repair instructions.
-- **Validation rules:** All rubric dimensions present; weighted score recomputes exactly; hard failures follow policy; every failure cites at least one evidence frame; `PASS` requires score threshold and no hard failure.
+- **Validation rules:** All eight rubric dimensions present exactly once; the weighted score is recomputed from the dimension values, never accepted from the provider; hard failures follow policy and force `FAIL` regardless of score; every actionable finding cites at least one sampled frame that the pipeline itself planned; `PASS` requires the applicable threshold and no hard failure.
 
 ## Final Editorial QA Agent
 
@@ -1182,9 +1183,45 @@ The application recomputes the weighted total from dimension scores. The model c
 - Model confidence below 0.70 on an identity or continuity decision produces `REVIEW` or a Terra adjudication.
 - If Luna and Terra verdicts disagree, Terra decides only when its confidence is at least 0.80. Otherwise the shot enters human review.
 
-Hard failures are wrong primary character, wrong character count, a missing mandatory action, severe broken face or anatomy, unintended readable text, a contradictory persistent state, duration error over 200 ms, black video, decode failure, or A/V material that cannot be normalized.
+Hard failures are wrong primary character, a missing required primary character, wrong character count, a missing mandatory action, a missing required prop, a contradicted approved location, a material screen-direction contradiction, severe broken face or anatomy, unintended readable text, a contradictory persistent state, duration error over 200 ms, black video, decode failure, non-finite technical measurements, missing mandatory T19 identity evidence, or A/V material that cannot be normalized. A hard failure is structurally separate from a warning in the contracts, the recomputation, and the database, so it cannot be averaged away.
 
 Deterministic warning thresholds include black frames above two consecutive frames, freeze ratio above 35% unless the shot calls for stillness, unexpected OCR confidence above 0.80, face-track continuity below 0.75, and perceptual style distance beyond the calibrated project threshold.
+
+### As implemented (T20)
+
+`services/qa/` keeps every stage separate: authoritative input selection (`contracts.py`),
+deterministic sampling (`sampler.py`), deterministic media and frame checks (`deterministic.py`),
+identity and continuity comparison (`identity.py`, `continuity.py`), the provider-neutral visual
+agent (`visual_agent.py` with `openai_adapter.py` and `fake_visual_agent.py`), versioned policy
+(`rubric.py`), score recomputation (`scoring.py`), bounded adjudication (`adjudication.py`),
+evidence assembly (`evidence.py`), and restartable orchestration (`pipeline.py`, `commands.py`).
+
+Keyframe QA and video QA are independent identities with their own attempts, samples, evidence,
+scores and outcomes. A QA identity binds the project, storyboard run and hash, shot ID and
+canonical shot hash, T16 workflow identity, target type and asset hash, the ordered approved T19
+reference asset IDs and hashes, identity-version IDs, state-snapshot hashes, the shot-reference
+bundle hash, the sampling and deterministic-check configuration, the rubric, threshold,
+adjudication-policy, prompt, contract and pipeline versions, and the first-pass provider and model.
+Changing any of these produces a new identity; repeating an identical request reuses the persisted
+samples, contact sheet, diagnostics, provider results, adjudication, recomputed score, evidence and
+outcome without a second provider request, T23 attempt, reservation, ledger entry, asset or row.
+
+Deterministic measurement runs before any paid request, so a corrupt, black, frozen, mis-sized or
+wrong-length asset never reaches a provider. Sampling uses exact integer microsecond arithmetic
+clamped to the measured duration, records both the requested and the actually decoded timestamp
+plus the reason for every sample, and is invoked through FFmpeg/ffprobe argument arrays over
+bounded temporary storage - one frame at a time, never the whole clip in memory.
+
+The bounded repair-code taxonomy in `rubric.py` maps every code to a failure category, severity,
+suggested T21 repair family, evidence requirement, retryability classification, and whether it is a
+hard failure. T20 emits those codes and a routing recommendation; it never executes one.
+
+Persistence lives in `visual_qa_runs`, `visual_qa_samples`, `visual_qa_attempts`,
+`visual_qa_results`, `visual_qa_evidence` and `visual_qa_human_reviews` (Alembic `0016_visual_qa`),
+with database constraints for project ownership, the stable QA identity, unique sample sequences and
+timestamps, unique attempt numbers per type, score and confidence ranges, required repair codes for
+a non-pass outcome, evidence timestamps, hard-failure consistency, and exactly one canonical result
+per run. T23 owns provider attempts, budgets, pricing, telemetry and the ledger; T20 references them.
 
 The creative budget is the initial generation plus two same-provider repairs. A third creative attempt uses one alternate provider when its estimated cost remains inside the shot cap. Exhaustion produces a deterministic 2.5D fallback for Utility/Normal shots or `HUMAN_REVIEW_REQUIRED` for Hero shots. Transport retries, polling interruptions, and output-download retries do not consume creative attempts.
 
@@ -1551,6 +1588,27 @@ Sampled frames: {{sampled_frames}}
 Motion summary: {{motion_summary}}
 Rubric and thresholds: {{qa_rubric}}
 ```
+
+The implemented prompts live in `services/qa/prompts/` as `visual_qa_v1.txt` (first pass) and
+`visual_qa_adjudication_v1.txt` (adjudication), rendered by the configured OpenAI adapter through
+Structured Outputs against the `VisualQAProviderResult` JSON Schema. Both prompts state explicitly
+that no overall score is returned - the application recomputes it - and that the response must not
+propose a regeneration, a provider change, or a prompt repair. Only bounded evidence for one shot
+is sent: the sampled frames, the optional contact sheet, this shot's approved T19 references, and
+the structured shot intent. Signed URLs, credentials, whole source videos, unrelated characters or
+locations, and earlier-stage prompts are never sent, and frame bytes are inlined for the duration
+of the call only - never persisted, logged, or written into a contract.
+
+### T17 render eligibility under the T20 policy
+
+A project is governed by the visual-QA render policy once any visual-QA run exists for it, so
+projects and renders that predate T20 are unaffected and their historical renders stay readable.
+For a governed project, `select_authoritative_inputs` requires a passing canonical video-QA result
+for every shot: a hard failure blocks outright, and a `REVIEW` result blocks automatic render
+completion until a human resolves it. Refusals are structured, non-retryable
+`visual_qa_missing` / `visual_qa_failed` / `visual_qa_review_required` lineage errors. The manifest
+records the applicable QA result IDs, run IDs and the policy version under `provenance`, which
+leaves existing manifest identity semantics unchanged rather than reshaping them in place.
 
 ## 8.10 Prompt repair after QA failure
 
@@ -2095,7 +2153,7 @@ High-quality video: `(180 sec x 1.50 x $0.12) + (120 sec x 1.50 x $0.20) = $68.4
 - Narration segments generate in parallel after a voice-profile calibration sample is approved.
 - Character sheets for different characters and location sheets for different locations run concurrently.
 - All shots with resolved references can run as child workflows. Provider quotas, not sequence, limit concurrency.
-- Visual QA starts as soon as each shot completes. The parent does not wait for all videos before QA.
+- Visual QA starts as soon as each shot completes. The parent does not wait for all videos before QA. As implemented, the child runs `DEFINED -> PROMPTING -> KEYFRAME_GENERATING -> KEYFRAME_QA -> ANIMATING -> VIDEO_QA -> LOCKED`: a keyframe must pass T20 before any animation spend, and a clip must pass before the shot locks. A blocked shot stops the child with `VISUAL_QA_FAILURE` and structured repair codes; a review-required shot stops with `VISUAL_QA_REVIEW_REQUIRED` and waits for a human decision. Neither is retried automatically, neither reruns T14 or T15, and a failed shot never touches a sibling. Only compact IDs and codes enter Temporal history.
 - Captions, SFX search, and thumbnail concepts can begin while the last shots render.
 
 ## Indicative latency
