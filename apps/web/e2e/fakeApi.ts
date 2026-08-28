@@ -191,6 +191,9 @@ export async function installFakeApi(page: Page, state: FakeApiState): Promise<v
     if (path.endsWith("/storyboard")) {
       return json(route, storyboard(state));
     }
+    if (path.endsWith("/visual-qa") && method === "GET") {
+      return json(route, { items: [] });
+    }
     if (path.includes(":regenerate")) {
       const id = path.split("/").pop()?.replace(":regenerate", "") ?? "";
       state.regeneratedShots.push(id);
