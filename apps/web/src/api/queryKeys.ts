@@ -39,6 +39,10 @@ export const queryKeys = {
   finalQaRun: (projectId: string, runId: string) =>
     ["projects", projectId, "final-qa", runId] as const,
   finalQaGate: (projectId: string) => ["projects", projectId, "final-qa", "gate"] as const,
+  youtubeConnections: () => ["youtube", "connections"] as const,
+  publications: (projectId: string) => ["projects", projectId, "publications"] as const,
+  publication: (projectId: string, publicationId: string) =>
+    ["projects", projectId, "publications", publicationId] as const,
   costs: (projectId: string) => ["projects", projectId, "costs"] as const,
   providerAttempts: (projectId: string) =>
     ["projects", projectId, "provider-attempts"] as const,

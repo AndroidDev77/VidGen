@@ -10,6 +10,10 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
   "alembic>=1.16,<2",
+  # Authenticated encryption for the T25 OAuth credential envelope. Required
+  # everywhere, not only in an Azure deployment: a local development database
+  # stores the same sealed refresh token as a deployed one.
+  "cryptography>=45,<51",
   "fastapi>=0.116,<1",
   "httpx>=0.28,<1",
   "pydantic>=2.11,<3",

@@ -1698,6 +1698,7 @@ version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "alembic" },
+    { name = "cryptography" },
     { name = "fastapi" },
     { name = "httpx" },
     { name = "openai" },
@@ -1736,6 +1737,7 @@ requires-dist = [
     { name = "azure-identity", marker = "extra == 'azure'", specifier = ">=1.19,<2" },
     { name = "azure-monitor-opentelemetry-exporter", marker = "extra == 'azure'", specifier = ">=1.0.0b30" },
     { name = "azure-storage-blob", marker = "extra == 'azure'", specifier = ">=12.24,<13" },
+    { name = "cryptography", specifier = ">=45,<51" },
     { name = "fastapi", specifier = ">=0.116,<1" },
     { name = "httpx", specifier = ">=0.28,<1" },
     { name = "openai", specifier = ">=1.100,<2" },

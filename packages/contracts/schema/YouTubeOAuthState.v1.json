@@ -1,0 +1,89 @@
+{
+  "additionalProperties": false,
+  "description": "A one-time authorization attempt. The verifier never appears here.\n\nOnly the *hash* of the ``state`` parameter is persisted and projected: a\nleaked projection therefore cannot be replayed against the callback.",
+  "properties": {
+    "code_challenge_method": {
+      "const": "S256",
+      "default": "S256",
+      "title": "Code Challenge Method",
+      "type": "string"
+    },
+    "consumed_at": {
+      "anyOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Consumed At"
+    },
+    "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+    },
+    "expires_at": {
+      "format": "date-time",
+      "title": "Expires At",
+      "type": "string"
+    },
+    "owner_subject": {
+      "maxLength": 255,
+      "minLength": 1,
+      "title": "Owner Subject",
+      "type": "string"
+    },
+    "redirect_target": {
+      "default": "",
+      "maxLength": 1000,
+      "title": "Redirect Target",
+      "type": "string"
+    },
+    "redirect_uri": {
+      "maxLength": 1000,
+      "minLength": 1,
+      "title": "Redirect Uri",
+      "type": "string"
+    },
+    "requested_scopes": {
+      "items": {
+        "type": "string"
+      },
+      "maxItems": 16,
+      "minItems": 1,
+      "title": "Requested Scopes",
+      "type": "array"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "state_hash": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "State Hash",
+      "type": "string"
+    },
+    "state_id": {
+      "format": "uuid",
+      "title": "State Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "state_id",
+    "state_hash",
+    "owner_subject",
+    "redirect_uri",
+    "requested_scopes",
+    "expires_at",
+    "created_at"
+  ],
+  "title": "YouTubeOAuthState",
+  "type": "object"
+}

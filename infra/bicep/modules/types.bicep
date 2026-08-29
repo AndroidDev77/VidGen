@@ -54,6 +54,29 @@ type ProviderToggles = {
   voicestudio: bool
   @description('OpenSubtitles: subtitle acquisition.')
   opensubtitles: bool
+  @description('YouTube Data API v3: T25 publication. False keeps the deterministic fake publisher, which needs no Google project and calls nothing.')
+  youtube: bool
+}
+
+@export()
+@description('T25 YouTube publication configuration. The OAuth client ID and the redirect URI are ordinary configuration and appear in the browser; the client secret and the token-encryption key are Key Vault secrets and never appear here.')
+type YouTubePublisherConfig = {
+  @description('OAuth 2.0 client ID for the Google Cloud project. Public by construction: it is in the authorization URL.')
+  oauthClientId: string
+  @description('The exact redirect URI registered with Google. Must match byte for byte, and must be reachable by an authorized user of this private environment.')
+  oauthRedirectUri: string
+  @description('Comma-separated same-site paths the OAuth callback may redirect a browser to after authorization.')
+  oauthRedirectTargets: string
+  @description('Version naming the active token-encryption key in Key Vault. Rotating the key means writing a new secret version and changing this string.')
+  tokenEncryptionKeyVersion: string
+  @description('Task queue the dedicated publisher worker polls. Separate from the project queue so a multi-hour upload cannot starve ordinary activities.')
+  taskQueue: string
+  @minValue(262144)
+  @description('Resumable upload chunk size in bytes. Must be a multiple of 256 KiB; the application rounds it down to one.')
+  uploadChunkBytes: int
+  @minValue(60)
+  @description('Seconds to keep polling YouTube processing before parking the publication as still processing. Not a failure.')
+  processingTimeoutSeconds: int
 }
 
 @export()

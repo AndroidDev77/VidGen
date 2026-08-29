@@ -1,6 +1,6 @@
 metadata description = 'The single definition of how VidGen configuration is expressed as Container Apps secrets and environment variables. Apps and jobs both import it, so a running app and a job that has to reproduce its behaviour cannot drift apart.'
 
-import { ProviderToggles, TemporalConfig, FeatureFlags } from './types.bicep'
+import { ProviderToggles, TemporalConfig, FeatureFlags, YouTubePublisherConfig } from './types.bicep'
 
 @export()
 @description('A Key Vault backed Container Apps secret, resolved by the workload managed identity at revision start. No secret value passes through the template.')
@@ -44,7 +44,12 @@ func applicationSecretNames(providers ProviderToggles, databaseSecretName string
     providers.veo ? ['google-credentials-json'] : [],
     providers.elevenlabs ? ['elevenlabs-api-key'] : [],
     providers.voicestudio ? ['voicestudio-endpoint', 'voicestudio-api-key'] : [],
-    providers.opensubtitles ? ['opensubtitles-api-key', 'opensubtitles-username', 'opensubtitles-password'] : []
+    providers.opensubtitles ? ['opensubtitles-api-key', 'opensubtitles-username', 'opensubtitles-password'] : [],
+    // T25. The OAuth client secret and the credential-envelope key are the only
+    // two YouTube secrets; the client ID and the redirect URI are plain
+    // configuration. With the provider off, neither secret is mounted at all,
+    // which is what keeps the staging smoke test free of real YouTube material.
+    providers.youtube ? ['youtube-oauth-client-secret', 'youtube-token-encryption-key'] : []
   )
 
 @export()
@@ -67,8 +72,33 @@ func providerEnv(providers ProviderToggles) array =>
           envSecret('VIDGEN_OPENSUBTITLES_USERNAME', 'opensubtitles-username')
           envSecret('VIDGEN_OPENSUBTITLES_PASSWORD', 'opensubtitles-password')
         ]
+      : [],
+    providers.youtube
+      ? [
+          envSecret('VIDGEN_YOUTUBE_OAUTH_CLIENT_SECRET', 'youtube-oauth-client-secret')
+          envSecret('VIDGEN_YOUTUBE_TOKEN_ENCRYPTION_KEY', 'youtube-token-encryption-key')
+        ]
       : []
   )
+
+@export()
+@description('Non-secret T25 publication configuration. Always present, so a disabled deployment still records which capability profile and chunk size it would use, and so the fake publisher has the same shape as the real one.')
+func youtubeEnv(publisher YouTubePublisherConfig, providers ProviderToggles) array => [
+  // "fake" keeps a deployment free of a Google project entirely: no OAuth
+  // client, no secret, and no YouTube request.
+  env('VIDGEN_YOUTUBE_PROVIDER', providers.youtube ? 'youtube' : 'fake')
+  env('VIDGEN_YOUTUBE_OAUTH_CLIENT_ID', publisher.oauthClientId)
+  env('VIDGEN_YOUTUBE_OAUTH_REDIRECT_URI', publisher.oauthRedirectUri)
+  env('VIDGEN_YOUTUBE_OAUTH_REDIRECT_TARGETS', publisher.oauthRedirectTargets)
+  env('VIDGEN_YOUTUBE_TOKEN_ENCRYPTION_KEY_VERSION', publisher.tokenEncryptionKeyVersion)
+  // Never true in a deployed environment: the development key is in the
+  // repository, so sealing a real refresh token with it would be worse than
+  // failing to start.
+  env('VIDGEN_YOUTUBE_ALLOW_DEV_ENCRYPTION_KEY', 'false')
+  env('VIDGEN_YOUTUBE_PUBLISHER_TASK_QUEUE', publisher.taskQueue)
+  env('VIDGEN_YOUTUBE_UPLOAD_CHUNK_BYTES', string(publisher.uploadChunkBytes))
+  env('VIDGEN_YOUTUBE_PROCESSING_TIMEOUT_SECONDS', string(publisher.processingTimeoutSeconds))
+]
 
 @export()
 @description('Configuration every application workload shares. Endpoints and flags stay plain; every credential is a secret reference.')

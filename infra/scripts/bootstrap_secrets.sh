@@ -49,6 +49,8 @@ SECRETS=(
   "opensubtitles-api-key|optional|VIDGEN_SECRET_OPENSUBTITLES_API_KEY|only when providers.opensubtitles is true"
   "opensubtitles-username|optional|VIDGEN_SECRET_OPENSUBTITLES_USERNAME|only when providers.opensubtitles is true"
   "opensubtitles-password|optional|VIDGEN_SECRET_OPENSUBTITLES_PASSWORD|only when providers.opensubtitles is true"
+  "youtube-oauth-client-secret|optional|VIDGEN_SECRET_YOUTUBE_OAUTH_CLIENT_SECRET|T25: OAuth 2.0 client secret; only when providers.youtube is true. The client ID is NOT a secret and belongs in the parameter file"
+  "youtube-token-encryption-key|optional|VIDGEN_SECRET_YOUTUBE_TOKEN_ENCRYPTION_KEY|T25: base64 AES-256 key sealing stored refresh tokens. Generate with: uv run python -c \"from vidgen.security.envelope import generate_key; print(generate_key())\". Rotating it means writing a new value AND bumping youtube.tokenEncryptionKeyVersion"
 )
 # applicationinsights-connection-string is written by main.bicep from the
 # component it creates, so it is deliberately absent from this list.

@@ -1,0 +1,55 @@
+{
+  "additionalProperties": false,
+  "description": "A channel identity resolved from YouTube, never supplied by a browser.",
+  "properties": {
+    "channel_id": {
+      "maxLength": 128,
+      "minLength": 1,
+      "pattern": "^[A-Za-z0-9_\\-]+$",
+      "title": "Channel Id",
+      "type": "string"
+    },
+    "custom_url": {
+      "default": "",
+      "maxLength": 255,
+      "title": "Custom Url",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "supports_custom_thumbnails": {
+      "anyOf": [
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Supports Custom Thumbnails"
+    },
+    "thumbnail_url": {
+      "default": "",
+      "maxLength": 1000,
+      "title": "Thumbnail Url",
+      "type": "string"
+    },
+    "title": {
+      "maxLength": 255,
+      "minLength": 1,
+      "title": "Title",
+      "type": "string"
+    }
+  },
+  "required": [
+    "channel_id",
+    "title"
+  ],
+  "title": "YouTubeChannel",
+  "type": "object"
+}

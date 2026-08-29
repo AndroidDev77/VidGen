@@ -1,0 +1,313 @@
+{
+  "$defs": {
+    "PublicationFailure": {
+      "additionalProperties": false,
+      "description": "A structured, renderable publication failure. Never carries a secret.",
+      "properties": {
+        "code": {
+          "$ref": "#/$defs/PublicationFailureCode"
+        },
+        "http_status": {
+          "anyOf": [
+            {
+              "maximum": 599,
+              "minimum": 100,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Http Status"
+        },
+        "occurred_at": {
+          "format": "date-time",
+          "title": "Occurred At",
+          "type": "string"
+        },
+        "provider_reason": {
+          "default": "",
+          "maxLength": 128,
+          "title": "Provider Reason",
+          "type": "string"
+        },
+        "reference_id": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Reference Id"
+        },
+        "remediation": {
+          "default": "",
+          "maxLength": 500,
+          "title": "Remediation",
+          "type": "string"
+        },
+        "retryable": {
+          "default": false,
+          "title": "Retryable",
+          "type": "boolean"
+        },
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "summary": {
+          "maxLength": 500,
+          "title": "Summary",
+          "type": "string"
+        }
+      },
+      "required": [
+        "code",
+        "summary"
+      ],
+      "title": "PublicationFailure",
+      "type": "object"
+    },
+    "PublicationFailureCode": {
+      "description": "The T23 failure classification for every YouTube operation.\n\nEvery member maps to exactly one operator action, which is why there is no\ngeneric ``ERROR``.",
+      "enum": [
+        "NO_ELIGIBLE_RENDER",
+        "RENDER_NOT_SELECTED",
+        "RENDER_NOT_APPROVED",
+        "COMPLETION_GATE_NOT_PASSED",
+        "STALE_RENDER",
+        "UNRESOLVED_HUMAN_REVIEW",
+        "CROSS_PROJECT_REFERENCE",
+        "MISSING_FINAL_ASSET",
+        "MISSING_CAPTION_ASSET",
+        "INVALID_THUMBNAIL_ASSET",
+        "INVALID_METADATA",
+        "INVALID_SCHEDULE",
+        "CONNECTION_NOT_OWNED",
+        "AUTHENTICATION_REQUIRED",
+        "INVALID_GRANT",
+        "INSUFFICIENT_SCOPE",
+        "CHANNEL_MISMATCH",
+        "QUOTA_EXCEEDED",
+        "UPLOAD_LIMIT_EXCEEDED",
+        "RATE_LIMITED",
+        "RETRYABLE_SERVER_ERROR",
+        "EXPIRED_RESUMABLE_SESSION",
+        "AMBIGUOUS_COMPLETION",
+        "PROCESSING_FAILED",
+        "CAPTION_CONFLICT",
+        "THUMBNAIL_NOT_PERMITTED",
+        "PRIVACY_RESTRICTED",
+        "PROVIDER_REJECTED",
+        "CANCELLED"
+      ],
+      "title": "PublicationFailureCode",
+      "type": "string"
+    },
+    "PublicationWarning": {
+      "additionalProperties": false,
+      "description": "A non-blocking observation surfaced to the dashboard and the CLI.",
+      "properties": {
+        "code": {
+          "maxLength": 64,
+          "minLength": 1,
+          "title": "Code",
+          "type": "string"
+        },
+        "reference_id": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Reference Id"
+        },
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "summary": {
+          "maxLength": 500,
+          "title": "Summary",
+          "type": "string"
+        }
+      },
+      "required": [
+        "code",
+        "summary"
+      ],
+      "title": "PublicationWarning",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Whether this project may publish, and exactly why not when it may not.\n\nRecomputed before starting an upload *and* again immediately before a\nvisibility change, so a render selected in between can never be published\nunder an older render's approval.",
+  "properties": {
+    "allowed": {
+      "title": "Allowed",
+      "type": "boolean"
+    },
+    "approval_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Approval Id"
+    },
+    "caption_asset_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Caption Asset Id"
+    },
+    "completion_gate_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Completion Gate Id"
+    },
+    "evaluated_at": {
+      "format": "date-time",
+      "title": "Evaluated At",
+      "type": "string"
+    },
+    "failures": {
+      "items": {
+        "$ref": "#/$defs/PublicationFailure"
+      },
+      "maxItems": 32,
+      "title": "Failures",
+      "type": "array"
+    },
+    "final_editorial_run_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Final Editorial Run Id"
+    },
+    "final_render_asset_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Final Render Asset Id"
+    },
+    "gate_version": {
+      "default": "",
+      "maxLength": 64,
+      "title": "Gate Version",
+      "type": "string"
+    },
+    "project_id": {
+      "format": "uuid",
+      "title": "Project Id",
+      "type": "string"
+    },
+    "render_identity": {
+      "anyOf": [
+        {
+          "pattern": "^[a-f0-9]{64}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Render Identity"
+    },
+    "render_job_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Render Job Id"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "thumbnail_asset_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Thumbnail Asset Id"
+    },
+    "warnings": {
+      "items": {
+        "$ref": "#/$defs/PublicationWarning"
+      },
+      "maxItems": 32,
+      "title": "Warnings",
+      "type": "array"
+    }
+  },
+  "required": [
+    "project_id",
+    "allowed"
+  ],
+  "title": "PublicationGate",
+  "type": "object"
+}

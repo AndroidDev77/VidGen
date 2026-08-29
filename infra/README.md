@@ -216,6 +216,8 @@ start: no secret value passes through Bicep, a workflow, an image or a log.
 | `elevenlabs-api-key` | when `providers.elevenlabs` | all | |
 | `voicestudio-endpoint`, `voicestudio-api-key` | when `providers.voicestudio` | all | |
 | `opensubtitles-api-key`, `opensubtitles-username`, `opensubtitles-password` | when `providers.opensubtitles` | all | |
+| `youtube-oauth-client-secret` | when `providers.youtube` | api, worker, publisher | T25 OAuth 2.0 client secret. The **client ID is not a secret** and belongs in the parameter file |
+| `youtube-token-encryption-key` | when `providers.youtube` | api, worker, publisher | T25 base64 AES-256 key sealing every stored refresh token. Generate with `uv run python -c "from vidgen.security.envelope import generate_key; print(generate_key())"` |
 
 There is deliberately **no secret pre-check in the deployment workflow**: the
 vault has public network access disabled, so a GitHub-hosted runner cannot make
@@ -442,6 +444,7 @@ affinity while `apiScale.maxReplicas` is above one.
 | `web` | private (`publicIngressEnabled`) | 1–2 | `/healthz` served by nginx itself, so it reports healthy independently of the API |
 | `api` | internal, never external | 1–3 | liveness `/healthz` (dependency-free), readiness `/readyz` (acquires a pooled connection), startup probe; graceful shutdown 30 s; **no Alembic migration at startup**; sticky session affinity, see below |
 | `worker` | none | 1–2 | polls Temporal Cloud; graceful activity shutdown; never scales to zero |
+| `publisher` | none | 1–2 | T25 YouTube publication. Polls the dedicated `vidgen-publisher` queue so a multi-hour upload cannot starve ordinary project activities; bounded concurrent uploads; 120 s termination grace so an in-flight chunk commits its confirmed offset |
 
 ### Jobs
 
@@ -763,6 +766,18 @@ Temporal test-server suites, Compose validation, ARM deployment validation and
    why the production template also keeps `publicIngressEnabled` false.
    Enabling public ingress before authentication exists would expose every
    project to anyone who can set a header.
+
+   This is also the reason **T25 YouTube publication is disabled in both
+   parameter files**. The OAuth callback itself does not depend on the header -
+   it validates a one-time, owner-bound `state` and the PKCE verifier sealed
+   with it, so a callback carrying someone else's identity header is refused -
+   but the rest of the publication API is owner-scoped by that header alone.
+   Publishing to a real person's YouTube channel from an API where identity is
+   a request header is not something to enable for anyone but an authorised user
+   of a private environment. Public multi-tenant YouTube OAuth is **not**
+   production-ready in this repository, and enabling `providers.youtube` does
+   not make it so; real application authentication is the blocker, and it is
+   T26 work.
 2. **The container registry's public endpoint is enabled.** GitHub-hosted
    runners push through it. Pulls use the private endpoint. Closing it requires
    a VNet-joined or self-hosted runner; the parameter is already there.
@@ -791,6 +806,109 @@ Temporal test-server suites, Compose validation, ARM deployment validation and
 8. **The production parameter file is a template.** It has never been deployed,
    and its SKUs are reasoned rather than measured. T26 load testing is what
    would justify them.
+
+## T25 YouTube publication
+
+The publisher is off in both parameter files (`providers.youtube: false`), which
+means the deployment runs the deterministic fake publisher: no Google project,
+no OAuth client secret in the vault, no YouTube request, and a smoke test that
+cannot reach anyone's channel. Everything below describes what enabling it
+involves.
+
+### Google Cloud project setup
+
+1. Create (or choose) a Google Cloud project and enable the **YouTube Data API
+   v3**.
+2. Configure the OAuth consent screen. While the project is unverified it stays
+   in testing mode: only listed test users can authorize it, and **an unverified
+   project may only upload private videos** - a public or unlisted transition is
+   refused with `privacyRestricted`, which the pipeline classifies and reports
+   rather than claiming success.
+3. Create an **OAuth client ID** of type *Web application*.
+4. Register the redirect URI **byte for byte**. The exchange sends the same
+   string, and Google rejects any difference:
+   * local development: `http://localhost:8000/api/v1/youtube/oauth:callback`
+     (Google permits plaintext only for loopback);
+   * private staging: `https://<the private web FQDN>/api/v1/youtube/oauth:callback`,
+     reachable only by an authorised user on the network.
+
+### Required scopes
+
+The narrowest verified set, centralised in `services/publisher/youtube.py`:
+
+| Scope | Why |
+| --- | --- |
+| `.../auth/youtube.upload` | `videos.insert` and `thumbnails.set` |
+| `.../auth/youtube.force-ssl` | `captions.insert` and `videos.update`. **`youtube.upload` alone cannot insert a caption track**, which is why this scope is not optional |
+| `.../auth/youtube.readonly` | verifying the channel identity after authorization |
+
+No YouTube Partner or CMS scope is ever requested; `OAuthSettings` refuses one
+at construction, and a test asserts it.
+
+### Secrets and configuration
+
+Secret, resolved from Key Vault by the workload identity:
+
+* `youtube-oauth-client-secret`
+* `youtube-token-encryption-key`
+
+Not secret, and set in the parameter file's `youtube` block: the OAuth client
+ID, the redirect URI, the allowed post-authorization targets, the encryption key
+*version*, the publisher task queue, the chunk size and the processing timeout.
+
+### Token encryption and rotation
+
+Refresh tokens are never stored in an ordinary column. They are sealed with
+AES-256-GCM, with a random 96-bit nonce, the connection's UUID bound in as
+associated data - so a ciphertext lifted into another connection fails
+authentication - and the key version recorded on the row. Ciphertext lives in
+`youtube_connection_secrets`, a table separate from the canonical connection,
+so a projection or an accidental `SELECT *` over a connection cannot return it.
+
+To rotate:
+
+1. generate a new key and write it as a new version of
+   `youtube-token-encryption-key`;
+2. keep the old key available to the workloads through
+   `VIDGEN_YOUTUBE_TOKEN_ENCRYPTION_RETIRED_KEYS` (`version:base64,...`);
+3. bump `youtube.tokenEncryptionKeyVersion` in the parameter file;
+4. re-seal existing rows (`PublicationRepository.rotate_connection_keys`);
+5. drop the retired key once no row records the old version.
+
+### Publisher worker operation
+
+The publisher is a Container App with **no ingress**, running the same
+application image as the API and the Temporal worker, on the dedicated
+`vidgen-publisher` task queue. It is granted no Blob *write*: it reads the final
+render, the caption and the thumbnail, and writes nothing back to storage.
+
+Scaling in is safe because progress is durable: a confirmed byte offset is
+committed after every chunk, and a replaced replica resumes from that offset
+rather than from byte zero. The 120-second termination grace period is what
+gives an in-flight chunk time to finish and commit.
+
+### Quota
+
+YouTube quota units are a **rate limit, not a charge**. They are recorded on the
+T23 provider attempt as a typed usage quantity with a zero monetary cost; the
+cost ledger is never given a fabricated dollar figure for them. Costs for the
+current capability profile are in `services/publisher/youtube.py`, with the date
+they were verified.
+
+### Troubleshooting
+
+| Symptom | Meaning | Action |
+| --- | --- | --- |
+| `AUTHENTICATION_REQUIRED` | no connected channel, or a 401 | connect or reconnect the channel |
+| `INVALID_GRANT` | the user revoked access, or the refresh token expired | reconnect; the connection is already marked `reauthorization_required` |
+| `INSUFFICIENT_SCOPE` | the consent screen granted less than the required set | reconnect and approve every permission |
+| `QUOTA_EXCEEDED` / `UPLOAD_LIMIT_EXCEEDED` | the daily allowance is spent | wait for the reset; the publication waits in `QUOTA_BLOCKED` and re-uploads nothing |
+| `EXPIRED_RESUMABLE_SESSION` | the session is gone after bytes were accepted | the publication is held for review; check the channel's uploads before doing anything |
+| `AMBIGUOUS_COMPLETION` | the final chunk's response was lost and the session is gone | same: check the channel, then cancel or resolve. **Never** start another upload |
+| `PROCESSING_FAILED` | YouTube could not process the video | the video ID and link are retained; re-encode the render |
+| `CAPTION_CONFLICT` | a track with this language and name exists | the existing track is adopted, never duplicated |
+| `THUMBNAIL_NOT_PERMITTED` | the channel cannot set custom thumbnails | the private video is preserved; verify the channel |
+| `PRIVACY_RESTRICTED` | the API project is limited to private uploads | complete Google's verification |
 
 ## Destroying a disposable environment
 

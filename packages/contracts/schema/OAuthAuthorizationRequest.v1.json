@@ -1,0 +1,35 @@
+{
+  "additionalProperties": false,
+  "description": "What the API hands the browser to start an authorization.",
+  "properties": {
+    "authorization_url": {
+      "maxLength": 2000,
+      "minLength": 1,
+      "title": "Authorization Url",
+      "type": "string"
+    },
+    "expires_at": {
+      "format": "date-time",
+      "title": "Expires At",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "state_id": {
+      "format": "uuid",
+      "title": "State Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "state_id",
+    "authorization_url",
+    "expires_at"
+  ],
+  "title": "OAuthAuthorizationRequest",
+  "type": "object"
+}

@@ -376,6 +376,91 @@
         "visualization": "table"
       },
       "name": "key-vault-audit"
+    },
+    {
+      "type": 3,
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "AppDependencies\n| where TimeGenerated {TimeRange}\n| where Name == \"provider.request\"\n| extend operation = tostring(Properties[\"provider.operation\"])\n| where operation startswith \"youtube.\"\n| summarize attempts = count() by operation, status = tostring(Properties[\"provider.status\"])\n| order by attempts desc",
+        "size": 1,
+        "title": "T25 publication outcomes (youtube.* provider attempts)",
+        "timeContextFromParameter": "TimeRange",
+        "queryType": 0,
+        "resourceType": "microsoft.operationalinsights/workspaces",
+        "crossComponentResources": [
+          "{Workspace}"
+        ],
+        "visualization": "table"
+      },
+      "name": "t25-publication-outcomes"
+    },
+    {
+      "type": 3,
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "AppDependencies\n| where TimeGenerated {TimeRange}\n| where Name == \"provider.request\"\n| extend operation = tostring(Properties[\"provider.operation\"])\n| where operation startswith \"youtube.\"\n| summarize p50 = percentile(DurationMs, 50), p95 = percentile(DurationMs, 95) by bin(TimeGenerated, 5m), operation\n| order by TimeGenerated asc",
+        "size": 1,
+        "title": "T25 YouTube operation latency p50/p95",
+        "timeContextFromParameter": "TimeRange",
+        "queryType": 0,
+        "resourceType": "microsoft.operationalinsights/workspaces",
+        "crossComponentResources": [
+          "{Workspace}"
+        ],
+        "visualization": "timechart"
+      },
+      "name": "t25-publication-latency"
+    },
+    {
+      "type": 3,
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "AppDependencies\n| where TimeGenerated {TimeRange}\n| where Name == \"provider.request\"\n| extend operation = tostring(Properties[\"provider.operation\"]), failure = tostring(Properties[\"provider.failure_class\"])\n| where operation startswith \"youtube.\" and isnotempty(failure)\n| summarize failures = count() by failure, operation\n| order by failures desc",
+        "size": 1,
+        "title": "T25 publication failure classification",
+        "timeContextFromParameter": "TimeRange",
+        "queryType": 0,
+        "resourceType": "microsoft.operationalinsights/workspaces",
+        "crossComponentResources": [
+          "{Workspace}"
+        ],
+        "visualization": "table"
+      },
+      "name": "t25-publication-failures"
+    },
+    {
+      "type": 3,
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "AppMetrics\n| where TimeGenerated {TimeRange}\n| where Properties[\"service.name\"] == \"vidgen-publisher\"\n| summarize value = avg(Sum / Count) by bin(TimeGenerated, 5m), Name\n| order by TimeGenerated asc",
+        "size": 1,
+        "title": "T25 publisher worker replicas and resource usage",
+        "timeContextFromParameter": "TimeRange",
+        "queryType": 0,
+        "resourceType": "microsoft.operationalinsights/workspaces",
+        "crossComponentResources": [
+          "{Workspace}"
+        ],
+        "visualization": "timechart"
+      },
+      "name": "t25-publisher-worker"
+    },
+    {
+      "type": 3,
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "AppDependencies\n| where TimeGenerated {TimeRange}\n| where Name == \"provider.request\"\n| extend operation = tostring(Properties[\"provider.operation\"])\n| where operation startswith \"youtube.\"\n| summarize units = sum(toint(Properties[\"quota_units\"])) by bin(TimeGenerated, 1h), operation\n| order by TimeGenerated asc",
+        "size": 1,
+        "title": "T25 YouTube quota units consumed (a rate limit, never a charge)",
+        "timeContextFromParameter": "TimeRange",
+        "queryType": 0,
+        "resourceType": "microsoft.operationalinsights/workspaces",
+        "crossComponentResources": [
+          "{Workspace}"
+        ],
+        "visualization": "timechart"
+      },
+      "name": "t25-quota-usage"
     }
   ],
   "fallbackResourceIds": [],

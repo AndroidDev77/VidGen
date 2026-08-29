@@ -121,6 +121,25 @@ param providers = {
   elevenlabs: false
   voicestudio: false
   opensubtitles: false
+  // T25 stays on the deterministic fake publisher in staging: no Google
+  // project, no OAuth client secret in the vault, no YouTube request, and a
+  // smoke test that cannot touch a real channel.
+  youtube: false
+}
+
+// Non-secret publication configuration. It is present even with the provider
+// off, so the shape a real connection would use is deployed and reviewable.
+// Enabling YouTube here means writing youtube-oauth-client-secret and
+// youtube-token-encryption-key with bootstrap_secrets.sh, and registering the
+// redirect URI below in the Google Cloud project - byte for byte.
+param youtube = {
+  oauthClientId: ''
+  oauthRedirectUri: ''
+  oauthRedirectTargets: '/'
+  tokenEncryptionKeyVersion: 'v1'
+  taskQueue: 'vidgen-publisher'
+  uploadChunkBytes: 8388608
+  processingTimeoutSeconds: 21600
 }
 
 param features = {

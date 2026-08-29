@@ -7,7 +7,7 @@ import shutil
 import time
 from collections.abc import Callable
 from pathlib import Path
-from typing import Protocol
+from typing import Protocol, runtime_checkable
 from urllib.parse import parse_qs, quote, unquote, urlparse
 from uuid import uuid4
 
@@ -24,6 +24,19 @@ class BlobStore(Protocol):
     def copy_to(self, key: str, destination: Path) -> None: ...
 
     def signed_read_url(self, key: str, expires_in_seconds: int = 900) -> str: ...
+
+
+@runtime_checkable
+class RangedBlobStore(Protocol):
+    """A store that can serve a byte window without materialising the blob.
+
+    Declared separately from :class:`BlobStore` so a future backend that cannot
+    do this is still a valid store: the T25 resumable uploader checks for this
+    capability with ``isinstance`` and falls back to a bounded temporary file
+    when it is absent, rather than reading a multi-gigabyte MP4 into memory.
+    """
+
+    def read_range(self, key: str, start: int, length: int) -> bytes: ...
 
 
 class FilesystemBlobStore:
@@ -83,6 +96,18 @@ class FilesystemBlobStore:
 
     def read(self, key: str) -> bytes:
         return self._path(key).read_bytes()
+
+    def read_range(self, key: str, start: int, length: int) -> bytes:
+        """Return at most ``length`` bytes from ``start``.
+
+        A short read at the end of the file is returned as-is; the caller
+        compares against the total size it already knows.
+        """
+        if start < 0 or length <= 0:
+            raise ValueError("a ranged read needs a nonnegative start and a positive length")
+        with self._path(key).open("rb") as stream:
+            stream.seek(start)
+            return stream.read(length)
 
     def exists(self, key: str) -> bool:
         return self._path(key).is_file()

@@ -131,6 +131,26 @@ param providers = {
   elevenlabs: false
   voicestudio: false
   opensubtitles: true
+  // T25 stays off until real application authentication exists. Publishing to
+  // a user's own YouTube channel from an API that still trusts a development
+  // identity header is not something to enable for a paying customer; see
+  // "Current production-authentication limitation" in infra/README.md.
+  youtube: false
+}
+
+// Non-secret publication configuration. Enabling providers.youtube also means:
+//   * a verified Google Cloud project with the YouTube Data API v3 enabled,
+//   * youtube-oauth-client-secret and youtube-token-encryption-key written with
+//     bootstrap_secrets.sh,
+//   * this exact redirect URI registered with Google, byte for byte.
+param youtube = {
+  oauthClientId: ''
+  oauthRedirectUri: ''
+  oauthRedirectTargets: '/'
+  tokenEncryptionKeyVersion: 'v1'
+  taskQueue: 'vidgen-publisher'
+  uploadChunkBytes: 8388608
+  processingTimeoutSeconds: 21600
 }
 
 param features = {

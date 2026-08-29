@@ -1546,3 +1546,191 @@ endpoint with its managed identity, so no key, connection string or SAS token is
 `AssetService`'s content-addressed identity and immutable provenance are preserved: the Azure
 adapter's `put_if_absent` uploads with an `If-None-Match: *` precondition and streams both
 directions.
+
+## T25 YouTube publication
+
+T25 publishes an approved, current, T22-`PASS` render to the connected user's own YouTube channel,
+restartably. It is the last irreversible step in the pipeline: a video that exists on someone's
+channel cannot be un-created, only made private. Every design decision below follows from that.
+
+```
+services/publisher/
+  youtube.py            the single official capability registry: endpoints, scopes, limits,
+                        quota units, retryable statuses, processing states, verification date
+  contracts.py          the provider-neutral boundary (dataclasses, never Google objects)
+  providers.py          failure classification, bounded retries, provider selection
+  youtube_adapter.py    the production YouTube Data API v3 adapter over httpx
+  fake_youtube.py       the deterministic offline provider, with declarative failure injection
+  oauth.py              the PKCE web-server authorization flow
+  credentials.py        the publisher's view of vidgen.security.envelope
+  eligibility.py        who may publish, decided before any provider request
+  metadata.py           deterministic drafts, capability-registry validation, stable identity
+  resumable.py          the resumable upload driver and its chunk sources
+  processing.py         bounded processing polling
+  pipeline.py           the restartable orchestration
+  commands.py           composed entry points for the CLI, the API and Temporal
+  projections.py        bounded, credential-free views
+
+src/vidgen/contracts/publication.py     strict versioned contracts and the state machine
+src/vidgen/db/publication_models.py     six tables, with the machine as a CHECK constraint
+src/vidgen/db/publication_repository.py the only code that touches ciphertext columns
+src/vidgen/security/envelope.py         AES-256-GCM envelope encryption and the keyring
+packages/workflows/publication.py       the restartable workflow
+workers/youtube_publisher/main.py       the dedicated, no-ingress publisher worker
+```
+
+### The capability registry
+
+Every URL, OAuth endpoint, scope, size limit, privacy state, quota unit cost, retryable status code
+and processing state lives once, in `services/publisher/youtube.py`, with the date it was verified
+against the official documentation and a profile version that every publication persists. Nothing
+else in the publisher hard-codes any of them, so a later profile can never silently reinterpret an
+already-published video.
+
+The registry records both the current quota accounting (`videos.insert` at 100 units, uploads
+billing to a separate daily allowance) and the pre-2025-12-04 accounting, so an environment pinned
+to the older profile is describable rather than mis-reported.
+
+### Eligibility, decided first
+
+`PublicationEligibilityService` proves every precondition from persisted rows before an OAuth
+refresh or a YouTube request happens: a selected, complete T17 render with a verification report; a
+readable final MP4 of an accepted media type and size; an unrevoked T18 approval for that exact
+render job; a selected T22 run decided `PASS` with a matching `PASS` completion gate for that exact
+render identity; nothing invalidated after the render was produced; no T21 repair parked in
+`HUMAN_REVIEW_REQUIRED`; a caption track reached through the render job rather than by kind, which
+is what proves it belongs to this render's lineage; a project-owned JPEG or PNG thumbnail when one
+is selected; and a connection this owner controls with every required scope granted.
+
+A refusal is a structured `PublicationGate` with an actionable remediation. A cross-owner or
+cross-project ID produces the same "not found" shape as a missing one.
+
+### OAuth and credential storage
+
+The standard web-server flow with PKCE S256. `state` is 256 bits from `secrets`, stored only as a
+SHA-256 hash, bound to the owner who started the flow, expiring after ten minutes and consumable
+exactly once. The PKCE verifier is sealed at rest and bound by AAD to its own state row. The
+post-login redirect target is checked against an allowlist when it is stored *and* again when it is
+used, so widening the allowlist later cannot bless an old row. The authorization code is exchanged
+only on the backend, and the channel identity is resolved from YouTube afterwards - a channel ID
+supplied by a browser is never trusted.
+
+Refresh tokens are sealed with AES-256-GCM: a random 96-bit nonce, the connection's UUID bound in as
+associated data, and the key version on the row. Ciphertext lives in `youtube_connection_secrets`,
+separate from the canonical connection, so a projection or an accidental `SELECT *` cannot return
+it. A database CHECK makes "connected implies a stored credential" an invariant rather than a
+convention. Rotation is `open with the recorded version, seal with the active one`, which is why
+retired keys stay configured until every row is re-sealed.
+
+Nothing in a contract, an API response, a log record, a span, a Temporal message or the dashboard
+has a field for a token, an authorization code, a client secret or a resumable session URI. Where
+evidence is needed, a *hash* is projected instead: `session_uri_hash` proves two checkpoints refer
+to the same session without being enough to upload to it.
+
+### The resumable upload
+
+The rules, in the order they matter:
+
+1. The session is persisted, sealed, **before a single media byte is sent**. A worker killed after
+   `videos.insert` resumes; it does not start again.
+2. Only a *server-confirmed* offset advances the checkpoint. A `308` carries the last byte YouTube
+   actually holds; a lost response carries nothing. After any interruption the driver asks, and
+   trusts the answer over its own bookkeeping.
+3. Byte zero is never revisited while a session can be resumed. The only path that creates a second
+   session is an expired session that confirmed *nothing* - where no video can exist.
+4. The whole file is never in memory. Chunks come from a ranged read against the blob store
+   (`RangedBlobStore`, implemented by both the filesystem and Azure adapters); a bounded temporary
+   file is a fallback for a store that cannot serve ranges, and is deleted on durable completion or
+   terminal failure.
+
+Ambiguity is a state, not an assumption. When the final chunk's response is lost and the session is
+gone, the publication stops at `HUMAN_REVIEW_REQUIRED` with the session identity and its confirmed
+offset preserved, and resuming refuses. A second video is never created on a guess.
+
+### Processing, captions, thumbnails
+
+The video ID is persisted *before* the first processing poll, so no failure can lose the identity of
+what was created. Polling is bounded exponential backoff; exceeding the elapsed budget leaves the
+publication in `PROCESSING` with its last observed state, because slow is not failed. A processing
+failure retains the video ID and its watch URL for investigation.
+
+Captions and the thumbnail run *after* the video exists and after processing, so their failure can
+never cause a second upload - a rule the state machine enforces: `UPLOADING_CAPTIONS` and
+`UPLOADING_THUMBNAIL` have no transition back to an upload state. A `captionExists` conflict adopts
+the existing track rather than duplicating it, and never touches a track this publication did not
+create. A channel that cannot set custom thumbnails keeps its private video and gets an actionable
+status. The canonical SRT is verified against its recorded hash and parsed before 400 quota units
+are spent on it. The deprecated caption `sync` parameter is never sent.
+
+### Privacy
+
+Every initial upload is `privacyStatus=private` with `notifySubscribers=false`, and there is no way
+to express anything else: `PublicationMetadata.initial_privacy` is a `Literal`. The
+synthetic-media disclosure (`status.containsSyntheticMedia`) is always sent, because VidGen output
+is animated and AI generated and the selected profile supports the field.
+
+A visibility change is an explicit user action that re-checks the render lineage and the T22 gate
+*immediately before* it runs, so a render selected during a long upload cannot be published under an
+older render's approval. A scheduled publication is submitted as a private video carrying
+`publishAt`. The privacy persisted is the one YouTube **returns**, never the one requested, so an
+API project restricted to private uploads can never be reported as public.
+
+### Identity and idempotency
+
+A publication identity binds the project, the final render asset and its hash, the T22 run and its
+report hash, the approval, the connection, the channel, the metadata version and hash, the caption
+asset and hash, the thumbnail asset and hash, the initial privacy state, the publisher version and
+the capability profile version. Retrying the same completed identity returns the existing
+publication and creates nothing. Changing the selected render produces a different identity.
+Changing material metadata after upload creates a new metadata version and updates the existing
+video through `videos.update`; it never creates a second one.
+
+### Database
+
+Six additive tables in `0019_youtube_publication`, leaving exactly one Alembic head. The state
+machine is compiled into a CHECK constraint *from the same transition table the application
+enforces*, so the two cannot disagree. Also enforced in the database: a state after upload names its
+video; a published video finished processing; a non-private state required an explicit visibility
+decision; one publication per stable identity; one publication per YouTube video ID; one active
+upload session per publication; a completed session confirmed every byte and names its video; one
+successful caption per publication, language and name; one video and one thumbnail row per
+publication; a byte offset within the total size; an OAuth state that expires after it was created
+and whose hash is unique.
+
+The downgrade refuses once publication provenance exists: these rows are the only local record of
+which YouTube video a render became.
+
+### T23 and Temporal
+
+Every YouTube operation runs inside the existing T23 provider instrumentation. Quota units are
+recorded as a typed usage quantity (`youtube_quota_unit`) with a **zero monetary cost**, because
+Google does not bill for them and a fabricated dollar figure would corrupt the cost ledger. T25
+adds no provider-attempt or telemetry table of its own.
+
+The workflow holds nothing but IDs: a project ID, a publication-run ID, a connection ID, a render
+asset ID, an idempotency key and a bounded trace context. It runs on a dedicated
+`vidgen-publisher` task queue with a dedicated no-ingress worker, so a multi-hour upload cannot
+starve ordinary project activities, and it re-enters the upload activity repeatedly, each time
+resuming from the confirmed offset.
+
+### Known limitations
+
+1. **No production authentication.** The API still identifies callers with the development
+   `X-VidGen-User` header. The OAuth callback itself does not depend on it - the one-time,
+   owner-bound `state` is the authority, and a callback carrying a mismatched identity header is
+   refused - but the rest of the publication API is owner-scoped by that header alone. Public
+   multi-tenant YouTube OAuth is therefore **not** production-ready, and `providers.youtube` is
+   false in both parameter files. Real authentication is T26 work.
+2. **The real-channel test has not been run in this repository.** `tests/test_t25_real_youtube.py`
+   is opt-in and manually triggered; it needs a Google Cloud project, a verified OAuth client and a
+   test channel, none of which exist here. Every fake-provider and mocked-adapter test passes.
+3. **Quota costs are point-in-time.** They were verified on the date recorded in the capability
+   registry, and Google has changed them twice in the last year. They are configuration, and the
+   registry records both profiles.
+4. **Only one caption language per publication.** The schema supports several - the uniqueness is
+   per language and name - but the draft exposes a single canonical track, which is the one T17
+   produces.
+5. **Thumbnails are chosen, not generated.** T25 adds no paid thumbnail-generation pipeline: the
+   user selects a project-owned JPEG or PNG.
+6. **Analytics, comments, playlists, monetization and multi-channel CMS are out of scope**, and no
+   Partner or CMS scope is requested.

@@ -7,7 +7,7 @@ targetScope = 'resourceGroup'
 // needs a subscription-scoped role: Contributor plus Role Based Access Control
 // Administrator on this one resource group is enough to deploy everything here.
 
-import { ContainerResources, ScaleBounds, JobLimits, ProviderToggles, TemporalConfig, FeatureFlags, ResourceTags } from './modules/types.bicep'
+import { ContainerResources, ScaleBounds, JobLimits, ProviderToggles, TemporalConfig, FeatureFlags, ResourceTags, YouTubePublisherConfig } from './modules/types.bicep'
 
 // -- identity and naming ------------------------------------------------------
 
@@ -84,6 +84,17 @@ param webScale ScaleBounds = { minReplicas: 1, maxReplicas: 3 }
 
 @description('Replica bounds for the Temporal worker. The minimum is never zero while the task queue requires polling.')
 param workerScale ScaleBounds = { minReplicas: 1, maxReplicas: 3 }
+
+@description('Per-replica CPU and memory for the dedicated T25 publisher worker. Modest: it streams bytes rather than decoding them.')
+param publisherResources ContainerResources = { cpu: '0.5', memory: '1Gi' }
+
+@description('Replica bounds for the publisher worker. Small on purpose: each replica may hold a multi-gigabyte resumable upload open.')
+param publisherScale ScaleBounds = { minReplicas: 1, maxReplicas: 2 }
+
+@description('Concurrent resumable uploads per publisher replica.')
+@minValue(1)
+@maxValue(8)
+param publisherMaxConcurrentUploads int = 2
 
 @description('Concurrent HTTP requests per API replica before another replica is added.')
 param apiConcurrentRequests int = 40
@@ -180,6 +191,24 @@ param providers ProviderToggles = {
   elevenlabs: false
   voicestudio: false
   opensubtitles: false
+  youtube: false
+}
+
+@description('''T25 YouTube publication configuration. The client ID and the
+redirect URI are ordinary configuration; the OAuth client secret and the
+credential-envelope key are Key Vault secrets written by bootstrap_secrets.sh
+and are never created by this template.''')
+param youtube YouTubePublisherConfig = {
+  oauthClientId: ''
+  // Reachable by an authorized user of this private environment. Until real
+  // application authentication exists, that means a developer on the VPN or a
+  // loopback redirect during local development - never a public URL.
+  oauthRedirectUri: ''
+  oauthRedirectTargets: '/'
+  tokenEncryptionKeyVersion: 'v1'
+  taskQueue: 'vidgen-publisher'
+  uploadChunkBytes: 8388608
+  processingTimeoutSeconds: 21600
 }
 
 @description('Application feature flags.')
@@ -414,12 +443,16 @@ module containerApps 'modules/container_apps.bicep' = {
     temporal: temporal
     providers: providers
     features: features
+    youtube: youtube
     apiResources: apiResources
     webResources: webResources
     workerResources: workerResources
+    publisherResources: publisherResources
     apiScale: apiScale
     webScale: webScale
     workerScale: workerScale
+    publisherScale: publisherScale
+    publisherMaxConcurrentUploads: publisherMaxConcurrentUploads
     apiConcurrentRequests: apiConcurrentRequests
     publicIngressEnabled: publicIngressEnabled
   }
@@ -490,6 +523,8 @@ output apiFqdn string = containerApps.outputs.apiFqdn
 output webAppName string = containerApps.outputs.webName
 output webFqdn string = containerApps.outputs.webFqdn
 output workerAppName string = containerApps.outputs.workerName
+output publisherAppName string = containerApps.outputs.publisherName
+output publisherLatestRevision string = containerApps.outputs.publisherLatestRevision
 
 output migrationJobName string = containerJobs.outputs.migrationJobName
 output renderJobName string = containerJobs.outputs.renderJobName

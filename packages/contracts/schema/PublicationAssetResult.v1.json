@@ -1,0 +1,282 @@
+{
+  "$defs": {
+    "PublicationAssetKind": {
+      "enum": [
+        "video",
+        "caption",
+        "thumbnail"
+      ],
+      "title": "PublicationAssetKind",
+      "type": "string"
+    },
+    "PublicationAssetStatus": {
+      "enum": [
+        "pending",
+        "in_progress",
+        "succeeded",
+        "skipped",
+        "failed"
+      ],
+      "title": "PublicationAssetStatus",
+      "type": "string"
+    },
+    "PublicationFailure": {
+      "additionalProperties": false,
+      "description": "A structured, renderable publication failure. Never carries a secret.",
+      "properties": {
+        "code": {
+          "$ref": "#/$defs/PublicationFailureCode"
+        },
+        "http_status": {
+          "anyOf": [
+            {
+              "maximum": 599,
+              "minimum": 100,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Http Status"
+        },
+        "occurred_at": {
+          "format": "date-time",
+          "title": "Occurred At",
+          "type": "string"
+        },
+        "provider_reason": {
+          "default": "",
+          "maxLength": 128,
+          "title": "Provider Reason",
+          "type": "string"
+        },
+        "reference_id": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Reference Id"
+        },
+        "remediation": {
+          "default": "",
+          "maxLength": 500,
+          "title": "Remediation",
+          "type": "string"
+        },
+        "retryable": {
+          "default": false,
+          "title": "Retryable",
+          "type": "boolean"
+        },
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "summary": {
+          "maxLength": 500,
+          "title": "Summary",
+          "type": "string"
+        }
+      },
+      "required": [
+        "code",
+        "summary"
+      ],
+      "title": "PublicationFailure",
+      "type": "object"
+    },
+    "PublicationFailureCode": {
+      "description": "The T23 failure classification for every YouTube operation.\n\nEvery member maps to exactly one operator action, which is why there is no\ngeneric ``ERROR``.",
+      "enum": [
+        "NO_ELIGIBLE_RENDER",
+        "RENDER_NOT_SELECTED",
+        "RENDER_NOT_APPROVED",
+        "COMPLETION_GATE_NOT_PASSED",
+        "STALE_RENDER",
+        "UNRESOLVED_HUMAN_REVIEW",
+        "CROSS_PROJECT_REFERENCE",
+        "MISSING_FINAL_ASSET",
+        "MISSING_CAPTION_ASSET",
+        "INVALID_THUMBNAIL_ASSET",
+        "INVALID_METADATA",
+        "INVALID_SCHEDULE",
+        "CONNECTION_NOT_OWNED",
+        "AUTHENTICATION_REQUIRED",
+        "INVALID_GRANT",
+        "INSUFFICIENT_SCOPE",
+        "CHANNEL_MISMATCH",
+        "QUOTA_EXCEEDED",
+        "UPLOAD_LIMIT_EXCEEDED",
+        "RATE_LIMITED",
+        "RETRYABLE_SERVER_ERROR",
+        "EXPIRED_RESUMABLE_SESSION",
+        "AMBIGUOUS_COMPLETION",
+        "PROCESSING_FAILED",
+        "CAPTION_CONFLICT",
+        "THUMBNAIL_NOT_PERMITTED",
+        "PRIVACY_RESTRICTED",
+        "PROVIDER_REJECTED",
+        "CANCELLED"
+      ],
+      "title": "PublicationFailureCode",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "description": "One uploaded YouTube sub-resource: the video, a caption or a thumbnail.",
+  "properties": {
+    "byte_size": {
+      "default": 0,
+      "minimum": 0,
+      "title": "Byte Size",
+      "type": "integer"
+    },
+    "completed_at": {
+      "anyOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Completed At"
+    },
+    "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+    },
+    "failure": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/PublicationFailure"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "kind": {
+      "$ref": "#/$defs/PublicationAssetKind"
+    },
+    "language": {
+      "default": "",
+      "maxLength": 16,
+      "title": "Language",
+      "type": "string"
+    },
+    "local_asset_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Local Asset Id"
+    },
+    "local_asset_sha256": {
+      "anyOf": [
+        {
+          "pattern": "^[a-f0-9]{64}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Local Asset Sha256"
+    },
+    "name": {
+      "default": "",
+      "maxLength": 150,
+      "title": "Name",
+      "type": "string"
+    },
+    "projection": {
+      "additionalProperties": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "integer"
+          },
+          {
+            "type": "boolean"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "title": "Projection",
+      "type": "object"
+    },
+    "provider_attempt_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Provider Attempt Id"
+    },
+    "provider_resource_id": {
+      "default": "",
+      "maxLength": 128,
+      "title": "Provider Resource Id",
+      "type": "string"
+    },
+    "publication_asset_id": {
+      "format": "uuid",
+      "title": "Publication Asset Id",
+      "type": "string"
+    },
+    "publication_run_id": {
+      "format": "uuid",
+      "title": "Publication Run Id",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "status": {
+      "$ref": "#/$defs/PublicationAssetStatus"
+    }
+  },
+  "required": [
+    "publication_asset_id",
+    "publication_run_id",
+    "kind",
+    "status",
+    "created_at"
+  ],
+  "title": "PublicationAssetResult",
+  "type": "object"
+}

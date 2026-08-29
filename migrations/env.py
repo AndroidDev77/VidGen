@@ -13,6 +13,7 @@ import vidgen.db.final_editorial_models
 import vidgen.db.image_generation_models
 import vidgen.db.models
 import vidgen.db.narration_models
+import vidgen.db.publication_models
 import vidgen.db.render_models
 import vidgen.db.repair_models
 import vidgen.db.review_models
