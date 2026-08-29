@@ -669,6 +669,29 @@ class FinalEditorialPipeline:
                 existing,
             )
         estimated = BASE_CALL_COST + COST_PER_FRAME * len(request.samples)
+        try:
+            return await self._instrumented_call(
+                run, selected, request, frames, agent, phase, existing, estimated, first_pass
+            )
+        except BaseException:
+            # ``instrument_provider_attempt`` records the failure classification
+            # on its way out. Nothing after it commits, so persist the failed
+            # attempt here or the T23 row stays stuck at STARTED forever.
+            self.session.commit()
+            raise
+
+    async def _instrumented_call(
+        self,
+        run: FinalEditorialRun,
+        selected: AuthoritativeFinalInputs,
+        request: FinalEditorialProviderRequest,
+        frames: list[SampledFrame],
+        agent: FinalEditorialProvider,
+        phase: FinalQAPhase,
+        existing: FinalEditorialProviderAttempt | None,
+        estimated: Decimal,
+        first_pass: FinalEditorialProviderResult | None,
+    ) -> tuple[FinalEditorialProviderResult, FinalEditorialProviderAttempt]:
         async with instrument_provider_attempt(
             session=self.session,
             tracer=self.tracer,

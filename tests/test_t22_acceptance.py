@@ -21,7 +21,7 @@ import pytest
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session, sessionmaker
 
-import vidgen.db  # noqa: F401  - registers every table on Base.metadata
+import vidgen.db
 from services.qa.final_commands import (
     FinalQABlocked,
     FinalQACommandOptions,

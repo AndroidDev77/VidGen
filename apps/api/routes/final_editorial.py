@@ -294,26 +294,8 @@ def list_final_editorial_runs(
     return FinalEditorialCollectionResponse(project_id=project.id, items=items)
 
 
-@router.get(
-    "/{project_id}/final-qa/{final_editorial_run_id}",
-    response_model=FinalEditorialRunDetailProjection,
-)
-def get_final_editorial_run(
-    project_id: UUID,
-    final_editorial_run_id: UUID,
-    session: SessionDep,
-    principal: PrincipalDep,
-    blob: BlobDep,
-    response: Response,
-) -> FinalEditorialRunDetailProjection:
-    project = owned_project(session, project_id, principal)
-    run = require_run(session, project.id, final_editorial_run_id)
-    body = _detail(session, blob, run)
-    session.commit()
-    set_etag(response, body.row_version)
-    return body
-
-
+# Declared before the parameterised run route: FastAPI matches in declaration
+# order, and a literal segment must win over a UUID path parameter.
 @router.get("/{project_id}/final-qa/gate", response_model=FinalCompletionGateProjection)
 def get_completion_gate(
     project_id: UUID, session: SessionDep, principal: PrincipalDep
@@ -343,6 +325,26 @@ def get_completion_gate(
         gate_version=GATE_VERSION,
         row_version=_row_version(session, project.id),
     )
+
+
+@router.get(
+    "/{project_id}/final-qa/{final_editorial_run_id}",
+    response_model=FinalEditorialRunDetailProjection,
+)
+def get_final_editorial_run(
+    project_id: UUID,
+    final_editorial_run_id: UUID,
+    session: SessionDep,
+    principal: PrincipalDep,
+    blob: BlobDep,
+    response: Response,
+) -> FinalEditorialRunDetailProjection:
+    project = owned_project(session, project_id, principal)
+    run = require_run(session, project.id, final_editorial_run_id)
+    body = _detail(session, blob, run)
+    session.commit()
+    set_etag(response, body.row_version)
+    return body
 
 
 # --- mutations -----------------------------------------------------------
