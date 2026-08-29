@@ -74,6 +74,19 @@ WORKFLOW_STAGE_ALIASES: dict[str, PipelineStage] = {
     "shot_generation_complete": PipelineStage.SHOT_ORCHESTRATION,
     "captions": PipelineStage.CAPTIONS,
     "rendering": PipelineStage.RENDERING,
+    # The T17b render stage's workflow statuses. They are the durable
+    # render-job statuses, so the timeline needs no translation table of its own.
+    "render": PipelineStage.RENDERING,
+    "render_queued": PipelineStage.RENDERING,
+    "render_claiming": PipelineStage.RENDERING,
+    "render_preparing": PipelineStage.RENDERING,
+    "render_manifest_ready": PipelineStage.RENDERING,
+    "render_rendering": PipelineStage.RENDERING,
+    "render_verifying": PipelineStage.RENDERING,
+    "render_persisting": PipelineStage.RENDERING,
+    "render_complete": PipelineStage.RENDERING,
+    "render_failed": PipelineStage.RENDERING,
+    "render_cancelled": PipelineStage.RENDERING,
     "review": PipelineStage.REVIEW,
 }
 
