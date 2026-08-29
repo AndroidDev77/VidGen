@@ -53,10 +53,16 @@ def config() -> Config:
     return Config(str(ROOT / "alembic.ini"))
 
 
-def test_t25_is_the_only_head_and_follows_t22() -> None:
+def test_t25_follows_t22_in_a_single_headed_chain() -> None:
     script = ScriptDirectory.from_config(config())
-    assert script.get_heads() == ["0019_youtube_publication"]
+    # Exactly one head is the invariant T25 has to hold, and it must keep
+    # holding for T26: the tip is asserted as an ancestor relation rather than
+    # by name, so the next task does not have to edit this test.
+    heads = script.get_heads()
+    assert len(heads) == 1
     assert script.get_revision("0019_youtube_publication").down_revision == PREVIOUS_HEAD
+    lineage = {revision.revision for revision in script.walk_revisions(base="base", head=heads[0])}
+    assert "0019_youtube_publication" in lineage
 
 
 def test_upgrade_downgrade_upgrade_is_clean_with_no_drift(
@@ -81,7 +87,9 @@ def test_the_migration_is_additive(tmp_path: Path, monkeypatch: pytest.MonkeyPat
     engine = create_engine(url)
     command.upgrade(config(), PREVIOUS_HEAD)
     before = set(inspect(engine).get_table_names())
-    command.upgrade(config(), "head")
+    # Upgrade to T25 exactly, not to head, for the same reason T20-T22 do: this
+    # assertion is about what T25 itself contributes.
+    command.upgrade(config(), "0019_youtube_publication")
     after = set(inspect(engine).get_table_names())
     assert before <= after, "T25 removes nothing that T01-T24 created"
     assert after - before == T25_TABLES
