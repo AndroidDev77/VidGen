@@ -28,13 +28,13 @@ from vidgen.review.idempotency import IdempotencyService
 from vidgen.review.projections import resolve_project
 from vidgen.review.versions import RowVersionService
 from vidgen.review.workflow_control import WorkflowController
-from vidgen.storage.blob import FilesystemBlobStore
+from vidgen.storage.blob import BlobStore
 
 SessionDep = Annotated[Session, Depends(get_session)]
 SessionFactoryDep = Annotated[sessionmaker[Session], Depends(get_session_factory)]
 PrincipalDep = Annotated[Principal, Depends(get_current_user)]
 SettingsDep = Annotated[APISettings, Depends(get_settings)]
-BlobDep = Annotated[FilesystemBlobStore, Depends(get_blob_store)]
+BlobDep = Annotated[BlobStore, Depends(get_blob_store)]
 ControllerDep = Annotated[WorkflowController, Depends(get_workflow_controller)]
 IfMatchDep = Annotated[str | None, Header(alias="If-Match")]
 IdempotencyKeyDep = Annotated[str | None, Header(alias="Idempotency-Key")]

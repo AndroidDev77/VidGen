@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 from uuid import UUID, uuid4
 
 from sqlalchemy.orm import Session
@@ -17,7 +18,15 @@ from vidgen.db.session import build_engine
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("project_id", type=UUID)
+    # The deployed render job is project-neutral: the project is supplied per
+    # execution with `az containerapp job start --env-vars VIDGEN_PROJECT_ID=...`,
+    # so the job definition never has to be redeployed to render a project.
+    parser.add_argument("project_id", type=UUID, nargs="?", default=None)
+    parser.add_argument(
+        "--from-env",
+        action="store_true",
+        help="read the project id from VIDGEN_PROJECT_ID instead of the positional argument",
+    )
     parser.add_argument("--idempotency-key", default=None)
     parser.add_argument("--profile", choices=("1080p24", "1080p30"), default="1080p24")
     parser.add_argument(
@@ -25,6 +34,13 @@ def main() -> None:
     )
     parser.add_argument("--ass-burn-in", action="store_true")
     arguments = parser.parse_args()
+    if arguments.from_env:
+        raw = os.environ.get("VIDGEN_PROJECT_ID", "").strip()
+        if not raw:
+            parser.error("--from-env requires VIDGEN_PROJECT_ID to be set")
+        arguments.project_id = UUID(raw)
+    elif arguments.project_id is None:
+        parser.error("a project id is required unless --from-env is given")
     try:
         with Session(build_engine()) as session, session.begin():
             selected = select_authoritative_inputs(session, arguments.project_id)

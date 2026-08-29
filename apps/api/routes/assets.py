@@ -10,7 +10,7 @@ from apps.api.auth import Principal, get_current_user
 from apps.api.dependencies import get_blob_store, get_session
 from apps.api.schemas.uploads import DownloadURLResponse
 from vidgen.db.models import Asset, Project
-from vidgen.storage.blob import FilesystemBlobStore
+from vidgen.storage.blob import BlobStore
 
 router = APIRouter(prefix="/assets", tags=["assets"])
 
@@ -20,7 +20,7 @@ def get_download_url(
     asset_id: UUID,
     session: Annotated[Session, Depends(get_session)],
     principal: Annotated[Principal, Depends(get_current_user)],
-    blob_store: Annotated[FilesystemBlobStore, Depends(get_blob_store)],
+    blob_store: Annotated[BlobStore, Depends(get_blob_store)],
     expires_in_seconds: int = Query(default=900, ge=60, le=3600),
 ) -> DownloadURLResponse:
     asset = session.get(Asset, asset_id)

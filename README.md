@@ -37,7 +37,8 @@ generated asset is content-addressed with its parents, hashes and provider reque
 
 ## Current capabilities
 
-Roadmap tasks T01 through T23 are implemented. The per-task detail lives in
+Roadmap tasks T01 through T23 are implemented, and T24 Azure infrastructure is implemented and
+reviewed but not yet validated by a real staging deployment. The per-task detail lives in
 [`docs/IMPLEMENTATION_STATUS.md`](docs/IMPLEMENTATION_STATUS.md); in short:
 
 - Versioned Pydantic contracts with exported JSON Schema, a PostgreSQL data model with Alembic
@@ -54,16 +55,20 @@ Roadmap tasks T01 through T23 are implemented. The per-task detail lives in
   Veo alternate provider and a free 2.5D parallax fallback.
 - Deterministic captioned rendering, final editorial QA with a workflow-enforced completion gate,
   a customer-facing React review application, and a cost ledger with budget caps.
+- Bicep infrastructure for a private-by-default Azure staging environment, with an Azure Blob
+  storage backend selected by `VIDGEN_BLOB_BACKEND` and telemetry that exports to Application
+  Insights (see [Azure deployment](#azure-deployment)).
 
 Two gaps affect what you can run locally today, and both are called out again where they bite:
 
 - **No supported command executes a render.** `POST /render:start` and
   `scripts/render_project.py` create or queue the render job row; the T17 pipeline that would
-  execute it (`services/renderer/pipeline.py`) is driven only from tests. A local run therefore
-  stops before the final MP4, and final editorial QA has no current render to inspect.
-- **Telemetry is not wired into the running services.** The T23 helpers exist in
-  `src/vidgen/telemetry`, but neither `apps/api/main.py` nor the Temporal worker calls them, so a
-  local Grafana shows no application metrics.
+  execute it (`services/renderer/pipeline.py`) is driven only from tests, and the project workflow
+  has no render stage. A local run therefore stops before the final MP4, and final editorial QA has
+  no current render to inspect.
+- **No metrics reach a local Grafana.** The API and the worker do initialize the T23 telemetry
+  stack, but the bootstrap exports logs (stdout JSON) and traces only. Nothing exports metrics over
+  OTLP, so the provisioned dashboard stays empty locally.
 
 ## Architecture summary
 
@@ -83,6 +88,7 @@ Two gaps affect what you can run locally today, and both are called out again wh
 | `apps/web` | The React review application (`@vidgen/web`) |
 | `scripts/` | Per-stage CLIs for running and inspecting one stage at a time |
 | `migrations/` | Alembic migrations |
+| `infra/` | Bicep templates, deployment scripts and policy tests for the Azure environment |
 
 Three processes make up a full local system: the **API** (`apps/api`), the **web application**
 (`apps/web`), and the **Temporal worker** (`workers/temporal_worker`). Docker Compose supplies
@@ -157,8 +163,9 @@ make verify-stack
 
 | Target | What it does |
 | --- | --- |
-| `make install` | `uv sync --all-groups` |
+| `make install` | `uv sync --all-groups --all-extras` (adds the optional Azure SDKs) |
 | `make infra-up` | Start PostgreSQL, Redis, Azurite and Temporal |
+| `make infra-validate` | Compile and policy-check the Bicep templates (no Azure credential) |
 | `make infra-logs` | Follow the infrastructure container logs |
 | `make migrate` | `alembic upgrade head` |
 | `make run-worker` | Run the Temporal worker |
@@ -350,11 +357,17 @@ Every project carries a T23 hard budget cap, and repairs can additionally be cap
 | `VIDGEN_TEMPORAL_ALLOW_FAKE_PROVIDERS` | `true` for an offline pipeline |
 | `VIDGEN_IMAGE_PROVIDER_NAME` / `VIDGEN_VIDEO_PROVIDER_NAME` | `fake` / `fake` offline, `openai` / `runway` in production |
 | `VIDGEN_CORS_ALLOWED_ORIGINS` | empty; the Vite proxy keeps the browser same-origin |
+| `VIDGEN_BLOB_BACKEND` | `filesystem`; a deployed environment sets `azure` |
 | `AZURE_STORAGE_CONNECTION_STRING` | `UseDevelopmentStorage=true` for Azurite |
 
 The Temporal worker additionally reads plain (unprefixed) variables: `TEMPORAL_ADDRESS`
-(default `localhost:7233`), `TEMPORAL_TASK_QUEUE` (default `vidgen-projects`) and
-`TEMPORAL_ACTIVITY_THREADS` (default `4`). The defaults match `make infra-up`.
+(default `localhost:7233`), `TEMPORAL_NAMESPACE`, `TEMPORAL_TASK_QUEUE` (default `vidgen-projects`),
+the Temporal Cloud settings `TEMPORAL_TLS_ENABLED` and `TEMPORAL_API_KEY` (both off by default, so
+a local dev server connects in plaintext), and the concurrency and shutdown bounds
+`TEMPORAL_ACTIVITY_THREADS` (4), `TEMPORAL_MAX_CONCURRENT_ACTIVITIES`,
+`TEMPORAL_MAX_CONCURRENT_WORKFLOW_TASKS` (100) and `TEMPORAL_GRACEFUL_SHUTDOWN_SECONDS` (30). The
+defaults match `make infra-up`; the deployment-only variables are listed at the bottom of
+`.env.example`.
 
 `apps/web/.env`:
 
@@ -556,6 +569,15 @@ The migration check that CI runs, against the local disposable database:
 make verify-stack
 ```
 
+`pytest` collects `infra/tests` as well as `tests` (see `testpaths` in `pyproject.toml`). Those are
+static policy checks over the compiled Bicep templates; the ones marked `bicep` need the Azure CLI's
+Bicep tooling and skip without it. Neither needs an Azure subscription:
+
+```bash
+uv run pytest infra/tests -q
+make infra-validate
+```
+
 ## Observability
 
 ```bash
@@ -579,11 +601,15 @@ docker compose --profile observability logs -f otel-collector
 `observability/alerts.yml`, and the provisioned dashboard is
 `observability/grafana/dashboards/vidgen-operations.json`.
 
-**What actually reports today:** the Temporal UI is the useful local view. The T23 telemetry
-helpers in `src/vidgen/telemetry` are not yet initialized by `apps/api/main.py` or by the Temporal
-worker, and `VIDGEN_OTEL_EXPORTER_OTLP_ENDPOINT` is read but not wired to an exporter, so the
-Grafana dashboard stays empty locally. Cost and budget data is available through the API
-(`GET /api/v1/projects/{id}/costs`) and `scripts/cost_report.py`.
+**What actually reports today:** the API and the worker both call `initialize_telemetry`
+(`src/vidgen/telemetry/bootstrap.py`) at startup, which configures redacted JSON logging on stdout
+and, when an export target is configured, batched trace export — to Application Insights via
+`VIDGEN_APPLICATIONINSIGHTS_CONNECTION_STRING` (needs the `azure` extra), or to
+`VIDGEN_OTEL_EXPORTER_OTLP_ENDPOINT` (needs `opentelemetry-exporter-otlp`, which is not a
+dependency). **Metrics are not exported**, so Prometheus scrapes an empty collector and the
+provisioned Grafana dashboard stays blank locally; the Temporal UI is the useful local view. Cost
+and budget data is available through the API (`GET /api/v1/projects/{id}/costs`) and
+`scripts/cost_report.py`.
 
 ## Stopping and resetting the environment
 
@@ -746,25 +772,74 @@ uv run python scripts/inspect_shot_workflow.py "$PROJECT_ID" --storyboard-run-id
 list. Check, in order: the API is up (<http://localhost:8000/healthz>); the Vite dev server is
 running on 5173; `VITE_VIDGEN_API_BASE_URL` in `apps/web/.env` is **empty**, so the browser uses the
 same-origin `/api` proxy. If the API listens somewhere other than `127.0.0.1:8000`, point the proxy
-at it with `VIDGEN_API_PROXY_TARGET` when starting the dev server. If you deliberately point the browser at a different origin, you must also
-set `VIDGEN_CORS_ALLOWED_ORIGINS=http://localhost:5173` in `.env` and restart the API — CORS is off
-by default.
+at it with `VIDGEN_API_PROXY_TARGET` when starting the dev server. If you deliberately point the
+browser at a different origin, you must also set
+`VIDGEN_CORS_ALLOWED_ORIGINS=http://localhost:5173` in `.env` and restart the API — CORS is off by
+default.
 
 ## Azure deployment
 
-There is no deployment automation in this repository yet: adding Azure infrastructure is roadmap
-task T24, and no `infra/` directory exists. What does exist:
+`infra/` holds the infrastructure-as-code for a VidGen deployment. The complete operational
+reference — architecture, resource inventory, network topology, parameters, RBAC, Key Vault secret
+names, autoscaling rationale, observability, deployment and migration order, smoke testing,
+rollback, backup and recovery, cost drivers and known limitations — is in
+[`infra/README.md`](infra/README.md).
 
-- The two images CI builds on every run: the API/worker image (root `Dockerfile`, `python:3.12-slim`
-  plus FFmpeg, served by uvicorn on 8000) and the web image (`apps/web/Dockerfile`, nginx serving
-  the built assets and reverse-proxying `/api` to `VIDGEN_API_UPSTREAM`).
-- The target topology — Front Door and WAF, the React app, FastAPI on Container Apps, Temporal
-  Cloud, PostgreSQL Flexible Server, Blob Storage, Managed Redis, Service Bus, Key Vault through
-  managed identity, and Container Apps Jobs for isolated FFmpeg renders — specified under
-  "Recommended Azure deployment" in [`docs/TECHNICAL_DESIGN.md`](docs/TECHNICAL_DESIGN.md).
+```text
+infra/
+  bicep/main.bicep            resource-group scoped composition
+  bicep/modules/              identities, networking, private_dns, container_registry,
+                              container_apps_environment, container_apps, container_jobs,
+                              postgres, storage, redis, key_vault, monitoring,
+                              role_assignments, shared types and app configuration
+  bicep/environments/         staging.bicepparam (deployed) and
+                              production.example.bicepparam (documented, undeployed)
+  tests/                      compiled-template policy tests
+  scripts/                    bootstrap_oidc, bootstrap_secrets, validate_infrastructure,
+                              scan_secrets, deploy_staging, run_migrations, run_smoke_test,
+                              verify_deployment, rollback_revision
+  dashboards/                 an Azure Monitor workbook over the T23 signals
+```
 
-Until T24 lands, treat that section of the design document as the deployment plan, not as
-something you can apply.
+What it deploys: a VNet-integrated Container Apps environment with an internal load balancer; the
+web, API and Temporal worker as Container Apps; finite Container Apps Jobs for migration,
+out-of-band rendering, the smoke test and administration; PostgreSQL Flexible Server with VNet
+injection; private Blob Storage; Azure Managed Redis; Key Vault with RBAC; one managed identity per
+workload with least-privilege role assignments; private endpoints and private DNS for every linked
+service; Log Analytics and Application Insights carrying the T23 telemetry; and GitHub Actions
+deployment through Azure OIDC federation with no client secret anywhere.
+
+Staging is private by default (`publicIngressEnabled` is `false`), and the API is never externally
+reachable whatever that parameter is set to, because production authentication does not exist yet.
+`.github/workflows/deploy-staging.yml` enforces the deployment order: build and push
+commit-SHA-tagged images, resolve digests, validate and `what-if`, wait for the protected
+environment approval, deploy infrastructure, run the migration job exactly once, activate the new
+revisions, run the private smoke test, verify health and digests, and roll traffic back if the
+smoke test fails. A failed migration never reaches revision activation, and rollback never
+downgrades the database.
+
+**T24 is not marked complete.** Its acceptance — a private staging deploy, migrations run once,
+workers autoscaling — can only be demonstrated by a real deployment, and none has run. Every static
+and CI check passes; `infra/README.md` lists what a first deployment needs.
+
+Two deployment-facing settings are worth knowing locally, because both default to the local value:
+
+- `VIDGEN_BLOB_BACKEND` selects the asset store: `filesystem` (local and every test) or `azure`
+  (reached over a private endpoint with the workload's managed identity — no key, connection string
+  or SAS token is ever configured). Any other value is rejected at startup.
+- The Temporal worker reads `TEMPORAL_ADDRESS`, `TEMPORAL_NAMESPACE`, `TEMPORAL_TASK_QUEUE`,
+  `TEMPORAL_TLS_ENABLED` and `TEMPORAL_API_KEY`. TLS and the API key are off by default so a local
+  `temporal server start-dev` connects in plaintext with no key; Temporal Cloud requires both.
+
+Validate the templates locally, with no Azure credential and no deployment:
+
+```bash
+az bicep build --file infra/bicep/main.bicep
+./infra/scripts/validate_infrastructure.sh
+uv run pytest infra/tests -q
+```
+
+`make infra-validate` runs the second of those.
 
 ## Additional documentation
 
@@ -772,6 +847,7 @@ something you can apply.
 | --- | --- |
 | [`docs/TECHNICAL_DESIGN.md`](docs/TECHNICAL_DESIGN.md) | Authoritative architecture, data model, stage specifications, and the T01-T26 roadmap |
 | [`docs/IMPLEMENTATION_STATUS.md`](docs/IMPLEMENTATION_STATUS.md) | What each implemented roadmap task delivered, with its per-stage local commands |
+| [`infra/README.md`](infra/README.md) | The Azure deployment's operational reference |
 | [`AGENTS.md`](AGENTS.md) | Contributor and coding-agent rules |
 | `.env.example`, `apps/web/.env.example` | Every environment variable with its local default |
 | `packages/contracts/schema` | Exported JSON Schema for the inter-stage contracts (`make schemas`) |

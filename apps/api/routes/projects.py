@@ -22,7 +22,7 @@ from vidgen.db.repositories import ProjectRepository
 from vidgen.db.upload_models import UploadSession
 from vidgen.review.projections import project_summary
 from vidgen.review.versions import RowVersionService
-from vidgen.storage.blob import FilesystemBlobStore
+from vidgen.storage.blob import BlobStore
 from vidgen.uploads.service import UploadError, UploadService
 
 router = APIRouter(prefix="/projects", tags=["projects"])
@@ -30,7 +30,7 @@ router = APIRouter(prefix="/projects", tags=["projects"])
 SessionDependency = Annotated[Session, Depends(get_session)]
 PrincipalDependency = Annotated[Principal, Depends(get_current_user)]
 SettingsDependency = Annotated[APISettings, Depends(get_settings)]
-BlobDependency = Annotated[FilesystemBlobStore, Depends(get_blob_store)]
+BlobDependency = Annotated[BlobStore, Depends(get_blob_store)]
 
 
 def owned_project(session: Session, project_id: UUID, principal: Principal) -> Project:
