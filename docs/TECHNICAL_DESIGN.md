@@ -30,7 +30,8 @@ example conflicts with an implemented interface.
 | T20 | Complete | Restartable semantic visual QA evaluates selected T14 keyframes and T15 canonical clips against approved storyboard intent, the exact approved T19 identity/location versions and state snapshots, T13 continuity, and versioned deterministic media thresholds. Deterministic sampling and media checks run before any paid request; the weighted score is recomputed by application code from validated dimension values; hard failures always block; findings carry exact frame evidence and structured repair codes; adjudication is bounded; results resume without duplicate provider calls, T23 attempts, reservations or ledger entries; T16 gates keyframe and video QA; T17 render eligibility requires a passing canonical video-QA result; and the T18 inspector exposes the scorecard, diagnostics and evidence. T20 identifies repairs and never executes one. |
 | T21 | Complete | Restartable repair and fallback routing consumes one failed T20 video-QA result, classifies it into one of five strict categories from T20 evidence alone, and drives a bounded policy: at most two same-provider repair generations, then one Google Veo alternate-provider generation, then a free deterministic 2.5D parallax render when the shot is deterministically eligible, and otherwise `HUMAN_REVIEW_REQUIRED`. The original generation is attempt ordinal 0 and is not one of the repairs. Prompt repair is a validated minimal delta that preserves every unaffected constraint; approved T19 references are never mutated and a reference that is itself invalid is routed upstream. Every repaired or fallback output is revalidated by T20 before it can be selected, exactly one attempt per shot may be selected, durable provider operations are resumed rather than resubmitted, ambiguous submissions are never resubmitted, T23 reserves and reconciles every paid attempt with no duplicate charges, and only the failed shot is touched. Review and CI succeeded. |
 | T22 | Complete | Restartable final editorial QA inspects the canonical T17 delivery as a whole through six checkpointed phases. It proves the render's lineage is current - selected script, narration, storyboard and animation attempts, a passing T20 video-QA result per shot, no active/failed/`HUMAN_REVIEW_REQUIRED` T21 run, matching declared hashes and shot ordering - and rejects a stale render before any paid request. Deterministic media, audio and caption checks are measured with FFmpeg/ffprobe through argument arrays and gate the paid editorial analysis, which never runs on a delivery that already failed measurement. Luna evaluates 21 editorial dimensions on the assembled recap and Terra adjudicates only borderline findings, deciding solely at confidence >= 0.80 and otherwise producing `REVIEW`. Severity is structural, so a high dimension score can never conceal a blocking finding; every finding carries an exact global timestamp range and resolvable evidence. The gate is recomputed from validated findings and persisted immutably, human review may resolve only genuinely uncertain semantic findings and never a measured failure or stale lineage, remediation is routed to the stage that already owns it without a new creative loop, and the parent workflow advances a project to completed only on a current `PASS`. Review and CI succeeded. |
-| T24-T26 | Planned | Do not begin a later task until its dependencies and the current implementation are reconciled. |
+| T24 | Complete | `infra/bicep` describes a reproducible, private-by-default Azure staging environment at resource-group scope: a VNet-integrated Container Apps environment with an internal load balancer; the web, API and Temporal worker as Container Apps; finite Container Apps Jobs for migration, out-of-band rendering, the private smoke test and administrative commands; PostgreSQL Flexible Server with VNet injection, enforced TLS and configurable SKU, storage, backups and redundancy; private Blob Storage with versioning, soft delete, lifecycle rules and no account key; Azure Managed Redis (`Microsoft.Cache/redisEnterprise`) behind a private endpoint; Key Vault with Azure RBAC authorisation and purge protection; six user-assigned managed identities with deterministic, least-privilege role assignments that never include Owner, Contributor, AcrPush or a Key Vault writer role; private endpoints and private DNS zones for every linked service; and Log Analytics plus workspace-based Application Insights carrying the existing T23 telemetry through a batching OTLP exporter. Public ingress is a single parameter, false in staging and in the production template, and the API is never external because production authentication does not exist yet. Images are pinned by base-image digest, run as non-root, carry commit-SHA OCI labels, contain FFmpeg and ffprobe, and are deployed by digest - never `latest`. Schema changes are applied exactly once by a dedicated manual job with parallelism one, no retry, a PostgreSQL advisory lock and a single-head assertion, before any new revision receives traffic; a failed migration blocks the traffic switch and rollback restores an application revision without ever downgrading the database. GitHub Actions authenticates through Azure OIDC federation with no client secret, and the private smoke test runs as a Container Apps Job inside the virtual network with every provider forced off. |
+| T25-T26 | Planned | Do not begin a later task until its dependencies and the current implementation are reconciled. |
 
 When a roadmap task is completed, update this table, `README.md`, and any affected design section in
 the same pull request.
@@ -2287,7 +2288,7 @@ Each task below is independently testable. File paths refer to the repository st
 | T21 | Add repair and fallback routing | `services/qa/repair.py`, `services/animation/veo.py`, `services/renderer/parallax.py` | T20 | Two repairs, alternate provider, and deterministic fallback follow policy and cost cap |
 | T22 | Add final editorial QA | `services/qa/final_editorial.py`, `final_deterministic.py`, `final_audio.py`, `final_captions.py`, `final_gate.py`, review gate | T17, T20 | Final workflow cannot complete with a blocking render, caption, continuity, or story issue |
 | T23 | Add observability and cost ledger | `packages/telemetry/*`, `packages/costs/*`, dashboards, alerts | T08, provider adapters | Every provider attempt exposes tokens/seconds, cost, latency, trace, result, and failure class |
-| T24 | Add Azure infrastructure | `infra/bicep/*` or `infra/terraform/*`, Container Apps manifests, managed identities, Key Vault references | T01, T23 | Staging deploy is private by default, migrations run once, workers autoscale, and secrets are absent from images/config repos |
+| T24 | Add Azure infrastructure | `infra/bicep/main.bicep`, `infra/bicep/modules/*`, `infra/bicep/environments/*.bicepparam`, `infra/scripts/*`, `infra/tests/*`, `infra/dashboards/vidgen-workbook.json`, `.github/workflows/infra-validate.yml`, `.github/workflows/deploy-staging.yml`, `src/vidgen/storage/azure_blob.py`, `src/vidgen/telemetry/bootstrap.py`, `scripts/run_migrations.py`, `scripts/staging_smoke_test.py` | T01, T23 | Staging deploy is private by default, migrations run once, workers autoscale, and secrets are absent from images/config repos |
 | T25 | Add YouTube publication | `services/publisher/youtube.py`, OAuth connection UI, resumable upload state | T18, T24 | Private test video, thumbnail, and captions upload once; interrupted upload resumes |
 | T26 | Build regression and load suite | `tests/golden/*`, fake providers, chaos tests, load scenarios | All prior | Golden scores are versioned; 20-project load and worker termination tests meet SLO and idempotency requirements |
 
@@ -2740,6 +2741,57 @@ Azure-only alternative: deploy Temporal on AKS with its own PostgreSQL persisten
 - Blob soft delete and versioning for control-plane accidents, while application assets remain content-addressed.
 - Temporal workflow retention long enough to cover project lifecycle, with application projections retained longer.
 - Multi-zone production configuration in one primary region. Restore exercises recreate the environment from infrastructure code and replay from stored contracts and assets.
+
+## Implemented staging deployment (T24)
+
+Section 18 above describes the intended production shape. T24 implements the
+subset of it that a private staging environment needs, in Azure Bicep, under
+`infra/`. `infra/README.md` is the operational reference; this section records
+where the implementation deliberately differs from the recommendation above and
+why.
+
+| Recommendation above | T24 implementation | Reason |
+| --- | --- | --- |
+| Azure Front Door + WAF in front of a public UI | No Front Door; the web app has **private ingress** and `publicIngressEnabled` defaults to false | Production authentication does not exist yet - the API trusts an `X-Vidgen-User` header - so nothing may be publicly addressable. Front Door belongs with the authentication work, not before it. |
+| React UI on Static Web Apps | nginx Container App inside the same environment | It reverse-proxies `/api` on the same origin, so the browser never makes a cross-origin request and CORS stays off. It also keeps the UI inside the private network. |
+| Separate Container Apps per queue family | One worker app polling `vidgen-projects` | The repository has one production task queue. Splitting it would be speculative topology. |
+| Container Apps Jobs for FFmpeg renders | The in-workflow T17 render stays a Temporal activity; a bounded manual render **job** exists for out-of-band re-renders | The workflow render is a durable step with retries, heartbeats and a completion gate. Forcing a continuously coordinated activity into a finite job would break that boundary. |
+| Azure Service Bus | Not deployed | Nothing in the current implementation produces or consumes an external event. It is added when T25 needs it. |
+| Queue-backlog autoscaling | CPU and memory utilisation, minimum one replica | A Temporal queue-depth scaler needs a Temporal credential inside the scaler. CPU and memory are the safe signals until that is warranted. |
+| OpenTelemetry Collector | Direct batching export to Application Insights; stdout logs shipped by the platform | One fewer deployed component, one fewer credential, and no second copy of every record. |
+
+Everything else in section 18 is implemented as described: Container Apps for
+the API and workers, Temporal Cloud with one namespace per environment and
+API-key authentication, PostgreSQL Flexible Server, private Blob Storage with
+content-addressed assets and short-lived user-delegation SAS reads, Azure
+Managed Redis, Key Vault reached by managed identity, immutable digest-pinned
+images in Azure Container Registry, and Application Insights with Log Analytics.
+
+Private networking is implemented for every service that supports it: the
+Container Apps environment is VNet integrated with an internal load balancer,
+PostgreSQL is VNet injected, and Blob Storage, Key Vault, Redis and the registry
+each have a private endpoint with a private DNS zone. The two documented
+exceptions are the registry's public endpoint, which GitHub-hosted runners push
+through, and Azure Monitor ingestion, which is not behind a Private Link Scope.
+
+## Deployment order
+
+```text
+deploy infrastructure
+  -> publish immutable commit-SHA-tagged images and resolve their digests
+  -> start the migration job once and wait for success
+  -> verify exactly one Alembic head
+  -> activate the new application revisions
+  -> run the private smoke test inside the virtual network
+  -> verify health and the deployed image digests
+```
+
+A failed migration exits before revision activation. A failed smoke test rolls
+application traffic back to the previous healthy revision and never downgrades
+the database, which is safe only because every migration is expected to be
+backwards-compatible with the immediately preceding application revision; a
+destructive change must be split into an expand migration and a later contract
+migration.
 
 # 19. Observability
 

@@ -1,0 +1,28 @@
+# Keep build context small and deterministic, and make it impossible for a
+# local .env, credential file or build cache to be copied into an image.
+.git
+.github
+.env
+.env.*
+!.env.example
+.venv
+.uv-cache
+.local-data
+.artifacts
+node_modules
+**/node_modules
+**/__pycache__
+**/*.pyc
+.pytest_cache
+.ruff_cache
+.mypy_cache
+htmlcov
+.coverage
+dist
+build
+*.egg-info
+apps/web/dist
+apps/web/playwright-report
+apps/web/test-results
+infra
+docs

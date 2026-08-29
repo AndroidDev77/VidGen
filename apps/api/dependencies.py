@@ -13,7 +13,8 @@ from vidgen.review.workflow_control import (
     TemporalWorkflowController,
     WorkflowController,
 )
-from vidgen.storage.blob import FilesystemBlobStore
+from vidgen.storage.blob import BlobStore
+from vidgen.storage.factory import build_blob_store
 
 
 @lru_cache
@@ -32,9 +33,9 @@ def get_session() -> Generator[Session, None, None]:
 
 
 @lru_cache
-def get_blob_store() -> FilesystemBlobStore:
+def get_blob_store() -> BlobStore:
     settings = get_settings()
-    return FilesystemBlobStore(settings.blob_root, settings.signing_secret.encode())
+    return build_blob_store(settings)
 
 
 @lru_cache

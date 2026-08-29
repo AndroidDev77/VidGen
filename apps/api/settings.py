@@ -7,12 +7,21 @@ from pathlib import Path
 from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from vidgen.storage.factory import SUPPORTED_BACKENDS
+
 
 class APISettings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="VIDGEN_", env_file=".env", extra="ignore")
 
     database_url: str = "postgresql+psycopg://vidgen:vidgen@localhost:5432/vidgen"
     blob_root: Path = Path(".local-data/blobs")
+    # "filesystem" keeps local development and every test suite free of the
+    # Azure SDKs. A deployed environment sets "azure" and reaches the account
+    # over a private endpoint with its managed identity; no key, connection
+    # string or SAS token is ever read from configuration.
+    blob_backend: str = "filesystem"
+    blob_account_url: str | None = None
+    blob_container: str = "assets"
     upload_root: Path = Path(".local-data/uploads")
     signing_secret: str = "local-development-only-change-me"
     max_upload_bytes: int = 10 * 1024 * 1024 * 1024
@@ -81,6 +90,14 @@ class APISettings(BaseSettings):
     temporal_use_fake_workflow_controller: bool = False
     # CORS stays disabled unless an explicit development allowlist is configured.
     cors_allowed_origins: tuple[str, ...] = ()
+
+    @field_validator("blob_backend")
+    @classmethod
+    def validate_blob_backend(cls, value: str) -> str:
+        normalized = value.strip().lower()
+        if normalized not in SUPPORTED_BACKENDS:
+            raise ValueError(f"blob_backend must be one of {SUPPORTED_BACKENDS}")
+        return normalized
 
     @field_validator("cors_allowed_origins", mode="before")
     @classmethod

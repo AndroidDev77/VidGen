@@ -1,0 +1,383 @@
+{
+  "version": "Notebook/1.0",
+  "items": [
+    {
+      "type": 9,
+      "content": {
+        "version": "KqlParameterItem/1.0",
+        "parameters": [
+          {
+            "id": "workspace",
+            "version": "KqlParameterItem/1.0",
+            "name": "Workspace",
+            "type": 5,
+            "isRequired": true,
+            "typeSettings": {
+              "resourceTypeFilter": {
+                "microsoft.operationalinsights/workspaces": true
+              }
+            }
+          },
+          {
+            "id": "timerange",
+            "version": "KqlParameterItem/1.0",
+            "name": "TimeRange",
+            "type": 4,
+            "isRequired": true,
+            "value": {
+              "durationMs": 86400000
+            },
+            "typeSettings": {
+              "allowedValues": [],
+              "selectableValues": [
+                {
+                  "durationMs": 3600000
+                },
+                {
+                  "durationMs": 86400000
+                },
+                {
+                  "durationMs": 604800000
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "name": "parameters"
+    },
+    {
+      "type": 1,
+      "content": {
+        "json": "# VidGen operations\n\nEvery panel below is built from three sources, and from nothing else:\n\n* **T23 structured logs** - redacted JSON on stdout, shipped to `ContainerAppConsoleLogs_CL`.\n* **T23 provider spans** - the `provider.request` span emitted by `instrument_provider_attempt`, in `AppDependencies`.\n* **Azure platform metrics** - replica counts, CPU, memory, PostgreSQL, Redis and Storage, in `AzureMetrics`.\n\nNo prompt, transcript, caption, credential, signed URL or media payload reaches any of them: T23 redaction runs before a record is emitted, and the span attributes are bounded to provider, model, operation, status, failure class, latency and cost.\n\nPanel titles name the T23 instrument each one corresponds to."
+      },
+      "name": "header"
+    },
+    {
+      "type": 1,
+      "content": {
+        "json": "## Project throughput"
+      },
+      "name": "projects-header"
+    },
+    {
+      "type": 3,
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "// VidGen writes redacted structured JSON to stdout; Container Apps ships it here.\nlet vidgen = ContainerAppConsoleLogs_CL\n| where TimeGenerated {TimeRange}\n| extend payload = parse_json(Log_s)\n| where isnotnull(payload)\n| extend\n    level = tostring(payload.level),\n    message = tostring(payload.message),\n    projectId = tostring(payload.projectId),\n    provider = tostring(payload.provider),\n    model = tostring(payload.model),\n    operation = tostring(payload.operation),\n    stage = tostring(payload.stage),\n    status = tostring(payload.status),\n    failureClass = tostring(payload.failureClass),\n    errorCode = tostring(payload.errorCode),\n    durationMs = todouble(payload.durationMs),\n    costUsd = todouble(payload.costUsd);\nvidgen\n| where message has_any (\"project started\", \"project completed\")\n| summarize started = countif(message has \"project started\"),\n            completed = countif(message has \"project completed\")\n          by bin(TimeGenerated, 1h)\n| render timechart",
+        "size": 0,
+        "title": "Projects started and completed (recap_projects_started / recap_projects_completed)",
+        "timeContextFromParameter": "TimeRange",
+        "queryType": 0,
+        "resourceType": "microsoft.operationalinsights/workspaces",
+        "crossComponentResources": [
+          "{Workspace}"
+        ],
+        "visualization": "timechart"
+      },
+      "name": "projects-throughput"
+    },
+    {
+      "type": 3,
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "// VidGen writes redacted structured JSON to stdout; Container Apps ships it here.\nlet vidgen = ContainerAppConsoleLogs_CL\n| where TimeGenerated {TimeRange}\n| extend payload = parse_json(Log_s)\n| where isnotnull(payload)\n| extend\n    level = tostring(payload.level),\n    message = tostring(payload.message),\n    projectId = tostring(payload.projectId),\n    provider = tostring(payload.provider),\n    model = tostring(payload.model),\n    operation = tostring(payload.operation),\n    stage = tostring(payload.stage),\n    status = tostring(payload.status),\n    failureClass = tostring(payload.failureClass),\n    errorCode = tostring(payload.errorCode),\n    durationMs = todouble(payload.durationMs),\n    costUsd = todouble(payload.costUsd);\nvidgen\n| where isnotempty(stage) and isnotnull(durationMs)\n| summarize p50 = percentile(durationMs, 50), p95 = percentile(durationMs, 95)\n          by stage, bin(TimeGenerated, 1h)\n| render timechart",
+        "size": 0,
+        "title": "Stage duration p50/p95 (recap_project_stage_duration_seconds)",
+        "timeContextFromParameter": "TimeRange",
+        "queryType": 0,
+        "resourceType": "microsoft.operationalinsights/workspaces",
+        "crossComponentResources": [
+          "{Workspace}"
+        ],
+        "visualization": "timechart"
+      },
+      "name": "stage-duration"
+    },
+    {
+      "type": 3,
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "// VidGen writes redacted structured JSON to stdout; Container Apps ships it here.\nlet vidgen = ContainerAppConsoleLogs_CL\n| where TimeGenerated {TimeRange}\n| extend payload = parse_json(Log_s)\n| where isnotnull(payload)\n| extend\n    level = tostring(payload.level),\n    message = tostring(payload.message),\n    projectId = tostring(payload.projectId),\n    provider = tostring(payload.provider),\n    model = tostring(payload.model),\n    operation = tostring(payload.operation),\n    stage = tostring(payload.stage),\n    status = tostring(payload.status),\n    failureClass = tostring(payload.failureClass),\n    errorCode = tostring(payload.errorCode),\n    durationMs = todouble(payload.durationMs),\n    costUsd = todouble(payload.costUsd);\nvidgen\n| where level in (\"ERROR\", \"CRITICAL\") and isnotempty(stage)\n| summarize failures = count() by stage, failureClass\n| order by failures desc\n| render barchart",
+        "size": 0,
+        "title": "Stage failures by error class (recap_stage_failures)",
+        "timeContextFromParameter": "TimeRange",
+        "queryType": 0,
+        "resourceType": "microsoft.operationalinsights/workspaces",
+        "crossComponentResources": [
+          "{Workspace}"
+        ],
+        "visualization": "barchart"
+      },
+      "name": "stage-failures"
+    },
+    {
+      "type": 1,
+      "content": {
+        "json": "## Temporal"
+      },
+      "name": "temporal-header"
+    },
+    {
+      "type": 3,
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "// VidGen writes redacted structured JSON to stdout; Container Apps ships it here.\nlet vidgen = ContainerAppConsoleLogs_CL\n| where TimeGenerated {TimeRange}\n| extend payload = parse_json(Log_s)\n| where isnotnull(payload)\n| extend\n    level = tostring(payload.level),\n    message = tostring(payload.message),\n    projectId = tostring(payload.projectId),\n    provider = tostring(payload.provider),\n    model = tostring(payload.model),\n    operation = tostring(payload.operation),\n    stage = tostring(payload.stage),\n    status = tostring(payload.status),\n    failureClass = tostring(payload.failureClass),\n    errorCode = tostring(payload.errorCode),\n    durationMs = todouble(payload.durationMs),\n    costUsd = todouble(payload.costUsd);\nvidgen\n| where ContainerAppName_s has \"worker\"\n| where level in (\"ERROR\", \"CRITICAL\")\n| summarize failures = count() by errorCode, bin(TimeGenerated, 1h)\n| render timechart",
+        "size": 0,
+        "title": "Temporal activity failures",
+        "timeContextFromParameter": "TimeRange",
+        "queryType": 0,
+        "resourceType": "microsoft.operationalinsights/workspaces",
+        "crossComponentResources": [
+          "{Workspace}"
+        ],
+        "visualization": "timechart"
+      },
+      "name": "temporal-activity-failures"
+    },
+    {
+      "type": 3,
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "AzureMetrics\n| where TimeGenerated {TimeRange}\n| where ResourceProvider == \"MICROSOFT.APP\"\n| where MetricName in (\"Replicas\", \"UsageNanoCores\", \"WorkingSetBytes\")\n| summarize value = avg(Average) by MetricName, Resource, bin(TimeGenerated, 5m)\n| render timechart",
+        "size": 0,
+        "title": "Worker replica count and resource usage",
+        "timeContextFromParameter": "TimeRange",
+        "queryType": 0,
+        "resourceType": "microsoft.operationalinsights/workspaces",
+        "crossComponentResources": [
+          "{Workspace}"
+        ],
+        "visualization": "timechart"
+      },
+      "name": "worker-resources"
+    },
+    {
+      "type": 1,
+      "content": {
+        "json": "## Providers and cost"
+      },
+      "name": "providers-header"
+    },
+    {
+      "type": 3,
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "AppDependencies\n| where TimeGenerated {TimeRange}\n| where Name == \"provider.request\"\n| extend provider = tostring(Properties[\"provider.name\"]),\n         model = tostring(Properties[\"provider.model\"]),\n         operation = tostring(Properties[\"provider.operation\"])\n| summarize p50 = percentile(DurationMs, 50), p95 = percentile(DurationMs, 95)\n          by provider, operation, bin(TimeGenerated, 1h)\n| render timechart",
+        "size": 0,
+        "title": "Provider latency p50/p95 (recap_provider_latency_seconds)",
+        "timeContextFromParameter": "TimeRange",
+        "queryType": 0,
+        "resourceType": "microsoft.operationalinsights/workspaces",
+        "crossComponentResources": [
+          "{Workspace}"
+        ],
+        "visualization": "timechart"
+      },
+      "name": "provider-latency"
+    },
+    {
+      "type": 3,
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "AppDependencies\n| where TimeGenerated {TimeRange}\n| where Name == \"provider.request\"\n| extend provider = tostring(Properties[\"provider.name\"]),\n         status = tostring(Properties[\"provider.status\"]),\n         failureClass = tostring(Properties[\"provider.failure_class\"])\n| summarize requests = count() by provider, status, failureClass\n| order by requests desc",
+        "size": 1,
+        "title": "Provider outcomes (recap_provider_requests / recap_provider_rate_limit)",
+        "timeContextFromParameter": "TimeRange",
+        "queryType": 0,
+        "resourceType": "microsoft.operationalinsights/workspaces",
+        "crossComponentResources": [
+          "{Workspace}"
+        ],
+        "visualization": "table"
+      },
+      "name": "provider-outcomes"
+    },
+    {
+      "type": 3,
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "AppDependencies\n| where TimeGenerated {TimeRange}\n| where Name == \"provider.request\"\n| extend provider = tostring(Properties[\"provider.name\"]),\n         operation = tostring(Properties[\"provider.operation\"]),\n         costUsd = todouble(Properties[\"provider.cost_usd\"])\n| where isnotnull(costUsd)\n| summarize spend = sum(costUsd) by provider, operation, bin(TimeGenerated, 1d)\n| render columnchart",
+        "size": 0,
+        "title": "Provider spend (recap_generation_cost_usd)",
+        "timeContextFromParameter": "TimeRange",
+        "queryType": 0,
+        "resourceType": "microsoft.operationalinsights/workspaces",
+        "crossComponentResources": [
+          "{Workspace}"
+        ],
+        "visualization": "barchart"
+      },
+      "name": "provider-cost"
+    },
+    {
+      "type": 3,
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "// VidGen writes redacted structured JSON to stdout; Container Apps ships it here.\nlet vidgen = ContainerAppConsoleLogs_CL\n| where TimeGenerated {TimeRange}\n| extend payload = parse_json(Log_s)\n| where isnotnull(payload)\n| extend\n    level = tostring(payload.level),\n    message = tostring(payload.message),\n    projectId = tostring(payload.projectId),\n    provider = tostring(payload.provider),\n    model = tostring(payload.model),\n    operation = tostring(payload.operation),\n    stage = tostring(payload.stage),\n    status = tostring(payload.status),\n    failureClass = tostring(payload.failureClass),\n    errorCode = tostring(payload.errorCode),\n    durationMs = todouble(payload.durationMs),\n    costUsd = todouble(payload.costUsd);\nvidgen\n| where errorCode has \"BUDGET\" or message has \"budget\"\n| summarize denials = count() by errorCode, bin(TimeGenerated, 1h)\n| render timechart",
+        "size": 0,
+        "title": "Budget denials (recap_project_cost_usd hard-cap refusals)",
+        "timeContextFromParameter": "TimeRange",
+        "queryType": 0,
+        "resourceType": "microsoft.operationalinsights/workspaces",
+        "crossComponentResources": [
+          "{Workspace}"
+        ],
+        "visualization": "timechart"
+      },
+      "name": "budget-denials"
+    },
+    {
+      "type": 1,
+      "content": {
+        "json": "## Quality gates"
+      },
+      "name": "quality-header"
+    },
+    {
+      "type": 3,
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "// VidGen writes redacted structured JSON to stdout; Container Apps ships it here.\nlet vidgen = ContainerAppConsoleLogs_CL\n| where TimeGenerated {TimeRange}\n| extend payload = parse_json(Log_s)\n| where isnotnull(payload)\n| extend\n    level = tostring(payload.level),\n    message = tostring(payload.message),\n    projectId = tostring(payload.projectId),\n    provider = tostring(payload.provider),\n    model = tostring(payload.model),\n    operation = tostring(payload.operation),\n    stage = tostring(payload.stage),\n    status = tostring(payload.status),\n    failureClass = tostring(payload.failureClass),\n    errorCode = tostring(payload.errorCode),\n    durationMs = todouble(payload.durationMs),\n    costUsd = todouble(payload.costUsd);\nvidgen\n| where message has_any (\"visual qa\", \"final editorial\", \"completion gate\")\n| summarize outcomes = count() by message, status, bin(TimeGenerated, 1h)\n| render timechart",
+        "size": 0,
+        "title": "T20 visual QA and T22 editorial outcomes (recap_shot_qa_score / recap_render_verification)",
+        "timeContextFromParameter": "TimeRange",
+        "queryType": 0,
+        "resourceType": "microsoft.operationalinsights/workspaces",
+        "crossComponentResources": [
+          "{Workspace}"
+        ],
+        "visualization": "timechart"
+      },
+      "name": "qa-outcomes"
+    },
+    {
+      "type": 3,
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "// VidGen writes redacted structured JSON to stdout; Container Apps ships it here.\nlet vidgen = ContainerAppConsoleLogs_CL\n| where TimeGenerated {TimeRange}\n| extend payload = parse_json(Log_s)\n| where isnotnull(payload)\n| extend\n    level = tostring(payload.level),\n    message = tostring(payload.message),\n    projectId = tostring(payload.projectId),\n    provider = tostring(payload.provider),\n    model = tostring(payload.model),\n    operation = tostring(payload.operation),\n    stage = tostring(payload.stage),\n    status = tostring(payload.status),\n    failureClass = tostring(payload.failureClass),\n    errorCode = tostring(payload.errorCode),\n    durationMs = todouble(payload.durationMs),\n    costUsd = todouble(payload.costUsd);\nvidgen\n| where message has \"retry\" and isnotempty(errorCode)\n| summarize retries = count() by errorCode\n| order by retries desc\n| render barchart",
+        "size": 0,
+        "title": "Shot retries by failure code (recap_shot_retry)",
+        "timeContextFromParameter": "TimeRange",
+        "queryType": 0,
+        "resourceType": "microsoft.operationalinsights/workspaces",
+        "crossComponentResources": [
+          "{Workspace}"
+        ],
+        "visualization": "barchart"
+      },
+      "name": "shot-retries"
+    },
+    {
+      "type": 3,
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "// VidGen writes redacted structured JSON to stdout; Container Apps ships it here.\nlet vidgen = ContainerAppConsoleLogs_CL\n| where TimeGenerated {TimeRange}\n| extend payload = parse_json(Log_s)\n| where isnotnull(payload)\n| extend\n    level = tostring(payload.level),\n    message = tostring(payload.message),\n    projectId = tostring(payload.projectId),\n    provider = tostring(payload.provider),\n    model = tostring(payload.model),\n    operation = tostring(payload.operation),\n    stage = tostring(payload.stage),\n    status = tostring(payload.status),\n    failureClass = tostring(payload.failureClass),\n    errorCode = tostring(payload.errorCode),\n    durationMs = todouble(payload.durationMs),\n    costUsd = todouble(payload.costUsd);\nvidgen\n| where message has \"render\"\n| summarize p95DurationMs = percentile(durationMs, 95), failures = countif(level == \"ERROR\")\n          by bin(TimeGenerated, 1h)\n| render timechart",
+        "size": 0,
+        "title": "Render duration and failures (recap_render_realtime_factor)",
+        "timeContextFromParameter": "TimeRange",
+        "queryType": 0,
+        "resourceType": "microsoft.operationalinsights/workspaces",
+        "crossComponentResources": [
+          "{Workspace}"
+        ],
+        "visualization": "timechart"
+      },
+      "name": "render-health"
+    },
+    {
+      "type": 3,
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "// VidGen writes redacted structured JSON to stdout; Container Apps ships it here.\nlet vidgen = ContainerAppConsoleLogs_CL\n| where TimeGenerated {TimeRange}\n| extend payload = parse_json(Log_s)\n| where isnotnull(payload)\n| extend\n    level = tostring(payload.level),\n    message = tostring(payload.message),\n    projectId = tostring(payload.projectId),\n    provider = tostring(payload.provider),\n    model = tostring(payload.model),\n    operation = tostring(payload.operation),\n    stage = tostring(payload.stage),\n    status = tostring(payload.status),\n    failureClass = tostring(payload.failureClass),\n    errorCode = tostring(payload.errorCode),\n    durationMs = todouble(payload.durationMs),\n    costUsd = todouble(payload.costUsd);\nvidgen\n| where message has \"human\" or message has \"awaiting approval\"\n| summarize p50Seconds = percentile(durationMs, 50) / 1000.0,\n            p95Seconds = percentile(durationMs, 95) / 1000.0\n          by bin(TimeGenerated, 1h)\n| render timechart",
+        "size": 0,
+        "title": "Human review waits (recap_human_wait_seconds)",
+        "timeContextFromParameter": "TimeRange",
+        "queryType": 0,
+        "resourceType": "microsoft.operationalinsights/workspaces",
+        "crossComponentResources": [
+          "{Workspace}"
+        ],
+        "visualization": "timechart"
+      },
+      "name": "human-wait"
+    },
+    {
+      "type": 1,
+      "content": {
+        "json": "## Data services"
+      },
+      "name": "data-header"
+    },
+    {
+      "type": 3,
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "AzureMetrics\n| where TimeGenerated {TimeRange}\n| where ResourceProvider == \"MICROSOFT.DBFORPOSTGRESQL\"\n| where MetricName in (\"cpu_percent\", \"memory_percent\", \"active_connections\", \"storage_percent\")\n| summarize value = avg(Average) by MetricName, bin(TimeGenerated, 5m)\n| render timechart",
+        "size": 0,
+        "title": "PostgreSQL health",
+        "timeContextFromParameter": "TimeRange",
+        "queryType": 0,
+        "resourceType": "microsoft.operationalinsights/workspaces",
+        "crossComponentResources": [
+          "{Workspace}"
+        ],
+        "visualization": "timechart"
+      },
+      "name": "postgres-health"
+    },
+    {
+      "type": 3,
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "AzureMetrics\n| where TimeGenerated {TimeRange}\n| where ResourceProvider == \"MICROSOFT.CACHE\"\n| summarize value = avg(Average) by MetricName, bin(TimeGenerated, 5m)\n| render timechart",
+        "size": 0,
+        "title": "Redis health",
+        "timeContextFromParameter": "TimeRange",
+        "queryType": 0,
+        "resourceType": "microsoft.operationalinsights/workspaces",
+        "crossComponentResources": [
+          "{Workspace}"
+        ],
+        "visualization": "timechart"
+      },
+      "name": "redis-health"
+    },
+    {
+      "type": 3,
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "StorageBlobLogs\n| where TimeGenerated {TimeRange}\n| where StatusCode >= 400\n| summarize errors = count() by StatusText, OperationName, bin(TimeGenerated, 1h)\n| render timechart",
+        "size": 0,
+        "title": "Blob Storage errors",
+        "timeContextFromParameter": "TimeRange",
+        "queryType": 0,
+        "resourceType": "microsoft.operationalinsights/workspaces",
+        "crossComponentResources": [
+          "{Workspace}"
+        ],
+        "visualization": "timechart"
+      },
+      "name": "storage-errors"
+    },
+    {
+      "type": 3,
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "AzureDiagnostics\n| where TimeGenerated {TimeRange}\n| where ResourceProvider == \"MICROSOFT.KEYVAULT\"\n| summarize reads = count() by identity_claim_appid_g, OperationName, ResultSignature\n| order by reads desc",
+        "size": 1,
+        "title": "Key Vault secret reads",
+        "timeContextFromParameter": "TimeRange",
+        "queryType": 0,
+        "resourceType": "microsoft.operationalinsights/workspaces",
+        "crossComponentResources": [
+          "{Workspace}"
+        ],
+        "visualization": "table"
+      },
+      "name": "key-vault-audit"
+    }
+  ],
+  "fallbackResourceIds": [],
+  "$schema": "https://github.com/Microsoft/Application-Insights-Workbooks/blob/master/schema/workbook.json"
+}

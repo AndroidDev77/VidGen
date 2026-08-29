@@ -99,7 +99,8 @@ from vidgen.db.transcription_models import (
 )
 from vidgen.db.workflow_models import EvidencePackageRecord, SceneEvidenceRecord
 from vidgen.storage.asset_service import AssetService
-from vidgen.storage.blob import FilesystemBlobStore
+from vidgen.storage.blob import BlobStore
+from vidgen.storage.factory import build_blob_store
 
 
 def build_production_handlers(
@@ -163,7 +164,7 @@ def _shot_input(
 
 def _resolve_shot_fanout(
     session: Session,
-    _blob_store: FilesystemBlobStore,
+    _blob_store: BlobStore,
     settings: APISettings,
     image_provider: ImageGenerationProvider,
     video_provider: VideoGenerationProvider,
@@ -215,7 +216,7 @@ def _authoritative_shot(session: Session, request: ShotWorkflowInput) -> tuple[o
 
 def _resolve_shot_input(
     session: Session,
-    _blob_store: FilesystemBlobStore,
+    _blob_store: BlobStore,
     _settings: APISettings,
     _image_provider: ImageGenerationProvider,
     _video_provider: VideoGenerationProvider,
@@ -233,7 +234,7 @@ def _resolve_shot_input(
 
 def _run_shot_keyframe(
     session: Session,
-    blob_store: FilesystemBlobStore,
+    blob_store: BlobStore,
     settings: APISettings,
     image_provider: ImageGenerationProvider,
     _video_provider: VideoGenerationProvider,
@@ -278,7 +279,7 @@ def _run_shot_keyframe(
 
 def _run_shot_visual_qa(
     session: Session,
-    blob_store: FilesystemBlobStore,
+    blob_store: BlobStore,
     settings: APISettings,
     target_type: VisualQATargetType,
     request: ShotWorkflowInput,
@@ -331,7 +332,7 @@ def _run_shot_visual_qa(
 
 def _run_shot_keyframe_qa(
     session: Session,
-    blob_store: FilesystemBlobStore,
+    blob_store: BlobStore,
     settings: APISettings,
     _image_provider: ImageGenerationProvider,
     _video_provider: VideoGenerationProvider,
@@ -343,7 +344,7 @@ def _run_shot_keyframe_qa(
 
 def _run_shot_video_qa(
     session: Session,
-    blob_store: FilesystemBlobStore,
+    blob_store: BlobStore,
     settings: APISettings,
     _image_provider: ImageGenerationProvider,
     _video_provider: VideoGenerationProvider,
@@ -355,7 +356,7 @@ def _run_shot_video_qa(
 
 def _run_shot_repair(
     session: Session,
-    blob_store: FilesystemBlobStore,
+    blob_store: BlobStore,
     settings: APISettings,
     _image_provider: ImageGenerationProvider,
     video_provider: VideoGenerationProvider,
@@ -437,7 +438,7 @@ _REPAIR_STATES: dict[RepairRunState, ShotWorkflowStatus] = {
 
 def _run_shot_animation(
     session: Session,
-    blob_store: FilesystemBlobStore,
+    blob_store: BlobStore,
     _settings: APISettings,
     _image_provider: ImageGenerationProvider,
     video_provider: VideoGenerationProvider,
@@ -526,7 +527,7 @@ def build_shot_production_handlers(
     """Build T16 adapters while retaining T14/T15 ownership of paid operations."""
     configured = settings or get_settings()
     engine = build_engine(configured.database_url)
-    blob_store = FilesystemBlobStore(configured.blob_root, configured.signing_secret.encode())
+    blob_store = build_blob_store(configured)
     image_provider: ImageGenerationProvider
     video_provider: VideoGenerationProvider
     if configured.openai_api_key:
@@ -578,13 +579,13 @@ def build_shot_production_handlers(
 
 
 BusinessHandler = Callable[
-    [Session, FilesystemBlobStore, APISettings, StageActivityInput], StageActivityResult
+    [Session, BlobStore, APISettings, StageActivityInput], StageActivityResult
 ]
 
 
 def _with_session(settings: APISettings, handler: BusinessHandler) -> StageHandler:
     engine = build_engine(settings.database_url)
-    blob_store = FilesystemBlobStore(settings.blob_root, settings.signing_secret.encode())
+    blob_store = build_blob_store(settings)
 
     def execute(request: StageActivityInput) -> StageActivityResult:
         with Session(engine, expire_on_commit=False) as session:
@@ -604,7 +605,7 @@ def _source(session: Session, request: StageActivityInput) -> SourceVideo:
 
 def _validate_upload(
     session: Session,
-    _blob_store: FilesystemBlobStore,
+    _blob_store: BlobStore,
     _settings: APISettings,
     request: StageActivityInput,
 ) -> StageActivityResult:
@@ -616,7 +617,7 @@ def _validate_upload(
 
 def _process_media(
     session: Session,
-    blob_store: FilesystemBlobStore,
+    blob_store: BlobStore,
     _settings: APISettings,
     request: StageActivityInput,
 ) -> StageActivityResult:
@@ -632,7 +633,7 @@ def _process_media(
 
 def _acquire_transcript(
     session: Session,
-    blob_store: FilesystemBlobStore,
+    blob_store: BlobStore,
     settings: APISettings,
     request: StageActivityInput,
 ) -> StageActivityResult:
@@ -717,7 +718,7 @@ def _latest_audio(session: Session, project_id: UUID, source_asset_id: UUID) -> 
 
 def _build_evidence(
     session: Session,
-    blob_store: FilesystemBlobStore,
+    blob_store: BlobStore,
     _settings: APISettings,
     request: StageActivityInput,
 ) -> StageActivityResult:
@@ -866,7 +867,7 @@ def _build_evidence(
 
 def _analyze_episode(
     session: Session,
-    blob_store: FilesystemBlobStore,
+    blob_store: BlobStore,
     settings: APISettings,
     request: StageActivityInput,
 ) -> StageActivityResult:
@@ -903,7 +904,7 @@ def _analyze_episode(
 
 def _generate_script(
     session: Session,
-    blob_store: FilesystemBlobStore,
+    blob_store: BlobStore,
     settings: APISettings,
     request: StageActivityInput,
 ) -> StageActivityResult:
@@ -936,7 +937,7 @@ def _generate_script(
 
 def _generate_narration(
     session: Session,
-    blob_store: FilesystemBlobStore,
+    blob_store: BlobStore,
     settings: APISettings,
     request: StageActivityInput,
 ) -> StageActivityResult:
@@ -1051,7 +1052,7 @@ def _contract_segment(segment: TranscriptSegmentRecord) -> TranscriptSegment:
 
 def _generate_storyboard(
     session: Session,
-    blob_store: FilesystemBlobStore,
+    blob_store: BlobStore,
     settings: APISettings,
     request: StageActivityInput,
 ) -> StageActivityResult:
@@ -1087,7 +1088,7 @@ def _generate_storyboard(
 
 def _generate_keyframes(
     session: Session,
-    blob_store: FilesystemBlobStore,
+    blob_store: BlobStore,
     settings: APISettings,
     request: StageActivityInput,
 ) -> StageActivityResult:
@@ -1130,7 +1131,7 @@ def build_final_qa_handler(settings: APISettings | None = None) -> FinalQAHandle
     """
     configured = settings or get_settings()
     engine = build_engine(configured.database_url)
-    blob_store = FilesystemBlobStore(configured.blob_root, configured.signing_secret.encode())
+    blob_store = build_blob_store(configured)
     if configured.openai_api_key:
         provider = "openai"
     elif configured.temporal_allow_fake_providers:
