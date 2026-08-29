@@ -49,6 +49,9 @@ from vidgen.db.storyboard_models import StoryboardRun, StoryboardShotRecord
 from vidgen.db.visual_qa_repository import VisualQARepository
 from vidgen.storage.blob import BlobStore
 
+#: The T17 terminal status a render must hold before final QA may inspect it.
+COMPLETED_RENDER_STATUS = "render_complete"
+
 #: T21 states that mean a shot is not yet eligible for final assembly.
 BLOCKING_REPAIR_STATES: dict[str, FinalQAFailureCode] = {
     "REPAIR_PLANNING": FinalQAFailureCode.ACTIVE_REPAIR_RUN,
@@ -171,7 +174,7 @@ class FinalInputSelector:
                 FinalQAFailureCode.RENDER_NOT_SELECTED,
                 "project has no selected canonical T17 render",
             )
-        if job.status != "completed" or job.final_video_asset_id is None:
+        if job.status != COMPLETED_RENDER_STATUS or job.final_video_asset_id is None:
             raise FinalQALineageError(
                 FinalQAFailureCode.RENDER_INCOMPLETE,
                 "the selected T17 render is not complete",

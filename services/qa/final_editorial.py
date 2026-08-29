@@ -27,7 +27,7 @@ from __future__ import annotations
 
 import json
 import logging
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
@@ -125,7 +125,7 @@ logger = logging.getLogger(__name__)
 class FinalQAOptions:
     """Everything a caller may configure without touching the versioned policy."""
 
-    configuration: FinalQAConfiguration = DEFAULT_CONFIGURATION
+    configuration: FinalQAConfiguration = field(default_factory=lambda: DEFAULT_CONFIGURATION)
     trace_context: dict[str, str] | None = None
     adjudicate: bool = True
 
@@ -277,9 +277,10 @@ class FinalEditorialPipeline:
                 manifest=selected.manifest_payload,
             )
             self.repository.persist_checks(run, [*media_checks, *audio_checks])
-            measurement_asset = self._store_json(
+            run.measurement_asset_id = self._store_json(
                 run,
                 selected,
+                existing=run.measurement_asset_id,
                 payload={
                     "measurements": measurements.model_dump(mode="json"),
                     "checks": [check.model_dump(mode="json") for check in media_checks],
@@ -288,10 +289,10 @@ class FinalEditorialPipeline:
                 kind="final_qa_measurements",
                 suffix="measurements",
             )
-            run.measurement_asset_id = measurement_asset
             run.audio_report_asset_id = self._store_json(
                 run,
                 selected,
+                existing=run.audio_report_asset_id,
                 payload={"checks": [check.model_dump(mode="json") for check in audio_checks]},
                 kind="final_qa_audio_report",
                 suffix="audio",
@@ -310,6 +311,7 @@ class FinalEditorialPipeline:
             run.caption_report_asset_id = self._store_json(
                 run,
                 selected,
+                existing=run.caption_report_asset_id,
                 payload={"checks": [check.model_dump(mode="json") for check in caption_checks]},
                 kind="final_qa_caption_report",
                 suffix="captions",
@@ -343,15 +345,13 @@ class FinalEditorialPipeline:
                 )
             else:
                 frames = extract_frames(render_path, inputs, configuration)
-                sheet = build_contact_sheet(
-                    frames, columns=configuration.contact_sheet_columns
-                )
+                sheet = build_contact_sheet(frames, columns=configuration.contact_sheet_columns)
                 if sheet is not None:
                     frames = [
                         replace(frame, contact_sheet_position=sheet.positions.get(frame.sample_id))
                         for frame in frames
                     ]
-                    run.contact_sheet_asset_id = self.assets.store(
+                    run.contact_sheet_asset_id = run.contact_sheet_asset_id or self.assets.store(
                         content=sheet.content,
                         kind="final_qa_contact_sheet",
                         media_type=sheet.media_type,
@@ -405,6 +405,7 @@ class FinalEditorialPipeline:
                     run.adjudication_asset_id = self._store_json(
                         run,
                         selected,
+                        existing=run.adjudication_asset_id,
                         payload=adjudication.model_dump(mode="json"),
                         kind="final_qa_adjudication",
                         suffix="adjudication",
@@ -462,7 +463,10 @@ class FinalEditorialPipeline:
                 trace_context=dict(self.options.trace_context or {}),
                 created_at=datetime.now(UTC),
             )
-            run.report_asset_id = self.assets.store(
+            # A report is written once for one identity and never overwritten.
+            # A resumed run keeps the report its first pass produced, which is
+            # what makes the artefact immutable rather than merely idempotent.
+            run.report_asset_id = run.report_asset_id or self.assets.store(
                 content=json.dumps(
                     report.model_dump(mode="json"), sort_keys=True, separators=(",", ":")
                 ).encode(),
@@ -561,10 +565,7 @@ class FinalEditorialPipeline:
         return CaptionTrack(
             caption_track_id=inputs.caption_track_id,
             language=language,
-            cues=[
-                cue.model_copy(update={"sequence": index + 1})
-                for index, cue in enumerate(cues)
-            ],
+            cues=[cue.model_copy(update={"sequence": index + 1}) for index, cue in enumerate(cues)],
             duration_us=max(inputs.timeline_duration_us, cues[-1].end_us),
         )
 
@@ -622,8 +623,7 @@ class FinalEditorialPipeline:
                 for item in inputs.character_identity_version_ids
             ][:256],
             video_qa_summary=[
-                f"shot={shot.shot_id} qa_result={shot.video_qa_result_id}"
-                for shot in inputs.shots
+                f"shot={shot.shot_id} qa_result={shot.video_qa_result_id}" for shot in inputs.shots
             ][:500],
             repair_summary=[
                 f"shot={shot.shot_id} repair_attempt={shot.selected_repair_attempt_id}"
@@ -661,9 +661,7 @@ class FinalEditorialPipeline:
     ) -> tuple[FinalEditorialProviderResult, FinalEditorialProviderAttempt]:
         """Run one bounded provider evaluation with T23 accounting, or reuse one."""
         agent = self.provider if first_pass is None else (self.adjudicator or self.provider)
-        phase = (
-            FinalQAPhase.EDITORIAL_ANALYSIS if first_pass is None else FinalQAPhase.ADJUDICATION
-        )
+        phase = FinalQAPhase.EDITORIAL_ANALYSIS if first_pass is None else FinalQAPhase.ADJUDICATION
         existing = self.repository.attempt_by_identity(request.attempt_identity)
         if existing is not None and existing.status == "succeeded" and existing.result_projection:
             return (
@@ -775,9 +773,7 @@ class FinalEditorialPipeline:
             finding.finding_id for finding in disputed if finding.issue_code in confirmed_codes
         ]
         dismissed = [
-            finding.finding_id
-            for finding in disputed
-            if finding.issue_code not in confirmed_codes
+            finding.finding_id for finding in disputed if finding.issue_code not in confirmed_codes
         ]
         return (
             FinalEditorialAdjudication(
@@ -906,7 +902,18 @@ class FinalEditorialPipeline:
         payload: dict[str, Any],
         kind: str,
         suffix: str,
+        existing: UUID | None = None,
     ) -> UUID:
+        """Write one QA artefact, or return the one this run already wrote.
+
+        The payloads carry measurement timestamps, so re-storing on a resumed
+        run would collide with its own idempotency key. Reusing the first
+        artefact is also the correct behaviour: the identity binds every
+        material input, so a second measurement of the same file says the same
+        thing.
+        """
+        if existing is not None:
+            return existing
         stored = self.assets.store(
             content=json.dumps(payload, sort_keys=True, separators=(",", ":")).encode(),
             kind=kind,
@@ -935,9 +942,9 @@ class FinalEditorialPipeline:
         checks = self.repository.checks(run.id)
         attempts = self.repository.attempts(run.id)
         adjudicated = any(attempt.phase == FinalQAPhase.ADJUDICATION.value for attempt in attempts)
-        routes = [
-            FinalRemediationTarget(value) for value in list(run.remediation_targets or [])
-        ][:16]
+        routes = [FinalRemediationTarget(value) for value in list(run.remediation_targets or [])][
+            :16
+        ]
         return FinalEditorialResult(
             final_editorial_run_id=run.id,
             project_id=run.project_id,
@@ -955,8 +962,7 @@ class FinalEditorialPipeline:
             deterministic_failure_count=sum(
                 1
                 for check in checks
-                if check.status == "fail"
-                and check.check_type in {"media", "timeline", "manifest"}
+                if check.status == "fail" and check.check_type in {"media", "timeline", "manifest"}
             ),
             audio_check_count=sum(1 for check in checks if check.check_type == "audio"),
             audio_failure_count=sum(

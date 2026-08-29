@@ -133,8 +133,10 @@ def boundary_frame_valid(path: Path, timestamp_us: int, *, timeout: int = 180) -
             str(path),
             "-frames:v",
             "1",
+            # Decode the frame and discard it. Writing raw pixels to a pipe
+            # would hand binary bytes to a text-capturing runner.
             "-f",
-            "rawvideo",
+            "null",
             "-",
         ],
         timeout=timeout,

@@ -39,7 +39,7 @@ class FinalQACommandOptions:
     openai_api_key: str | None = None
     first_pass_model: str | None = None
     adjudicator_model: str | None = None
-    configuration: FinalQAConfiguration = DEFAULT_CONFIGURATION
+    configuration: FinalQAConfiguration = field(default_factory=lambda: DEFAULT_CONFIGURATION)
     trace_context: dict[str, str] = field(default_factory=dict)
     #: Controlled fake profiles keyed by render identity, for fixtures only.
     fake_defects: dict[str, FakeEditorialDefect] = field(default_factory=dict)

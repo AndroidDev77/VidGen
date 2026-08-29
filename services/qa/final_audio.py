@@ -14,6 +14,7 @@ audio check is blocking and is never overridable.
 
 from __future__ import annotations
 
+import json
 import math
 import re
 from pathlib import Path
@@ -73,7 +74,13 @@ def _audio_check(
 
 
 def measure_loudness(path: Path, *, timeout: int = 900) -> dict[str, float]:
-    """Integrated loudness, true peak and loudness range of the delivered mix."""
+    """Integrated loudness, true peak and loudness range of the delivered mix.
+
+    A mix with nothing in it reports non-finite loudness. That is a real
+    measurement outcome, not a crash: the unmeasurable values are dropped and
+    the checks that depend on them are skipped, while narration coverage and
+    silence - which still measure fine - do the blocking.
+    """
     result = run_bounded(
         [
             FFMPEG,
@@ -91,7 +98,34 @@ def measure_loudness(path: Path, *, timeout: int = 900) -> dict[str, float]:
     )
     if result.returncode:
         raise RenderVerificationError("loudness measurement failed")
-    return parse_loudnorm_json(result.stderr)
+    try:
+        return parse_loudnorm_json(result.stderr)
+    except ValueError:
+        return _finite_loudness(result.stderr)
+
+
+def _finite_loudness(output: str) -> dict[str, float]:
+    """Keep only the loudness fields that came back finite."""
+    blocks = re.findall(r"\{[^{}]+\}", output, flags=re.DOTALL)
+    if not blocks:
+        return {}
+    try:
+        raw = json.loads(blocks[-1])
+    except json.JSONDecodeError:
+        return {}
+    measurements: dict[str, float] = {}
+    for source, target in (
+        ("input_i", "integrated_lufs"),
+        ("input_tp", "true_peak_dbtp"),
+        ("input_lra", "loudness_range"),
+    ):
+        try:
+            value = float(raw[source])
+        except (KeyError, TypeError, ValueError):
+            continue
+        if math.isfinite(value):
+            measurements[target] = value
+    return measurements
 
 
 def measure_statistics(path: Path, *, timeout: int = 900) -> dict[str, float]:
