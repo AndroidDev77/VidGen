@@ -18,6 +18,8 @@ with workflow.unsafe.imports_passed_through():
         FinalQAActivityResult,
         ProjectWorkflowInput,
         ProjectWorkflowState,
+        RenderActivityInput,
+        RenderActivityResult,
         StageActivityInput,
         StageActivityResult,
     )
@@ -31,6 +33,17 @@ FINAL_QA_FAILED = "FINAL_QA_FAILED"
 #: Fan-out outcomes that mean every required shot is eligible for assembly.
 ELIGIBLE_FANOUT_STATUSES = frozenset({"completed", "shot_generation_complete"})
 
+#: The dedicated render task queue named by the design. Rendering is CPU and
+#: disk bound and must not compete with provider-bound activities for the
+#: project worker's bounded concurrency.
+RENDER_TASK_QUEUE = "render"
+
+#: The workflow-visible T17b statuses, mirroring the durable render-job states.
+RENDER_QUEUED = "render_queued"
+RENDER_COMPLETE = "render_complete"
+RENDER_FAILED = "render_failed"
+RENDER_CANCELLED = "render_cancelled"
+
 
 @workflow.defn
 class ProjectWorkflow:
@@ -39,6 +52,7 @@ class ProjectWorkflow:
     def __init__(self) -> None:
         self._state: ProjectWorkflowState | None = None
         self._cancelled = False
+        self._render: RenderActivityResult | None = None
         self._final_qa: FinalQAActivityResult | None = None
         self._fanout: (
             workflow.ChildWorkflowHandle[ProjectShotFanoutWorkflow, ProjectShotFanoutResult] | None
@@ -117,7 +131,48 @@ class ProjectWorkflow:
             # eligible for assembly there is nothing valid to inspect, and
             # running it anyway would only buy a paid analysis of a stale cut.
             return self._state
+        render = await self._render_stage(request)
+        if render.status != RENDER_COMPLETE or render.final_render_asset_id is None:
+            # T22 must never start from an incomplete render. A failed or
+            # cancelled render is a stopping point with a structured reason,
+            # not a reason to analyse whatever happens to be on disk.
+            self._state.status = render.status
+            return self._state
         return await self._final_editorial_qa(request)
+
+    async def _render_stage(self, request: ProjectWorkflowInput) -> RenderActivityResult:
+        """Render the approved cut, then let T22 inspect exactly that render.
+
+        The message carries IDs only. The activity queues or resumes the render
+        job, drives T17b's executor, and returns a bounded result; the manifest,
+        the captions, the media and every FFmpeg diagnostic stay in durable
+        storage. A retry of this activity resumes the same render job from its
+        last durable checkpoint rather than starting a second one.
+        """
+        assert self._state is not None
+        self._state.status = RENDER_QUEUED
+        result: RenderActivityResult = await workflow.execute_activity(
+            "run_render_activity",
+            RenderActivityInput(
+                project_id=request.project_id,
+                idempotency_key=f"{request.idempotency_key}:t17b",
+                trace_context=request.trace_context,
+            ),
+            # A long encode is bounded by the activity timeout and kept alive by
+            # the executor's heartbeats, which also carry cancellation back into
+            # FFmpeg rather than leaving a process running after the workflow
+            # has moved on.
+            start_to_close_timeout=timedelta(hours=6),
+            heartbeat_timeout=timedelta(minutes=5),
+            retry_policy=default_activity_retry_policy(),
+            task_queue=RENDER_TASK_QUEUE,
+            result_type=RenderActivityResult,
+        )
+        self._render = result
+        self._state.status = result.status
+        if result.status == RENDER_COMPLETE:
+            self._state.completed_stages.append("render")
+        return result
 
     async def _final_editorial_qa(self, request: ProjectWorkflowInput) -> ProjectWorkflowState:
         """Run T22 against the project's current T17 render and enforce its gate.
@@ -158,6 +213,11 @@ class ProjectWorkflow:
     @workflow.query
     def project_state(self) -> ProjectWorkflowState | None:
         return self._state
+
+    @workflow.query
+    def render_state(self) -> RenderActivityResult | None:
+        """Query-visible T17b progress: IDs, status and percentage only."""
+        return self._render
 
     @workflow.query
     def final_qa_state(self) -> FinalQAActivityResult | None:

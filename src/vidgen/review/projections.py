@@ -679,6 +679,16 @@ def render_projection(
         narration_run_id=render.narration_run_id,
         ffmpeg_version=render.ffmpeg_version,
         lineage_hash=lineage,
+        progress_percent=max(0, min(100, render.progress_percent)),
+        checkpoint=render.checkpoint,
+        attempt_count=max(render.attempt_count, 0),
+        cancel_requested=render.cancel_requested,
+        failure_code=render.error_code,
+        failure_classification=render.failure_classification,
+        output_sha256=render.output_sha256,
+        input_hash=render.input_hash,
+        renderer_version=render.renderer_version,
+        downloadable=verified and not stale and render.final_video_asset_id is not None,
         approval=(
             RenderApprovalProjection(
                 approval_id=approval.id,

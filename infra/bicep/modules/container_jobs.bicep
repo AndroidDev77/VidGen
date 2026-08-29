@@ -164,11 +164,18 @@ var appEnv = commonEnv(
   features
 )
 
-// The in-workflow T17 render stays a Temporal activity inside the worker: it is
+// The in-workflow T17b render stays a Temporal activity inside the worker: it is
 // part of a durable workflow with retries, heartbeats and a completion gate,
 // and moving it here would break that boundary. This job exists for the finite,
-// out-of-band case - re-rendering one project deliberately - and its bounded
-// parallelism is what keeps that from competing with the workflow for CPU.
+// out-of-band case - executing one already-queued render job deliberately - and
+// its bounded parallelism is what keeps that from competing with the workflow
+// for CPU.
+//
+// It runs the render *worker*, not a command that only inserts a queue row: the
+// execution receives an existing render job id and performs the render, so the
+// job's exit status reflects the real render result. The worker claims the job
+// under a lease and resumes from its durable checkpoint, so a platform retry
+// re-enters the same render instead of producing a duplicate output.
 resource render 'Microsoft.App/jobs@2025-01-01' = {
   name: '${namePrefix}-job-render'
   location: location
@@ -210,12 +217,18 @@ resource render 'Microsoft.App/jobs@2025-01-01' = {
             memory: renderLimits.resources.memory
           }
           command: ['python']
-          // VIDGEN_PROJECT_ID is supplied per execution by `az containerapp job
-          // start --env-vars`, so the job definition itself is project-neutral.
-          args: ['-m', 'scripts.render_project', '--from-env']
+          // VIDGEN_RENDER_JOB_ID is supplied per execution by `az containerapp
+          // job start --env-vars`, so the job definition itself is neutral: one
+          // render job per execution, never a project or a queue baked into the
+          // deployed definition.
+          args: ['-m', 'workers.render_job.main', '--from-env']
           env: concat(appEnv, [
             env('AZURE_CLIENT_ID', renderIdentity.clientId)
             env('VIDGEN_SERVICE_NAME', 'vidgen-render')
+            // Disposable scratch under the writable TMPDIR the image creates.
+            // Inputs are staged here and every canonical output is streamed to
+            // Blob Storage before the directory is removed.
+            env('VIDGEN_RENDER_WORK_ROOT', '/tmp/vidgen/render')
           ])
         }
       ]

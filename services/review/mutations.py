@@ -16,6 +16,8 @@ from uuid import UUID, uuid4
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from services.render_execution.inputs import resolve_render_inputs
+from services.renderer.selection import RenderLineageError
 from services.review.invalidation import (
     InvalidationRecorder,
     script_invalidation_set,
@@ -28,6 +30,7 @@ from services.review.shot_identity import (
     shot_workflow_identity,
 )
 from services.script.canonicalize import compute_segment_content_hash
+from vidgen.contracts.render_execution import RenderExecutionStatus
 from vidgen.contracts.review import (
     ApiErrorCode,
     InvalidationSet,
@@ -460,7 +463,19 @@ class ReviewMutationService:
     # ------------------------------------------------------------------
 
     def start_render(self, project: Project, *, idempotency_key: str) -> RenderJob:
-        """Queue one render job; the T17 pipeline performs the work out of band."""
+        """Queue one render job. T17b executes it out of band.
+
+        The queued row is executable as-is: the canonical queue command resolves
+        the project's authoritative inputs and stamps the render's input
+        identity, so a worker can claim this job and render it without anyone
+        constructing a manifest by hand.
+
+        When the project cannot currently produce a render - an unapproved
+        script, a shot still awaiting T20, an active T21 repair - the job is
+        still queued, with the structured refusal recorded on the row. The
+        review UI needs to show *why* a render is blocked, and a 500 or a
+        silently missing row shows nothing.
+        """
         existing = self._session.scalar(
             select(RenderJob).where(
                 RenderJob.project_id == project.id,
@@ -480,7 +495,7 @@ class ReviewMutationService:
         )
         job = RenderJob(
             project_id=project.id,
-            status="pending",
+            status=RenderExecutionStatus.QUEUED.value,
             attempt=attempt,
             idempotency_key=idempotency_key,
             storyboard_run_id=storyboard.id,
@@ -491,14 +506,41 @@ class ReviewMutationService:
         )
         self._session.add(job)
         self._session.flush()
+        self._stamp_input_identity(job)
         self._events.append(
             project.id,
             event_type="render_started",
-            status="pending",
+            status=job.status,
             stage=PipelineStage.RENDERING,
-            payload={"render_status": "pending"},
+            payload={"render_status": job.status},
         )
         return job
+
+    def _stamp_input_identity(self, job: RenderJob) -> None:
+        """Record the render's authoritative input identity, or why there isn't one.
+
+        The executor re-resolves and re-hashes the inputs when it claims the job,
+        and refuses to render when the identity has moved. Stamping it here means
+        a change between queueing and execution is caught rather than absorbed.
+        """
+        try:
+            resolved = resolve_render_inputs(self._session, job=job)
+        except RenderLineageError as error:
+            job.error = {
+                "code": error.code,
+                "message": str(error)[:1024],
+                "retryable": error.retryable,
+                "warnings": [],
+            }
+            job.error_code = error.code
+            self._session.flush()
+            return
+        job.input_hash = resolved.input_hash
+        job.input_selection = resolved.contract.model_dump(mode="json")
+        job.expected_duration_us = resolved.total_duration_us
+        job.error_code = None
+        job.error = {}
+        self._session.flush()
 
     def approve_render(
         self, project: Project, render: RenderJob, lineage_hash: str

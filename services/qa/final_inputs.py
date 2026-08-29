@@ -31,6 +31,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from services.render_execution.commands import current_render_job
 from services.renderer.manifest import bound_manifest_identity
 from services.renderer.selection import project_narration_words
 from vidgen.contracts.final_editorial import (
@@ -165,12 +166,11 @@ class FinalInputSelector:
 
     # --- render -----------------------------------------------------------
     def _render_job(self, project_id: UUID) -> RenderJob:
-        job = self._session.scalar(
-            select(RenderJob)
-            .where(RenderJob.project_id == project_id, RenderJob.selected.is_(True))
-            .order_by(RenderJob.created_at.desc())
-        )
-        if job is None:
+        # One authoritative lookup for "the project's current render", shared
+        # with T17b and T18. T22 keeps its own refusal codes, but it must never
+        # evaluate a different render than the one the dashboard offers.
+        job = current_render_job(self._session, project_id)
+        if job is None or not job.selected:
             raise FinalQALineageError(
                 FinalQAFailureCode.RENDER_NOT_SELECTED,
                 "project has no selected canonical T17 render",

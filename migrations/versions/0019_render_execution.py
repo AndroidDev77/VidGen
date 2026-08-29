@@ -40,7 +40,10 @@ _COLUMNS = (
 )
 
 _CONSTRAINTS = (
-    ("ck_render_jobs_render_output_hash_length", "output_sha256 IS NULL OR length(output_sha256) = 64"),
+    (
+        "ck_render_jobs_render_output_hash_length",
+        "output_sha256 IS NULL OR length(output_sha256) = 64",
+    ),
     ("ck_render_jobs_render_progress_percent_range", "progress_percent BETWEEN 0 AND 100"),
     ("ck_render_jobs_render_attempt_count_nonnegative", "attempt_count >= 0"),
     (
@@ -65,9 +68,7 @@ def upgrade() -> None:
         )
         batch.add_column(sa.Column("checkpoint", sa.String(length=64), nullable=True))
         batch.add_column(
-            sa.Column(
-                "cancel_requested", sa.Boolean(), nullable=False, server_default=sa.false()
-            )
+            sa.Column("cancel_requested", sa.Boolean(), nullable=False, server_default=sa.false())
         )
         batch.add_column(sa.Column("failure_classification", sa.String(length=32), nullable=True))
         batch.add_column(
@@ -78,9 +79,7 @@ def upgrade() -> None:
         batch.add_column(sa.Column("trace_id", sa.String(length=64), nullable=True))
         for name, expression in _CONSTRAINTS:
             batch.create_check_constraint(name, sa.text(expression))
-        batch.create_index(
-            "ix_render_jobs_lease", ["status", "lease_expires_at"], unique=False
-        )
+        batch.create_index("ix_render_jobs_lease", ["status", "lease_expires_at"], unique=False)
 
 
 def downgrade() -> None:
