@@ -59,6 +59,42 @@ class AnimationActivityInput(StrictContract):
     trace_context: dict[str, str] = Field(default_factory=dict)
 
 
+class FinalQAActivityInput(StrictContract):
+    """Compact T22 message. Scripts, captions, media bytes, reports, sampled
+    frames, provider payloads and findings never enter workflow history: the
+    activity resolves everything from durable storage using these IDs alone."""
+
+    schema_version: Literal["1.0"] = "1.0"
+    project_id: UUID
+    final_render_asset_id: UUID | None = None
+    render_manifest_asset_id: UUID | None = None
+    final_editorial_run_id: UUID | None = None
+    provider: Literal["fake", "openai"] = "fake"
+    adjudicate: bool = True
+    idempotency_key: str = Field(min_length=1, max_length=255)
+    trace_context: dict[str, str] = Field(default_factory=dict)
+
+
+class FinalQAActivityResult(StrictContract):
+    """The bounded T22 outcome the workflow may branch on. IDs and counts only."""
+
+    schema_version: Literal["1.0"] = "1.0"
+    project_id: UUID
+    final_editorial_run_id: UUID
+    final_render_asset_id: UUID
+    status: str = Field(min_length=1, max_length=48)
+    phase: str = Field(min_length=1, max_length=32)
+    decision: Literal["PASS", "FAIL", "REVIEW"] | None = None
+    blocking_finding_count: int = Field(default=0, ge=0)
+    review_finding_count: int = Field(default=0, ge=0)
+    deterministic_failure_count: int = Field(default=0, ge=0)
+    remediation_targets: list[str] = Field(default_factory=list, max_length=16)
+    report_asset_id: UUID | None = None
+    cost_microusd: int = Field(default=0, ge=0)
+    error_code: str | None = Field(default=None, max_length=128)
+    reused: bool = False
+
+
 class StageActivityResult(StrictContract):
     schema_version: Literal["1.0"] = "1.0"
     stage: str

@@ -27,6 +27,12 @@ export interface FakeApiState {
   providerAttempts: number;
   /** Recorded T20 human-review decisions, newest last. */
   visualQaDecisions: string[];
+  /** Recorded T22 final-QA runs requested by the owner, newest last. */
+  finalQaRuns: string[];
+  /** Recorded T22 semantic review resolutions, newest last. */
+  finalQaReviews: string[];
+  /** Whether the T22 review finding has been resolved, which clears the gate. */
+  finalQaResolved: boolean;
 }
 
 export function shotId(index: number): string {
@@ -60,6 +66,175 @@ export function createFakeState(): FakeApiState {
     downloads: [],
     providerAttempts: SHOT_COUNT,
     visualQaDecisions: [],
+    finalQaRuns: [],
+    finalQaReviews: [],
+    finalQaResolved: false,
+  };
+}
+
+export const FINAL_QA_RUN_ID = "aaaaaaaa-2222-4222-8222-000000000001";
+export const FINAL_QA_FINDING_ID = "aaaaaaaa-2222-4222-8222-000000000002";
+const FINAL_RENDER_ASSET_ID = "77777777-2222-4222-8222-000000000001";
+const FINAL_MANIFEST_ASSET_ID = "77777777-2222-4222-8222-000000000002";
+const TIMELINE_US = 30_000_000;
+
+/** The T22 run projection: a delivery that measures clean but reads uncertain. */
+function finalQaRun(state: FakeApiState) {
+  const resolved = state.finalQaResolved;
+  return {
+    final_editorial_run_id: FINAL_QA_RUN_ID,
+    project_id: PROJECT_ID,
+    final_render_asset_id: FINAL_RENDER_ASSET_ID,
+    render_manifest_asset_id: FINAL_MANIFEST_ASSET_ID,
+    render_identity: HASH,
+    final_qa_identity: "b".repeat(64),
+    input_hash: "c".repeat(64),
+    configuration_hash: "d".repeat(64),
+    report_version: "final-editorial/1.0",
+    status: resolved ? "FINAL_QA_PASSED" : "FINAL_QA_REVIEW_REQUIRED",
+    phase: "COMPLETION_GATE",
+    decision: resolved ? "PASS" : "REVIEW",
+    selected: true,
+    blocking_finding_count: 0,
+    review_finding_count: resolved ? 0 : 1,
+    warning_finding_count: 0,
+    deterministic_failure_count: 0,
+    remediation_targets: resolved ? [] : ["HUMAN_EDITORIAL_REVIEW"],
+    provider: "fake",
+    model: "fake-final-editorial-1",
+    adjudicated: true,
+    cost_microusd: 54_000,
+    report_asset_id: "aaaaaaaa-2222-4222-8222-000000000003",
+    contact_sheet_asset_id: null,
+    error_code: null,
+    row_version: 1,
+    created_at: "2026-08-02T12:00:00Z",
+    completed_at: "2026-08-02T12:02:00Z",
+  };
+}
+
+function finalQaDetail(state: FakeApiState) {
+  return {
+    ...finalQaRun(state),
+    measurements: {
+      container_format: "mov,mp4,m4a",
+      byte_size: 12_345_678,
+      video_codec: "h264",
+      audio_codec: "aac",
+      width: 1920,
+      height: 1080,
+      pixel_format: "yuv420p",
+      frame_rate: "24/1",
+      container_duration_us: TIMELINE_US,
+      video_duration_us: TIMELINE_US,
+      audio_duration_us: TIMELINE_US,
+      sample_rate_hz: 48_000,
+      channels: 2,
+      integrated_lufs: -14.2,
+      true_peak_dbtp: -1.4,
+      clipping_ratio: 0,
+      video_decoded: true,
+      audio_decoded: true,
+      black_interval_count: 0,
+      freeze_interval_count: 0,
+      silence_interval_count: 1,
+      ffmpeg_version: "ffmpeg 7",
+      ffprobe_version: "ffprobe 7",
+    },
+    media_checks: [
+      {
+        check_id: "aaaaaaaa-2222-4222-8222-000000000010",
+        check_type: "media",
+        code: "RESOLUTION_MISMATCH",
+        status: "pass",
+        blocking: false,
+        measurement: null,
+        threshold: null,
+        unit: "",
+        start_us: null,
+        end_us: null,
+        cue_sequence: null,
+        tool: "ffprobe",
+        tool_version: "ffprobe 7",
+        message: "resolution matches the delivery profile",
+      },
+    ],
+    audio_checks: [],
+    caption_checks: [],
+    dimensions: [
+      {
+        category: "comprehensibility",
+        applicable: true,
+        score: 92,
+        confidence: 0.71,
+        blocking_finding_count: 0,
+        review_finding_count: 1,
+        warning_finding_count: 0,
+        summary: "",
+      },
+    ],
+    findings: state.finalQaResolved
+      ? []
+      : [
+          {
+            finding_id: FINAL_QA_FINDING_ID,
+            category: "comprehensibility",
+            severity: "review_required",
+            blocking: false,
+            confidence: 0.62,
+            issue_code: "INCOMPREHENSIBLE_SEQUENCE",
+            summary: "The jump between shots four and five may confuse a viewer.",
+            start_us: 9_000_000,
+            end_us: 12_000_000,
+            shot_ids: [shotId(4)],
+            caption_cue_sequences: [],
+            narration_segment_ids: [],
+            evidence: [
+              {
+                evidence_id: "aaaaaaaa-2222-4222-8222-000000000020",
+                evidence_type: "contact_sheet_tile",
+                start_us: 9_000_000,
+                end_us: 9_000_000,
+                frame_asset_id: null,
+                sample_id: null,
+                contact_sheet_asset_id: null,
+                contact_sheet_position: 4,
+                caption_cue_sequence: null,
+                shot_id: shotId(4),
+                measurement: null,
+                threshold: null,
+                explanation: "sampled frame",
+              },
+            ],
+            expected_behavior: "the cut reads clearly",
+            observed_behavior: "the cut may not read",
+            remediation_target: "HUMAN_EDITORIAL_REVIEW",
+            provenance: "provider",
+            resolved_by_review: false,
+          },
+        ],
+    remediation_routes: [],
+    adjudication_confidence: 0.62,
+    adjudication_decided: false,
+    gate_reasons: state.finalQaResolved ? [] : ["1 unresolved review finding(s)"],
+    timeline_duration_us: TIMELINE_US,
+  };
+}
+
+function finalQaGate(state: FakeApiState) {
+  const resolved = state.finalQaResolved;
+  return {
+    project_id: PROJECT_ID,
+    final_editorial_run_id: FINAL_QA_RUN_ID,
+    final_render_asset_id: FINAL_RENDER_ASSET_ID,
+    decision: resolved ? "PASS" : "REVIEW",
+    allowed: resolved,
+    reason: resolved ? "final_qa_pass" : "final_qa_review_required",
+    blocking_finding_count: 0,
+    review_finding_count: resolved ? 0 : 1,
+    deterministic_failure_count: 0,
+    gate_version: "final-gate/1.0",
+    row_version: 1,
   };
 }
 
@@ -449,6 +624,42 @@ export async function installFakeApi(page: Page, state: FakeApiState): Promise<v
           (value) => shotId(value) === id,
         ) ?? 0;
       return json(route, shotDetail(state, index));
+    }
+    if (path.endsWith("/final-qa:run") && method === "POST") {
+      state.finalQaRuns.push(request.headers()["idempotency-key"] ?? "");
+      return json(
+        route,
+        {
+          status: "queued",
+          project_id: PROJECT_ID,
+          final_render_asset_id: FINAL_RENDER_ASSET_ID,
+          provider: "fake",
+          resource_id: "aaaaaaaa-2222-4222-8222-000000000030",
+          row_version: 1,
+        },
+        202,
+      );
+    }
+    if (path.endsWith(":review") && path.includes("/final-qa/") && method === "POST") {
+      state.finalQaReviews.push(request.headers()["idempotency-key"] ?? "");
+      state.finalQaResolved = true;
+      return json(route, {
+        final_editorial_run_id: FINAL_QA_RUN_ID,
+        review_id: "aaaaaaaa-2222-4222-8222-000000000031",
+        finding_id: FINAL_QA_FINDING_ID,
+        decision: "accept",
+        resulting_gate: "PASS",
+        row_version: 2,
+      });
+    }
+    if (path.endsWith("/final-qa/gate") && method === "GET") {
+      return json(route, finalQaGate(state));
+    }
+    if (path.includes("/final-qa/") && method === "GET") {
+      return json(route, finalQaDetail(state));
+    }
+    if (path.endsWith("/final-qa") && method === "GET") {
+      return json(route, { project_id: PROJECT_ID, items: [finalQaRun(state)] });
     }
     if (path.endsWith("/render:start")) {
       state.renderStale = false;

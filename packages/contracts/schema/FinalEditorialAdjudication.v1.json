@@ -1,0 +1,109 @@
+{
+  "$defs": {
+    "FinalQADecision": {
+      "enum": [
+        "PASS",
+        "FAIL",
+        "REVIEW"
+      ],
+      "title": "FinalQADecision",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "description": "One bounded Terra second opinion over disputed first-pass findings.",
+  "properties": {
+    "adjudication_id": {
+      "format": "uuid",
+      "title": "Adjudication Id",
+      "type": "string"
+    },
+    "confidence": {
+      "maximum": 1,
+      "minimum": 0,
+      "title": "Confidence",
+      "type": "number"
+    },
+    "confirmed_finding_ids": {
+      "items": {
+        "format": "uuid",
+        "type": "string"
+      },
+      "maxItems": 32,
+      "title": "Confirmed Finding Ids",
+      "type": "array"
+    },
+    "decided": {
+      "title": "Decided",
+      "type": "boolean"
+    },
+    "dismissed_finding_ids": {
+      "items": {
+        "format": "uuid",
+        "type": "string"
+      },
+      "maxItems": 32,
+      "title": "Dismissed Finding Ids",
+      "type": "array"
+    },
+    "disputed_finding_ids": {
+      "items": {
+        "format": "uuid",
+        "type": "string"
+      },
+      "maxItems": 32,
+      "title": "Disputed Finding Ids",
+      "type": "array"
+    },
+    "model": {
+      "default": "",
+      "maxLength": 128,
+      "title": "Model",
+      "type": "string"
+    },
+    "policy_version": {
+      "maxLength": 64,
+      "minLength": 1,
+      "title": "Policy Version",
+      "type": "string"
+    },
+    "provider": {
+      "default": "",
+      "maxLength": 64,
+      "title": "Provider",
+      "type": "string"
+    },
+    "rationale": {
+      "default": "",
+      "maxLength": 1000,
+      "title": "Rationale",
+      "type": "string"
+    },
+    "resulting_decision_hint": {
+      "$ref": "#/$defs/FinalQADecision"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "triggers": {
+      "items": {
+        "type": "string"
+      },
+      "maxItems": 16,
+      "title": "Triggers",
+      "type": "array"
+    }
+  },
+  "required": [
+    "adjudication_id",
+    "policy_version",
+    "confidence",
+    "decided",
+    "resulting_decision_hint"
+  ],
+  "title": "FinalEditorialAdjudication",
+  "type": "object"
+}

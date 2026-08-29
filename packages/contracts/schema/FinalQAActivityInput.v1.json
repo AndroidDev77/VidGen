@@ -1,0 +1,89 @@
+{
+  "additionalProperties": false,
+  "description": "Compact T22 message. Scripts, captions, media bytes, reports, sampled\nframes, provider payloads and findings never enter workflow history: the\nactivity resolves everything from durable storage using these IDs alone.",
+  "properties": {
+    "adjudicate": {
+      "default": true,
+      "title": "Adjudicate",
+      "type": "boolean"
+    },
+    "final_editorial_run_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Final Editorial Run Id"
+    },
+    "final_render_asset_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Final Render Asset Id"
+    },
+    "idempotency_key": {
+      "maxLength": 255,
+      "minLength": 1,
+      "title": "Idempotency Key",
+      "type": "string"
+    },
+    "project_id": {
+      "format": "uuid",
+      "title": "Project Id",
+      "type": "string"
+    },
+    "provider": {
+      "default": "fake",
+      "enum": [
+        "fake",
+        "openai"
+      ],
+      "title": "Provider",
+      "type": "string"
+    },
+    "render_manifest_asset_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Render Manifest Asset Id"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "trace_context": {
+      "additionalProperties": {
+        "type": "string"
+      },
+      "title": "Trace Context",
+      "type": "object"
+    }
+  },
+  "required": [
+    "project_id",
+    "idempotency_key"
+  ],
+  "title": "FinalQAActivityInput",
+  "type": "object"
+}

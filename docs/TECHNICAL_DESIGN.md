@@ -29,7 +29,8 @@ example conflicts with an implemented interface.
 | T19 | Complete | PR 19 includes strict continuity contracts, deterministic candidate selection, stable-versus-temporary bibles, interval state resolution, bundle compaction/hashing, additive T14 projection, relational persistence, owner-scoped API/UI projections and CLI inspection. Reference generation now reuses T14 providers/validation and AssetService with T23 attempts, reservation and reconciliation. An ID-only Temporal workflow durably waits for replay-safe approval; application marks exactly the affected T14/T15 selections and T17 render stale and dispatches content-bound T16 regeneration while preserving siblings and historical assets. The mandatory deterministic ten-shot acceptance fixture covers the complete continuity behavior. Review and CI succeeded. |
 | T20 | Complete | Restartable semantic visual QA evaluates selected T14 keyframes and T15 canonical clips against approved storyboard intent, the exact approved T19 identity/location versions and state snapshots, T13 continuity, and versioned deterministic media thresholds. Deterministic sampling and media checks run before any paid request; the weighted score is recomputed by application code from validated dimension values; hard failures always block; findings carry exact frame evidence and structured repair codes; adjudication is bounded; results resume without duplicate provider calls, T23 attempts, reservations or ledger entries; T16 gates keyframe and video QA; T17 render eligibility requires a passing canonical video-QA result; and the T18 inspector exposes the scorecard, diagnostics and evidence. T20 identifies repairs and never executes one. |
 | T21 | Complete | Restartable repair and fallback routing consumes one failed T20 video-QA result, classifies it into one of five strict categories from T20 evidence alone, and drives a bounded policy: at most two same-provider repair generations, then one Google Veo alternate-provider generation, then a free deterministic 2.5D parallax render when the shot is deterministically eligible, and otherwise `HUMAN_REVIEW_REQUIRED`. The original generation is attempt ordinal 0 and is not one of the repairs. Prompt repair is a validated minimal delta that preserves every unaffected constraint; approved T19 references are never mutated and a reference that is itself invalid is routed upstream. Every repaired or fallback output is revalidated by T20 before it can be selected, exactly one attempt per shot may be selected, durable provider operations are resumed rather than resubmitted, ambiguous submissions are never resubmitted, T23 reserves and reconciles every paid attempt with no duplicate charges, and only the failed shot is touched. Review and CI succeeded. |
-| T22, T24-T26 | Planned | Do not begin a later task until its dependencies and the current implementation are reconciled. |
+| T22 | Complete | Restartable final editorial QA inspects the canonical T17 delivery as a whole through six checkpointed phases. It proves the render's lineage is current - selected script, narration, storyboard and animation attempts, a passing T20 video-QA result per shot, no active/failed/`HUMAN_REVIEW_REQUIRED` T21 run, matching declared hashes and shot ordering - and rejects a stale render before any paid request. Deterministic media, audio and caption checks are measured with FFmpeg/ffprobe through argument arrays and gate the paid editorial analysis, which never runs on a delivery that already failed measurement. Luna evaluates 21 editorial dimensions on the assembled recap and Terra adjudicates only borderline findings, deciding solely at confidence >= 0.80 and otherwise producing `REVIEW`. Severity is structural, so a high dimension score can never conceal a blocking finding; every finding carries an exact global timestamp range and resolvable evidence. The gate is recomputed from validated findings and persisted immutably, human review may resolve only genuinely uncertain semantic findings and never a measured failure or stale lineage, remediation is routed to the stage that already owns it without a new creative loop, and the parent workflow advances a project to completed only on a current `PASS`. Review and CI succeeded. |
+| T24-T26 | Planned | Do not begin a later task until its dependencies and the current implementation are reconciled. |
 
 When a roadmap task is completed, update this table, `README.md`, and any affected design section in
 the same pull request.
@@ -1784,6 +1785,45 @@ ffmpeg -hide_banner -y \
 3. Decode the entire output to null to catch corrupt frames: `ffmpeg -v error -i final.mp4 -f null -`.
 4. Extract a frame every 10 seconds and a waveform preview for final QA.
 
+### As implemented (T22)
+
+T22 owns everything after this point. It re-measures the assembled delivery rather than trusting
+T17's own verification report, because the two answer different questions: T17 asks whether its
+encode succeeded, T22 asks whether the file the project now holds is a valid, current and coherent
+delivery of the approved recap.
+
+`services/qa/` keeps the final stages separate under a `final_` prefix: canonical input selection
+and stale-lineage rejection (`final_inputs.py`), measured media checks on the assembled output
+(`final_deterministic.py`), measured checks on the delivered mix (`final_audio.py`), canonical and
+delivered caption checks (`final_captions.py`), deterministic sampling and evidence
+(`final_evidence.py`), versioned configuration and routing policy (`final_rubric.py`), the
+provider-neutral editorial interface (`final_editorial_provider.py` with `final_openai_adapter.py`
+and `final_fake_provider.py`), finding recomputation and the gate (`final_gate.py`), bounded human
+adjudication (`final_human_review.py`), and restartable orchestration (`final_editorial.py`,
+`final_commands.py`).
+
+A final-QA identity binds the validated `FinalQAInput` - project, render job and identity, final
+video and manifest asset IDs and hashes, approved script ID/version/hash, narration run, assets and
+word-timing hash, storyboard and timing hashes, caption track identity, every caption asset hash,
+every selected shot with its clip hash, interval, T20 result and selected T21 attempt, and the
+canonical timeline duration - together with the complete versioned configuration, the rubric and
+routing policy, and the first-pass and adjudicator provider and model. Changing any of these
+produces a new identity; repeating an identical request reuses the persisted measurements, checks,
+provider results, adjudication, findings, report and gate without a second provider request, T23
+attempt, reservation, ledger entry, asset or row.
+
+Deterministic measurement runs before any paid request, so a delivery that will not decode, drifts
+from its manifest, or has lost caption coverage never reaches a provider. Every FFmpeg and ffprobe
+invocation uses a subprocess argument array over bounded temporary storage; no command string is
+constructed from a manifest, an asset name or any other externally supplied value.
+
+The gate is recomputed rather than asserted. A failed deterministic, audio or caption check becomes
+an evidenced blocking finding that no score, adjudication or human decision can remove; a provider
+proposal becomes blocking only in a structurally blocking category, at or above the 0.80 confidence
+floor, with resolvable evidence, and otherwise becomes `REVIEW`. `PASS` requires zero blocking
+findings, zero failed checks and zero unresolved reviews, and the database refuses to store any
+other combination.
+
 # 10. API Integration Design
 
 ## Provider-neutral interfaces
@@ -2245,7 +2285,7 @@ Each task below is independently testable. File paths refer to the repository st
 | T19 | Add character/location references | `services/continuity/reference_selector.py`, `bible_builder.py`, `state_resolver.py`, new UI panels | T10, T14, T18 | Approved identity version and state snapshot are injected into every affected shot |
 | T20 | Add visual QA | `services/qa/sampler.py`, `deterministic.py`, `visual_agent.py`, rubric and fixtures | T16, T19 | QA score recomputes; hard failures block; evidence timestamps and repair codes persist |
 | T21 | Add repair and fallback routing | `services/qa/repair.py`, `services/animation/veo.py`, `services/renderer/parallax.py` | T20 | Two repairs, alternate provider, and deterministic fallback follow policy and cost cap |
-| T22 | Add final editorial QA | `services/qa/final_editorial.py`, A/V checks, review gate | T17, T20 | Final workflow cannot complete with a blocking render, caption, continuity, or story issue |
+| T22 | Add final editorial QA | `services/qa/final_editorial.py`, `final_deterministic.py`, `final_audio.py`, `final_captions.py`, `final_gate.py`, review gate | T17, T20 | Final workflow cannot complete with a blocking render, caption, continuity, or story issue |
 | T23 | Add observability and cost ledger | `packages/telemetry/*`, `packages/costs/*`, dashboards, alerts | T08, provider adapters | Every provider attempt exposes tokens/seconds, cost, latency, trace, result, and failure class |
 | T24 | Add Azure infrastructure | `infra/bicep/*` or `infra/terraform/*`, Container Apps manifests, managed identities, Key Vault references | T01, T23 | Staging deploy is private by default, migrations run once, workers autoscale, and secrets are absent from images/config repos |
 | T25 | Add YouTube publication | `services/publisher/youtube.py`, OAuth connection UI, resumable upload state | T18, T24 | Private test video, thumbnail, and captions upload once; interrupted upload resumes |

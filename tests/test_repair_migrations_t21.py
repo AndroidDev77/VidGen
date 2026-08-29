@@ -41,9 +41,10 @@ def config() -> Config:
     return Config(str(ROOT / "alembic.ini"))
 
 
-def test_t21_is_the_only_head_and_follows_t20() -> None:
+def test_t21_follows_t20_in_a_single_headed_chain() -> None:
     script = ScriptDirectory.from_config(config())
-    assert script.get_heads() == ["0017_repair_fallback"]
+    # The chain stays single-headed; later tasks own the head assertion.
+    assert len(script.get_heads()) == 1
     assert script.get_revision("0017_repair_fallback").down_revision == "0016_visual_qa"
 
 
@@ -72,7 +73,9 @@ def test_the_migration_is_additive_and_preserves_existing_tables(
     engine = create_engine(url)
     command.upgrade(config(), "0016_visual_qa")
     before = set(inspect(engine).get_table_names())
-    command.upgrade(config(), "head")
+    # Upgrade to T21 exactly, not to head: later tasks add their own tables and
+    # this assertion is about what T21 itself contributes.
+    command.upgrade(config(), "0017_repair_fallback")
     after = set(inspect(engine).get_table_names())
     assert before <= after, "T21 removes nothing that T01-T20 created"
     assert after - before == T21_TABLES

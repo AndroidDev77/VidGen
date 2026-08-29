@@ -1,0 +1,2371 @@
+{
+  "$defs": {
+    "FinalAudioCheck": {
+      "additionalProperties": false,
+      "description": "A deterministic audio-mix check, located against the global timeline.",
+      "properties": {
+        "blocking": {
+          "default": false,
+          "title": "Blocking",
+          "type": "boolean"
+        },
+        "check_id": {
+          "format": "uuid",
+          "title": "Check Id",
+          "type": "string"
+        },
+        "check_type": {
+          "const": "audio",
+          "default": "audio",
+          "title": "Check Type",
+          "type": "string"
+        },
+        "check_version": {
+          "maxLength": 64,
+          "minLength": 1,
+          "title": "Check Version",
+          "type": "string"
+        },
+        "code": {
+          "$ref": "#/$defs/FinalIssueCode"
+        },
+        "end_us": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "End Us"
+        },
+        "measurement": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Measurement"
+        },
+        "message": {
+          "default": "",
+          "maxLength": 500,
+          "title": "Message",
+          "type": "string"
+        },
+        "narration_segment_id": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Narration Segment Id"
+        },
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "start_us": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Start Us"
+        },
+        "status": {
+          "enum": [
+            "pass",
+            "fail",
+            "warning",
+            "not_applicable"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "threshold": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Threshold"
+        },
+        "tool": {
+          "default": "",
+          "maxLength": 64,
+          "title": "Tool",
+          "type": "string"
+        },
+        "tool_version": {
+          "default": "",
+          "maxLength": 128,
+          "title": "Tool Version",
+          "type": "string"
+        },
+        "unit": {
+          "default": "",
+          "maxLength": 32,
+          "title": "Unit",
+          "type": "string"
+        }
+      },
+      "required": [
+        "check_id",
+        "check_version",
+        "code",
+        "status"
+      ],
+      "title": "FinalAudioCheck",
+      "type": "object"
+    },
+    "FinalCaptionCheck": {
+      "additionalProperties": false,
+      "description": "A deterministic caption check, located against a cue and its narration.",
+      "properties": {
+        "blocking": {
+          "default": false,
+          "title": "Blocking",
+          "type": "boolean"
+        },
+        "caption_asset_id": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Caption Asset Id"
+        },
+        "check_id": {
+          "format": "uuid",
+          "title": "Check Id",
+          "type": "string"
+        },
+        "check_type": {
+          "const": "caption",
+          "default": "caption",
+          "title": "Check Type",
+          "type": "string"
+        },
+        "check_version": {
+          "maxLength": 64,
+          "minLength": 1,
+          "title": "Check Version",
+          "type": "string"
+        },
+        "code": {
+          "$ref": "#/$defs/FinalIssueCode"
+        },
+        "cue_sequence": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Cue Sequence"
+        },
+        "end_us": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "End Us"
+        },
+        "measurement": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Measurement"
+        },
+        "message": {
+          "default": "",
+          "maxLength": 500,
+          "title": "Message",
+          "type": "string"
+        },
+        "narration_segment_id": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Narration Segment Id"
+        },
+        "remediation_target": {
+          "$ref": "#/$defs/FinalRemediationTarget",
+          "default": "REBUILD_CAPTIONS_T17"
+        },
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "start_us": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Start Us"
+        },
+        "status": {
+          "enum": [
+            "pass",
+            "fail",
+            "warning",
+            "not_applicable"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "threshold": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Threshold"
+        },
+        "tool": {
+          "default": "",
+          "maxLength": 64,
+          "title": "Tool",
+          "type": "string"
+        },
+        "tool_version": {
+          "default": "",
+          "maxLength": 128,
+          "title": "Tool Version",
+          "type": "string"
+        },
+        "unit": {
+          "default": "",
+          "maxLength": 32,
+          "title": "Unit",
+          "type": "string"
+        }
+      },
+      "required": [
+        "check_id",
+        "check_version",
+        "code",
+        "status"
+      ],
+      "title": "FinalCaptionCheck",
+      "type": "object"
+    },
+    "FinalCheckType": {
+      "description": "Which deterministic family produced a persisted check row.",
+      "enum": [
+        "lineage",
+        "media",
+        "timeline",
+        "audio",
+        "caption",
+        "manifest"
+      ],
+      "title": "FinalCheckType",
+      "type": "string"
+    },
+    "FinalDeterministicCheck": {
+      "additionalProperties": false,
+      "description": "One deterministic media or timeline check with its measurement.",
+      "properties": {
+        "blocking": {
+          "default": false,
+          "title": "Blocking",
+          "type": "boolean"
+        },
+        "check_id": {
+          "format": "uuid",
+          "title": "Check Id",
+          "type": "string"
+        },
+        "check_type": {
+          "$ref": "#/$defs/FinalCheckType"
+        },
+        "check_version": {
+          "maxLength": 64,
+          "minLength": 1,
+          "title": "Check Version",
+          "type": "string"
+        },
+        "code": {
+          "$ref": "#/$defs/FinalIssueCode"
+        },
+        "end_us": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "End Us"
+        },
+        "measurement": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Measurement"
+        },
+        "message": {
+          "default": "",
+          "maxLength": 500,
+          "title": "Message",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "start_us": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Start Us"
+        },
+        "status": {
+          "enum": [
+            "pass",
+            "fail",
+            "warning",
+            "not_applicable"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "threshold": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Threshold"
+        },
+        "tool": {
+          "default": "",
+          "maxLength": 64,
+          "title": "Tool",
+          "type": "string"
+        },
+        "tool_version": {
+          "default": "",
+          "maxLength": 128,
+          "title": "Tool Version",
+          "type": "string"
+        },
+        "unit": {
+          "default": "",
+          "maxLength": 32,
+          "title": "Unit",
+          "type": "string"
+        }
+      },
+      "required": [
+        "check_id",
+        "check_type",
+        "check_version",
+        "code",
+        "status"
+      ],
+      "title": "FinalDeterministicCheck",
+      "type": "object"
+    },
+    "FinalEditorialAdjudication": {
+      "additionalProperties": false,
+      "description": "One bounded Terra second opinion over disputed first-pass findings.",
+      "properties": {
+        "adjudication_id": {
+          "format": "uuid",
+          "title": "Adjudication Id",
+          "type": "string"
+        },
+        "confidence": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Confidence",
+          "type": "number"
+        },
+        "confirmed_finding_ids": {
+          "items": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "maxItems": 32,
+          "title": "Confirmed Finding Ids",
+          "type": "array"
+        },
+        "decided": {
+          "title": "Decided",
+          "type": "boolean"
+        },
+        "dismissed_finding_ids": {
+          "items": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "maxItems": 32,
+          "title": "Dismissed Finding Ids",
+          "type": "array"
+        },
+        "disputed_finding_ids": {
+          "items": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "maxItems": 32,
+          "title": "Disputed Finding Ids",
+          "type": "array"
+        },
+        "model": {
+          "default": "",
+          "maxLength": 128,
+          "title": "Model",
+          "type": "string"
+        },
+        "policy_version": {
+          "maxLength": 64,
+          "minLength": 1,
+          "title": "Policy Version",
+          "type": "string"
+        },
+        "provider": {
+          "default": "",
+          "maxLength": 64,
+          "title": "Provider",
+          "type": "string"
+        },
+        "rationale": {
+          "default": "",
+          "maxLength": 1000,
+          "title": "Rationale",
+          "type": "string"
+        },
+        "resulting_decision_hint": {
+          "$ref": "#/$defs/FinalQADecision"
+        },
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "triggers": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 16,
+          "title": "Triggers",
+          "type": "array"
+        }
+      },
+      "required": [
+        "adjudication_id",
+        "policy_version",
+        "confidence",
+        "decided",
+        "resulting_decision_hint"
+      ],
+      "title": "FinalEditorialAdjudication",
+      "type": "object"
+    },
+    "FinalEditorialCategory": {
+      "description": "The bounded editorial dimensions T22 evaluates on the assembled recap.",
+      "enum": [
+        "story_beat_coverage",
+        "narrative_structure",
+        "scene_completeness",
+        "character_identity_continuity",
+        "character_state_continuity",
+        "location_continuity",
+        "prop_and_wardrobe_continuity",
+        "visual_contradiction",
+        "shot_to_shot_continuity",
+        "transition_coherence",
+        "narration_visual_agreement",
+        "caption_narration_agreement",
+        "comprehensibility",
+        "setup_and_payoff",
+        "narrative_jump",
+        "repetition",
+        "pacing",
+        "dead_air",
+        "ending_completeness",
+        "script_contradiction",
+        "source_contradiction"
+      ],
+      "title": "FinalEditorialCategory",
+      "type": "string"
+    },
+    "FinalEditorialDimension": {
+      "additionalProperties": false,
+      "description": "One recomputed editorial dimension result.\n\n``score`` is descriptive only. The gate reads findings, never this number:\na high average must never conceal a blocking issue.",
+      "properties": {
+        "applicable": {
+          "default": true,
+          "title": "Applicable",
+          "type": "boolean"
+        },
+        "blocking_finding_count": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Blocking Finding Count",
+          "type": "integer"
+        },
+        "category": {
+          "$ref": "#/$defs/FinalEditorialCategory"
+        },
+        "confidence": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Confidence",
+          "type": "number"
+        },
+        "review_finding_count": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Review Finding Count",
+          "type": "integer"
+        },
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "score": {
+          "maximum": 100,
+          "minimum": 0,
+          "title": "Score",
+          "type": "number"
+        },
+        "summary": {
+          "default": "",
+          "maxLength": 500,
+          "title": "Summary",
+          "type": "string"
+        },
+        "warning_finding_count": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Warning Finding Count",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "category",
+        "score",
+        "confidence"
+      ],
+      "title": "FinalEditorialDimension",
+      "type": "object"
+    },
+    "FinalEditorialEvidence": {
+      "additionalProperties": false,
+      "description": "Exact, resolvable evidence for one finding. Never bytes, never a URL.",
+      "properties": {
+        "caption_cue_sequence": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Caption Cue Sequence"
+        },
+        "contact_sheet_asset_id": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Contact Sheet Asset Id"
+        },
+        "contact_sheet_position": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Contact Sheet Position"
+        },
+        "end_us": {
+          "minimum": 0,
+          "title": "End Us",
+          "type": "integer"
+        },
+        "evidence_id": {
+          "format": "uuid",
+          "title": "Evidence Id",
+          "type": "string"
+        },
+        "evidence_type": {
+          "enum": [
+            "sampled_frame",
+            "contact_sheet_tile",
+            "deterministic_measurement",
+            "caption_cue",
+            "audio_interval",
+            "manifest_reference",
+            "whole_file"
+          ],
+          "title": "Evidence Type",
+          "type": "string"
+        },
+        "explanation": {
+          "default": "",
+          "maxLength": 500,
+          "title": "Explanation",
+          "type": "string"
+        },
+        "frame_asset_id": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Frame Asset Id"
+        },
+        "measurement": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Measurement"
+        },
+        "sample_id": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sample Id"
+        },
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "shot_id": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Shot Id"
+        },
+        "start_us": {
+          "minimum": 0,
+          "title": "Start Us",
+          "type": "integer"
+        },
+        "threshold": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Threshold"
+        },
+        "tool": {
+          "default": "",
+          "maxLength": 64,
+          "title": "Tool",
+          "type": "string"
+        },
+        "tool_version": {
+          "default": "",
+          "maxLength": 128,
+          "title": "Tool Version",
+          "type": "string"
+        }
+      },
+      "required": [
+        "evidence_id",
+        "evidence_type",
+        "start_us",
+        "end_us"
+      ],
+      "title": "FinalEditorialEvidence",
+      "type": "object"
+    },
+    "FinalEditorialFinding": {
+      "additionalProperties": false,
+      "description": "One canonical finding. Provider prose never reaches this model unbounded.",
+      "properties": {
+        "blocking": {
+          "title": "Blocking",
+          "type": "boolean"
+        },
+        "caption_cue_sequences": {
+          "items": {
+            "type": "integer"
+          },
+          "maxItems": 64,
+          "title": "Caption Cue Sequences",
+          "type": "array"
+        },
+        "category": {
+          "$ref": "#/$defs/FinalEditorialCategory"
+        },
+        "confidence": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Confidence",
+          "type": "number"
+        },
+        "end_us": {
+          "minimum": 0,
+          "title": "End Us",
+          "type": "integer"
+        },
+        "evidence": {
+          "items": {
+            "$ref": "#/$defs/FinalEditorialEvidence"
+          },
+          "maxItems": 16,
+          "title": "Evidence",
+          "type": "array"
+        },
+        "expected_behavior": {
+          "default": "",
+          "maxLength": 500,
+          "title": "Expected Behavior",
+          "type": "string"
+        },
+        "finding_id": {
+          "format": "uuid",
+          "title": "Finding Id",
+          "type": "string"
+        },
+        "issue_code": {
+          "$ref": "#/$defs/FinalIssueCode"
+        },
+        "narration_segment_ids": {
+          "items": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "maxItems": 64,
+          "title": "Narration Segment Ids",
+          "type": "array"
+        },
+        "observed_behavior": {
+          "default": "",
+          "maxLength": 500,
+          "title": "Observed Behavior",
+          "type": "string"
+        },
+        "provenance": {
+          "default": "deterministic",
+          "enum": [
+            "deterministic",
+            "provider",
+            "adjudication",
+            "human"
+          ],
+          "title": "Provenance",
+          "type": "string"
+        },
+        "provider_attempt_number": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Provider Attempt Number"
+        },
+        "remediation_target": {
+          "$ref": "#/$defs/FinalRemediationTarget",
+          "default": "NONE"
+        },
+        "sample_ids": {
+          "items": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "maxItems": 64,
+          "title": "Sample Ids",
+          "type": "array"
+        },
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "script_segment_ids": {
+          "items": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "maxItems": 64,
+          "title": "Script Segment Ids",
+          "type": "array"
+        },
+        "severity": {
+          "$ref": "#/$defs/FinalFindingSeverity"
+        },
+        "shot_ids": {
+          "items": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "maxItems": 64,
+          "title": "Shot Ids",
+          "type": "array"
+        },
+        "source_check": {
+          "default": "",
+          "maxLength": 64,
+          "title": "Source Check",
+          "type": "string"
+        },
+        "start_us": {
+          "minimum": 0,
+          "title": "Start Us",
+          "type": "integer"
+        },
+        "summary": {
+          "maxLength": 500,
+          "minLength": 1,
+          "title": "Summary",
+          "type": "string"
+        }
+      },
+      "required": [
+        "finding_id",
+        "category",
+        "severity",
+        "blocking",
+        "confidence",
+        "issue_code",
+        "summary",
+        "start_us",
+        "end_us"
+      ],
+      "title": "FinalEditorialFinding",
+      "type": "object"
+    },
+    "FinalFindingSeverity": {
+      "description": "Severity is structural, never derived from an average score.",
+      "enum": [
+        "blocking",
+        "review_required",
+        "warning",
+        "informational"
+      ],
+      "title": "FinalFindingSeverity",
+      "type": "string"
+    },
+    "FinalGateDecision": {
+      "additionalProperties": false,
+      "description": "The completion gate's recomputed decision for one render identity.",
+      "properties": {
+        "blocking_finding_count": {
+          "minimum": 0,
+          "title": "Blocking Finding Count",
+          "type": "integer"
+        },
+        "decided_at": {
+          "format": "date-time",
+          "title": "Decided At",
+          "type": "string"
+        },
+        "decision": {
+          "$ref": "#/$defs/FinalQADecision"
+        },
+        "deterministic_failure_count": {
+          "minimum": 0,
+          "title": "Deterministic Failure Count",
+          "type": "integer"
+        },
+        "final_video_asset_id": {
+          "format": "uuid",
+          "title": "Final Video Asset Id",
+          "type": "string"
+        },
+        "gate_version": {
+          "maxLength": 64,
+          "minLength": 1,
+          "title": "Gate Version",
+          "type": "string"
+        },
+        "reasons": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 32,
+          "title": "Reasons",
+          "type": "array"
+        },
+        "render_identity": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Render Identity",
+          "type": "string"
+        },
+        "review_finding_count": {
+          "minimum": 0,
+          "title": "Review Finding Count",
+          "type": "integer"
+        },
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "unresolved_review_count": {
+          "minimum": 0,
+          "title": "Unresolved Review Count",
+          "type": "integer"
+        },
+        "warning_finding_count": {
+          "minimum": 0,
+          "title": "Warning Finding Count",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "gate_version",
+        "decision",
+        "final_video_asset_id",
+        "render_identity",
+        "blocking_finding_count",
+        "review_finding_count",
+        "warning_finding_count",
+        "deterministic_failure_count",
+        "unresolved_review_count",
+        "decided_at"
+      ],
+      "title": "FinalGateDecision",
+      "type": "object"
+    },
+    "FinalIssueCode": {
+      "description": "The bounded structured issue taxonomy. Adding a member is a version change.",
+      "enum": [
+        "RENDER_MISSING",
+        "RENDER_EMPTY",
+        "RENDER_UNREADABLE",
+        "CONTAINER_MISMATCH",
+        "VIDEO_CODEC_MISMATCH",
+        "AUDIO_CODEC_MISMATCH",
+        "VIDEO_DECODE_FAILURE",
+        "AUDIO_DECODE_FAILURE",
+        "MISSING_VIDEO_STREAM",
+        "MISSING_AUDIO_STREAM",
+        "UNEXPECTED_STREAM",
+        "RESOLUTION_MISMATCH",
+        "PIXEL_FORMAT_MISMATCH",
+        "FRAME_RATE_INVALID",
+        "TIME_BASE_INVALID",
+        "DURATION_INVALID",
+        "VIDEO_DURATION_MISMATCH",
+        "AUDIO_DURATION_MISMATCH",
+        "AV_DURATION_DRIFT",
+        "TIMELINE_DURATION_MISMATCH",
+        "SHOT_COVERAGE_GAP",
+        "SHOT_COVERAGE_OVERLAP",
+        "TRANSITION_HANDLE_MISMATCH",
+        "UNEXPECTED_BLACK_INTERVAL",
+        "EXCESSIVE_FREEZE_INTERVAL",
+        "CORRUPT_RENDER_SECTION",
+        "INVALID_BOUNDARY_FRAME",
+        "NON_MONOTONIC_TIMESTAMPS",
+        "START_OFFSET_OUT_OF_RANGE",
+        "NON_FINITE_MEASUREMENT",
+        "FILE_SIZE_OUT_OF_RANGE",
+        "BITRATE_OUT_OF_RANGE",
+        "NARRATION_INTERVAL_MISSING",
+        "NARRATION_ORDER_MISMATCH",
+        "NARRATION_SEGMENT_DUPLICATED",
+        "NARRATION_SEGMENT_OMITTED",
+        "NARRATION_TIMING_DRIFT",
+        "AUDIO_VIDEO_DRIFT",
+        "LOUDNESS_OUT_OF_RANGE",
+        "TRUE_PEAK_EXCEEDED",
+        "AUDIO_CLIPPING",
+        "NON_FINITE_SAMPLE",
+        "LEADING_SILENCE_OUT_OF_RANGE",
+        "TRAILING_SILENCE_OUT_OF_RANGE",
+        "ABNORMAL_INTERNAL_SILENCE",
+        "NARRATION_MASKED_BY_BED",
+        "CHANNEL_LAYOUT_MISMATCH",
+        "SAMPLE_RATE_MISMATCH",
+        "AUDIO_DISCONTINUITY",
+        "BACKGROUND_AUDIO_OVERRUN",
+        "UNAPPROVED_PROVIDER_AUDIO",
+        "CAPTION_COVERAGE_MISSING",
+        "CAPTION_TEXT_MISMATCH",
+        "CAPTION_ORDER_INVALID",
+        "CAPTION_NEGATIVE_START",
+        "CAPTION_NONPOSITIVE_DURATION",
+        "CAPTION_OUT_OF_BOUNDS",
+        "CAPTION_OVERLAP",
+        "CAPTION_TIMING_DRIFT",
+        "CAPTION_CUE_MISSING",
+        "CAPTION_CUE_DUPLICATED",
+        "CAPTION_ASSET_HASH_MISMATCH",
+        "CAPTION_LINE_COUNT_EXCEEDED",
+        "CAPTION_LINE_LENGTH_EXCEEDED",
+        "CAPTION_READING_SPEED_EXCEEDED",
+        "CAPTION_REFLOW_NONDETERMINISTIC",
+        "CAPTION_PUNCTUATION_ALTERED",
+        "CAPTION_ENCODING_INVALID",
+        "CAPTION_PARSE_FAILURE",
+        "CAPTION_SAFE_AREA_VIOLATION",
+        "CAPTION_LANGUAGE_MISMATCH",
+        "MISSING_STORY_BEAT",
+        "DUPLICATED_SCENE",
+        "MISSING_SCENE",
+        "OUT_OF_ORDER_SCENE",
+        "CONTINUITY_CONTRADICTION",
+        "IDENTITY_CONTRADICTION",
+        "LOCATION_CONTRADICTION",
+        "PROP_CONTRADICTION",
+        "NARRATION_VISUAL_MISMATCH",
+        "CAPTION_NARRATION_MISMATCH",
+        "INCOMPREHENSIBLE_SEQUENCE",
+        "UNRESOLVED_SETUP",
+        "ABRUPT_NARRATIVE_JUMP",
+        "EXCESSIVE_REPETITION",
+        "PACING_PROBLEM",
+        "UNINTENDED_DEAD_AIR",
+        "INCOMPLETE_ENDING",
+        "SCRIPT_CONTRADICTION",
+        "SOURCE_CONTRADICTION",
+        "AMBIGUOUS_EDITORIAL_EVIDENCE"
+      ],
+      "title": "FinalIssueCode",
+      "type": "string"
+    },
+    "FinalMediaMeasurements": {
+      "additionalProperties": false,
+      "description": "Every measured property of the assembled render, with its tool versions.",
+      "properties": {
+        "audio_codec": {
+          "default": "",
+          "maxLength": 64,
+          "title": "Audio Codec",
+          "type": "string"
+        },
+        "audio_decoded": {
+          "default": false,
+          "title": "Audio Decoded",
+          "type": "boolean"
+        },
+        "audio_duration_us": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Audio Duration Us"
+        },
+        "audio_start_us": {
+          "default": 0,
+          "title": "Audio Start Us",
+          "type": "integer"
+        },
+        "audio_time_base": {
+          "default": "",
+          "maxLength": 32,
+          "title": "Audio Time Base",
+          "type": "string"
+        },
+        "bit_rate": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Bit Rate"
+        },
+        "black_intervals": {
+          "items": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object"
+          },
+          "maxItems": 512,
+          "title": "Black Intervals",
+          "type": "array"
+        },
+        "byte_size": {
+          "minimum": 0,
+          "title": "Byte Size",
+          "type": "integer"
+        },
+        "channels": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Channels"
+        },
+        "clipping_ratio": {
+          "anyOf": [
+            {
+              "maximum": 1,
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Clipping Ratio"
+        },
+        "container_duration_us": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Container Duration Us"
+        },
+        "container_format": {
+          "default": "",
+          "maxLength": 128,
+          "title": "Container Format",
+          "type": "string"
+        },
+        "decode_error_count": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Decode Error Count",
+          "type": "integer"
+        },
+        "ffmpeg_version": {
+          "default": "",
+          "maxLength": 256,
+          "title": "Ffmpeg Version",
+          "type": "string"
+        },
+        "ffprobe_version": {
+          "default": "",
+          "maxLength": 256,
+          "title": "Ffprobe Version",
+          "type": "string"
+        },
+        "first_frame_valid": {
+          "default": false,
+          "title": "First Frame Valid",
+          "type": "boolean"
+        },
+        "frame_rate": {
+          "default": "",
+          "maxLength": 32,
+          "title": "Frame Rate",
+          "type": "string"
+        },
+        "freeze_intervals": {
+          "items": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object"
+          },
+          "maxItems": 512,
+          "title": "Freeze Intervals",
+          "type": "array"
+        },
+        "height": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Height"
+        },
+        "integrated_lufs": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Integrated Lufs"
+        },
+        "last_frame_valid": {
+          "default": false,
+          "title": "Last Frame Valid",
+          "type": "boolean"
+        },
+        "loudness_range": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Loudness Range"
+        },
+        "measured_at": {
+          "format": "date-time",
+          "title": "Measured At",
+          "type": "string"
+        },
+        "monotonic_video_timestamps": {
+          "default": true,
+          "title": "Monotonic Video Timestamps",
+          "type": "boolean"
+        },
+        "pixel_format": {
+          "default": "",
+          "maxLength": 32,
+          "title": "Pixel Format",
+          "type": "string"
+        },
+        "sample_rate_hz": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sample Rate Hz"
+        },
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "silence_intervals": {
+          "items": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object"
+          },
+          "maxItems": 512,
+          "title": "Silence Intervals",
+          "type": "array"
+        },
+        "subtitle_stream_count": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Subtitle Stream Count",
+          "type": "integer"
+        },
+        "true_peak_dbtp": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "True Peak Dbtp"
+        },
+        "video_codec": {
+          "default": "",
+          "maxLength": 64,
+          "title": "Video Codec",
+          "type": "string"
+        },
+        "video_decoded": {
+          "default": false,
+          "title": "Video Decoded",
+          "type": "boolean"
+        },
+        "video_duration_us": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Video Duration Us"
+        },
+        "video_start_us": {
+          "default": 0,
+          "title": "Video Start Us",
+          "type": "integer"
+        },
+        "video_time_base": {
+          "default": "",
+          "maxLength": 32,
+          "title": "Video Time Base",
+          "type": "string"
+        },
+        "width": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Width"
+        }
+      },
+      "required": [
+        "measured_at",
+        "byte_size"
+      ],
+      "title": "FinalMediaMeasurements",
+      "type": "object"
+    },
+    "FinalQAConfiguration": {
+      "additionalProperties": false,
+      "description": "Versioned thresholds. Every value here is bound into the final-QA identity.\n\nChanging any threshold is a configuration change, which produces a new\nidentity and therefore a new run rather than silently re-grading an old one.",
+      "properties": {
+        "adjudication_policy_version": {
+          "maxLength": 64,
+          "minLength": 1,
+          "title": "Adjudication Policy Version",
+          "type": "string"
+        },
+        "audio_check_version": {
+          "maxLength": 64,
+          "minLength": 1,
+          "title": "Audio Check Version",
+          "type": "string"
+        },
+        "av_drift_tolerance_us": {
+          "default": 150000,
+          "maximum": 2000000,
+          "minimum": 0,
+          "title": "Av Drift Tolerance Us",
+          "type": "integer"
+        },
+        "caption_check_version": {
+          "maxLength": 64,
+          "minLength": 1,
+          "title": "Caption Check Version",
+          "type": "string"
+        },
+        "caption_safe_area_percent": {
+          "default": 10,
+          "maximum": 30,
+          "minimum": 0,
+          "title": "Caption Safe Area Percent",
+          "type": "integer"
+        },
+        "caption_timing_tolerance_us": {
+          "default": 250000,
+          "maximum": 5000000,
+          "minimum": 0,
+          "title": "Caption Timing Tolerance Us",
+          "type": "integer"
+        },
+        "configuration_version": {
+          "maxLength": 64,
+          "minLength": 1,
+          "title": "Configuration Version",
+          "type": "string"
+        },
+        "contact_sheet_columns": {
+          "default": 6,
+          "maximum": 8,
+          "minimum": 1,
+          "title": "Contact Sheet Columns",
+          "type": "integer"
+        },
+        "deterministic_check_version": {
+          "maxLength": 64,
+          "minLength": 1,
+          "title": "Deterministic Check Version",
+          "type": "string"
+        },
+        "duration_tolerance_us": {
+          "default": 120000,
+          "maximum": 2000000,
+          "minimum": 0,
+          "title": "Duration Tolerance Us",
+          "type": "integer"
+        },
+        "editorial_rubric_version": {
+          "maxLength": 64,
+          "minLength": 1,
+          "title": "Editorial Rubric Version",
+          "type": "string"
+        },
+        "editorial_sample_count": {
+          "default": 24,
+          "maximum": 64,
+          "minimum": 1,
+          "title": "Editorial Sample Count",
+          "type": "integer"
+        },
+        "expected_audio_codec": {
+          "default": "aac",
+          "maxLength": 32,
+          "minLength": 1,
+          "title": "Expected Audio Codec",
+          "type": "string"
+        },
+        "expected_caption_language": {
+          "default": "en",
+          "pattern": "^[a-z]{2,3}(-[A-Z]{2})?$",
+          "title": "Expected Caption Language",
+          "type": "string"
+        },
+        "expected_channels": {
+          "default": 2,
+          "maximum": 8,
+          "minimum": 1,
+          "title": "Expected Channels",
+          "type": "integer"
+        },
+        "expected_container": {
+          "default": "mp4",
+          "maxLength": 32,
+          "minLength": 1,
+          "title": "Expected Container",
+          "type": "string"
+        },
+        "expected_frame_rate": {
+          "default": 24,
+          "exclusiveMinimum": 0,
+          "maximum": 240,
+          "title": "Expected Frame Rate",
+          "type": "integer"
+        },
+        "expected_height": {
+          "default": 1080,
+          "exclusiveMinimum": 0,
+          "maximum": 16384,
+          "title": "Expected Height",
+          "type": "integer"
+        },
+        "expected_pixel_format": {
+          "default": "yuv420p",
+          "maxLength": 32,
+          "minLength": 1,
+          "title": "Expected Pixel Format",
+          "type": "string"
+        },
+        "expected_sample_rate_hz": {
+          "default": 48000,
+          "exclusiveMinimum": 0,
+          "title": "Expected Sample Rate Hz",
+          "type": "integer"
+        },
+        "expected_video_codec": {
+          "default": "h264",
+          "maxLength": 32,
+          "minLength": 1,
+          "title": "Expected Video Codec",
+          "type": "string"
+        },
+        "expected_width": {
+          "default": 1920,
+          "exclusiveMinimum": 0,
+          "maximum": 16384,
+          "title": "Expected Width",
+          "type": "integer"
+        },
+        "loudness_tolerance_lu": {
+          "default": 1.5,
+          "maximum": 6,
+          "minimum": 0,
+          "title": "Loudness Tolerance Lu",
+          "type": "number"
+        },
+        "max_adjudications": {
+          "default": 8,
+          "maximum": 32,
+          "minimum": 0,
+          "title": "Max Adjudications",
+          "type": "integer"
+        },
+        "max_black_interval_us": {
+          "default": 500000,
+          "maximum": 10000000,
+          "minimum": 0,
+          "title": "Max Black Interval Us",
+          "type": "integer"
+        },
+        "max_bytes_per_second": {
+          "default": 3500000,
+          "exclusiveMinimum": 0,
+          "title": "Max Bytes Per Second",
+          "type": "integer"
+        },
+        "max_caption_line_characters": {
+          "default": 42,
+          "maximum": 120,
+          "minimum": 10,
+          "title": "Max Caption Line Characters",
+          "type": "integer"
+        },
+        "max_caption_lines": {
+          "default": 2,
+          "maximum": 4,
+          "minimum": 1,
+          "title": "Max Caption Lines",
+          "type": "integer"
+        },
+        "max_caption_reading_speed_cps": {
+          "default": 21.0,
+          "exclusiveMinimum": 0,
+          "maximum": 60,
+          "title": "Max Caption Reading Speed Cps",
+          "type": "number"
+        },
+        "max_clipping_ratio": {
+          "default": 0.0005,
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Max Clipping Ratio",
+          "type": "number"
+        },
+        "max_findings": {
+          "default": 64,
+          "maximum": 256,
+          "minimum": 1,
+          "title": "Max Findings",
+          "type": "integer"
+        },
+        "max_freeze_interval_us": {
+          "default": 2000000,
+          "maximum": 30000000,
+          "minimum": 0,
+          "title": "Max Freeze Interval Us",
+          "type": "integer"
+        },
+        "max_internal_silence_us": {
+          "default": 2000000,
+          "maximum": 30000000,
+          "minimum": 0,
+          "title": "Max Internal Silence Us",
+          "type": "integer"
+        },
+        "max_leading_silence_us": {
+          "default": 1500000,
+          "maximum": 30000000,
+          "minimum": 0,
+          "title": "Max Leading Silence Us",
+          "type": "integer"
+        },
+        "max_trailing_silence_us": {
+          "default": 2500000,
+          "maximum": 30000000,
+          "minimum": 0,
+          "title": "Max Trailing Silence Us",
+          "type": "integer"
+        },
+        "min_bytes_per_second": {
+          "default": 8000,
+          "exclusiveMinimum": 0,
+          "title": "Min Bytes Per Second",
+          "type": "integer"
+        },
+        "min_narration_headroom_db": {
+          "default": 6.0,
+          "maximum": 40,
+          "minimum": 0,
+          "title": "Min Narration Headroom Db",
+          "type": "number"
+        },
+        "narration_timing_tolerance_us": {
+          "default": 250000,
+          "maximum": 5000000,
+          "minimum": 0,
+          "title": "Narration Timing Tolerance Us",
+          "type": "integer"
+        },
+        "prompt_version": {
+          "maxLength": 64,
+          "minLength": 1,
+          "title": "Prompt Version",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "start_offset_tolerance_us": {
+          "default": 50000,
+          "maximum": 1000000,
+          "minimum": 0,
+          "title": "Start Offset Tolerance Us",
+          "type": "integer"
+        },
+        "target_integrated_lufs": {
+          "default": -14.0,
+          "maximum": -5,
+          "minimum": -30,
+          "title": "Target Integrated Lufs",
+          "type": "number"
+        },
+        "true_peak_ceiling_dbtp": {
+          "default": -1.0,
+          "maximum": 0,
+          "minimum": -6,
+          "title": "True Peak Ceiling Dbtp",
+          "type": "number"
+        }
+      },
+      "required": [
+        "configuration_version",
+        "deterministic_check_version",
+        "audio_check_version",
+        "caption_check_version",
+        "editorial_rubric_version",
+        "prompt_version",
+        "adjudication_policy_version"
+      ],
+      "title": "FinalQAConfiguration",
+      "type": "object"
+    },
+    "FinalQADecision": {
+      "enum": [
+        "PASS",
+        "FAIL",
+        "REVIEW"
+      ],
+      "title": "FinalQADecision",
+      "type": "string"
+    },
+    "FinalQAInput": {
+      "additionalProperties": false,
+      "description": "The exact canonical inputs one final-QA run was bound to.\n\nEvery field is part of the input hash. A newer selected animation, a new\nrender, a rebuilt caption asset or a different approved script produces a\ndifferent hash and therefore a different run: a report is never reused for\nmaterial that changed.",
+      "properties": {
+        "approved_script_hash": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Approved Script Hash",
+          "type": "string"
+        },
+        "approved_script_id": {
+          "format": "uuid",
+          "title": "Approved Script Id",
+          "type": "string"
+        },
+        "approved_script_version": {
+          "exclusiveMinimum": 0,
+          "title": "Approved Script Version",
+          "type": "integer"
+        },
+        "caption_asset_hashes": {
+          "items": {
+            "pattern": "^[a-f0-9]{64}$",
+            "type": "string"
+          },
+          "maxItems": 8,
+          "minItems": 1,
+          "title": "Caption Asset Hashes",
+          "type": "array"
+        },
+        "caption_asset_ids": {
+          "items": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "maxItems": 8,
+          "minItems": 1,
+          "title": "Caption Asset Ids",
+          "type": "array"
+        },
+        "caption_identity": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Caption Identity",
+          "type": "string"
+        },
+        "caption_track_id": {
+          "format": "uuid",
+          "title": "Caption Track Id",
+          "type": "string"
+        },
+        "character_identity_version_ids": {
+          "items": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "maxItems": 256,
+          "title": "Character Identity Version Ids",
+          "type": "array"
+        },
+        "final_audio_asset_id": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Final Audio Asset Id"
+        },
+        "final_video_asset_id": {
+          "format": "uuid",
+          "title": "Final Video Asset Id",
+          "type": "string"
+        },
+        "final_video_sha256": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Final Video Sha256",
+          "type": "string"
+        },
+        "location_identity_version_ids": {
+          "items": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "maxItems": 256,
+          "title": "Location Identity Version Ids",
+          "type": "array"
+        },
+        "narration_asset_ids": {
+          "items": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "maxItems": 1000,
+          "minItems": 1,
+          "title": "Narration Asset Ids",
+          "type": "array"
+        },
+        "narration_duration_us": {
+          "exclusiveMinimum": 0,
+          "title": "Narration Duration Us",
+          "type": "integer"
+        },
+        "narration_run_id": {
+          "format": "uuid",
+          "title": "Narration Run Id",
+          "type": "string"
+        },
+        "narration_word_timing_hash": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Narration Word Timing Hash",
+          "type": "string"
+        },
+        "project_id": {
+          "format": "uuid",
+          "title": "Project Id",
+          "type": "string"
+        },
+        "render_identity": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Render Identity",
+          "type": "string"
+        },
+        "render_job_id": {
+          "format": "uuid",
+          "title": "Render Job Id",
+          "type": "string"
+        },
+        "render_manifest_asset_id": {
+          "format": "uuid",
+          "title": "Render Manifest Asset Id",
+          "type": "string"
+        },
+        "render_manifest_hash": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Render Manifest Hash",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "shots": {
+          "items": {
+            "$ref": "#/$defs/FinalSelectedShot"
+          },
+          "maxItems": 500,
+          "minItems": 1,
+          "title": "Shots",
+          "type": "array"
+        },
+        "storyboard_hash": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Storyboard Hash",
+          "type": "string"
+        },
+        "storyboard_run_id": {
+          "format": "uuid",
+          "title": "Storyboard Run Id",
+          "type": "string"
+        },
+        "subtitle_mode": {
+          "default": "selectable",
+          "enum": [
+            "selectable",
+            "burn_in",
+            "both"
+          ],
+          "title": "Subtitle Mode",
+          "type": "string"
+        },
+        "timeline_duration_us": {
+          "exclusiveMinimum": 0,
+          "title": "Timeline Duration Us",
+          "type": "integer"
+        },
+        "timing_manifest_hash": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Timing Manifest Hash",
+          "type": "string"
+        }
+      },
+      "required": [
+        "project_id",
+        "render_job_id",
+        "render_identity",
+        "final_video_asset_id",
+        "final_video_sha256",
+        "render_manifest_asset_id",
+        "render_manifest_hash",
+        "approved_script_id",
+        "approved_script_version",
+        "approved_script_hash",
+        "narration_run_id",
+        "narration_asset_ids",
+        "narration_word_timing_hash",
+        "narration_duration_us",
+        "storyboard_run_id",
+        "storyboard_hash",
+        "timing_manifest_hash",
+        "caption_track_id",
+        "caption_identity",
+        "caption_asset_ids",
+        "caption_asset_hashes",
+        "shots",
+        "timeline_duration_us"
+      ],
+      "title": "FinalQAInput",
+      "type": "object"
+    },
+    "FinalRemediationRoute": {
+      "additionalProperties": false,
+      "description": "One structured remediation route derived from confirmed findings.",
+      "properties": {
+        "caption_cue_sequences": {
+          "items": {
+            "type": "integer"
+          },
+          "maxItems": 64,
+          "title": "Caption Cue Sequences",
+          "type": "array"
+        },
+        "finding_ids": {
+          "items": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "maxItems": 64,
+          "minItems": 1,
+          "title": "Finding Ids",
+          "type": "array"
+        },
+        "reason": {
+          "maxLength": 500,
+          "minLength": 1,
+          "title": "Reason",
+          "type": "string"
+        },
+        "requires_new_render": {
+          "default": true,
+          "title": "Requires New Render",
+          "type": "boolean"
+        },
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "shot_ids": {
+          "items": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "maxItems": 64,
+          "title": "Shot Ids",
+          "type": "array"
+        },
+        "target": {
+          "$ref": "#/$defs/FinalRemediationTarget"
+        }
+      },
+      "required": [
+        "target",
+        "finding_ids",
+        "reason"
+      ],
+      "title": "FinalRemediationRoute",
+      "type": "object"
+    },
+    "FinalRemediationTarget": {
+      "description": "Where a confirmed issue is routed. T22 never executes the route itself.",
+      "enum": [
+        "NONE",
+        "RERENDER_T17",
+        "REBUILD_CAPTIONS_T17",
+        "REMIX_AUDIO_T17",
+        "REGENERATE_SHOT_T16",
+        "REPAIR_SHOT_T21",
+        "CORRECT_REFERENCE_T19",
+        "CORRECT_SCRIPT_UPSTREAM",
+        "HUMAN_EDITORIAL_REVIEW"
+      ],
+      "title": "FinalRemediationTarget",
+      "type": "string"
+    },
+    "FinalSelectedShot": {
+      "additionalProperties": false,
+      "description": "One selected shot as the render manifest recorded it, with its QA lineage.",
+      "properties": {
+        "global_end_us": {
+          "exclusiveMinimum": 0,
+          "title": "Global End Us",
+          "type": "integer"
+        },
+        "global_start_us": {
+          "minimum": 0,
+          "title": "Global Start Us",
+          "type": "integer"
+        },
+        "repair_run_id": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Repair Run Id"
+        },
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "selected_repair_attempt_id": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Selected Repair Attempt Id"
+        },
+        "sequence": {
+          "minimum": 0,
+          "title": "Sequence",
+          "type": "integer"
+        },
+        "shot_id": {
+          "format": "uuid",
+          "title": "Shot Id",
+          "type": "string"
+        },
+        "shot_workflow_identity": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Shot Workflow Identity",
+          "type": "string"
+        },
+        "video_asset_id": {
+          "format": "uuid",
+          "title": "Video Asset Id",
+          "type": "string"
+        },
+        "video_qa_result_id": {
+          "format": "uuid",
+          "title": "Video Qa Result Id",
+          "type": "string"
+        },
+        "video_qa_run_id": {
+          "format": "uuid",
+          "title": "Video Qa Run Id",
+          "type": "string"
+        },
+        "video_sha256": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Video Sha256",
+          "type": "string"
+        }
+      },
+      "required": [
+        "shot_id",
+        "sequence",
+        "video_asset_id",
+        "video_sha256",
+        "global_start_us",
+        "global_end_us",
+        "shot_workflow_identity",
+        "video_qa_run_id",
+        "video_qa_result_id"
+      ],
+      "title": "FinalSelectedShot",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "The immutable persisted report. Never overwritten, never reused.",
+  "properties": {
+    "adjudication": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/FinalEditorialAdjudication"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "adjudicator_model": {
+      "default": "",
+      "maxLength": 128,
+      "title": "Adjudicator Model",
+      "type": "string"
+    },
+    "adjudicator_provider": {
+      "default": "",
+      "maxLength": 64,
+      "title": "Adjudicator Provider",
+      "type": "string"
+    },
+    "audio_checks": {
+      "items": {
+        "$ref": "#/$defs/FinalAudioCheck"
+      },
+      "maxItems": 256,
+      "title": "Audio Checks",
+      "type": "array"
+    },
+    "caption_checks": {
+      "items": {
+        "$ref": "#/$defs/FinalCaptionCheck"
+      },
+      "maxItems": 512,
+      "title": "Caption Checks",
+      "type": "array"
+    },
+    "configuration": {
+      "$ref": "#/$defs/FinalQAConfiguration"
+    },
+    "configuration_hash": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Configuration Hash",
+      "type": "string"
+    },
+    "cost_microusd": {
+      "default": 0,
+      "minimum": 0,
+      "title": "Cost Microusd",
+      "type": "integer"
+    },
+    "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+    },
+    "deterministic_checks": {
+      "items": {
+        "$ref": "#/$defs/FinalDeterministicCheck"
+      },
+      "maxItems": 256,
+      "title": "Deterministic Checks",
+      "type": "array"
+    },
+    "dimensions": {
+      "items": {
+        "$ref": "#/$defs/FinalEditorialDimension"
+      },
+      "maxItems": 32,
+      "title": "Dimensions",
+      "type": "array"
+    },
+    "final_editorial_run_id": {
+      "format": "uuid",
+      "title": "Final Editorial Run Id",
+      "type": "string"
+    },
+    "final_qa_identity": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Final Qa Identity",
+      "type": "string"
+    },
+    "findings": {
+      "items": {
+        "$ref": "#/$defs/FinalEditorialFinding"
+      },
+      "maxItems": 256,
+      "title": "Findings",
+      "type": "array"
+    },
+    "first_pass_model": {
+      "default": "",
+      "maxLength": 128,
+      "title": "First Pass Model",
+      "type": "string"
+    },
+    "first_pass_provider": {
+      "default": "",
+      "maxLength": 64,
+      "title": "First Pass Provider",
+      "type": "string"
+    },
+    "gate": {
+      "$ref": "#/$defs/FinalGateDecision"
+    },
+    "input_hash": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Input Hash",
+      "type": "string"
+    },
+    "inputs": {
+      "$ref": "#/$defs/FinalQAInput"
+    },
+    "measurements": {
+      "$ref": "#/$defs/FinalMediaMeasurements"
+    },
+    "project_id": {
+      "format": "uuid",
+      "title": "Project Id",
+      "type": "string"
+    },
+    "provider_request_ids": {
+      "items": {
+        "type": "string"
+      },
+      "maxItems": 16,
+      "title": "Provider Request Ids",
+      "type": "array"
+    },
+    "remediation_routes": {
+      "items": {
+        "$ref": "#/$defs/FinalRemediationRoute"
+      },
+      "maxItems": 32,
+      "title": "Remediation Routes",
+      "type": "array"
+    },
+    "report_version": {
+      "default": "final-editorial/1.0",
+      "maxLength": 64,
+      "minLength": 1,
+      "title": "Report Version",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "tool_versions": {
+      "additionalProperties": {
+        "type": "string"
+      },
+      "title": "Tool Versions",
+      "type": "object"
+    },
+    "trace_context": {
+      "additionalProperties": {
+        "type": "string"
+      },
+      "title": "Trace Context",
+      "type": "object"
+    }
+  },
+  "required": [
+    "final_editorial_run_id",
+    "project_id",
+    "final_qa_identity",
+    "input_hash",
+    "configuration_hash",
+    "inputs",
+    "configuration",
+    "measurements",
+    "gate",
+    "created_at"
+  ],
+  "title": "FinalEditorialReport",
+  "type": "object"
+}

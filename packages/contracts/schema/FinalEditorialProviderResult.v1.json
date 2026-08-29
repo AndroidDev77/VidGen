@@ -1,0 +1,415 @@
+{
+  "$defs": {
+    "FinalEditorialCategory": {
+      "description": "The bounded editorial dimensions T22 evaluates on the assembled recap.",
+      "enum": [
+        "story_beat_coverage",
+        "narrative_structure",
+        "scene_completeness",
+        "character_identity_continuity",
+        "character_state_continuity",
+        "location_continuity",
+        "prop_and_wardrobe_continuity",
+        "visual_contradiction",
+        "shot_to_shot_continuity",
+        "transition_coherence",
+        "narration_visual_agreement",
+        "caption_narration_agreement",
+        "comprehensibility",
+        "setup_and_payoff",
+        "narrative_jump",
+        "repetition",
+        "pacing",
+        "dead_air",
+        "ending_completeness",
+        "script_contradiction",
+        "source_contradiction"
+      ],
+      "title": "FinalEditorialCategory",
+      "type": "string"
+    },
+    "FinalEditorialDimension": {
+      "additionalProperties": false,
+      "description": "One recomputed editorial dimension result.\n\n``score`` is descriptive only. The gate reads findings, never this number:\na high average must never conceal a blocking issue.",
+      "properties": {
+        "applicable": {
+          "default": true,
+          "title": "Applicable",
+          "type": "boolean"
+        },
+        "blocking_finding_count": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Blocking Finding Count",
+          "type": "integer"
+        },
+        "category": {
+          "$ref": "#/$defs/FinalEditorialCategory"
+        },
+        "confidence": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Confidence",
+          "type": "number"
+        },
+        "review_finding_count": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Review Finding Count",
+          "type": "integer"
+        },
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "score": {
+          "maximum": 100,
+          "minimum": 0,
+          "title": "Score",
+          "type": "number"
+        },
+        "summary": {
+          "default": "",
+          "maxLength": 500,
+          "title": "Summary",
+          "type": "string"
+        },
+        "warning_finding_count": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Warning Finding Count",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "category",
+        "score",
+        "confidence"
+      ],
+      "title": "FinalEditorialDimension",
+      "type": "object"
+    },
+    "FinalEditorialProviderFinding": {
+      "additionalProperties": false,
+      "description": "A provider proposal. Never canonical until application code validates it.",
+      "properties": {
+        "caption_cue_sequences": {
+          "items": {
+            "type": "integer"
+          },
+          "maxItems": 32,
+          "title": "Caption Cue Sequences",
+          "type": "array"
+        },
+        "category": {
+          "$ref": "#/$defs/FinalEditorialCategory"
+        },
+        "confidence": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Confidence",
+          "type": "number"
+        },
+        "end_us": {
+          "minimum": 0,
+          "title": "End Us",
+          "type": "integer"
+        },
+        "expected_behavior": {
+          "default": "",
+          "maxLength": 500,
+          "title": "Expected Behavior",
+          "type": "string"
+        },
+        "issue_code": {
+          "$ref": "#/$defs/FinalIssueCode"
+        },
+        "observed_behavior": {
+          "default": "",
+          "maxLength": 500,
+          "title": "Observed Behavior",
+          "type": "string"
+        },
+        "proposed_remediation": {
+          "$ref": "#/$defs/FinalRemediationTarget",
+          "default": "NONE"
+        },
+        "proposed_severity": {
+          "$ref": "#/$defs/FinalFindingSeverity"
+        },
+        "sample_ids": {
+          "items": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "maxItems": 32,
+          "title": "Sample Ids",
+          "type": "array"
+        },
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "shot_ids": {
+          "items": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "maxItems": 32,
+          "title": "Shot Ids",
+          "type": "array"
+        },
+        "start_us": {
+          "minimum": 0,
+          "title": "Start Us",
+          "type": "integer"
+        },
+        "summary": {
+          "maxLength": 500,
+          "minLength": 1,
+          "title": "Summary",
+          "type": "string"
+        }
+      },
+      "required": [
+        "category",
+        "issue_code",
+        "proposed_severity",
+        "confidence",
+        "summary",
+        "start_us",
+        "end_us"
+      ],
+      "title": "FinalEditorialProviderFinding",
+      "type": "object"
+    },
+    "FinalFindingSeverity": {
+      "description": "Severity is structural, never derived from an average score.",
+      "enum": [
+        "blocking",
+        "review_required",
+        "warning",
+        "informational"
+      ],
+      "title": "FinalFindingSeverity",
+      "type": "string"
+    },
+    "FinalIssueCode": {
+      "description": "The bounded structured issue taxonomy. Adding a member is a version change.",
+      "enum": [
+        "RENDER_MISSING",
+        "RENDER_EMPTY",
+        "RENDER_UNREADABLE",
+        "CONTAINER_MISMATCH",
+        "VIDEO_CODEC_MISMATCH",
+        "AUDIO_CODEC_MISMATCH",
+        "VIDEO_DECODE_FAILURE",
+        "AUDIO_DECODE_FAILURE",
+        "MISSING_VIDEO_STREAM",
+        "MISSING_AUDIO_STREAM",
+        "UNEXPECTED_STREAM",
+        "RESOLUTION_MISMATCH",
+        "PIXEL_FORMAT_MISMATCH",
+        "FRAME_RATE_INVALID",
+        "TIME_BASE_INVALID",
+        "DURATION_INVALID",
+        "VIDEO_DURATION_MISMATCH",
+        "AUDIO_DURATION_MISMATCH",
+        "AV_DURATION_DRIFT",
+        "TIMELINE_DURATION_MISMATCH",
+        "SHOT_COVERAGE_GAP",
+        "SHOT_COVERAGE_OVERLAP",
+        "TRANSITION_HANDLE_MISMATCH",
+        "UNEXPECTED_BLACK_INTERVAL",
+        "EXCESSIVE_FREEZE_INTERVAL",
+        "CORRUPT_RENDER_SECTION",
+        "INVALID_BOUNDARY_FRAME",
+        "NON_MONOTONIC_TIMESTAMPS",
+        "START_OFFSET_OUT_OF_RANGE",
+        "NON_FINITE_MEASUREMENT",
+        "FILE_SIZE_OUT_OF_RANGE",
+        "BITRATE_OUT_OF_RANGE",
+        "NARRATION_INTERVAL_MISSING",
+        "NARRATION_ORDER_MISMATCH",
+        "NARRATION_SEGMENT_DUPLICATED",
+        "NARRATION_SEGMENT_OMITTED",
+        "NARRATION_TIMING_DRIFT",
+        "AUDIO_VIDEO_DRIFT",
+        "LOUDNESS_OUT_OF_RANGE",
+        "TRUE_PEAK_EXCEEDED",
+        "AUDIO_CLIPPING",
+        "NON_FINITE_SAMPLE",
+        "LEADING_SILENCE_OUT_OF_RANGE",
+        "TRAILING_SILENCE_OUT_OF_RANGE",
+        "ABNORMAL_INTERNAL_SILENCE",
+        "NARRATION_MASKED_BY_BED",
+        "CHANNEL_LAYOUT_MISMATCH",
+        "SAMPLE_RATE_MISMATCH",
+        "AUDIO_DISCONTINUITY",
+        "BACKGROUND_AUDIO_OVERRUN",
+        "UNAPPROVED_PROVIDER_AUDIO",
+        "CAPTION_COVERAGE_MISSING",
+        "CAPTION_TEXT_MISMATCH",
+        "CAPTION_ORDER_INVALID",
+        "CAPTION_NEGATIVE_START",
+        "CAPTION_NONPOSITIVE_DURATION",
+        "CAPTION_OUT_OF_BOUNDS",
+        "CAPTION_OVERLAP",
+        "CAPTION_TIMING_DRIFT",
+        "CAPTION_CUE_MISSING",
+        "CAPTION_CUE_DUPLICATED",
+        "CAPTION_ASSET_HASH_MISMATCH",
+        "CAPTION_LINE_COUNT_EXCEEDED",
+        "CAPTION_LINE_LENGTH_EXCEEDED",
+        "CAPTION_READING_SPEED_EXCEEDED",
+        "CAPTION_REFLOW_NONDETERMINISTIC",
+        "CAPTION_PUNCTUATION_ALTERED",
+        "CAPTION_ENCODING_INVALID",
+        "CAPTION_PARSE_FAILURE",
+        "CAPTION_SAFE_AREA_VIOLATION",
+        "CAPTION_LANGUAGE_MISMATCH",
+        "MISSING_STORY_BEAT",
+        "DUPLICATED_SCENE",
+        "MISSING_SCENE",
+        "OUT_OF_ORDER_SCENE",
+        "CONTINUITY_CONTRADICTION",
+        "IDENTITY_CONTRADICTION",
+        "LOCATION_CONTRADICTION",
+        "PROP_CONTRADICTION",
+        "NARRATION_VISUAL_MISMATCH",
+        "CAPTION_NARRATION_MISMATCH",
+        "INCOMPREHENSIBLE_SEQUENCE",
+        "UNRESOLVED_SETUP",
+        "ABRUPT_NARRATIVE_JUMP",
+        "EXCESSIVE_REPETITION",
+        "PACING_PROBLEM",
+        "UNINTENDED_DEAD_AIR",
+        "INCOMPLETE_ENDING",
+        "SCRIPT_CONTRADICTION",
+        "SOURCE_CONTRADICTION",
+        "AMBIGUOUS_EDITORIAL_EVIDENCE"
+      ],
+      "title": "FinalIssueCode",
+      "type": "string"
+    },
+    "FinalRemediationTarget": {
+      "description": "Where a confirmed issue is routed. T22 never executes the route itself.",
+      "enum": [
+        "NONE",
+        "RERENDER_T17",
+        "REBUILD_CAPTIONS_T17",
+        "REMIX_AUDIO_T17",
+        "REGENERATE_SHOT_T16",
+        "REPAIR_SHOT_T21",
+        "CORRECT_REFERENCE_T19",
+        "CORRECT_SCRIPT_UPSTREAM",
+        "HUMAN_EDITORIAL_REVIEW"
+      ],
+      "title": "FinalRemediationTarget",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "description": "One bounded provider reply. Provider metadata never enters the report.",
+  "properties": {
+    "attempt_identity": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Attempt Identity",
+      "type": "string"
+    },
+    "attempt_type": {
+      "enum": [
+        "first_pass",
+        "adjudication"
+      ],
+      "title": "Attempt Type",
+      "type": "string"
+    },
+    "dimension_scores": {
+      "items": {
+        "$ref": "#/$defs/FinalEditorialDimension"
+      },
+      "maxItems": 32,
+      "title": "Dimension Scores",
+      "type": "array"
+    },
+    "findings": {
+      "items": {
+        "$ref": "#/$defs/FinalEditorialProviderFinding"
+      },
+      "maxItems": 64,
+      "title": "Findings",
+      "type": "array"
+    },
+    "model": {
+      "maxLength": 128,
+      "minLength": 1,
+      "title": "Model",
+      "type": "string"
+    },
+    "narrative_summary": {
+      "default": "",
+      "maxLength": 1000,
+      "title": "Narrative Summary",
+      "type": "string"
+    },
+    "overall_confidence": {
+      "default": 1.0,
+      "maximum": 1,
+      "minimum": 0,
+      "title": "Overall Confidence",
+      "type": "number"
+    },
+    "provider": {
+      "maxLength": 64,
+      "minLength": 1,
+      "title": "Provider",
+      "type": "string"
+    },
+    "provider_request_id": {
+      "anyOf": [
+        {
+          "maxLength": 255,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Provider Request Id"
+    },
+    "redacted_metadata": {
+      "additionalProperties": {
+        "type": "string"
+      },
+      "title": "Redacted Metadata",
+      "type": "object"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "usage": {
+      "additionalProperties": {
+        "type": "number"
+      },
+      "title": "Usage",
+      "type": "object"
+    }
+  },
+  "required": [
+    "attempt_identity",
+    "attempt_type",
+    "provider",
+    "model"
+  ],
+  "title": "FinalEditorialProviderResult",
+  "type": "object"
+}

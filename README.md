@@ -6,7 +6,7 @@ The complete system architecture and T01-T26 implementation roadmap are maintain
 [`docs/TECHNICAL_DESIGN.md`](docs/TECHNICAL_DESIGN.md). Contributors and coding agents should
 read it together with `AGENTS.md` before planning the next roadmap task.
 
-This repository implements roadmap tasks T01 through T21 and T23, so the pipeline now runs end to
+This repository implements roadmap tasks T01 through T22 and T23, so the pipeline now runs end to
 end behind a customer-facing web application. The foundations include subtitle-first transcript
 acquisition, restartable episode analysis, comedy script generation, measured narration,
 deterministic storyboard timing, reviewed keyframe and video generation, deterministic captioned
@@ -38,6 +38,13 @@ generation, then a free deterministic 2.5D parallax render when the shot is elig
 selected, the complete attempt lineage and its costs are persisted, and only the failed shot is
 touched.
 
+T22 final editorial QA is complete. The assembled T17 delivery - not the individual shots - is
+inspected as a whole: its lineage is proved current, its media, audio and captions are measured
+deterministically, and only then is a bounded editorial analysis bought. The completion gate is
+recomputed from validated findings rather than asserted, so a project cannot reach its final
+completed state without a current `PASS` for the render it actually holds, and no human action can
+override a measured failure or a stale lineage.
+
 - Python monorepo, CI, and local infrastructure
 - Versioned Pydantic contracts plus exported JSON Schema
 - PostgreSQL data model and Alembic migration
@@ -63,6 +70,10 @@ touched.
 - T21 repair and fallback routing: bounded failure classification, minimal validated prompt repair,
   two same-provider repairs, one Google Veo alternate-provider attempt, a free deterministic 2.5D
   parallax fallback, T20 revalidation before any selection, complete attempt lineage and costs
+- T22 final editorial QA: restartable phases over the assembled render, stale-lineage rejection
+  before any paid request, deterministic media/audio/caption measurement, bounded Luna/Terra
+  editorial analysis, evidence-linked findings, structured remediation routing, an immutable report
+  and a workflow-enforced completion gate
 
 ## T18 MVP review UI and control-plane APIs
 
@@ -734,7 +745,8 @@ continues trace and bounded-metric propagation without fabricated provider costs
 
 Local entry points are `uv run python scripts/render_project.py PROJECT_UUID` and
 `uv run python scripts/inspect_render.py PROJECT_UUID` once a project has completed and locked T16
-outputs. T22 and later roadmap stages remain unfinished.
+outputs. T22 inspects the render this stage produces; T24 and later roadmap stages remain
+unfinished.
 
 The required synthetic acceptance test generates ten copyright-free clips and narration with
 FFmpeg at test time, persists SRT/WebVTT, renders and fully decodes a 1920x1080 H.264/yuv420p MP4
@@ -1206,5 +1218,244 @@ single bounded alternate-provider attempt once Google credentials are configured
 - FFmpeg and ffprobe must be on `PATH`; every T21 media test synthesises its fixtures with them.
 
 T21 persistence adds `repair_runs`, `repair_attempts`, `repair_decisions`,
-`repair_fallback_renders` and `repair_veo_operations` in Alembic revision `0017_repair_fallback`,
-the repository's single current head.
+`repair_fallback_renders` and `repair_veo_operations` in Alembic revision `0017_repair_fallback`.
+
+## T22 final editorial QA
+
+T20 asks whether one shot is right. T22 asks whether the *finished recap* is right, and it is the
+last gate before a project may complete. It inspects the canonical T17 delivery as a whole, so it
+sees the class of defect no shot-level result can: a concatenation seam, a caption file that lost
+its second half, an audio track that drifted two seconds from the picture, a story beat that never
+made it onto the screen.
+
+The design rests on one rule: **deterministic truth outranks semantic opinion.** A decode failure,
+a stale lineage, a missing caption cue or a drifting mix is a measured fact. No provider score, no
+averaged dimension and no human decision can turn one into a `PASS`.
+
+### Architecture and phase boundaries
+
+T22 runs as six restartable phases, each with its own checkpoint and stable idempotency identity:
+
+```text
+INPUT_VALIDATION → DETERMINISTIC_MEDIA_QA → CAPTION_QA → EDITORIAL_ANALYSIS
+                 → ADJUDICATION (when necessary) → COMPLETION_GATE
+```
+
+Separation is enforced by module, not by convention:
+
+| Module | Responsibility |
+| --- | --- |
+| `services/qa/final_inputs.py` | Authoritative input selection and stale-lineage rejection |
+| `services/qa/final_deterministic.py` | Measured media checks on the assembled render |
+| `services/qa/final_audio.py` | Measured checks on the delivered final mix |
+| `services/qa/final_captions.py` | Canonical manifest and delivered caption-asset checks |
+| `services/qa/final_evidence.py` | Deterministic sampling, contact sheet and evidence assembly |
+| `services/qa/final_editorial_provider.py` | The provider-neutral editorial interface and registry |
+| `services/qa/final_fake_provider.py` | The deterministic fake used by every test and by CI |
+| `services/qa/final_openai_adapter.py` | The configured production structured-output adapter |
+| `services/qa/final_gate.py` | Finding recomputation, remediation routing and the gate |
+| `services/qa/final_editorial.py` | Restartable orchestration and persistence |
+| `services/qa/final_human_review.py` | Bounded human adjudication of uncertain findings |
+
+A completed phase is reused whenever its inputs are unchanged. Because the final-QA identity binds
+every material input, a phase recorded against a run was computed from exactly those inputs, so a
+resumed run reattaches to its checkpoints instead of re-deriving them - and never re-stores an
+artefact it already wrote.
+
+### Canonical inputs and lineage rules
+
+T22 does not re-derive the render. It loads the current selected T17 render and its manifest, then
+proves the manifest still describes the project's current state. The run is rejected - before any
+paid provider request, and non-retryably - when:
+
+- an asset belongs to another project,
+- any required upstream output is missing,
+- the render was produced from a superseded selected animation, script, narration or storyboard,
+- a selected shot has no passing T20 video-QA result,
+- a T21 repair run is active, failed or `HUMAN_REVIEW_REQUIRED`,
+- the render does not contain the selected passing T21 attempt for a repaired shot,
+- a declared narration, storyboard, caption or render hash does not match the database,
+- shot ordering or an asset reference differs from the render manifest,
+- the final asset is empty or inaccessible.
+
+The answer to any of these is a new render, never a second evaluation of the same stale one.
+
+### Deterministic render checks
+
+FFmpeg and ffprobe are invoked exclusively through subprocess argument arrays; no command string is
+built from a manifest, an asset name or any other externally supplied value. The checks cover
+existence and size, container and codec, full video and audio decode, expected streams, resolution,
+pixel format, frame rate and time base, finite positive duration, video/audio/timeline duration
+agreement, A/V drift, shot coverage without gaps or overlaps, transition handles, unexpected black
+and excessive frozen intervals, corrupt sections, first and final frame decode, monotonic
+timestamps, start offset, non-finite measurements, and delivery byte rate and bitrate.
+
+These operate on the *assembled* output, so they detect damage introduced during concatenation,
+filtering, trimming, captioning, mixing or encoding. T20's shot-level scoring is neither reused nor
+altered; what is reused are the repository's existing measurement utilities.
+
+### Audio checks and thresholds
+
+Loudness and true peak come from `loudnorm`; peak, RMS and clipped-sample counts from `astats`;
+silence from `silencedetect`. Narration coverage is checked by intersecting the approved T12 word
+timings with the measured non-silent intervals of the delivered mix, so an omitted, duplicated or
+drifting segment is located by an exact global timestamp range rather than inferred from a score.
+
+Defaults: integrated loudness -14 LUFS ±1.5 LU, true peak ceiling -1.0 dBTP, clipping ratio
+≤0.0005, leading silence ≤1.5 s, trailing silence ≤2.5 s, internal silence inside narration ≤2.0 s,
+narration timing tolerance 250 ms, minimum narration headroom over music and effects 6 dB, and a
+48 kHz stereo delivery profile. A mix with nothing in it reports non-finite loudness; that is a
+measurement outcome, not a crash, and narration coverage does the blocking.
+
+### Caption checks and thresholds
+
+Two things are validated and never confused: the canonical caption track the manifest declared, and
+the selectable caption files that were actually delivered. A cue that is correct in the manifest but
+missing from the delivered SRT is a blocking failure, because the viewer sees the delivered file.
+
+Checks cover narration coverage, text fidelity against the approved script projection, monotonic
+ordering, nonnegative starts, positive durations, in-bounds cues, unintended overlaps, timing
+alignment with T12 word timings, missing and duplicated cues, delivered asset hashes, line count
+(≤2) and line length (≤42 characters), reading speed (≤21 cps), deterministic reflow against the
+declared caption identity, punctuation preservation, valid UTF-8, successful parsing, burned-in safe
+area, and delivered language metadata. Caption QA never rewrites the approved script; it reports the
+mismatch and names the repair target.
+
+Only the selectable formats are parsed for cues. A burned-in ASS asset is a rendering input rather
+than a file a viewer selects, so it is verified by hash and by the safe-area check but never fed to
+a cue parser. The delivered cues are carried in an unvalidated record rather than a `CaptionTrack`:
+that contract rejects overlapping and out-of-duration cues, which are exactly the defects caption
+QA exists to report.
+
+### Editorial dimensions, findings and evidence
+
+After deterministic checks permit it, a bounded structured analysis evaluates the assembled recap
+across 21 dimensions: story-beat coverage, narrative structure, scene completeness, character
+identity and state continuity, location continuity, prop and wardrobe continuity, visual
+contradictions, shot-to-shot continuity, transition coherence, narration-to-visual and
+caption-to-narration agreement, comprehensibility, setup and payoff, narrative jumps, repetition,
+pacing, dead air, ending completeness, and contradiction of the approved script or approved source
+evidence.
+
+T22 evaluates the assembled recap; it does not rescore individual shots as if it were T20. Findings
+are classified `blocking`, `review_required`, `warning` or `informational`, and severity is
+structural rather than derived from an average - **a high dimension score can never conceal a
+blocking finding.** Every finding carries a stable ID, category, severity, blocking flag,
+confidence, structured issue code, summary, exact global timestamp range, affected shot, script,
+narration and caption-cue references, evidence, expected and observed behaviour, a remediation
+target and its provenance. Findings are truncated most-severe-first against a strict bound, and
+unrestricted model prose is never stored.
+
+### Luna, Terra and human review
+
+Luna performs the first pass on the configured inexpensive vision model. Terra adjudicates
+borderline, contradictory or low-confidence findings on the stronger model, and **may only decide at
+confidence ≥ 0.80**; below that the disagreement becomes `REVIEW`, which is the correct outcome for
+a genuinely uncertain editorial question. A provider score is never canonical: a reply that answers
+a different attempt, scores a dimension it was not asked about, cites an unsampled frame or a shot
+outside the render, or leaves an actionable claim without evidence is a non-retryable provider
+contract failure.
+
+A human reviewer may resolve a semantic `REVIEW` finding only when no deterministic hard failure
+and no stale lineage exist, and only with a structured reason recorded against a row version under
+optimistic concurrency. A reviewer can never override corrupt media, stale lineage, a missing
+required asset, invalid timestamps, missing caption or narration coverage, a failing T20 hard
+result, or an unresolved T21 human-review state. Accepting a review finding can turn `REVIEW` into
+`PASS`; nothing can turn `FAIL` into anything.
+
+### Completion gate
+
+`PASS` is computed, never asserted. It requires current compatible lineage, successful deterministic
+media, audio and caption checks, no blocking editorial finding, no unresolved T21 human review, no
+missing passing T20 result, no unresolved final editorial review, and a persisted report and gate
+decision. `FAIL` is required when any blocking issue is confirmed; `REVIEW` when a semantic question
+remains genuinely uncertain after bounded adjudication.
+
+The gate is workflow state, not a UI affordance: the parent workflow advances a project to
+`completed` only on `PASS`, the database refuses to store a `PASS` alongside a blocking finding or an
+unresolved review, and the API exposes no action that marks a deterministic failure as passed.
+
+### Remediation routing
+
+T22 identifies and gates; it never starts another creative repair loop and never makes a paid
+generation call. Confirmed findings are grouped into structured routes - `RERENDER_T17`,
+`REBUILD_CAPTIONS_T17`, `REMIX_AUDIO_T17`, `REGENERATE_SHOT_T16`, `REPAIR_SHOT_T21`,
+`CORRECT_REFERENCE_T19`, `CORRECT_SCRIPT_UPSTREAM`, `HUMAN_EDITORIAL_REVIEW` - which the parent
+workflow or an authorized user action hands to the stage that already owns that repair. Only
+affected downstream outputs are invalidated; unaffected shot selections and every historical render
+and QA asset are preserved. Any route that changes a selected input requires a new T17 render and a
+new T22 run against the new render identity; a report is never reused for an older render.
+
+### Temporal integration
+
+The parent project workflow runs T22 after the shot fan-out reports every required shot eligible for
+assembly. The message is IDs only - project, render and manifest asset, run ID, idempotency key and
+trace context - so reports, findings, sampled frames, caption text, media bytes and provider
+payloads never enter workflow history. Progress is query-visible through `final_qa_state`, and the
+workflow-visible statuses are `FINAL_QA_QUEUED`, `FINAL_QA_VALIDATING_INPUTS`,
+`FINAL_QA_CHECKING_MEDIA`, `FINAL_QA_CHECKING_CAPTIONS`, `FINAL_QA_ANALYZING`,
+`FINAL_QA_ADJUDICATING`, `FINAL_QA_REVIEW_REQUIRED`, `FINAL_QA_PASSED` and `FINAL_QA_FAILED`.
+
+### T23 cost and telemetry integration
+
+Every production editorial call reuses the existing T23 infrastructure: a durable provider-attempt
+identity, a cost estimate, a transactional budget reservation under the project hard cap, a durable
+pre-call checkpoint, propagated trace context, then recorded usage, reconciliation, released
+reservation, bounded metrics, taxonomy-classified failures and redacted metadata. Deterministic
+checks create no provider charges, and an idempotent retry duplicates no attempt, reservation,
+reconciliation, ledger entry or cost. A budget denial stops the run without a decision, so nothing
+completes on that render.
+
+### API and dashboard
+
+`GET /api/v1/projects/{id}/final-qa` lists runs, `GET .../final-qa/{run_id}` returns measurements,
+checks, dimensions, findings and remediation routes, and `GET .../final-qa/gate` returns the
+backend's own completion answer. `POST .../final-qa:run`, `:cancel`, `:review` and `:remediate`
+carry `If-Match` and `Idempotency-Key` under existing owner scoping. The final-review page renders
+the gate verdict, phase and status, render and audio measurements, caption results, editorial
+dimensions, a timeline marker per finding with its evidence and affected shots or cues, the
+recommended remediation target, provider, model, cost and report identity. Cancellation is offered
+only before a paid analysis, and no control marks a deterministic failure as passed.
+
+### Local commands
+
+```bash
+uv run python scripts/run_final_editorial_qa.py PROJECT_UUID --provider fake
+VIDGEN_OPENAI_API_KEY=... uv run python scripts/run_final_editorial_qa.py PROJECT_UUID \
+    --provider openai
+```
+
+Fake mode is fully deterministic and needs no provider credential. The command prints the
+final-editorial run ID, the final-render asset ID, the input identity, deterministic check counts,
+audio and caption results, blocking/review/warning counts, provider and model, the adjudication
+result when one was used, the cost summary, the report asset ID, the gate decision and the final
+status.
+
+Production configuration: `VIDGEN_OPENAI_API_KEY`, `VIDGEN_FINAL_QA_FIRST_PASS_MODEL`,
+`VIDGEN_FINAL_QA_ADJUDICATOR_MODEL` and `VIDGEN_FINAL_QA_ADJUDICATION_ENABLED`. Both model defaults
+are the model this repository already has configured and verified for its other vision agent roles;
+check the provider's current official documentation before changing one.
+
+### Known limitations
+
+- Editorial analysis reads deterministically sampled frames and a contact sheet, not the moving
+  picture. A defect that is only visible in motion between two sampled timestamps - a single
+  glitched frame, for instance - is caught by the deterministic checks or not at all.
+- Story-beat coverage is judged against the approved script structure supplied in the request. The
+  request carries a beat summary rather than the full plot plan, so a project whose beats are
+  encoded only in prose gets a weaker signal than one with structured beats.
+- Narration coverage is measured from silence intervals, which detects an absent or displaced
+  segment but not one replaced by different speech at the right time. Text-level narration fidelity
+  remains T12's responsibility.
+- The audio masking check reads the manifest's declared ducking and gain rather than measuring
+  narration intelligibility against the bed, because a reliable intelligibility measure needs the
+  stems, which the delivery does not carry.
+- Single-pass loudness normalization lands within roughly 1 LU of target, so the delivery tolerance
+  is a configured value rather than an exact match.
+- Cancellation is only meaningful before the editorial phase. Once the provider request is issued
+  the cost is already committed, and the run completes rather than abandoning what was bought.
+- FFmpeg and ffprobe must be on `PATH`; every T22 media test synthesises its fixtures with them.
+
+T22 persistence adds `final_editorial_runs`, `final_editorial_checks`,
+`final_editorial_provider_attempts`, `final_editorial_reviews` and `final_completion_gates` in
+Alembic revision `0018_final_editorial_qa`, the repository's single current head.

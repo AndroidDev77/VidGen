@@ -1,0 +1,128 @@
+{
+  "additionalProperties": false,
+  "description": "The bounded T22 outcome the workflow may branch on. IDs and counts only.",
+  "properties": {
+    "blocking_finding_count": {
+      "default": 0,
+      "minimum": 0,
+      "title": "Blocking Finding Count",
+      "type": "integer"
+    },
+    "cost_microusd": {
+      "default": 0,
+      "minimum": 0,
+      "title": "Cost Microusd",
+      "type": "integer"
+    },
+    "decision": {
+      "anyOf": [
+        {
+          "enum": [
+            "PASS",
+            "FAIL",
+            "REVIEW"
+          ],
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Decision"
+    },
+    "deterministic_failure_count": {
+      "default": 0,
+      "minimum": 0,
+      "title": "Deterministic Failure Count",
+      "type": "integer"
+    },
+    "error_code": {
+      "anyOf": [
+        {
+          "maxLength": 128,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Error Code"
+    },
+    "final_editorial_run_id": {
+      "format": "uuid",
+      "title": "Final Editorial Run Id",
+      "type": "string"
+    },
+    "final_render_asset_id": {
+      "format": "uuid",
+      "title": "Final Render Asset Id",
+      "type": "string"
+    },
+    "phase": {
+      "maxLength": 32,
+      "minLength": 1,
+      "title": "Phase",
+      "type": "string"
+    },
+    "project_id": {
+      "format": "uuid",
+      "title": "Project Id",
+      "type": "string"
+    },
+    "remediation_targets": {
+      "items": {
+        "type": "string"
+      },
+      "maxItems": 16,
+      "title": "Remediation Targets",
+      "type": "array"
+    },
+    "report_asset_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Report Asset Id"
+    },
+    "reused": {
+      "default": false,
+      "title": "Reused",
+      "type": "boolean"
+    },
+    "review_finding_count": {
+      "default": 0,
+      "minimum": 0,
+      "title": "Review Finding Count",
+      "type": "integer"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "status": {
+      "maxLength": 48,
+      "minLength": 1,
+      "title": "Status",
+      "type": "string"
+    }
+  },
+  "required": [
+    "project_id",
+    "final_editorial_run_id",
+    "final_render_asset_id",
+    "status",
+    "phase"
+  ],
+  "title": "FinalQAActivityResult",
+  "type": "object"
+}

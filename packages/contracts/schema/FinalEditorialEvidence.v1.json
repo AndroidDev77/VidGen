@@ -1,0 +1,168 @@
+{
+  "additionalProperties": false,
+  "description": "Exact, resolvable evidence for one finding. Never bytes, never a URL.",
+  "properties": {
+    "caption_cue_sequence": {
+      "anyOf": [
+        {
+          "minimum": 1,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Caption Cue Sequence"
+    },
+    "contact_sheet_asset_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Contact Sheet Asset Id"
+    },
+    "contact_sheet_position": {
+      "anyOf": [
+        {
+          "minimum": 0,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Contact Sheet Position"
+    },
+    "end_us": {
+      "minimum": 0,
+      "title": "End Us",
+      "type": "integer"
+    },
+    "evidence_id": {
+      "format": "uuid",
+      "title": "Evidence Id",
+      "type": "string"
+    },
+    "evidence_type": {
+      "enum": [
+        "sampled_frame",
+        "contact_sheet_tile",
+        "deterministic_measurement",
+        "caption_cue",
+        "audio_interval",
+        "manifest_reference",
+        "whole_file"
+      ],
+      "title": "Evidence Type",
+      "type": "string"
+    },
+    "explanation": {
+      "default": "",
+      "maxLength": 500,
+      "title": "Explanation",
+      "type": "string"
+    },
+    "frame_asset_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Frame Asset Id"
+    },
+    "measurement": {
+      "anyOf": [
+        {
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Measurement"
+    },
+    "sample_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Sample Id"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "shot_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Shot Id"
+    },
+    "start_us": {
+      "minimum": 0,
+      "title": "Start Us",
+      "type": "integer"
+    },
+    "threshold": {
+      "anyOf": [
+        {
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Threshold"
+    },
+    "tool": {
+      "default": "",
+      "maxLength": 64,
+      "title": "Tool",
+      "type": "string"
+    },
+    "tool_version": {
+      "default": "",
+      "maxLength": 128,
+      "title": "Tool Version",
+      "type": "string"
+    }
+  },
+  "required": [
+    "evidence_id",
+    "evidence_type",
+    "start_us",
+    "end_us"
+  ],
+  "title": "FinalEditorialEvidence",
+  "type": "object"
+}

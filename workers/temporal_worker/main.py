@@ -8,9 +8,13 @@ from temporalio.client import Client
 from temporalio.contrib.pydantic import pydantic_data_converter
 from temporalio.worker import Worker
 
-from packages.workflows.activities import configure_activity_handlers
+from packages.workflows.activities import (
+    configure_activity_handlers,
+    configure_final_qa_handler,
+)
 from packages.workflows.shot_activities import configure_shot_activity_handlers
 from workers.temporal_worker.production_handlers import (
+    build_final_qa_handler,
     build_production_handlers,
     build_shot_production_handlers,
 )
@@ -20,6 +24,7 @@ from workers.temporal_worker.registry import ACTIVITIES, WORKFLOWS
 async def run() -> None:
     configure_activity_handlers(build_production_handlers())
     configure_shot_activity_handlers(build_shot_production_handlers())
+    configure_final_qa_handler(build_final_qa_handler())
     client = await Client.connect(
         os.getenv("TEMPORAL_ADDRESS", "localhost:7233"),
         data_converter=pydantic_data_converter,

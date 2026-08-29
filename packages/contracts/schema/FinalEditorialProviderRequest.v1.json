@@ -1,0 +1,379 @@
+{
+  "$defs": {
+    "FinalEditorialEvidence": {
+      "additionalProperties": false,
+      "description": "Exact, resolvable evidence for one finding. Never bytes, never a URL.",
+      "properties": {
+        "caption_cue_sequence": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Caption Cue Sequence"
+        },
+        "contact_sheet_asset_id": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Contact Sheet Asset Id"
+        },
+        "contact_sheet_position": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Contact Sheet Position"
+        },
+        "end_us": {
+          "minimum": 0,
+          "title": "End Us",
+          "type": "integer"
+        },
+        "evidence_id": {
+          "format": "uuid",
+          "title": "Evidence Id",
+          "type": "string"
+        },
+        "evidence_type": {
+          "enum": [
+            "sampled_frame",
+            "contact_sheet_tile",
+            "deterministic_measurement",
+            "caption_cue",
+            "audio_interval",
+            "manifest_reference",
+            "whole_file"
+          ],
+          "title": "Evidence Type",
+          "type": "string"
+        },
+        "explanation": {
+          "default": "",
+          "maxLength": 500,
+          "title": "Explanation",
+          "type": "string"
+        },
+        "frame_asset_id": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Frame Asset Id"
+        },
+        "measurement": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Measurement"
+        },
+        "sample_id": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sample Id"
+        },
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "shot_id": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Shot Id"
+        },
+        "start_us": {
+          "minimum": 0,
+          "title": "Start Us",
+          "type": "integer"
+        },
+        "threshold": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Threshold"
+        },
+        "tool": {
+          "default": "",
+          "maxLength": 64,
+          "title": "Tool",
+          "type": "string"
+        },
+        "tool_version": {
+          "default": "",
+          "maxLength": 128,
+          "title": "Tool Version",
+          "type": "string"
+        }
+      },
+      "required": [
+        "evidence_id",
+        "evidence_type",
+        "start_us",
+        "end_us"
+      ],
+      "title": "FinalEditorialEvidence",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Exactly the bounded material one editorial evaluation may see.",
+  "properties": {
+    "attempt_identity": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Attempt Identity",
+      "type": "string"
+    },
+    "attempt_number": {
+      "minimum": 1,
+      "title": "Attempt Number",
+      "type": "integer"
+    },
+    "attempt_type": {
+      "enum": [
+        "first_pass",
+        "adjudication"
+      ],
+      "title": "Attempt Type",
+      "type": "string"
+    },
+    "audio_measurements": {
+      "additionalProperties": {
+        "type": "number"
+      },
+      "title": "Audio Measurements",
+      "type": "object"
+    },
+    "caption_timing_summary": {
+      "items": {
+        "type": "string"
+      },
+      "maxItems": 500,
+      "title": "Caption Timing Summary",
+      "type": "array"
+    },
+    "contact_sheet_asset_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Contact Sheet Asset Id"
+    },
+    "continuity_summary": {
+      "items": {
+        "type": "string"
+      },
+      "maxItems": 256,
+      "title": "Continuity Summary",
+      "type": "array"
+    },
+    "disputed_findings": {
+      "items": {
+        "type": "string"
+      },
+      "maxItems": 32,
+      "title": "Disputed Findings",
+      "type": "array"
+    },
+    "final_qa_identity": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Final Qa Identity",
+      "type": "string"
+    },
+    "final_video_asset_id": {
+      "format": "uuid",
+      "title": "Final Video Asset Id",
+      "type": "string"
+    },
+    "plot_beats": {
+      "items": {
+        "type": "string"
+      },
+      "maxItems": 128,
+      "title": "Plot Beats",
+      "type": "array"
+    },
+    "project_id": {
+      "format": "uuid",
+      "title": "Project Id",
+      "type": "string"
+    },
+    "prompt_version": {
+      "maxLength": 64,
+      "minLength": 1,
+      "title": "Prompt Version",
+      "type": "string"
+    },
+    "render_identity": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Render Identity",
+      "type": "string"
+    },
+    "repair_summary": {
+      "items": {
+        "type": "string"
+      },
+      "maxItems": 500,
+      "title": "Repair Summary",
+      "type": "array"
+    },
+    "review_proxy_asset_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Review Proxy Asset Id"
+    },
+    "rubric_version": {
+      "maxLength": 64,
+      "minLength": 1,
+      "title": "Rubric Version",
+      "type": "string"
+    },
+    "samples": {
+      "items": {
+        "$ref": "#/$defs/FinalEditorialEvidence"
+      },
+      "maxItems": 64,
+      "title": "Samples",
+      "type": "array"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "script_structure": {
+      "items": {
+        "type": "string"
+      },
+      "maxItems": 128,
+      "title": "Script Structure",
+      "type": "array"
+    },
+    "shot_map": {
+      "items": {
+        "type": "string"
+      },
+      "maxItems": 500,
+      "title": "Shot Map",
+      "type": "array"
+    },
+    "storyboard_timing_summary": {
+      "items": {
+        "type": "string"
+      },
+      "maxItems": 500,
+      "title": "Storyboard Timing Summary",
+      "type": "array"
+    },
+    "timeline_duration_us": {
+      "exclusiveMinimum": 0,
+      "title": "Timeline Duration Us",
+      "type": "integer"
+    },
+    "trace_context": {
+      "additionalProperties": {
+        "type": "string"
+      },
+      "title": "Trace Context",
+      "type": "object"
+    },
+    "transition_map": {
+      "items": {
+        "type": "string"
+      },
+      "maxItems": 500,
+      "title": "Transition Map",
+      "type": "array"
+    },
+    "video_qa_summary": {
+      "items": {
+        "type": "string"
+      },
+      "maxItems": 500,
+      "title": "Video Qa Summary",
+      "type": "array"
+    }
+  },
+  "required": [
+    "final_qa_identity",
+    "attempt_identity",
+    "attempt_type",
+    "attempt_number",
+    "project_id",
+    "final_video_asset_id",
+    "render_identity",
+    "timeline_duration_us",
+    "rubric_version",
+    "prompt_version"
+  ],
+  "title": "FinalEditorialProviderRequest",
+  "type": "object"
+}

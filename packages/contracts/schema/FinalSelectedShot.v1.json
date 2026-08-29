@@ -1,0 +1,96 @@
+{
+  "additionalProperties": false,
+  "description": "One selected shot as the render manifest recorded it, with its QA lineage.",
+  "properties": {
+    "global_end_us": {
+      "exclusiveMinimum": 0,
+      "title": "Global End Us",
+      "type": "integer"
+    },
+    "global_start_us": {
+      "minimum": 0,
+      "title": "Global Start Us",
+      "type": "integer"
+    },
+    "repair_run_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Repair Run Id"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "selected_repair_attempt_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Selected Repair Attempt Id"
+    },
+    "sequence": {
+      "minimum": 0,
+      "title": "Sequence",
+      "type": "integer"
+    },
+    "shot_id": {
+      "format": "uuid",
+      "title": "Shot Id",
+      "type": "string"
+    },
+    "shot_workflow_identity": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Shot Workflow Identity",
+      "type": "string"
+    },
+    "video_asset_id": {
+      "format": "uuid",
+      "title": "Video Asset Id",
+      "type": "string"
+    },
+    "video_qa_result_id": {
+      "format": "uuid",
+      "title": "Video Qa Result Id",
+      "type": "string"
+    },
+    "video_qa_run_id": {
+      "format": "uuid",
+      "title": "Video Qa Run Id",
+      "type": "string"
+    },
+    "video_sha256": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Video Sha256",
+      "type": "string"
+    }
+  },
+  "required": [
+    "shot_id",
+    "sequence",
+    "video_asset_id",
+    "video_sha256",
+    "global_start_us",
+    "global_end_us",
+    "shot_workflow_identity",
+    "video_qa_run_id",
+    "video_qa_result_id"
+  ],
+  "title": "FinalSelectedShot",
+  "type": "object"
+}

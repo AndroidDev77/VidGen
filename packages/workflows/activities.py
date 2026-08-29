@@ -10,12 +10,16 @@ from temporalio import activity
 
 from vidgen.contracts.workflow import (
     AnimationActivityInput,
+    FinalQAActivityInput,
+    FinalQAActivityResult,
     StageActivityInput,
     StageActivityResult,
 )
 
 StageHandler = Callable[[Any], StageActivityResult]
+FinalQAHandler = Callable[[FinalQAActivityInput], FinalQAActivityResult]
 _handlers: dict[str, StageHandler] = {}
+_final_qa_handler: dict[str, FinalQAHandler] = {}
 HEARTBEAT_INTERVAL_SECONDS = 30.0
 
 
@@ -23,6 +27,13 @@ def configure_activity_handlers(handlers: dict[str, StageHandler]) -> None:
     """Install process-local adapters; production adapters own sessions and provider clients."""
     _handlers.clear()
     _handlers.update(handlers)
+
+
+def configure_final_qa_handler(handler: FinalQAHandler | None) -> None:
+    """Install the T22 adapter, which returns a bounded ID-only result."""
+    _final_qa_handler.clear()
+    if handler is not None:
+        _final_qa_handler["final_editorial_qa"] = handler
 
 
 def _execute(request: StageActivityInput | AnimationActivityInput) -> StageActivityResult:
@@ -115,3 +126,18 @@ def run_image_generation_activity(request: StageActivityInput) -> StageActivityR
 def run_animation_activity(request: AnimationActivityInput) -> StageActivityResult:
     """T15 ID-only boundary; prompts, URLs, video and probe JSON stay out of history."""
     return _execute(request)
+
+
+@activity.defn(name="run_final_editorial_qa_activity")
+def run_final_editorial_qa_activity(request: FinalQAActivityInput) -> FinalQAActivityResult:
+    """T22 ID-only boundary.
+
+    The activity receives references and returns counts, IDs and a gate
+    decision. Reports, findings, sampled frames, caption text, media bytes and
+    provider payloads stay in durable storage and never reach workflow history.
+    """
+    handler = _final_qa_handler.get("final_editorial_qa")
+    if handler is None:
+        raise RuntimeError("no activity handler configured for final_editorial_qa")
+    with _activity_heartbeats("final_editorial_qa"):
+        return handler(request)
