@@ -83,6 +83,10 @@ class APISettings(BaseSettings):
     temporal_allow_fake_providers: bool = False
     temporal_target_host: str = "localhost:7233"
     temporal_namespace: str = "default"
+    # Temporal Cloud requires both. Off by default so a local
+    # `temporal server start-dev` still connects in plaintext with no key.
+    temporal_api_key: str | None = None
+    temporal_tls_enabled: bool = False
     # T18 keeps Temporal out of API and frontend unit tests.
     # Off by default so an unconfigured deployment cannot silently report
     # workflows as running while nothing was started. Local development and the

@@ -2760,6 +2760,19 @@ why.
 | Queue-backlog autoscaling | CPU and memory utilisation, minimum one replica | A Temporal queue-depth scaler needs a Temporal credential inside the scaler. CPU and memory are the safe signals until that is warranted. |
 | OpenTelemetry Collector | Direct batching export to Application Insights; stdout logs shipped by the platform | One fewer deployed component, one fewer credential, and no second copy of every record. |
 
+Two implementation details are worth recording because they are easy to get
+wrong and were both caught in review:
+
+* The Temporal Cloud address, namespace, TLS flag and API key are shared
+  configuration, not worker configuration. The API's `TemporalWorkflowController`
+  starts and queries workflows against the same namespace and needs the same
+  credential, and the smoke test needs it to prove the endpoint is reachable.
+* Container Apps ingress with `allowInsecure: false` answers a plaintext request
+  with a redirect, and routes an internal request by its Host header. Every
+  internal address is therefore `https://`, and the web tier's nginx forwards
+  `Host $proxy_host` rather than the browser's host, with `proxy_ssl_server_name`
+  on for SNI.
+
 Everything else in section 18 is implemented as described: Container Apps for
 the API and workers, Temporal Cloud with one namespace per environment and
 API-key authentication, PostgreSQL Flexible Server, private Blob Storage with

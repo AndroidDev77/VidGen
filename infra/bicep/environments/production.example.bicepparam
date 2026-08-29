@@ -89,9 +89,10 @@ param postgresBackupRetentionDays = 7
 param postgresGeoRedundantBackup = false
 // Unavailable on Burstable, and staging does not need it.
 param postgresZoneRedundant = false
-// 100 connections against a ceiling of 3 API replicas plus 2 worker replicas
-// plus one render job plus one migration job: see infra/README.md.
-param postgresMaxConnections = 100
+// 10 API + 8 worker + 4 render + 1 migration + 1 smoke = 24 processes, and
+// SQLAlchemy's default pool is 5 connections with 10 overflow, so the worst
+// case is 360. See "PostgreSQL connection budget" in infra/README.md.
+param postgresMaxConnections = 400
 param postgresAdministratorPrincipalId = readEnvironmentVariable('VIDGEN_DEPLOY_PRINCIPAL_ID')
 param postgresAdministratorPrincipalName = readEnvironmentVariable(
   'VIDGEN_DEPLOY_PRINCIPAL_NAME',
@@ -138,4 +139,7 @@ param features = {
   repairAllowParallaxFallback: true
   finalQaAdjudicationEnabled: true
   subtitleSyncEnabled: false
+  // Never true where a paid provider is enabled: a missing credential must
+  // fail loudly, not silently produce fake output for a paying customer.
+  allowFakeProviders: false
 }

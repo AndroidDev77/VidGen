@@ -48,4 +48,9 @@ def get_workflow_controller() -> WorkflowController:
     settings = get_settings()
     if settings.temporal_use_fake_workflow_controller:
         return FakeWorkflowController()
-    return TemporalWorkflowController(settings.temporal_target_host, settings.temporal_namespace)
+    return TemporalWorkflowController(
+        settings.temporal_target_host,
+        settings.temporal_namespace,
+        api_key=settings.temporal_api_key,
+        tls_enabled=settings.temporal_tls_enabled or settings.temporal_api_key is not None,
+    )

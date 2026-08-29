@@ -118,7 +118,13 @@ async def run() -> None:
                 "max_concurrent_activities": max_activities,
             },
         )
-        await worker.run(shutdown_event=stop)
+        # `async with` runs the worker and, on exit, performs the graceful
+        # shutdown the timeout above bounds. Waiting on the signal event inside
+        # the block is what turns a Container Apps SIGTERM into that shutdown
+        # rather than an abrupt cancellation of in-flight activities.
+        async with worker:
+            await stop.wait()
+            _LOGGER.info("shutdown signal received; draining in-flight activities")
     _LOGGER.info("worker stopped")
 
 

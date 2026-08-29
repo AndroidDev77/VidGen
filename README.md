@@ -446,6 +446,11 @@ it, activate the new revisions, run the private smoke-test job, verify health an
 digests, and roll application traffic back if the smoke test fails. A failed migration never reaches
 revision activation, and rollback never downgrades the database.
 
+Staging enables `features.allowFakeProviders`, because every provider is off and
+the Temporal worker refuses to start with an unconfigured one. That flag must
+stay false wherever a paid provider is enabled, so a missing credential fails
+loudly rather than silently producing fake output.
+
 Blob storage is selected by `VIDGEN_BLOB_BACKEND`. Local development and every test keep the
 filesystem store; a deployed environment sets `azure` and reaches the account over a private
 endpoint with its managed identity, so no key, connection string or SAS token is ever configured.

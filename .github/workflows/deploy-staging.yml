@@ -161,14 +161,13 @@ jobs:
           subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
       - run: az bicep install
 
-      - name: Confirm every required secret is present before deploying
-        run: |
-          vault="$(az keyvault list --resource-group "${VIDGEN_RESOURCE_GROUP}" --query '[0].name' -o tsv || true)"
-          if [ -n "${vault}" ]; then
-            VIDGEN_KEY_VAULT_NAME="${vault}" ./infra/scripts/bootstrap_secrets.sh --check
-          else
-            echo "no vault yet; this is the first deployment"
-          fi
+      # There is deliberately no secret pre-check here. The vault has
+      # publicNetworkAccess disabled, so a GitHub-hosted runner cannot make a
+      # data-plane call to it and would report every secret as missing. Secret
+      # presence is enforced where it can actually be observed: a Container App
+      # revision whose Key Vault reference does not resolve fails to start, so
+      # the migration job and then the smoke test fail the deployment. Run
+      # `bootstrap_secrets.sh --check` from a network that can reach the vault.
 
       # Deploys infrastructure and the Container App definitions. New revisions
       # are created here but the migration below is what gates them being

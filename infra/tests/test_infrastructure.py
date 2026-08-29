@@ -470,7 +470,10 @@ def test_the_worker_shuts_down_gracefully() -> None:
         assert name in definition
     source = (REPO_ROOT / "workers" / "temporal_worker" / "main.py").read_text()
     assert "graceful_shutdown_timeout" in source
-    assert "shutdown_event" in source
+    # `async with worker:` is what performs the bounded graceful shutdown;
+    # Worker.run() takes no shutdown argument.
+    assert "async with worker:" in source
+    assert "shutdown_event" not in source
     assert "signal.SIGTERM" in source
 
 
@@ -704,3 +707,122 @@ def test_replica_ceilings_fit_the_postgres_connection_budget(
     budget = parameters["postgresMaxConnections"]["value"]
     # Azure reserves a handful of connections for its own monitoring.
     assert processes * worst_case_per_process <= budget - 10
+
+
+# -- regressions -----------------------------------------------------------------
+
+
+def test_every_workload_can_authenticate_to_temporal_cloud() -> None:
+    """The API starts and queries workflows and the smoke test proves the
+    endpoint is reachable, so the connection cannot live only on the worker."""
+    compiled = module("container_apps")
+    shared = json.dumps(user_defined_function(compiled, "commonEnv"))
+    for name in ("TEMPORAL_ADDRESS", "TEMPORAL_NAMESPACE", "TEMPORAL_TLS_ENABLED"):
+        assert name in shared
+    # The API key is a secret reference, never a literal.
+    assert "temporal-api-key" in shared
+    assert "TEMPORAL_API_KEY" in shared
+    assert "VIDGEN_TEMPORAL_API_KEY" in shared
+    # Every workload mounts the secret the reference resolves.
+    for name in ("container_apps", "container_jobs"):
+        assert "temporal-api-key" in json.dumps(
+            user_defined_function(module(name), "applicationSecretNames")
+        )
+
+
+def test_the_worker_is_told_which_providers_it_may_fake(
+    staging_parameters: dict[str, Any], production_parameters: dict[str, Any]
+) -> None:
+    """The worker refuses to start with an unconfigured provider, so an
+    all-providers-off environment must say so explicitly."""
+    shared = json.dumps(user_defined_function(module("container_apps"), "commonEnv"))
+    assert "VIDGEN_TEMPORAL_ALLOW_FAKE_PROVIDERS" in shared
+
+    staging_providers = staging_parameters["parameters"]["providers"]["value"]
+    staging_features = staging_parameters["parameters"]["features"]["value"]
+    assert not any(staging_providers.values())
+    assert staging_features["allowFakeProviders"] is True
+
+    # The invariant that matters: fakes are never allowed where a paid provider
+    # is enabled, or a missing credential would silently produce fake output.
+    production_providers = production_parameters["parameters"]["providers"]["value"]
+    production_features = production_parameters["parameters"]["features"]["value"]
+    if any(production_providers.values()):
+        assert production_features["allowFakeProviders"] is False
+
+
+def test_internal_ingress_is_addressed_over_https() -> None:
+    """Both ingresses set allowInsecure:false, so a plaintext request is
+    answered with a redirect that neither the smoke client nor a proxy_pass
+    follows."""
+    apps = resources_of_type(module("container_apps"), "Microsoft.App/containerApps")
+    web = by_name(apps, "-web")
+    upstream = json.dumps(web["properties"]["template"]["containers"])
+    assert "https://" in upstream
+    assert "'http://'" not in upstream
+
+    jobs = resources_of_type(module("container_jobs"), "Microsoft.App/jobs")
+    smoke = json.dumps(by_name(jobs, "job-smoke")["properties"]["template"]["containers"])
+    assert "https://" in smoke
+    assert "http://" not in smoke.replace("https://", "")
+
+    nginx = (REPO_ROOT / "apps" / "web" / "nginx.conf").read_text()
+    # Container Apps routes an internal request by Host and terminates TLS with
+    # a certificate for that name, so the browser's host must not be forwarded.
+    assert "proxy_set_header Host $proxy_host;" in nginx
+    assert "proxy_ssl_server_name on;" in nginx
+
+
+def test_multi_replica_uploads_keep_their_parts_on_one_replica() -> None:
+    """Resumable upload parts are staged on local disk, so the part PUT and the
+    completing POST have to reach the same replica."""
+    apps = resources_of_type(module("container_apps"), "Microsoft.App/containerApps")
+    api = by_name(apps, "-api")
+    ingress = api["properties"]["configuration"]["ingress"]
+    assert ingress["stickySessions"]["affinity"] == "sticky"
+
+
+def test_the_deny_all_outbound_rule_spares_the_platform_dns_service() -> None:
+    """168.63.129.16 is AzurePlatformDNS, not AzureCloud and not Internet.
+    Without an explicit allow, the deny below it breaks every private endpoint
+    name lookup in the environment."""
+    nsg = by_name(
+        resources_of_type(module("networking"), "Microsoft.Network/networkSecurityGroups"),
+        "nsg-apps",
+    )
+    rules = {rule["name"]: rule["properties"] for rule in nsg["properties"]["securityRules"]}
+    platform = rules["AllowOutboundAzurePlatformDns"]
+    assert platform["destinationAddressPrefix"] == "AzurePlatformDNS"
+    assert platform["access"] == "Allow"
+    deny = rules["DenyOtherInternetOutbound"]
+    assert platform["priority"] < deny["priority"]
+
+
+def test_image_immutability_is_enforced_where_it_can_stop_a_deployment() -> None:
+    """Bicep cannot fail on a computed condition, so the check has to live in
+    the script that runs before anything reaches Azure."""
+    common = (REPO_ROOT / "infra" / "scripts" / "_common.sh").read_text()
+    assert "assert_immutable_image()" in common
+    assert "refusing to deploy the 'latest' tag" in common
+    deploy = (REPO_ROOT / "infra" / "scripts" / "deploy_staging.sh").read_text()
+    assert 'assert_immutable_image "${VIDGEN_APP_IMAGE}"' in deploy
+    assert 'assert_immutable_image "${VIDGEN_WEB_IMAGE}"' in deploy
+
+
+def test_the_smoke_mode_override_cannot_drop_the_secret_environment() -> None:
+    """`--env-vars` would replace the whole environment list and unmount every
+    Key Vault reference; only the arguments may be overridden."""
+    script = (REPO_ROOT / "infra" / "scripts" / "run_smoke_test.sh").read_text()
+    # Comments are allowed to explain why; the executable lines are the claim.
+    code = "\n".join(line for line in script.splitlines() if not line.lstrip().startswith("#"))
+    assert "--env-vars" not in code
+    assert "--args" in code
+
+
+def test_the_deploy_workflow_makes_no_key_vault_data_plane_call_from_a_runner() -> None:
+    """The vault has public network access disabled, so a hosted runner would
+    get a 403 and report every secret as missing."""
+    workflow = (REPO_ROOT / ".github" / "workflows" / "deploy-staging.yml").read_text()
+    code = "\n".join(line for line in workflow.splitlines() if not line.lstrip().startswith("#"))
+    assert "bootstrap_secrets.sh" not in code
+    assert "az keyvault" not in code

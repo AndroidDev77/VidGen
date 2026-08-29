@@ -21,10 +21,21 @@ require_env AZURE_SUBSCRIPTION_ID VIDGEN_RESOURCE_GROUP VIDGEN_SMOKE_JOB
 az account set --subscription "${AZURE_SUBSCRIPTION_ID}"
 
 log "starting the smoke-test job in mode ${VIDGEN_SMOKE_MODE}"
-execution="$(az containerapp job start \
-  --name "${VIDGEN_SMOKE_JOB}" \
-  --resource-group "${VIDGEN_RESOURCE_GROUP}" \
-  --query name -o tsv)"
+# The mode is an argument override, not an environment override: `--env-vars`
+# would replace the whole environment list and drop every Key Vault reference,
+# while `--args` touches only the command line. The deployed default is `e2e`,
+# so only a narrower run needs an override.
+start_arguments=(
+  --name "${VIDGEN_SMOKE_JOB}"
+  --resource-group "${VIDGEN_RESOURCE_GROUP}"
+)
+if [[ "${VIDGEN_SMOKE_MODE}" != "e2e" ]]; then
+  start_arguments+=(
+    --command python
+    --args "-m,scripts.staging_smoke_test,--mode,${VIDGEN_SMOKE_MODE}"
+  )
+fi
+execution="$(az containerapp job start "${start_arguments[@]}" --query name -o tsv)"
 log "smoke execution ${execution} started"
 
 deadline=$(( $(date +%s) + VIDGEN_SMOKE_TIMEOUT_SECONDS ))

@@ -129,4 +129,9 @@ param features = {
   repairAllowParallaxFallback: true
   finalQaAdjudicationEnabled: true
   subtitleSyncEnabled: false
+  // True only because every provider above is false. The worker refuses to
+  // start with an unconfigured provider, so this is what lets staging run the
+  // real pipeline at zero cost - and it is what the smoke test's "committed
+  // provider cost is exactly zero" assertion depends on.
+  allowFakeProviders: true
 }

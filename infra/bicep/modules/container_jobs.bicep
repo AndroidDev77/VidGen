@@ -351,8 +351,11 @@ resource smoke 'Microsoft.App/jobs@2025-01-01' = {
             // resolve inside this virtual network, which is the point: the
             // smoke test runs here rather than on a GitHub-hosted runner
             // precisely because a hosted runner cannot reach them.
-            env('VIDGEN_SMOKE_API_URL', 'http://${apiFqdn}')
-            env('VIDGEN_SMOKE_WEB_URL', 'http://${webFqdn}')
+            // https, not http: both ingresses set allowInsecure:false, so a
+            // plaintext request is answered with a redirect the smoke client
+            // does not follow.
+            env('VIDGEN_SMOKE_API_URL', 'https://${apiFqdn}')
+            env('VIDGEN_SMOKE_WEB_URL', 'https://${webFqdn}')
             env('VIDGEN_SMOKE_POSTGRES_HOST', postgresFqdn)
             env('VIDGEN_SMOKE_REDIS_HOST', redisHostName)
             env('VIDGEN_SMOKE_KEY_VAULT_NAME', keyVaultName)

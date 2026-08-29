@@ -89,6 +89,12 @@ type FeatureFlags = {
   finalQaAdjudicationEnabled: bool
   @description('T09 subtitle timing synchronisation.')
   subtitleSyncEnabled: bool
+  @description('''Let the Temporal worker fall back to the deterministic fake
+providers for any provider that is disabled. True in staging, where every
+provider is off and the worker would otherwise refuse to start; it must be false
+wherever a paid provider is enabled, so a misconfigured credential fails loudly
+instead of silently producing fake output.''')
+  allowFakeProviders: bool
 }
 
 @export()

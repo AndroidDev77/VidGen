@@ -134,6 +134,13 @@ resource api 'Microsoft.App/containerApps@2025-01-01' = {
         transport: 'http'
         allowInsecure: false
         clientCertificateMode: 'ignore'
+        // Resumable uploads stage their parts on the receiving replica's local
+        // disk, so a part PUT and the completing POST have to reach the same
+        // replica. Affinity is what makes more than one API replica safe until
+        // part staging moves into Blob Storage - see infra/README.md.
+        stickySessions: {
+          affinity: 'sticky'
+        }
         // Long enough for a Server-Sent Events stream and for a streamed asset
         // download, bounded so a stuck upstream cannot hold a connection open
         // indefinitely.
@@ -386,7 +393,9 @@ resource web 'Microsoft.App/containerApps@2025-01-01' = {
             // nginx template at container start, so pointing the UI at a
             // different API never requires a rebuild and never changes the
             // image digest.
-            env('VIDGEN_API_UPSTREAM', 'http://${api.properties.configuration.ingress.fqdn}')
+            // https, not http: the API ingress sets allowInsecure:false, so a
+            // plaintext proxy_pass would be answered with a redirect.
+            env('VIDGEN_API_UPSTREAM', 'https://${api.properties.configuration.ingress.fqdn}')
           ]
           probes: [
             {

@@ -90,11 +90,23 @@ func commonEnv(
       env('VIDGEN_BLOB_CONTAINER', assetsContainerName)
       env('VIDGEN_TELEMETRY_ENABLED', 'true')
       env('VIDGEN_TELEMETRY_LOGGING_MODE', 'json')
+      // The Temporal Cloud connection every workload needs: the API starts and
+      // queries workflows, the worker polls, and the smoke test proves the
+      // endpoint is reachable. Only the worker's tuning knobs are separate.
       env('VIDGEN_TEMPORAL_TARGET_HOST', temporal.address)
       env('VIDGEN_TEMPORAL_NAMESPACE', temporal.namespace)
+      env('VIDGEN_TEMPORAL_TLS_ENABLED', string(temporal.tlsEnabled))
+      env('TEMPORAL_ADDRESS', temporal.address)
+      env('TEMPORAL_NAMESPACE', temporal.namespace)
+      env('TEMPORAL_TLS_ENABLED', string(temporal.tlsEnabled))
+      envSecret('VIDGEN_TEMPORAL_API_KEY', 'temporal-api-key')
+      envSecret('TEMPORAL_API_KEY', 'temporal-api-key')
       // Never true in a deployed environment: the fake controller would report
       // workflows as running while nothing had been started.
       env('VIDGEN_TEMPORAL_USE_FAKE_WORKFLOW_CONTROLLER', 'false')
+      // With every provider disabled the worker would refuse to start, so this
+      // is what lets a zero-cost staging environment run the real pipeline.
+      env('VIDGEN_TEMPORAL_ALLOW_FAKE_PROVIDERS', string(features.allowFakeProviders))
       env('VIDGEN_REPAIR_ALTERNATE_PROVIDER', features.repairAlternateProvider)
       env('VIDGEN_REPAIR_ALLOW_PARALLAX_FALLBACK', string(features.repairAllowParallaxFallback))
       env('VIDGEN_FINAL_QA_ADJUDICATION_ENABLED', string(features.finalQaAdjudicationEnabled))
@@ -112,15 +124,11 @@ func commonEnv(
   )
 
 @export()
-@description('Temporal connection variables read by the worker entry point.')
+@description('The worker-only tuning knobs. The connection itself is in commonEnv, because the API and the smoke test need it too.')
 func temporalEnv(temporal TemporalConfig) array => [
-  env('TEMPORAL_ADDRESS', temporal.address)
-  env('TEMPORAL_NAMESPACE', temporal.namespace)
   env('TEMPORAL_TASK_QUEUE', temporal.taskQueue)
-  env('TEMPORAL_TLS_ENABLED', string(temporal.tlsEnabled))
   env('TEMPORAL_GRACEFUL_SHUTDOWN_SECONDS', string(temporal.gracefulShutdownSeconds))
   env('TEMPORAL_MAX_CONCURRENT_ACTIVITIES', string(temporal.maxConcurrentActivities))
   env('TEMPORAL_MAX_CONCURRENT_WORKFLOW_TASKS', string(temporal.maxConcurrentWorkflowTasks))
   env('TEMPORAL_ACTIVITY_THREADS', string(temporal.maxConcurrentActivities))
-  envSecret('TEMPORAL_API_KEY', 'temporal-api-key')
 ]

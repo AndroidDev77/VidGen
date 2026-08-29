@@ -355,3 +355,71 @@ def test_the_web_image_keeps_the_api_endpoint_a_runtime_setting() -> None:
     assert 'ARG VITE_VIDGEN_API_BASE_URL=""' in source
     assert 'ENV VIDGEN_API_UPSTREAM="http://api:8000"' in source
     assert "location = /healthz" in Path("apps/web/nginx.conf").read_text()
+
+
+# -- regressions ---------------------------------------------------------------
+
+
+def test_the_worker_uses_a_real_shutdown_api() -> None:
+    """`Worker.run()` takes no arguments in temporalio; passing one would raise
+    a TypeError on every container start."""
+    import inspect
+
+    from temporalio.worker import Worker
+
+    assert list(inspect.signature(Worker.run).parameters) == ["self"]
+    assert hasattr(Worker, "__aenter__") and hasattr(Worker, "__aexit__")
+
+    source = Path("workers/temporal_worker/main.py").read_text()
+    assert "async with worker:" in source
+    assert "shutdown_event" not in source
+    assert "graceful_shutdown_timeout" in source
+
+
+def test_the_api_authenticates_to_temporal_cloud() -> None:
+    """A control plane that connects without an API key or TLS cannot reach
+    Temporal Cloud at all."""
+    import inspect
+
+    from vidgen.review.workflow_control import TemporalWorkflowController
+
+    parameters = inspect.signature(TemporalWorkflowController.__init__).parameters
+    assert "api_key" in parameters
+    assert "tls_enabled" in parameters
+
+    source = inspect.getsource(TemporalWorkflowController._client)
+    assert "api_key=self._api_key" in source
+    assert "TLSConfig()" in source
+
+    assert {"temporal_api_key", "temporal_tls_enabled"} <= set(APISettings.model_fields)
+
+
+def test_temporal_tls_follows_the_api_key_by_default() -> None:
+    """A configured key means Temporal Cloud, which is always TLS; a bare local
+    dev server has neither."""
+    from vidgen.review.workflow_control import TemporalWorkflowController
+
+    assert TemporalWorkflowController("host:7233", "ns")._tls_enabled is False
+    assert TemporalWorkflowController("host:7233", "ns", api_key="k")._tls_enabled is True
+    # An explicit choice still wins.
+    assert (
+        TemporalWorkflowController("host:7233", "ns", api_key="k", tls_enabled=False)._tls_enabled
+        is False
+    )
+
+
+def test_the_worker_refuses_to_start_without_a_provider_or_permission_to_fake() -> None:
+    """This is why an all-providers-off staging environment has to set
+    VIDGEN_TEMPORAL_ALLOW_FAKE_PROVIDERS explicitly."""
+    from workers.temporal_worker.production_handlers import build_shot_production_handlers
+
+    settings = APISettings(
+        openai_api_key=None,
+        runway_api_secret=None,
+        temporal_allow_fake_providers=False,
+    )
+    with pytest.raises(ValueError, match="not configured"):
+        build_shot_production_handlers(settings)
+
+    permitted = settings.model_copy(update={"temporal_allow_fake_providers": True})
+    assert build_shot_production_handlers(permitted)

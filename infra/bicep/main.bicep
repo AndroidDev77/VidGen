@@ -39,8 +39,13 @@ param appImage string
 param webImage string
 
 // A moving tag makes a revision unreproducible and a rollback meaningless.
-// Failing at template build time is cheaper than discovering it after a deploy.
-@description('Rejects "latest" and any other non-immutable reference.')
+//
+// Bicep has no way to fail a deployment on a computed condition, so this pair
+// is surfaced as the `imagesAreImmutable` output and the *enforcement* lives
+// where it can actually stop a deployment: `assert_immutable_image` in
+// infra/scripts/_common.sh, which deploy_staging.sh calls before it reaches
+// Azure, and the policy tests in infra/tests.
+@description('False for "latest" or any other non-immutable reference.')
 var appImageIsImmutable = !endsWith(appImage, ':latest') && (contains(appImage, '@sha256:') || length(split(
   appImage,
   ':'
@@ -183,6 +188,9 @@ param features FeatureFlags = {
   repairAllowParallaxFallback: true
   finalQaAdjudicationEnabled: true
   subtitleSyncEnabled: false
+  // Off by default: an environment with a paid provider enabled must fail
+  // loudly on a missing credential rather than silently emit fake output.
+  allowFakeProviders: false
 }
 
 // -- deterministic names ------------------------------------------------------

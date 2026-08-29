@@ -74,6 +74,23 @@ resource containerAppsNsg 'Microsoft.Network/networkSecurityGroups@2024-05-01' =
         }
       }
       {
+        // The Azure platform DNS and time service live at 168.63.129.16, which
+        // is covered by the AzurePlatformDNS tag and NOT by AzureCloud or
+        // Internet. Without this rule the deny below would break name
+        // resolution for every private endpoint in the environment.
+        name: 'AllowOutboundAzurePlatformDns'
+        properties: {
+          priority: 115
+          direction: 'Outbound'
+          access: 'Allow'
+          protocol: '*'
+          sourceAddressPrefix: containerAppsPrefix
+          sourcePortRange: '*'
+          destinationAddressPrefix: 'AzurePlatformDNS'
+          destinationPortRange: '*'
+        }
+      }
+      {
         name: 'AllowOutboundDns'
         properties: {
           priority: 120
@@ -84,6 +101,31 @@ resource containerAppsNsg 'Microsoft.Network/networkSecurityGroups@2024-05-01' =
           sourcePortRange: '*'
           destinationAddressPrefix: 'AzureCloud'
           destinationPortRange: '53'
+        }
+      }
+      {
+        // Container Apps itself needs these: image pulls from the Microsoft and
+        // Azure registries, Entra ID for the managed-identity token exchange,
+        // and Azure Monitor for log and trace ingestion. They are public
+        // addresses and so are already inside AllowOutboundHttps above; naming
+        // them separately makes the dependency explicit and survives a future
+        // narrowing of the Internet rule.
+        name: 'AllowOutboundAzurePlatformServices'
+        properties: {
+          priority: 125
+          direction: 'Outbound'
+          access: 'Allow'
+          protocol: 'Tcp'
+          sourceAddressPrefix: containerAppsPrefix
+          sourcePortRange: '*'
+          destinationAddressPrefixes: [
+            'AzureActiveDirectory'
+            'AzureMonitor'
+            'AzureContainerRegistry'
+            'MicrosoftContainerRegistry'
+            'AzureKeyVault'
+          ]
+          destinationPortRange: '443'
         }
       }
       {

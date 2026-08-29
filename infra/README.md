@@ -158,7 +158,7 @@ environment variable at build time.
 | `logRetentionInDays`, `logDailyQuotaGb` | Log retention and ingestion cap | 30, 5 |
 | `temporal` | Temporal Cloud address, namespace, task queue, TLS, shutdown and concurrency | from environment variables |
 | `providers` | Which providers may be used | all `false` |
-| `features` | T21/T22/T09 feature flags | see file |
+| `features` | T21/T22/T09 feature flags and `allowFakeProviders` | see file |
 
 Required tags on every resource: `application`, `environment`, `owner`,
 `costCenter`, `managedBy`, `repository`.
@@ -217,6 +217,14 @@ start: no secret value passes through Bicep, a workflow, an image or a log.
 | `voicestudio-endpoint`, `voicestudio-api-key` | when `providers.voicestudio` | all | |
 | `opensubtitles-api-key`, `opensubtitles-username`, `opensubtitles-password` | when `providers.opensubtitles` | all | |
 
+There is deliberately **no secret pre-check in the deployment workflow**: the
+vault has public network access disabled, so a GitHub-hosted runner cannot make
+a data-plane call to it and would report every secret as missing. Presence is
+enforced where it can be observed - a revision whose Key Vault reference does
+not resolve fails to start, so the migration job and then the smoke test fail
+the deployment. Run `bootstrap_secrets.sh --check` from a network that can reach
+the vault.
+
 Write them with:
 
 ```bash
@@ -245,6 +253,15 @@ Enabling one means two changes together: set it `true` in `providers`, and write
 its secret with `bootstrap_secrets.sh`. Enabling `veo` additionally requires
 setting `features.repairAlternateProvider` to `veo`; a test asserts the two never
 disagree.
+
+`features.allowFakeProviders` is the flag that makes an all-providers-off
+environment actually run. The worker refuses to start with an unconfigured
+provider - `build_shot_production_handlers` raises `T16 image generation
+provider is not configured` - so staging sets it `true` and runs the
+deterministic fakes, which is also what the smoke test's "committed provider
+cost is exactly zero" assertion depends on. It must stay `false` wherever a paid
+provider is enabled, so that a missing credential fails loudly instead of
+silently producing fake output; a test asserts that invariant.
 
 **Veo is intentionally left disabled.** T21's Google adapter currently reads a
 static `VIDGEN_GOOGLE_ACCESS_TOKEN`, which is short lived. Deploying one as a
@@ -282,7 +299,8 @@ SQLAlchemy's default pool is 5 connections with 10 overflow, so 15 per process
 is the worst case. Staging's ceilings are 3 API replicas + 2 worker replicas + 1
 render job + 1 migration job + 1 smoke job = 8 processes = 120 connections,
 inside `postgresMaxConnections = 200` with room for Azure's own monitoring
-sessions. `test_replica_ceilings_fit_the_postgres_connection_budget` asserts
+sessions. The production template's ceilings are 10 + 8 + 4 + 1 + 1 = 24
+processes = 360, inside its `postgresMaxConnections = 400`. `test_replica_ceilings_fit_the_postgres_connection_budget` asserts
 this arithmetic, so raising a replica ceiling without raising the budget fails
 the build rather than exhausting the server at runtime.
 
@@ -343,11 +361,18 @@ fixture and is never deployed as infrastructure.
 | Task queue | `temporal.taskQueue` | `vidgen-projects` |
 | TLS | `temporal.tlsEnabled` | `true` |
 | API key | Key Vault `temporal-api-key` | resolved by managed identity |
+| Reaches | api, worker, render, smoke, admin | the connection is in `commonEnv`, not only on the worker |
 | Graceful shutdown | `temporal.gracefulShutdownSeconds` | 45 s, with a 60 s pod termination grace period |
 | Activity concurrency | `temporal.maxConcurrentActivities` | 4 per replica |
 | Workflow task concurrency | `temporal.maxConcurrentWorkflowTasks` | 50 per replica |
 
-The worker reads all of these from the environment in
+The address, namespace, TLS flag and API key are part of `commonEnv`, so every
+workload has them: the API's `TemporalWorkflowController` starts and queries
+workflows against Temporal Cloud, and the smoke test proves the endpoint is
+reachable. Only the task queue, the graceful-shutdown window and the two
+concurrency bounds are worker-only.
+
+The worker reads its own tuning knobs from the environment in
 `workers/temporal_worker/main.py` and nowhere else, so a revision change is the
 only way any of them can move. It installs SIGTERM and SIGINT handlers and calls
 `worker.run(shutdown_event=...)`, so a scale-in or a revision replacement lets
@@ -386,12 +411,28 @@ same-origin `/api` path and nginx substitutes `VIDGEN_API_UPSTREAM` into its
 template at container start. Pointing the UI at a different API therefore never
 requires a rebuild and never changes the image digest.
 
+Both ingresses set `allowInsecure: false`, so every internal address is `https://`:
+the web tier proxies to `https://<api fqdn>` and the smoke test calls the
+`https://` FQDNs. nginx forwards `Host $proxy_host` rather than the browser's
+host, because Container Apps routes an internal request by its Host header and
+terminates TLS with a certificate for that name; the API still sees the original
+host in `X-Forwarded-*`.
+
+### Upload session affinity
+
+`UploadService` stages resumable upload parts on the receiving replica's local
+disk, so a part `PUT` and the completing `POST` must reach the same replica.
+The API ingress therefore sets `stickySessions: { affinity: 'sticky' }`, which
+is what makes more than one API replica safe today. Moving part staging into
+Blob Storage would remove the constraint; until then, do not remove the
+affinity while `apiScale.maxReplicas` is above one.
+
 ### Workloads
 
 | Workload | Ingress | Replicas | Notes |
 | --- | --- | --- | --- |
 | `web` | private (`publicIngressEnabled`) | 1–2 | `/healthz` served by nginx itself, so it reports healthy independently of the API |
-| `api` | internal, never external | 1–3 | liveness `/healthz` (dependency-free), readiness `/readyz` (acquires a pooled connection), startup probe; graceful shutdown 30 s; **no Alembic migration at startup** |
+| `api` | internal, never external | 1–3 | liveness `/healthz` (dependency-free), readiness `/readyz` (acquires a pooled connection), startup probe; graceful shutdown 30 s; **no Alembic migration at startup**; sticky session affinity, see below |
 | `worker` | none | 1–2 | polls Temporal Cloud; graceful activity shutdown; never scales to zero |
 
 ### Jobs
@@ -717,24 +758,29 @@ Temporal test-server suites, Compose validation, ARM deployment validation and
 2. **The container registry's public endpoint is enabled.** GitHub-hosted
    runners push through it. Pulls use the private endpoint. Closing it requires
    a VNet-joined or self-hosted runner; the parameter is already there.
-3. **Metrics are not scraped.** T23's `recap_*` instruments are
+3. **Upload parts are staged on local disk.** Session affinity on the API
+   ingress keeps a multi-part upload on one replica, but a replica that is
+   replaced mid-upload loses the staged parts and the client has to restart the
+   upload. Staging parts in Blob Storage is the real fix and is application
+   work, not infrastructure work.
+4. **Metrics are not scraped.** T23's `recap_*` instruments are
    `prometheus_client` objects owned per pipeline instance, with no
    process-wide registry, so there is no endpoint to scrape and no correct way
    to bridge them without restructuring T23's metric ownership. The workbook is
    therefore built on T23 spans, T23 structured logs and Azure platform metrics,
    with each panel titled by the instrument it corresponds to. Wiring a
    process-wide registry is T23 work.
-4. **Veo is disabled.** See [Provider enablement](#provider-enablement).
-5. **Azure Monitor Private Link Scope is not deployed.** Log and trace ingestion
+5. **Veo is disabled.** See [Provider enablement](#provider-enablement).
+6. **Azure Monitor Private Link Scope is not deployed.** Log and trace ingestion
    uses the public Azure Monitor endpoints over TLS from inside the VNet. An
    AMPLS would close that path and is a reasonable follow-up; it also affects
    every workspace in the scope, so it is a deliberate decision rather than a
    default.
-6. **PostgreSQL roles are created manually.** The application and migration
+7. **PostgreSQL roles are created manually.** The application and migration
    roles are created once against a fresh server and their URLs stored in Key
    Vault. Bicep cannot create a PostgreSQL role, and adding a migration to do it
    would put credential management into the application schema.
-7. **The production parameter file is a template.** It has never been deployed,
+8. **The production parameter file is a template.** It has never been deployed,
    and its SKUs are reasoned rather than measured. T26 load testing is what
    would justify them.
 
