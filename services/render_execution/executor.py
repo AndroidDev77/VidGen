@@ -156,7 +156,9 @@ class _RenderExecutionArtifactStore(AssetServiceArtifactStore):
     ) -> PersistedArtifact:
         existing = self._captions.get(kind)
         if existing is not None:
-            return existing
+            # Return the artifact resolved through the cache, so its ``path``
+            # is a real readable file like every other artifact's.
+            return self._artifact(existing.asset_id)
         return super().store_bytes(
             content=content, media_type=media_type, kind=kind, identity_key=identity_key
         )
@@ -405,6 +407,9 @@ class RenderExecutor:
                 asset_id=asset.id,
                 sha256=asset.sha256,
                 media_type=asset.media_type,
+                # The caption bytes are already in storage; the pipeline
+                # resolves a readable path through the artifact store when it
+                # needs one, so nothing here depends on this being on disk.
                 path=self.work_root / "captions" / asset.sha256,
             )
         report = self.assets.store(
