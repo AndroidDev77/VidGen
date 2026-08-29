@@ -115,6 +115,61 @@ def test_the_activity_message_cannot_carry_a_payload(field: str) -> None:
         )
 
 
+def test_the_render_activity_message_carries_references_and_nothing_else() -> None:
+    message = RenderActivityInput(
+        project_id=PROJECT,
+        render_job_id=RENDER_JOB,
+        idempotency_key="project:t17b",
+        trace_context={"traceparent": "00-abc-def-01"},
+    )
+    assert set(message.model_dump()) == {
+        "schema_version",
+        "project_id",
+        "render_job_id",
+        "idempotency_key",
+        "trace_context",
+    }
+
+
+@pytest.mark.parametrize(
+    "field",
+    ["manifest", "captions", "media", "ffmpeg_output", "diagnostics", "command_plan"],
+)
+def test_the_render_activity_message_cannot_carry_a_payload(field: str) -> None:
+    with pytest.raises(ValidationError):
+        RenderActivityInput(
+            project_id=PROJECT,
+            idempotency_key="project:t17b",
+            **{field: "anything at all"},  # type: ignore[arg-type]
+        )
+
+
+def test_the_render_activity_result_carries_ids_and_counts_only() -> None:
+    result = RenderActivityResult(
+        project_id=PROJECT,
+        render_job_id=RENDER_JOB,
+        status="render_complete",
+        progress_percent=100,
+        final_render_asset_id=RENDER_ASSET,
+        render_manifest_asset_id=MANIFEST_ASSET,
+    )
+    assert result.final_render_asset_id == RENDER_ASSET
+    with pytest.raises(ValidationError):
+        RenderActivityResult(
+            project_id=PROJECT,
+            render_job_id=RENDER_JOB,
+            status="render_complete",
+            ffmpeg_stderr="a" * 100,  # type: ignore[call-arg]
+        )
+    with pytest.raises(ValidationError):
+        RenderActivityResult(
+            project_id=PROJECT,
+            render_job_id=RENDER_JOB,
+            status="render_complete",
+            progress_percent=101,
+        )
+
+
 def test_the_activity_result_carries_counts_and_a_decision_only() -> None:
     result = FinalQAActivityResult(
         project_id=PROJECT,
@@ -281,6 +336,41 @@ async def test_a_passing_gate_advances_the_project_to_completed() -> None:
     assert seen[0].project_id == PROJECT
     assert seen[0].idempotency_key == "project-1:t22"
     assert seen[0].final_render_asset_id is None
+
+
+@pytest.mark.asyncio
+async def test_the_render_stage_runs_before_final_qa() -> None:
+    """T17b renders first; T22 only ever inspects a completed render."""
+    seen_render: list[RenderActivityInput] = []
+    seen_qa: list[FinalQAActivityInput] = []
+    state = await run_project(
+        gate_activity("PASS", "FINAL_QA_PASSED", seen_qa),
+        render=await render_activity(seen_render),
+    )
+    assert state.status == "completed"
+    assert len(seen_render) == 1
+    assert seen_render[0].project_id == PROJECT
+    assert seen_render[0].idempotency_key == "project-1:t17b"
+    # The render activity is not given a job id: it queues or resumes the
+    # project's render itself, so a workflow retry cannot fork a second one.
+    assert seen_render[0].render_job_id is None
+    assert state.completed_stages.index("render") < state.completed_stages.index(
+        "final_editorial_qa"
+    )
+    assert len(seen_qa) == 1
+
+
+@pytest.mark.asyncio
+async def test_final_qa_never_starts_when_the_render_did_not_complete() -> None:
+    seen_qa: list[FinalQAActivityInput] = []
+    state = await run_project(
+        gate_activity("PASS", "FINAL_QA_PASSED", seen_qa),
+        render=await render_activity(status="render_failed"),
+    )
+    assert state.status == "render_failed"
+    assert seen_qa == []
+    assert "render" not in state.completed_stages
+    assert "final_editorial_qa" not in state.completed_stages
 
 
 @pytest.mark.asyncio

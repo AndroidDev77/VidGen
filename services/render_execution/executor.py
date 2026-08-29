@@ -212,6 +212,18 @@ class RenderExecutor:
             logger.info("render job already complete", extra={"status": "reused"})
             return self._completed_result(job, reused=True)
         if job.cancel_requested or job.status == RenderExecutionStatus.CANCELLED.value:
+            # Cancellation is durable state, not just a return value: a job
+            # asked to stop must read as cancelled to T18 and to the next worker.
+            if job.status != RenderExecutionStatus.CANCELLED.value:
+                job.status = RenderExecutionStatus.CANCELLED.value
+                job.checkpoint = "cancelled"
+                job.error_code = "render_cancelled"
+                job.failure_classification = "cancelled"
+                job.claimed_by = None
+                job.lease_expires_at = None
+                job.completed_at = job.completed_at or datetime.now(UTC)
+                self.session.flush()
+                self.session.commit()
             return self._cancelled_result(job)
         try:
             claim = claim_render_job(
@@ -510,8 +522,15 @@ class RenderExecutor:
         )
         self.session.commit()
         attempt_root.mkdir(parents=True, exist_ok=True)
-        self._require_disk_space(attempt_root, request.minimum_free_bytes)
         job = require_lease(self.session, claim)
+        recovered = self._recover_persisted_outputs(job, manifest)
+        if recovered is not None:
+            # The previous attempt got as far as committing every output. There
+            # is nothing left to render: re-encoding identical inputs would burn
+            # CPU to produce the bytes already in storage.
+            logger.info("render outputs recovered", extra={"status": "recovered"})
+            return recovered
+        self._require_disk_space(attempt_root, request.minimum_free_bytes)
         repository = RenderRepository(self.session)
         attempt_row = repository.next_attempt(job, manifest.render_identity)
         self.session.commit()
@@ -572,6 +591,52 @@ class RenderExecutor:
         self.metrics.render_verification.labels(status="passed").inc()
         logger.info("render verified", extra={"status": "verified"})
         return completed
+
+    def _recover_persisted_outputs(
+        self, job: RenderJob, manifest: RenderManifest
+    ) -> CompletedRender | None:
+        """Resume a run that rendered and persisted, then failed before completing.
+
+        Recovery is only safe when the stored outputs belong to *this* manifest:
+        the job's render identity must match, every canonical asset row must
+        exist, and its bytes must still be readable. Anything less and the render
+        is redone rather than a stale output being blessed as the deliverable.
+        """
+        if job.render_identity != manifest.render_identity:
+            return None
+        references = (
+            job.manifest_asset_id,
+            job.srt_asset_id,
+            job.webvtt_asset_id,
+            job.final_video_asset_id,
+            job.verification_report_asset_id,
+        )
+        if any(asset_id is None for asset_id in references) or not job.measured_duration_us:
+            return None
+        artifacts: list[PersistedArtifact] = []
+        for asset_id in references:
+            asset = self.session.get(Asset, asset_id)
+            if asset is None or not self.blob_store.exists(asset.storage_key):
+                return None
+            artifacts.append(
+                PersistedArtifact(
+                    asset_id=asset.id,
+                    sha256=asset.sha256,
+                    media_type=asset.media_type,
+                    path=self.work_root / "recovered" / asset.sha256,
+                )
+            )
+        manifest_asset, srt, webvtt, final_video, report = artifacts
+        return CompletedRender(
+            render_identity=manifest.render_identity,
+            manifest=manifest_asset,
+            srt=srt,
+            webvtt=webvtt,
+            final_video=final_video,
+            verification_report=report,
+            measured_duration_us=job.measured_duration_us,
+            reused=True,
+        )
 
     def _complete(
         self,

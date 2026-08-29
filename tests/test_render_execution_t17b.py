@@ -44,7 +44,9 @@ from services.render_execution.ffmpeg import (
 from services.render_execution.inputs import render_settings_for, resolve_render_inputs
 from services.render_execution.manifest_builder import build_captions, build_manifest
 from services.renderer.manifest import bound_manifest_identity, canonical_json
+from services.renderer.pipeline import DeterministicRenderPipeline
 from services.renderer.selection import RenderLineageError
+from services.renderer.verify import RenderVerificationError
 from tests.render_execution_fixtures import RenderableProject, build_renderable_project
 from vidgen.contracts.render import RenderInputReference
 from vidgen.contracts.render_execution import RenderExecutionStatus
@@ -715,3 +717,194 @@ def _force_complete(session: Session, job: RenderJob) -> None:
     job.measured_duration_us = 1_000
     job.completed_at = datetime.now(UTC)
     session.commit()
+
+
+# ---------------------------------------------------------------------------
+# Terminal outcomes, recorded durably by the executor
+# ---------------------------------------------------------------------------
+
+
+def _execute(
+    session: Session, store: FilesystemBlobStore, job_id: object, tmp_path: Path, **kwargs: object
+) -> object:
+    return render_commands.execute_render_job(
+        session,
+        store,
+        job_id,  # type: ignore[arg-type]
+        work_root=tmp_path / "work",
+        minimum_free_bytes=0,
+        **kwargs,  # type: ignore[arg-type]
+    )
+
+
+def test_a_verification_failure_is_terminal_and_leaves_no_deliverable(
+    project: tuple[Session, FilesystemBlobStore, RenderableProject],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session, store, fixture = project
+    job = queue(session, fixture)
+
+    def failing_run(*_args: object, **_kwargs: object) -> None:
+        raise RenderVerificationError("duration outside tolerance")
+
+    monkeypatch.setattr(DeterministicRenderPipeline, "run", failing_run)
+    result = _execute(session, store, job.id, tmp_path)
+    assert result.status is RenderExecutionStatus.FAILED
+    assert result.failure is not None
+    assert result.failure.classification == "validation"
+    assert not result.failure.retryable
+
+    session.expire_all()
+    stored = session.get(RenderJob, job.id)
+    assert stored is not None
+    assert stored.status == RenderExecutionStatus.FAILED.value
+    assert stored.final_video_asset_id is None
+    assert stored.output_sha256 is None
+    assert stored.failure_classification == "validation"
+    # The lease is dropped, so a failed worker never locks the job.
+    assert stored.claimed_by is None and stored.lease_expires_at is None
+    # The failure is a bounded structured record, not an FFmpeg log.
+    assert len(json.dumps(stored.error)) < 2000
+
+
+def test_cancellation_during_rendering_is_recorded_durably(
+    project: tuple[Session, FilesystemBlobStore, RenderableProject],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session, store, fixture = project
+    job = queue(session, fixture)
+
+    def cancelled_run(*_args: object, **_kwargs: object) -> None:
+        raise RenderCancelled("cancelled during encode")
+
+    monkeypatch.setattr(DeterministicRenderPipeline, "run", cancelled_run)
+    result = _execute(session, store, job.id, tmp_path)
+    assert result.status is RenderExecutionStatus.CANCELLED
+
+    session.expire_all()
+    stored = session.get(RenderJob, job.id)
+    assert stored is not None
+    assert stored.status == RenderExecutionStatus.CANCELLED.value
+    assert stored.failure_classification == "cancelled"
+    assert stored.final_video_asset_id is None
+
+
+def test_a_job_cancelled_before_it_starts_never_renders(
+    project: tuple[Session, FilesystemBlobStore, RenderableProject],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session, store, fixture = project
+    job = queue(session, fixture)
+    request_cancellation(session, job.id)
+    session.commit()
+
+    def unreachable(*_args: object, **_kwargs: object) -> None:
+        raise AssertionError("a cancelled job must not reach FFmpeg")
+
+    monkeypatch.setattr(DeterministicRenderPipeline, "run", unreachable)
+    result = _execute(session, store, job.id, tmp_path)
+    assert result.status is RenderExecutionStatus.CANCELLED
+    session.expire_all()
+    stored = session.get(RenderJob, job.id)
+    assert stored is not None and stored.status == RenderExecutionStatus.CANCELLED.value
+
+
+def test_a_stored_input_identity_that_no_longer_matches_is_refused(
+    project: tuple[Session, FilesystemBlobStore, RenderableProject],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session, store, fixture = project
+    job = queue(session, fixture)
+    # The job was queued against inputs that have since moved on.
+    job.input_hash = "f" * 64
+    session.commit()
+
+    def unreachable(*_args: object, **_kwargs: object) -> None:
+        raise AssertionError("a job whose inputs moved must not render")
+
+    monkeypatch.setattr(DeterministicRenderPipeline, "run", unreachable)
+    result = _execute(session, store, job.id, tmp_path)
+    assert result.status is RenderExecutionStatus.FAILED
+    assert result.failure is not None
+    assert result.failure.code == "input_identity_changed"
+    assert result.failure.classification == "lineage"
+    assert not result.failure.retryable
+
+
+def test_captions_and_manifest_survive_an_interrupted_run(
+    project: tuple[Session, FilesystemBlobStore, RenderableProject],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An interrupted run resumes onto the same captions and the same manifest."""
+    session, store, fixture = project
+    job = queue(session, fixture)
+
+    def interrupted(*_args: object, **_kwargs: object) -> None:
+        raise RuntimeError("worker died mid-encode")
+
+    monkeypatch.setattr(DeterministicRenderPipeline, "run", interrupted)
+    first = _execute(session, store, job.id, tmp_path, worker_id="worker-a")
+    assert first.status is RenderExecutionStatus.FAILED
+    session.expire_all()
+    stored = session.get(RenderJob, job.id)
+    assert stored is not None
+    caption_assets = (stored.srt_asset_id, stored.webvtt_asset_id)
+    identity = stored.render_identity
+    assets_before = len(session.scalars(select(Asset.id)).all())
+    assert all(caption_assets) and identity
+
+    second = _execute(session, store, job.id, tmp_path, worker_id="worker-b")
+    assert second.status is RenderExecutionStatus.FAILED
+    session.expire_all()
+    resumed = session.get(RenderJob, job.id)
+    assert resumed is not None
+    # The same caption assets and the same manifest identity, and no duplicate
+    # asset rows: a retry resumes rather than starting a parallel render.
+    assert (resumed.srt_asset_id, resumed.webvtt_asset_id) == caption_assets
+    assert resumed.render_identity == identity
+    assert len(session.scalars(select(Asset.id)).all()) == assets_before
+    assert resumed.attempt_count == 2
+
+
+def test_persisted_outputs_are_recovered_without_rendering_again(
+    project: tuple[Session, FilesystemBlobStore, RenderableProject],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A run that persisted every output but never completed does not re-encode."""
+    session, store, fixture = project
+    job = queue(session, fixture)
+    resolved = resolve_render_inputs(session, job=job)
+    captions = build_captions(resolved)
+    references = _caption_references(captions)
+    manifest = build_manifest(resolved, captions, references)
+
+    # Stand in for a worker that committed its outputs and then died: the assets
+    # exist and the identity matches, but the job never reached ``complete``.
+    asset = session.scalars(
+        select(Asset).where(Asset.kind == "canonical_shot_video").limit(1)
+    ).one()
+    job.render_identity = manifest.render_identity
+    job.manifest_asset_id = asset.id
+    job.srt_asset_id = asset.id
+    job.webvtt_asset_id = asset.id
+    job.final_video_asset_id = asset.id
+    job.verification_report_asset_id = asset.id
+    job.output_sha256 = asset.sha256
+    job.measured_duration_us = fixture.timeline_duration_us
+    job.status = RenderExecutionStatus.PERSISTING.value
+    session.commit()
+
+    def unreachable(*_args: object, **_kwargs: object) -> None:
+        raise AssertionError("persisted outputs must not be re-encoded")
+
+    monkeypatch.setattr(DeterministicRenderPipeline, "run", unreachable)
+    result = _execute(session, store, job.id, tmp_path)
+    assert result.status is RenderExecutionStatus.COMPLETE
+    assert result.final_video_asset_id == asset.id
+    assert result.output_sha256 == asset.sha256
