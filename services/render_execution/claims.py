@@ -67,6 +67,19 @@ def _rows_updated(result: Any) -> int:
     return int(result.rowcount)
 
 
+def _expire(session: Session, render_job_id: UUID) -> None:
+    """Drop the identity-map copy of a row a conditional UPDATE just changed.
+
+    The claim and heartbeat updates deliberately run with
+    ``synchronize_session=False``: the whole point of the ``WHERE`` clause is
+    that the database, not this session, decides whether the update applied.
+    Expiring the row afterwards is what makes the next read see that decision.
+    """
+    tracked = session.get(RenderJob, render_job_id)
+    if tracked is not None:
+        session.expire(tracked)
+
+
 def utcnow() -> datetime:
     return datetime.now(UTC)
 
@@ -97,6 +110,10 @@ def claim_render_job(
     job = session.get(RenderJob, render_job_id)
     if job is None:
         raise RenderClaimError("render_job_not_found", "the render job does not exist")
+    # Read the row as the database currently holds it. Another worker - or this
+    # session's own conditional updates - may have moved it since it was last
+    # loaded, and a claim decided from a stale identity-map copy is not a claim.
+    session.refresh(job)
     if job.status == RenderExecutionStatus.COMPLETE.value:
         raise RenderClaimError("render_job_complete", "the render job is already complete")
     if job.status == RenderExecutionStatus.CANCELLED.value or job.cancel_requested:
@@ -123,6 +140,7 @@ def claim_render_job(
             | (RenderJob.lease_expires_at <= moment)
             | (RenderJob.claimed_by == worker_id),
         )
+        .execution_options(synchronize_session=False)
         .values(
             status=RenderExecutionStatus.CLAIMING.value,
             claimed_by=worker_id,
@@ -142,6 +160,7 @@ def claim_render_job(
             "render_job_leased", "the render job is held by another active executor"
         )
     session.flush()
+    session.expire(job)
     session.refresh(job)
     return Claim(
         render_job_id=render_job_id,
@@ -171,11 +190,13 @@ def heartbeat(
     result = session.execute(
         update(RenderJob)
         .where(RenderJob.id == claim.render_job_id, RenderJob.claimed_by == claim.worker_id)
+        .execution_options(synchronize_session=False)
         .values(**values)
     )
     if _rows_updated(result) != 1:
         raise RenderClaimError("render_lease_lost", "this worker no longer holds the render lease")
     session.flush()
+    _expire(session, claim.render_job_id)
     return expires
 
 
@@ -198,9 +219,11 @@ def release(session: Session, claim: Claim) -> None:
     session.execute(
         update(RenderJob)
         .where(RenderJob.id == claim.render_job_id, RenderJob.claimed_by == claim.worker_id)
+        .execution_options(synchronize_session=False)
         .values(claimed_by=None, lease_expires_at=None)
     )
     session.flush()
+    _expire(session, claim.render_job_id)
 
 
 def checkpoint(
@@ -247,9 +270,11 @@ def request_cancellation(session: Session, render_job_id: UUID) -> bool:
                 ]
             ),
         )
+        .execution_options(synchronize_session=False)
         .values(cancel_requested=True)
     )
     session.flush()
+    session.expire_all()
     return _rows_updated(result) == 1
 
 

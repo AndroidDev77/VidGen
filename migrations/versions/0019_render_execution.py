@@ -40,14 +40,11 @@ _COLUMNS = (
 )
 
 _CONSTRAINTS = (
+    ("render_output_hash_length", "output_sha256 IS NULL OR length(output_sha256) = 64"),
+    ("render_progress_percent_range", "progress_percent BETWEEN 0 AND 100"),
+    ("render_attempt_count_nonnegative", "attempt_count >= 0"),
     (
-        "ck_render_jobs_render_output_hash_length",
-        "output_sha256 IS NULL OR length(output_sha256) = 64",
-    ),
-    ("ck_render_jobs_render_progress_percent_range", "progress_percent BETWEEN 0 AND 100"),
-    ("ck_render_jobs_render_attempt_count_nonnegative", "attempt_count >= 0"),
-    (
-        "ck_render_jobs_render_complete_has_measurements",
+        "render_complete_has_measurements",
         "status <> 'render_complete' OR (output_sha256 IS NOT NULL AND "
         "measured_duration_us IS NOT NULL AND completed_at IS NOT NULL)",
     ),

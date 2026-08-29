@@ -788,7 +788,10 @@ class RenderExecutor:
 def _tool_version(tool: str) -> str:
     """The first banner line of a local tool, bounded and never a full log."""
     try:
-        result = run_bounded([tool, "-version"], timeout=30, output_limit=256)
+        # ``run_bounded`` keeps the *tail* of the output, which is the right
+        # choice for an FFmpeg error and the wrong one for a banner, so the
+        # limit is generous and the first line is taken from the head.
+        result = run_bounded([tool, "-version"], timeout=30, output_limit=100_000)
     except (OSError, ValueError):  # pragma: no cover - only a broken installation
         return "unknown"
     line = (result.stdout or "").splitlines()

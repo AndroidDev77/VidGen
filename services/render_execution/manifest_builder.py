@@ -159,7 +159,11 @@ def build_manifest(
         # the whole clip rather than reapplying T13's generation-time offsets.
         shots.append(
             RenderShotEntry(
-                shot_id=record.stable_shot_id,
+                # The storyboard shot row's own id: T22 and the review UI both
+                # resolve a manifest entry back to that row, and a content-derived
+                # id would silently break that join. Content stability lives in
+                # ``shot_workflow_identity`` instead.
+                shot_id=record.id,
                 sequence=sequence,
                 shot_workflow_identity=_shot_workflow_identity(item),
                 animation_run_id=item.animation_run.id,

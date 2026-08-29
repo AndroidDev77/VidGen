@@ -355,9 +355,7 @@ class RenderJob(UUIDPrimaryKeyMixin, TimestampMixin, Base):
             "output_sha256 IS NULL OR length(output_sha256) = 64",
             name="render_output_hash_length",
         ),
-        CheckConstraint(
-            "progress_percent BETWEEN 0 AND 100", name="render_progress_percent_range"
-        ),
+        CheckConstraint("progress_percent BETWEEN 0 AND 100", name="render_progress_percent_range"),
         CheckConstraint("attempt_count >= 0", name="render_attempt_count_nonnegative"),
         CheckConstraint(
             "status <> 'render_complete' OR (output_sha256 IS NOT NULL AND "
@@ -381,6 +379,9 @@ class RenderJob(UUIDPrimaryKeyMixin, TimestampMixin, Base):
             "final_video_asset_id IS NOT NULL AND verification_report_asset_id IS NOT NULL)",
             name="render_complete_has_outputs",
         ),
+        # The lease-recovery query: a worker looking for a claimable job scans
+        # by status and expiry, and both are hot columns on every claim.
+        Index("ix_render_jobs_lease", "status", "lease_expires_at"),
         Index(
             "uq_render_jobs_identity",
             "render_identity",
