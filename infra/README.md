@@ -411,6 +411,14 @@ same-origin `/api` path and nginx substitutes `VIDGEN_API_UPSTREAM` into its
 template at container start. Pointing the UI at a different API therefore never
 requires a rebuild and never changes the image digest.
 
+nginx resolves a literal `proxy_pass` host once, at startup, and refuses to
+start if it does not resolve. `container_apps.bicep` builds `VIDGEN_API_UPSTREAM`
+from the API app's own ingress FQDN, which makes the API an implicit dependency
+of the web app, so the API always exists first. If a web replica does start
+before that name is resolvable it exits and Container Apps restarts it, which
+converges on its own; a web app stuck restarting is therefore a signal that the
+API app is missing, not that the web image is broken.
+
 Both ingresses set `allowInsecure: false`, so every internal address is `https://`:
 the web tier proxies to `https://<api fqdn>` and the smoke test calls the
 `https://` FQDNs. nginx forwards `Host $proxy_host` rather than the browser's

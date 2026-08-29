@@ -159,19 +159,36 @@ jobs:
             if curl -fsS http://127.0.0.1:8000/healthz >/dev/null; then break; fi
             sleep 2
           done
-          curl -fsS http://127.0.0.1:8000/healthz | grep -q '"ok"'
+          if ! curl -fsS http://127.0.0.1:8000/healthz | grep -q '"ok"'; then
+            echo "::error::the API container did not serve /healthz"
+            docker logs vidgen-api || true
+            exit 1
+          fi
           # /readyz has no database here, so it must report unavailable rather
           # than pretending to be ready.
           test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8000/readyz)" = "503"
 
       - name: The web image answers its health endpoint
         run: |
-          docker run -d --name vidgen-web --network vidgen-ci -p 8080:8080 vidgen-web:${GITHUB_SHA}
+          # nginx resolves a literal proxy_pass host once, at startup, and
+          # refuses to start if it does not resolve. The default upstream is the
+          # deployed API's name, so the container is given the API started above
+          # on the same docker network: this proves the reverse proxy config is
+          # loadable, not just that the static assets are present.
+          docker run -d --name vidgen-web --network vidgen-ci -p 8080:8080 \
+            -e VIDGEN_API_UPSTREAM=http://vidgen-api:8000 \
+            vidgen-web:${GITHUB_SHA}
           for attempt in $(seq 1 30); do
             if curl -fsS http://127.0.0.1:8080/healthz >/dev/null; then break; fi
             sleep 2
           done
-          curl -fsS http://127.0.0.1:8080/healthz | grep -q ok
+          if ! curl -fsS http://127.0.0.1:8080/healthz | grep -q ok; then
+            echo "::error::the web container did not serve /healthz"
+            docker logs vidgen-web || true
+            exit 1
+          fi
+          # The SPA fallback still serves the application shell.
+          curl -fsS http://127.0.0.1:8080/ | grep -qi "<div id=\"root\""
 
       - if: always()
         run: docker rm -f vidgen-api vidgen-web || true
