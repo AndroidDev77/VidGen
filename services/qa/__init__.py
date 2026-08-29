@@ -17,6 +17,26 @@ The package keeps the pipeline stages separate on purpose:
 
 T20 identifies repairs. It never executes one: T21 owns repair and fallback
 routing.
+
+T22 final editorial QA lives alongside it under the ``final_`` prefix, and keeps
+the same separation over the *assembled* T17 delivery rather than one shot:
+
+``final_inputs``              canonical render selection and stale-lineage rejection
+``final_deterministic``       measured media checks on the assembled output
+``final_audio``               measured checks on the delivered final mix
+``final_captions``            canonical manifest and delivered caption-asset checks
+``final_evidence``            deterministic sampling, contact sheet and evidence
+``final_rubric``              versioned configuration, dimensions and routing policy
+``final_editorial_provider``  the provider-neutral editorial interface and registry
+``final_fake_provider``       the deterministic fake used by tests and CI
+``final_openai_adapter``      the configured production structured-output adapter
+``final_gate``                finding recomputation, routing and the completion gate
+``final_human_review``        bounded human adjudication of uncertain findings
+``final_editorial``           restartable orchestration and persistence
+``final_commands``            CLI, worker and activity entry points
+
+T22 identifies and gates. It never makes a paid generation call and never starts
+another creative repair loop.
 """
 
 PIPELINE_VERSION = "visual-qa/1.0.0"
