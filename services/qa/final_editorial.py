@@ -964,7 +964,22 @@ class FinalEditorialPipeline:
     def _projection(self, run: FinalEditorialRun, *, reused: bool) -> FinalEditorialResult:
         checks = self.repository.checks(run.id)
         attempts = self.repository.attempts(run.id)
+        adjudication = next(
+            (
+                attempt
+                for attempt in attempts
+                if attempt.phase == FinalQAPhase.ADJUDICATION.value
+                and attempt.status == "succeeded"
+                and attempt.result_projection
+            ),
+            None,
+        )
         adjudicated = any(attempt.phase == FinalQAPhase.ADJUDICATION.value for attempt in attempts)
+        confidence = (
+            float((adjudication.result_projection or {}).get("overall_confidence", 0.0))
+            if adjudication is not None
+            else None
+        )
         routes = [FinalRemediationTarget(value) for value in list(run.remediation_targets or [])][
             :16
         ]
@@ -1002,6 +1017,7 @@ class FinalEditorialPipeline:
             first_pass_provider=run.first_pass_provider or "",
             first_pass_model=run.first_pass_model or "",
             adjudicated=adjudicated,
+            adjudication_confidence=confidence,
             cost_microusd=run.cost_microusd or 0,
             report_asset_id=run.report_asset_id,
             error_code=run.error_code,

@@ -444,9 +444,7 @@ def test_a_caption_asset_that_loses_cues_fails_the_caption_gate(
         from vidgen.contracts.render import RenderManifest
 
         rebuilt = RenderManifest.model_validate(payload)
-        rebuilt = rebuilt.model_copy(
-            update={"render_identity": bound_manifest_identity(rebuilt)}
-        )
+        rebuilt = rebuilt.model_copy(update={"render_identity": bound_manifest_identity(rebuilt)})
         new_content = json.dumps(rebuilt.model_dump(mode="json"), sort_keys=True).encode()
         (blob_root / manifest_asset.storage_key).write_bytes(new_content)
         manifest_asset.sha256 = hashlib.sha256(new_content).hexdigest()
@@ -567,6 +565,9 @@ def test_a_low_confidence_finding_becomes_review_and_blocks_completion(
         assert result.status is FinalQAStatus.FINAL_QA_REVIEW_REQUIRED
         assert result.review_finding_count == 1
         assert result.adjudicated
+        # Terra's confidence is reported, and it is below the decision floor.
+        assert result.adjudication_confidence is not None
+        assert result.adjudication_confidence < 0.80
         allowed, reason = completion_allowed(
             session,
             project_id=fixture.project_id,
@@ -678,3 +679,52 @@ def test_the_fixture_narration_bed_is_real_audio(tmp_path: Path) -> None:
     """A guard on the fixture itself: text bytes labelled ``audio/wav`` prove nothing."""
     path = narration_wav(tmp_path / "narration.wav", segments=2, seconds=1.0)
     assert path.stat().st_size > 100_000
+
+
+def test_the_cli_runs_in_fake_mode_without_any_provider_credential(
+    factory: sessionmaker[Session],
+    blob_root: Path,
+    fixture: FinalQAFixture,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """The documented fake-mode command, run end to end against a real fixture."""
+    import scripts.run_final_editorial_qa as cli
+
+    monkeypatch.setenv("VIDGEN_BLOB_ROOT", str(blob_root))
+    monkeypatch.setenv("VIDGEN_BLOB_SIGNING_SECRET", "test-secret")
+    monkeypatch.delenv("VIDGEN_OPENAI_API_KEY", raising=False)
+    monkeypatch.setattr(cli, "session_factory", lambda _engine: factory, raising=True)
+    monkeypatch.setattr(cli, "build_engine", lambda: None, raising=True)
+
+    def fixture_options(**kwargs: object) -> FinalQACommandOptions:
+        # The CLI grades against the production 1080p delivery profile. The
+        # fixture renders a smaller profile to keep the suite fast, so the
+        # command is exercised with the fixture's configuration.
+        return FinalQACommandOptions(configuration=FIXTURE_CONFIGURATION, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(cli, "FinalQACommandOptions", fixture_options, raising=True)
+    monkeypatch.setattr(
+        "sys.argv",
+        ["run_final_editorial_qa.py", str(fixture.project_id), "--provider", "fake"],
+    )
+    assert asyncio.run(cli.main()) == 0
+    printed = capsys.readouterr().out
+    for expected in (
+        "final_editorial_run_id=",
+        "final_render_asset_id=",
+        "input_identity=",
+        "deterministic_checks=",
+        "audio_checks=",
+        "caption_checks=",
+        "blocking=",
+        "remediation_targets=",
+        "provider=fake",
+        "adjudication=",
+        "cost_microusd=",
+        "report_asset_id=",
+        "gate_decision=PASS",
+        "status=FINAL_QA_PASSED",
+    ):
+        assert expected in printed, f"the CLI must print {expected!r}"
