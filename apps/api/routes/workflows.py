@@ -71,7 +71,9 @@ def start_workflow(
         .where(UploadSession.project_id == project.id)
         .order_by(UploadSession.created_at.desc())
     )
-    if source is None or (upload is not None and upload.status != "completed"):
+    # ``UploadService.finalize`` records the terminal upload status as
+    # "complete"; anything else means the source is still in flight.
+    if source is None or (upload is not None and upload.status != "complete"):
         raise conflict(
             ApiErrorCode.UPLOAD_INCOMPLETE,
             "The source video upload must complete before the workflow can start.",

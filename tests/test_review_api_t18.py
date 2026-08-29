@@ -6,6 +6,7 @@ workflow controller: no Temporal cluster and no paid provider call is involved.
 
 from __future__ import annotations
 
+import hashlib
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
@@ -24,6 +25,7 @@ from vidgen.db.models import Project
 from vidgen.db.review_models import ApiIdempotencyRecord, ProjectUIEvent, RenderApproval
 from vidgen.db.script_models import Script, ScriptSegment
 from vidgen.db.storyboard_models import StoryboardShotRecord
+from vidgen.db.upload_models import UploadSession
 from vidgen.review.workflow_control import FakeWorkflowController
 
 OWNER = {"X-VidGen-User": "owner-a"}
@@ -249,6 +251,58 @@ def test_workflow_start_rejects_an_incomplete_upload(
     )
     assert response.status_code == 409
     assert response.json()["code"] == "upload_incomplete"
+
+
+def test_workflow_start_accepts_the_status_a_real_upload_records(
+    client: TestClient,
+    review_client: tuple[TestClient, sessionmaker[Session], FakeWorkflowController],
+    golden_video: Path,
+) -> None:
+    """A project uploaded through the API must be startable.
+
+    The guard previously compared the upload status against "completed" while
+    ``UploadService.finalize`` records "complete", so every project uploaded
+    through the documented local path was refused as incomplete.
+    """
+    _, factory, controller = review_client
+    created = client.post(
+        "/api/v1/projects",
+        json={"name": "Uploaded locally", "visual_style": "flat", "humor_intensity": 5},
+        headers=OWNER,
+    )
+    assert created.status_code == 201
+    project_id = created.json()["id"]
+
+    content = golden_video.read_bytes()
+    upload = client.post(
+        f"/api/v1/projects/{project_id}/uploads",
+        json={
+            "filename": "golden.mp4",
+            "media_type": "video/mp4",
+            "expected_size": len(content),
+            "expected_sha256": hashlib.sha256(content).hexdigest(),
+            "part_size": 8 * 1024 * 1024,
+        },
+        headers=OWNER,
+    ).json()
+    assert (
+        client.put(
+            f"/api/v1/uploads/{upload['id']}/parts/0", content=content, headers=OWNER
+        ).status_code
+        == 200
+    )
+    completed = client.post(f"/api/v1/uploads/{upload['id']}/complete", headers=OWNER)
+    assert completed.status_code == 200
+
+    with factory() as session:
+        stored = session.scalar(select(UploadSession).where(UploadSession.id == UUID(upload["id"])))
+        assert stored is not None and stored.status == "complete"
+
+    started = client.post(
+        api(UUID(project_id), "/workflow:start"), json={}, headers=headers(key="start-1")
+    )
+    assert started.status_code == 200, started.json()
+    assert len(controller.started) == 1
 
 
 def test_workflow_cancel_and_compact_status(
