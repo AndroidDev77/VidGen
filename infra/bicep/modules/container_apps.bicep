@@ -114,15 +114,7 @@ param publicIngressEnabled bool = false
 var databaseSecretName = 'postgres-app-url'
 var appSecretNames = applicationSecretNames(providers, databaseSecretName)
 var appEnv = concat(
-  commonEnv(
-    deploymentEnvironment,
-    blobEndpoint,
-    assetsContainerName,
-    databaseSecretName,
-    temporal,
-    providers,
-    features
-  ),
+  commonEnv(deploymentEnvironment, blobEndpoint, assetsContainerName, databaseSecretName, temporal, providers, features),
   youtubeEnv(youtube, providers)
 )
 var workerTemporalEnv = temporalEnv(temporal)
@@ -440,7 +432,6 @@ resource publisher 'Microsoft.App/containerApps@2025-01-01' = {
     }
   }
 }
-
 
 // -- Web ----------------------------------------------------------------------
 

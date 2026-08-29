@@ -207,7 +207,14 @@ export function FinalReviewPage(): JSX.Element {
     queryFn: ({ signal }) => getProjectPublications(projectId, client, signal).then((r) => r.data),
     enabled: projectId !== "",
   });
-  const currentPublicationId = publications.data?.items[0]?.publication_id ?? null;
+  // Read defensively, exactly as the final-QA gate above is. An unavailable or
+  // unexpected publications response must not take the whole final-review page
+  // down: the render preview, its stale warning and the approval control matter
+  // more than the publication panel.
+  const publicationItems = Array.isArray(publications.data?.items)
+    ? publications.data.items
+    : [];
+  const currentPublicationId = publicationItems[0]?.publication_id ?? null;
   const publication = useQuery({
     queryKey: queryKeys.publication(projectId, currentPublicationId ?? ""),
     queryFn: ({ signal }) =>
@@ -217,7 +224,8 @@ export function FinalReviewPage(): JSX.Element {
     // is the only way byte progress reaches the page.
     refetchInterval: currentPublicationId === null ? false : 5_000,
   });
-  const publicationGate = publications.data?.gate ?? null;
+  const publicationGate =
+    typeof publications.data?.gate?.allowed === "boolean" ? publications.data.gate : null;
   const publicationRowVersion = publicationGate?.row_version ?? 0;
 
   const invalidatePublications = () => {
@@ -620,9 +628,13 @@ export function FinalReviewPage(): JSX.Element {
           />
 
           <PublicationPanel
-            connections={connections.data ?? null}
+            connections={
+              Array.isArray(connections.data?.items) ? connections.data : null
+            }
             gate={publicationGate}
-            publication={publication.data ?? null}
+            publication={
+              typeof publication.data?.publication_id === "string" ? publication.data : null
+            }
             busy={
               connectYouTube.isPending ||
               disconnect.isPending ||

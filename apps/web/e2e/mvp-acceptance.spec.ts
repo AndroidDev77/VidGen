@@ -147,6 +147,23 @@ test.describe("T18 MVP acceptance", () => {
     await expect
       .poll(() => new Set(state.downloads).size)
       .toBeGreaterThanOrEqual(3);
+
+    // 22. The T25 publication panel renders on the same page, showing the
+    //     connected channel, the privacy YouTube actually reports, and the
+    //     public watch link - and never a credential.
+    await expect(page.getByText("Publish to YouTube")).toBeVisible();
+    await expect(page.getByText("VidGen Test Channel")).toBeVisible();
+    await expect(page.getByText("Actual privacy")).toBeVisible();
+    await expect(
+      page.getByRole("link", { name: "vidfake000000001" }),
+    ).toHaveAttribute("href", "https://www.youtube.com/watch?v=vidfake000000001");
+    // Quota units are a rate limit, and the panel says so rather than
+    // presenting them as spend.
+    await expect(page.getByText("251 (rate limit, not a charge)")).toBeVisible();
+    const panelText = (await page.locator("section[aria-label='YouTube publication']").innerText());
+    for (const forbidden of ["Bearer", "refresh_token", "access_token", "googleapis.com/upload"]) {
+      expect(panelText).not.toContain(forbidden);
+    }
   });
 
   test("a cross-owner project is indistinguishable from a missing one", async ({ page }) => {

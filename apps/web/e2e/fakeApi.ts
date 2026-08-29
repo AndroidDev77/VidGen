@@ -704,6 +704,17 @@ export async function installFakeApi(page: Page, state: FakeApiState): Promise<v
         expires_in_seconds: 60,
       });
     }
+    // T25 publication. Declared before the project catch-all below, which would
+    // otherwise answer these paths with a project detail body.
+    if (path === "/api/v1/youtube/connections" && method === "GET") {
+      return json(route, youtubeConnections());
+    }
+    if (path.endsWith("/publications") && method === "GET") {
+      return json(route, publicationCollection(state));
+    }
+    if (path.includes("/publications/") && method === "GET") {
+      return json(route, publicationDetail());
+    }
     if (path.startsWith(`/api/v1/projects/${PROJECT_ID}`) && method === "GET") {
       return json(route, projectDetail());
     }
@@ -1072,6 +1083,135 @@ function render(state: FakeApiState) {
     row_version: 1,
     completed_at: "2026-08-01T11:00:00Z",
   };
+}
+
+const PUBLICATION_ID = "aaaaaaaa-2222-4222-8222-000000000001";
+const CONNECTION_ID = "bbbbbbbb-2222-4222-8222-000000000001";
+
+function youtubeConnections() {
+  return {
+    items: [
+      {
+        connection_id: CONNECTION_ID,
+        channel: {
+          channel_id: "UCfakevidgenchannel0001",
+          title: "VidGen Test Channel",
+          thumbnail_url: "https://yt3.example/channel.jpg",
+          custom_url: "@vidgen",
+        },
+        status: "connected",
+        granted_scopes: [
+          "https://www.googleapis.com/auth/youtube.upload",
+          "https://www.googleapis.com/auth/youtube.force-ssl",
+          "https://www.googleapis.com/auth/youtube.readonly",
+        ],
+        // The envelope key *version* only. There is nowhere here for a token.
+        encryption_key_version: "dev-insecure-1",
+        credential_expires_at: null,
+        last_verified_at: "2026-08-02T09:00:00Z",
+        error_code: null,
+        created_at: "2026-08-02T09:00:00Z",
+        updated_at: "2026-08-02T09:00:00Z",
+      },
+    ],
+    oauth_configured: true,
+    production_authentication_available: false,
+  };
+}
+
+function publicationMetadata() {
+  return {
+    title: "Season 3 Episode 4 - animated recap",
+    description: "An animated recap, generated with VidGen.",
+    tags: ["recap", "animated recap"],
+    category_id: "24",
+    default_language: "en",
+    caption_language: "en",
+    caption_track_name: "VidGen recap",
+    made_for_kids: false,
+    contains_synthetic_media: true,
+    embeddable: true,
+    notify_subscribers: false,
+    requested_privacy: "private",
+    scheduled_publish_at: null,
+  };
+}
+
+function publicationProjection() {
+  return {
+    publication_id: PUBLICATION_ID,
+    project_id: PROJECT_ID,
+    connection_id: CONNECTION_ID,
+    channel_id: "UCfakevidgenchannel0001",
+    final_render_asset_id: "88888888-2222-4222-8222-000000000010",
+    final_editorial_run_id: "77777777-2222-4222-8222-000000000001",
+    approval_id: "99999999-2222-4222-8222-000000000001",
+    publication_identity: HASH,
+    metadata_version: 1,
+    status: "PRIVATE_READY",
+    phase: "VERIFICATION",
+    video_id: "vidfake000000001",
+    video_url: "https://www.youtube.com/watch?v=vidfake000000001",
+    total_bytes: 2097152,
+    confirmed_offset: 2097152,
+    processing_state: "succeeded",
+    caption_status: "succeeded",
+    caption_track_id: "capfake000000001",
+    thumbnail_status: "succeeded",
+    requested_privacy: "private",
+    // What YouTube reports, never what was requested.
+    actual_privacy: "private",
+    scheduled_publish_at: null,
+    contains_synthetic_media: true,
+    made_for_kids: false,
+    notify_subscribers: false,
+    quota_units: 251,
+    capability_profile_version: "youtube-data-v3/2026-08",
+    publisher_version: "t25/1.0",
+    gate_version: "final-gate/1.0",
+    render_identity: HASH,
+    metadata: publicationMetadata(),
+    failure: null,
+    row_version: 1,
+    created_at: "2026-08-02T09:00:00Z",
+    updated_at: "2026-08-02T09:05:00Z",
+  };
+}
+
+function publicationCollection(state: FakeApiState) {
+  // The gate only opens once the render is approved, exactly as the backend
+  // decides it: an unapproved render explains itself rather than hiding.
+  const allowed = state.approvals > 0;
+  return {
+    project_id: PROJECT_ID,
+    items: [publicationProjection()],
+    gate: {
+      project_id: PROJECT_ID,
+      allowed,
+      final_render_asset_id: "88888888-2222-4222-8222-000000000010",
+      final_editorial_run_id: "77777777-2222-4222-8222-000000000001",
+      approval_id: allowed ? "99999999-2222-4222-8222-000000000001" : null,
+      caption_asset_id: "88888888-2222-4222-8222-000000000011",
+      gate_version: "final-gate/1.0",
+      failures: allowed
+        ? []
+        : [
+            {
+              code: "RENDER_NOT_APPROVED",
+              summary: "This render has not been approved in the review UI.",
+              retryable: false,
+              http_status: null,
+              remediation: "Approve the render on the final review page, then publish.",
+            },
+          ],
+      warnings: [],
+      row_version: 1,
+    },
+  };
+}
+
+function publicationDetail() {
+  return { ...publicationProjection(), assets: [], attempts: [] };
 }
 
 function costs() {

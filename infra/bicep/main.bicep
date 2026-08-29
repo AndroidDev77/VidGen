@@ -7,7 +7,16 @@ targetScope = 'resourceGroup'
 // needs a subscription-scoped role: Contributor plus Role Based Access Control
 // Administrator on this one resource group is enough to deploy everything here.
 
-import { ContainerResources, ScaleBounds, JobLimits, ProviderToggles, TemporalConfig, FeatureFlags, ResourceTags, YouTubePublisherConfig } from './modules/types.bicep'
+import {
+  ContainerResources
+  ScaleBounds
+  JobLimits
+  ProviderToggles
+  TemporalConfig
+  FeatureFlags
+  ResourceTags
+  YouTubePublisherConfig
+} from './modules/types.bicep'
 
 // -- identity and naming ------------------------------------------------------
 
