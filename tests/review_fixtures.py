@@ -731,6 +731,8 @@ def _add_render(
         verification_report_asset_id=report.id,
         expected_duration_us=SHOT_COUNT * SHOT_DURATION_US,
         measured_duration_us=SHOT_COUNT * SHOT_DURATION_US,
+        output_sha256=final.sha256,
+        renderer_version="t17/1",
         video_profile={"width": 1280, "height": 720},
         audio_profile={"integrated_loudness_lufs": -16.0, "true_peak_dbtp": -1.5},
         caption_profile={"mode": "external"},

@@ -32,6 +32,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from services.renderer.manifest import bound_manifest_identity
+from services.renderer.selection import project_narration_words
 from vidgen.contracts.final_editorial import (
     FinalQAFailureCode,
     FinalQAInput,
@@ -41,7 +42,7 @@ from vidgen.contracts.render import CaptionWord, RenderManifest
 from vidgen.contracts.visual_qa import VisualQAOutcome, VisualQATargetType
 from vidgen.db.animation_models import AnimationGeneratedVideo
 from vidgen.db.models import Asset, Project, RenderJob
-from vidgen.db.narration_models import NarrationRun, NarrationSegment
+from vidgen.db.narration_models import NarrationRun
 from vidgen.db.render_models import CaptionTrackRecord
 from vidgen.db.repair_models import RepairRun
 from vidgen.db.script_models import Script
@@ -182,9 +183,7 @@ class FinalInputSelector:
             )
         return job
 
-    def _manifest(
-        self, job: RenderJob, project_id: UUID
-    ) -> tuple[RenderManifest, dict[str, Any]]:
+    def _manifest(self, job: RenderJob, project_id: UUID) -> tuple[RenderManifest, dict[str, Any]]:
         asset_id = self._require(job.manifest_asset_id, "render manifest")
         asset = self._asset(asset_id, project_id, FinalQAFailureCode.RENDER_MANIFEST_MISSING)
         try:
@@ -422,9 +421,7 @@ class FinalInputSelector:
             )
 
     # --- captions and narration --------------------------------------------
-    def _captions(
-        self, manifest: RenderManifest, project_id: UUID
-    ) -> tuple[list[UUID], list[str]]:
+    def _captions(self, manifest: RenderManifest, project_id: UUID) -> tuple[list[UUID], list[str]]:
         ids: list[UUID] = []
         hashes: list[str] = []
         for reference in manifest.caption_assets:
@@ -444,48 +441,18 @@ class FinalInputSelector:
     def _narration_projection(
         self, manifest: RenderManifest
     ) -> tuple[tuple[tuple[UUID, int, int], ...], tuple[CaptionWord, ...]]:
-        """Project approved T12 segments and word timings onto the global timeline."""
-        shots = list(
-            self._session.scalars(
-                select(StoryboardShotRecord)
-                .where(StoryboardShotRecord.storyboard_run_id == manifest.storyboard_run_id)
-                .order_by(StoryboardShotRecord.global_sequence)
-            )
+        """Project approved T12 segments and word timings onto the global timeline.
+
+        T17b builds the deliverable caption track from the same projection, so
+        this stays a shared definition rather than a second interpretation of
+        the same rows: T22's independent reconstruction is a check on the
+        renderer, not on the projection.
+        """
+        return project_narration_words(
+            self._session,
+            storyboard_run_id=manifest.storyboard_run_id,
+            narration_run_id=manifest.narration_run_id,
         )
-        spans: dict[UUID, list[int]] = {}
-        for shot in shots:
-            span = spans.setdefault(
-                shot.narration_segment_id, [shot.global_start_us, shot.global_end_us]
-            )
-            span[0] = min(span[0], shot.global_start_us)
-            span[1] = max(span[1], shot.global_end_us)
-        segments = {
-            segment.id: segment
-            for segment in self._session.scalars(
-                select(NarrationSegment)
-                .where(NarrationSegment.narration_run_id == manifest.narration_run_id)
-                .order_by(NarrationSegment.sequence)
-            )
-        }
-        intervals = tuple(
-            (segment_id, span[0], span[1])
-            for segment_id, span in sorted(spans.items(), key=lambda item: item[1][0])
-        )
-        words: list[CaptionWord] = []
-        for segment_id, start, _end in intervals:
-            segment = segments.get(segment_id)
-            for timing in list(segment.word_timings or []) if segment is not None else []:
-                text = f"{timing.get('word', '')}{timing.get('punctuation', '')}".strip()
-                word_start = start + round(float(timing.get("start_seconds", 0.0)) * 1_000_000)
-                word_end = start + round(float(timing.get("end_seconds", 0.0)) * 1_000_000)
-                if not text or word_end <= word_start:
-                    continue
-                words.append(
-                    CaptionWord(
-                        sequence=len(words), text=text[:128], start_us=word_start, end_us=word_end
-                    )
-                )
-        return intervals, tuple(words)
 
     # --- helpers ------------------------------------------------------------
     def _asset(self, asset_id: UUID, project_id: UUID, code: FinalQAFailureCode) -> Asset:

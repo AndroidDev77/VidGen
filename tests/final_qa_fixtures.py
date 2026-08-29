@@ -594,6 +594,9 @@ def _update_render_job(
     job.render_identity = manifest.render_identity
     job.expected_duration_us = timeline_us
     job.measured_duration_us = timeline_us
+    final_asset = session.get(Asset, final_asset_id)
+    job.output_sha256 = final_asset.sha256 if final_asset is not None else None
+    job.renderer_version = "t17/1"
     job.completed_at = datetime.now(UTC)
     record = session.scalars(
         select(CaptionTrackRecord).where(CaptionTrackRecord.render_job_id == job.id)
