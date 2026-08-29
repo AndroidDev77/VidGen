@@ -75,9 +75,13 @@ export function FinalReviewPage(): JSX.Element {
   });
   // The current report is the selected one; an older report for a superseded
   // render is history and never decides whether this project may complete.
+  // Tolerate an unavailable or unexpected final-QA response: it must not take
+  // the whole final-review page down with it. The render preview, its stale
+  // warning and the approval control matter more than the final-QA panel.
+  const finalQaRuns = finalQa.data?.items ?? [];
   const currentFinalQaRunId =
-    finalQa.data?.items.find((item) => item.selected)?.final_editorial_run_id ??
-    finalQa.data?.items[0]?.final_editorial_run_id ??
+    finalQaRuns.find((item) => item.selected)?.final_editorial_run_id ??
+    finalQaRuns[0]?.final_editorial_run_id ??
     null;
   const finalQaRun = useQuery({
     queryKey: queryKeys.finalQaRun(projectId, currentFinalQaRunId ?? ""),
@@ -90,6 +94,13 @@ export function FinalReviewPage(): JSX.Element {
     queryFn: ({ signal }) => getFinalQaGate(projectId, client, signal).then((r) => r.data),
     enabled: projectId !== "",
   });
+
+  // A gate response is only usable once it actually carries a decision; the
+  // page must never read a field off a body it did not recognise.
+  const gate =
+    typeof finalQaGate.data?.allowed === "boolean" && typeof finalQaGate.data.reason === "string"
+      ? finalQaGate.data
+      : null;
 
   const invalidateFinalQa = () => {
     void queryClient.invalidateQueries({ queryKey: queryKeys.finalQa(projectId) });
@@ -106,7 +117,7 @@ export function FinalReviewPage(): JSX.Element {
       startFinalQa(
         projectId,
         { provider: "fake", adjudicate: true },
-        finalQaGate.data?.row_version ?? 0,
+        gate?.row_version ?? 0,
         newIdempotencyKey(`final-qa-${projectId}`),
         client,
       ).then((r) => r.data),
@@ -121,7 +132,7 @@ export function FinalReviewPage(): JSX.Element {
         projectId,
         currentFinalQaRunId,
         { reason: "cancelled from the final review page" },
-        finalQaGate.data?.row_version ?? finalQaRun.data?.row_version ?? 0,
+        gate?.row_version ?? finalQaRun.data?.row_version ?? 0,
         newIdempotencyKey(`final-qa-cancel-${currentFinalQaRunId}`),
         client,
       ).then((r) => r.data);
@@ -142,7 +153,7 @@ export function FinalReviewPage(): JSX.Element {
           reason_code: "reviewer_accepted",
           reason: "Reviewed on the final review page and judged acceptable.",
         },
-        finalQaGate.data?.row_version ?? finalQaRun.data?.row_version ?? 0,
+        gate?.row_version ?? finalQaRun.data?.row_version ?? 0,
         newIdempotencyKey(`final-qa-review-${findingId}`),
         client,
       ).then((r) => r.data);
@@ -158,7 +169,7 @@ export function FinalReviewPage(): JSX.Element {
         projectId,
         currentFinalQaRunId,
         { target, finding_ids: [...findingIds] },
-        finalQaGate.data?.row_version ?? finalQaRun.data?.row_version ?? 0,
+        gate?.row_version ?? finalQaRun.data?.row_version ?? 0,
         newIdempotencyKey(`final-qa-route-${target}`),
         client,
       ).then((r) => r.data);
@@ -362,13 +373,13 @@ export function FinalReviewPage(): JSX.Element {
             </div>
           </section>
 
-          {finalQaGate.isSuccess && !finalQaGate.data.allowed && (
+          {gate !== null && !gate.allowed && (
             <MessageBar intent="warning">
               <MessageBarBody>
                 <MessageBarTitle>Final editorial QA blocks completion</MessageBarTitle>
                 {"The project cannot reach its completed state until final QA records a current "}
                 {"PASS for this render. Reason: "}
-                {humanize(finalQaGate.data.reason)}.
+                {humanize(gate.reason)}.
               </MessageBarBody>
             </MessageBar>
           )}
@@ -406,7 +417,7 @@ export function FinalReviewPage(): JSX.Element {
 
           <FinalQAPanel
             run={finalQaRun.data ?? null}
-            gate={finalQaGate.data ?? null}
+            gate={gate}
             busy={
               runFinalQa.isPending ||
               cancelFinalQaRun.isPending ||
