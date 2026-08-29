@@ -1,0 +1,226 @@
+name: Infrastructure validation
+
+# Runs on every pull request and needs no Azure credential: everything here is
+# a local, offline check. The credentialed steps - deployment validation and
+# what-if - live in deploy-staging.yml, which is manually triggered.
+
+on:
+  pull_request:
+    paths:
+      - "infra/**"
+      - "Dockerfile"
+      - ".dockerignore"
+      - "apps/web/Dockerfile"
+      - "apps/web/nginx.conf"
+      - "scripts/run_migrations.py"
+      - "scripts/staging_smoke_test.py"
+      - "workers/temporal_worker/main.py"
+      - ".github/workflows/infra-validate.yml"
+  push:
+    branches: [main]
+    paths:
+      - "infra/**"
+      - "Dockerfile"
+      - "apps/web/Dockerfile"
+      - ".github/workflows/infra-validate.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  bicep:
+    name: Bicep build, lint and policy tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install the Bicep CLI
+        run: |
+          az bicep install
+          az bicep version
+
+      - name: Format, build, lint and scan
+        run: ./infra/scripts/validate_infrastructure.sh
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.11.33"
+          enable-cache: true
+      - run: uv sync --all-groups --all-extras --frozen
+
+      - name: Infrastructure policy tests
+        run: uv run pytest infra/tests -q
+
+      - name: Lint and typecheck the deployment scripts
+        run: |
+          uv run ruff check scripts src apps
+          uv run mypy --strict scripts src apps
+
+      - name: Shell script syntax
+        run: |
+          for script in infra/scripts/*.sh; do bash -n "$script"; done
+
+  docker:
+    name: Docker image build validation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Built exactly the way the deployment workflow builds them, including the
+      # commit-SHA labels, so a Dockerfile change that only breaks the deployed
+      # build cannot reach main.
+      - name: Build the application image
+        run: |
+          docker build \
+            --build-arg VIDGEN_COMMIT_SHA="${GITHUB_SHA}" \
+            --build-arg VIDGEN_BUILD_TIMESTAMP="$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            -t vidgen-app:${GITHUB_SHA} .
+
+      - name: Build the web image
+        run: |
+          docker build \
+            --build-arg VIDGEN_COMMIT_SHA="${GITHUB_SHA}" \
+            --build-arg VIDGEN_BUILD_TIMESTAMP="$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            -f apps/web/Dockerfile \
+            -t vidgen-web:${GITHUB_SHA} .
+
+      - name: The application image carries FFmpeg, ffprobe and no root default
+        run: |
+          docker run --rm vidgen-app:${GITHUB_SHA} ffmpeg -version | head -1
+          docker run --rm vidgen-app:${GITHUB_SHA} ffprobe -version | head -1
+          test "$(docker run --rm vidgen-app:${GITHUB_SHA} id -u)" != "0"
+          test "$(docker inspect -f '{{.Config.User}}' vidgen-app:${GITHUB_SHA})" = "10001:10001"
+
+      - name: The web image does not run as root
+        run: |
+          test "$(docker inspect -f '{{.Config.User}}' vidgen-web:${GITHUB_SHA})" != "0"
+          test -n "$(docker inspect -f '{{.Config.User}}' vidgen-web:${GITHUB_SHA})"
+
+      - name: Both images carry the commit-SHA OCI labels
+        run: |
+          for image in vidgen-app vidgen-web; do
+            revision="$(docker inspect -f '{{index .Config.Labels "org.opencontainers.image.revision"}}' ${image}:${GITHUB_SHA})"
+            test "${revision}" = "${GITHUB_SHA}"
+            docker inspect -f '{{index .Config.Labels "org.opencontainers.image.created"}}' ${image}:${GITHUB_SHA} | grep -q .
+          done
+
+      - name: Neither image contains a credential
+        run: |
+          set -euo pipefail
+          # The build context excludes .env, .git and local data, but assert it
+          # rather than assume it: a leaked key in a layer cannot be removed
+          # after a push. The search is over the application payload only -
+          # scanning "/" would match Python's own bundled CA bundle and the
+          # certificate fixtures in its test suite, neither of which is a
+          # credential.
+          for image in vidgen-app vidgen-web; do
+            # `|| true` because a missing path (there is no /app in the web
+            # image) makes find exit non-zero; an empty result is the pass.
+            leaked="$(docker run --rm --entrypoint sh ${image}:${GITHUB_SHA} -c '
+              for root in /app /usr/share/nginx; do
+                [ -d "$root" ] || continue
+                # .venv holds only what the lockfile installed; the scan is
+                # for repository content that should never have been copied in.
+                find "$root" -name .venv -prune -o \
+                  \( -name ".env" -o -name ".env.*" -o -name "id_rsa" \
+                     -o -name "*.key" -o -name ".netrc" -o -name ".git" \) \
+                  ! -name ".env.example" -print 2>/dev/null
+              done
+              exit 0
+            ' || true)"
+            if [ -n "${leaked}" ]; then
+              echo "::error::${image} contains credential-shaped files:"
+              echo "${leaked}"
+              exit 1
+            fi
+            # A private key or provider key embedded in a file, not just named
+            # like one.
+            if docker run --rm --entrypoint sh ${image}:${GITHUB_SHA} -c '
+              grep -rIlE --exclude-dir=.venv \
+                "BEGIN [A-Z ]*PRIVATE KEY|AccountKey=[A-Za-z0-9+/=]{40,}" /app 2>/dev/null | head -1
+            ' | grep -q .; then
+              echo "::error::${image} contains embedded key material"
+              exit 1
+            fi
+            if docker inspect -f '{{json .Config.Env}}' ${image}:${GITHUB_SHA} \
+                | grep -Eq 'sk-[A-Za-z0-9]{20,}|AccountKey='; then
+              echo "::error::${image} bakes a credential into its environment"
+              exit 1
+            fi
+          done
+
+      - name: The application image answers its health endpoint
+        run: |
+          docker network create vidgen-ci || true
+          docker run -d --name vidgen-api --network vidgen-ci \
+            -e VIDGEN_TELEMETRY_LOGGING_MODE=json \
+            -p 8000:8000 vidgen-app:${GITHUB_SHA}
+          for attempt in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:8000/healthz >/dev/null; then break; fi
+            sleep 2
+          done
+          if ! curl -fsS http://127.0.0.1:8000/healthz | grep -q '"ok"'; then
+            echo "::error::the API container did not serve /healthz"
+            docker logs vidgen-api || true
+            exit 1
+          fi
+          # /readyz has no database here, so it must report unavailable rather
+          # than pretending to be ready.
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8000/readyz)" = "503"
+
+      - name: The web image answers its health endpoint
+        run: |
+          # nginx resolves a literal proxy_pass host once, at startup, and
+          # refuses to start if it does not resolve. The default upstream is the
+          # deployed API's name, so the container is given the API started above
+          # on the same docker network: this proves the reverse proxy config is
+          # loadable, not just that the static assets are present.
+          docker run -d --name vidgen-web --network vidgen-ci -p 8080:8080 \
+            -e VIDGEN_API_UPSTREAM=http://vidgen-api:8000 \
+            vidgen-web:${GITHUB_SHA}
+          for attempt in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:8080/healthz >/dev/null; then break; fi
+            sleep 2
+          done
+          if ! curl -fsS http://127.0.0.1:8080/healthz | grep -q ok; then
+            echo "::error::the web container did not serve /healthz"
+            docker logs vidgen-web || true
+            exit 1
+          fi
+          # The SPA fallback still serves the application shell.
+          curl -fsS http://127.0.0.1:8080/ | grep -qi "<div id=\"root\""
+
+      - if: always()
+        run: docker rm -f vidgen-api vidgen-web || true
+
+  diff:
+    name: Git diff validation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.11.33"
+          enable-cache: true
+      - run: uv sync --all-groups --all-extras --frozen
+
+      # Scoped to the paths T24 owns. The repository has never enforced
+      # `ruff format --check` over the whole tree, and widening it here would
+      # turn an infrastructure change into a repository-wide reformat.
+      - name: Deployment sources are formatted
+        run: uv run ruff format --check infra scripts workers
+
+      - name: Schema export and the lockfile leave no diff
+        run: |
+          uv run python scripts/export_schemas.py
+          uv lock --check
+          if ! git diff --quiet; then
+            echo "::error::the working tree is dirty after the schema export"
+            git --no-pager diff --stat
+            exit 1
+          fi
+
+      - name: Exactly one Alembic head
+        run: |
+          heads="$(uv run alembic heads | grep -c '(head)')"
+          test "${heads}" -eq 1 || { echo "::error::${heads} Alembic heads"; exit 1; }

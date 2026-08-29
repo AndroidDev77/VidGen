@@ -1,0 +1,248 @@
+name: Deploy staging
+
+# Manually triggered. It authenticates to Azure with GitHub's OIDC token - there
+# is no Azure client secret anywhere in this repository - and every mutating
+# step runs inside the protected `staging` GitHub environment, so a required
+# reviewer must approve before anything changes.
+#
+# Order matters and is enforced by job dependencies:
+#
+#   build and push immutable images
+#     -> validate + what-if (read-only, no approval needed)
+#     -> [environment approval]
+#     -> deploy infrastructure
+#     -> run the migration job exactly once and wait for it
+#     -> activate the new application revisions
+#     -> run the private smoke-test job
+#     -> verify health and the deployed image digests
+#     -> on smoke failure, roll application traffic back
+#
+# A failed migration never reaches the revision activation step, and a rollback
+# never downgrades the database.
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Environment parameter file to deploy
+        type: choice
+        options: [staging]
+        default: staging
+      smoke_mode:
+        description: Smoke-test depth
+        type: choice
+        options: [e2e, connectivity]
+        default: e2e
+
+permissions:
+  contents: read
+  # Required to request the OIDC token. No other permission is granted.
+  id-token: write
+
+env:
+  VIDGEN_ENVIRONMENT: ${{ inputs.environment }}
+  AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+  VIDGEN_RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+  VIDGEN_AZURE_LOCATION: ${{ vars.AZURE_LOCATION }}
+  VIDGEN_TEMPORAL_ADDRESS: ${{ vars.VIDGEN_TEMPORAL_ADDRESS }}
+  VIDGEN_TEMPORAL_NAMESPACE: ${{ vars.VIDGEN_TEMPORAL_NAMESPACE }}
+  VIDGEN_DEPLOY_PRINCIPAL_ID: ${{ vars.VIDGEN_DEPLOY_PRINCIPAL_ID }}
+  VIDGEN_DEPLOY_PRINCIPAL_NAME: ${{ vars.VIDGEN_DEPLOY_PRINCIPAL_NAME }}
+
+jobs:
+  build:
+    name: Build and push immutable images
+    runs-on: ubuntu-latest
+    outputs:
+      commit_sha: ${{ steps.resolve.outputs.commit_sha }}
+      app_image: ${{ steps.push.outputs.app_image }}
+      web_image: ${{ steps.push.outputs.web_image }}
+      registry: ${{ steps.registry.outputs.login_server }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve the exact commit being deployed
+        id: resolve
+        run: |
+          sha="$(git rev-parse HEAD)"
+          echo "commit_sha=${sha}" >> "$GITHUB_OUTPUT"
+          echo "Deploying ${sha}"
+
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Discover the registry
+        id: registry
+        run: |
+          server="$(az acr list --resource-group "${VIDGEN_RESOURCE_GROUP}" \
+            --query '[0].loginServer' -o tsv)"
+          test -n "${server}" || { echo "::error::no container registry in ${VIDGEN_RESOURCE_GROUP}; run deploy_staging.sh once first"; exit 1; }
+          echo "login_server=${server}" >> "$GITHUB_OUTPUT"
+
+      - name: Build, push and resolve digests
+        id: push
+        env:
+          REGISTRY: ${{ steps.registry.outputs.login_server }}
+          SHA: ${{ steps.resolve.outputs.commit_sha }}
+        run: |
+          set -euo pipefail
+          built_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          az acr login --name "${REGISTRY%%.*}"
+
+          # Tagged with the commit SHA, never with a moving tag.
+          docker build \
+            --build-arg VIDGEN_COMMIT_SHA="${SHA}" \
+            --build-arg VIDGEN_BUILD_TIMESTAMP="${built_at}" \
+            -t "${REGISTRY}/vidgen-app:${SHA}" .
+          docker build \
+            --build-arg VIDGEN_COMMIT_SHA="${SHA}" \
+            --build-arg VIDGEN_BUILD_TIMESTAMP="${built_at}" \
+            -f apps/web/Dockerfile \
+            -t "${REGISTRY}/vidgen-web:${SHA}" .
+
+          docker push "${REGISTRY}/vidgen-app:${SHA}"
+          docker push "${REGISTRY}/vidgen-web:${SHA}"
+
+          # Deploy by digest, not by tag: the digest is what actually pins the
+          # bytes a revision runs, and it is what verify_deployment.sh compares.
+          app_digest="$(az acr manifest show-metadata "${REGISTRY}/vidgen-app:${SHA}" --query digest -o tsv)"
+          web_digest="$(az acr manifest show-metadata "${REGISTRY}/vidgen-web:${SHA}" --query digest -o tsv)"
+          echo "app_image=${REGISTRY}/vidgen-app@${app_digest}" >> "$GITHUB_OUTPUT"
+          echo "web_image=${REGISTRY}/vidgen-web@${web_digest}" >> "$GITHUB_OUTPUT"
+
+  validate:
+    name: Deployment validation and what-if
+    runs-on: ubuntu-latest
+    needs: build
+    env:
+      VIDGEN_APP_IMAGE: ${{ needs.build.outputs.app_image }}
+      VIDGEN_WEB_IMAGE: ${{ needs.build.outputs.web_image }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      - run: az bicep install
+
+      - name: Static validation
+        run: ./infra/scripts/validate_infrastructure.sh
+
+      - name: ARM deployment validation
+        run: ./infra/scripts/deploy_staging.sh --validate
+
+      - name: What-if
+        run: ./infra/scripts/deploy_staging.sh --what-if
+
+  deploy:
+    name: Deploy, migrate and smoke test
+    runs-on: ubuntu-latest
+    needs: [build, validate]
+    # The protected environment. Approval happens here, after what-if has shown
+    # exactly what would change and before anything is mutated.
+    environment:
+      name: ${{ inputs.environment }}
+    env:
+      VIDGEN_APP_IMAGE: ${{ needs.build.outputs.app_image }}
+      VIDGEN_WEB_IMAGE: ${{ needs.build.outputs.web_image }}
+      VIDGEN_SMOKE_MODE: ${{ inputs.smoke_mode }}
+    outputs:
+      outputs_json: ${{ steps.deploy.outputs.outputs_json }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      - run: az bicep install
+
+      # There is deliberately no secret pre-check here. The vault has
+      # publicNetworkAccess disabled, so a GitHub-hosted runner cannot make a
+      # data-plane call to it and would report every secret as missing. Secret
+      # presence is enforced where it can actually be observed: a Container App
+      # revision whose Key Vault reference does not resolve fails to start, so
+      # the migration job and then the smoke test fail the deployment. Run
+      # `bootstrap_secrets.sh --check` from a network that can reach the vault.
+
+      # Deploys infrastructure and the Container App definitions. New revisions
+      # are created here but the migration below is what gates them being
+      # trusted: the smoke test and the verification decide whether traffic
+      # stays on them.
+      - name: Deploy infrastructure
+        id: deploy
+        run: |
+          set -euo pipefail
+          ./infra/scripts/deploy_staging.sh > /tmp/deployment-outputs.json
+          {
+            echo "outputs_json<<EOF"
+            cat /tmp/deployment-outputs.json
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Read the deployment outputs
+        id: outputs
+        run: |
+          python3 - <<'PY' >> "$GITHUB_ENV"
+          import json
+          with open("/tmp/deployment-outputs.json") as handle:
+              outputs = json.load(handle)
+          for key, target in (
+              ("migrationJobName", "VIDGEN_MIGRATION_JOB"),
+              ("smokeJobName", "VIDGEN_SMOKE_JOB"),
+              ("apiAppName", "VIDGEN_API_APP"),
+              ("webAppName", "VIDGEN_WEB_APP"),
+              ("workerAppName", "VIDGEN_WORKER_APP"),
+          ):
+              print(f"{target}={outputs[key]['value']}")
+          PY
+
+      # Exactly once. The script refuses to start a second execution while one
+      # is running, the job is capped at parallelism one, and the script it runs
+      # holds a PostgreSQL advisory lock.
+      - name: Run the database migration
+        run: ./infra/scripts/run_migrations.sh
+
+      # Only reached when the migration succeeded, because the step above exits
+      # non-zero otherwise and this job stops.
+      - name: Activate the new application revisions
+        run: |
+          set -euo pipefail
+          for app in "${VIDGEN_API_APP}" "${VIDGEN_WEB_APP}"; do
+            latest="$(az containerapp show --name "${app}" --resource-group "${VIDGEN_RESOURCE_GROUP}" \
+              --query properties.latestRevisionName -o tsv)"
+            echo "sending traffic on ${app} to ${latest}"
+            az containerapp ingress traffic set --name "${app}" \
+              --resource-group "${VIDGEN_RESOURCE_GROUP}" \
+              --revision-weight "${latest}=100" --output none
+          done
+
+      - name: Run the private smoke test
+        id: smoke
+        run: ./infra/scripts/run_smoke_test.sh
+
+      - name: Verify health and the deployed image digests
+        run: ./infra/scripts/verify_deployment.sh
+
+      # Runs only when a step above failed. Traffic returns to the previous
+      # healthy revision; the database is left exactly as the migration left it.
+      - name: Roll application traffic back
+        if: failure()
+        run: |
+          set +e
+          for app in "${VIDGEN_API_APP}" "${VIDGEN_WEB_APP}" "${VIDGEN_WORKER_APP}"; do
+            [ -n "${app}" ] && ./infra/scripts/rollback_revision.sh "${app}"
+          done
+          echo "::warning::rolled application traffic back; the database was NOT downgraded"
+
+      - name: Record the deployment outputs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: deployment-outputs-${{ needs.build.outputs.commit_sha }}
+          path: /tmp/deployment-outputs.json
+          if-no-files-found: warn

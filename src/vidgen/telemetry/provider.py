@@ -105,6 +105,11 @@ async def instrument_provider_attempt(
                 span.set_attribute("provider.request_id", row.provider_request_id)
             metrics.provider_requests.labels(*labels, "success").inc()
             metrics.cost.labels(*labels).inc(float(ctx.actual_cost))
+            # Bounded, non-sensitive span attributes: an outcome and a number.
+            # They let the deployed dashboard report provider success rates and
+            # spend from traces without any prompt or response text.
+            span.set_attribute("provider.status", "success")
+            span.set_attribute("provider.cost_usd", float(ctx.actual_cost))
         except BaseException as exc:
             failure = classify_failure(exc)
             row.status = "FAILED"
@@ -113,6 +118,8 @@ async def instrument_provider_attempt(
             row.retryable = failure.retryable
             status = "cancelled" if failure.failure_class == "CANCELLED" else "failure"
             metrics.provider_requests.labels(*labels, status).inc()
+            span.set_attribute("provider.status", status)
+            span.set_attribute("provider.failure_class", failure.failure_class)
             if failure.failure_class == "RATE_LIMIT":
                 metrics.rate_limits.labels(provider, model).inc()
             raise
@@ -120,6 +127,7 @@ async def instrument_provider_attempt(
             elapsed = time.monotonic() - started
             row.latency_ms = int(elapsed * 1000)
             row.completed_at = datetime.now(UTC)
+            span.set_attribute("provider.latency_ms", int(elapsed * 1000))
             metrics.provider_latency.labels(*labels).observe(elapsed)
             metrics.provider_active.labels(provider, model).dec()
             session.flush()

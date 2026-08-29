@@ -6,8 +6,9 @@ The complete system architecture and T01-T26 implementation roadmap are maintain
 [`docs/TECHNICAL_DESIGN.md`](docs/TECHNICAL_DESIGN.md). Contributors and coding agents should
 read it together with `AGENTS.md` before planning the next roadmap task.
 
-This repository implements roadmap tasks T01 through T22 and T23, so the pipeline now runs end to
-end behind a customer-facing web application. The foundations include subtitle-first transcript
+This repository implements roadmap tasks T01 through T23, and the T24 Azure infrastructure is
+implemented and reviewed but not yet validated by a real staging deployment. The pipeline runs end
+to end behind a customer-facing web application. The foundations include subtitle-first transcript
 acquisition, restartable episode analysis, comedy script generation, measured narration,
 deterministic storyboard timing, reviewed keyframe and video generation, deterministic captioned
 rendering, an owner-scoped review UI, and cloud-neutral observability/cost controls:
@@ -37,6 +38,24 @@ generation, then a free deterministic 2.5D parallax render when the shot is elig
 `HUMAN_REVIEW_REQUIRED`. Every repaired or fallback output is revalidated by T20 before it can be
 selected, the complete attempt lineage and its costs are persisted, and only the failed shot is
 touched.
+
+T24 Azure infrastructure is implemented and reviewed. `infra/bicep` describes a reproducible, private-by-default
+staging environment: a VNet-integrated Container Apps environment with an internal load balancer, the
+web, API and Temporal worker as Container Apps, finite Container Apps Jobs for migration, rendering,
+smoke testing and administration, PostgreSQL Flexible Server with VNet injection, private Blob
+Storage, Azure Managed Redis, Key Vault with RBAC authorisation, one managed identity per workload
+with least-privilege role assignments, private endpoints and private DNS for every linked service,
+Log Analytics and Application Insights carrying the existing T23 telemetry, and GitHub Actions
+deployment through Azure OIDC federation with no client secret anywhere. Public ingress requires
+changing a single parameter; it is false in staging and in the production template. Schema changes
+are applied exactly once by a dedicated migration job, before any new revision receives traffic, and
+rollback restores an application revision without ever downgrading the database.
+See [`infra/README.md`](infra/README.md).
+
+T24 is **not** marked complete on the roadmap: its acceptance - a private staging deploy, migrations
+run once, workers autoscaling - can only be demonstrated by a real deployment, and no Azure
+subscription has been available. Every static and CI check passes. `infra/README.md` lists what a
+first deployment needs.
 
 T22 final editorial QA is complete. The assembled T17 delivery - not the individual shots - is
 inspected as a whole: its lineage is proved current, its media, audio and captions are measured
@@ -74,6 +93,9 @@ override a measured failure or a stale lineage.
   before any paid request, deterministic media/audio/caption measurement, bounded Luna/Terra
   editorial analysis, evidence-linked findings, structured remediation routing, an immutable report
   and a workflow-enforced completion gate
+- T24 Azure infrastructure: Bicep modules for a private staging environment, digest-pinned images,
+  one managed identity per workload, Key Vault references, a single-writer migration job, a private
+  in-network smoke test with fake providers only, revision rollback, and OIDC-authenticated CI
 
 ## T18 MVP review UI and control-plane APIs
 
@@ -382,6 +404,65 @@ make verify-stack
 
 The default application database is `postgresql+psycopg://vidgen:vidgen@localhost:5432/vidgen`.
 
+Infrastructure checks need no Azure credential and no deployment:
+
+```bash
+az bicep build --file infra/bicep/main.bicep
+./infra/scripts/validate_infrastructure.sh
+uv run pytest infra/tests -q
+```
+
+## T24 Azure infrastructure
+
+`infra/` holds the authoritative infrastructure-as-code for a VidGen deployment. The complete
+operational reference - architecture, resource inventory, network topology, parameters, RBAC, Key
+Vault secret names, autoscaling rationale, observability, deployment and migration order, smoke
+testing, rollback, backup and recovery, cost drivers and known limitations - is in
+[`infra/README.md`](infra/README.md).
+
+```text
+infra/
+  bicep/
+    main.bicep                 resource-group scoped composition
+    modules/                   identities, networking, private_dns, container_registry,
+                               container_apps_environment, container_apps, container_jobs,
+                               postgres, storage, redis, key_vault, monitoring,
+                               role_assignments, plus shared types and app configuration
+    environments/
+      staging.bicepparam                 the deployed environment
+      production.example.bicepparam      a documented, undeployed template
+  tests/                       compiled-template policy tests, run by `uv run pytest -q`
+  scripts/                     bootstrap_oidc, bootstrap_secrets, validate_infrastructure,
+                               scan_secrets, deploy_staging, run_migrations, run_smoke_test,
+                               verify_deployment, rollback_revision
+  dashboards/vidgen-workbook.json        Azure Monitor workbook over the T23 signals
+  README.md
+```
+
+Staging is private by default. `publicIngressEnabled` is `false`, which makes the Container Apps
+environment internal and disables public network access on Key Vault, Blob Storage and Redis;
+PostgreSQL is VNet injected and has no public endpoint at all. The API is never externally
+reachable, whatever that parameter is set to, because production authentication does not exist yet.
+
+Deployment order is enforced by `.github/workflows/deploy-staging.yml`: build and push
+commit-SHA-tagged images, resolve their digests, validate and `what-if`, wait for the protected
+GitHub environment approval, deploy infrastructure, run the migration job exactly once and wait for
+it, activate the new revisions, run the private smoke-test job, verify health and the deployed
+digests, and roll application traffic back if the smoke test fails. A failed migration never reaches
+revision activation, and rollback never downgrades the database.
+
+Staging enables `features.allowFakeProviders`, because every provider is off and
+the Temporal worker refuses to start with an unconfigured one. That flag must
+stay false wherever a paid provider is enabled, so a missing credential fails
+loudly rather than silently producing fake output.
+
+Blob storage is selected by `VIDGEN_BLOB_BACKEND`. Local development and every test keep the
+filesystem store; a deployed environment sets `azure` and reaches the account over a private
+endpoint with its managed identity, so no key, connection string or SAS token is ever configured.
+`AssetService`'s content-addressed identity and immutable provenance are preserved: the Azure
+adapter's `put_if_absent` uploads with an `If-None-Match: *` precondition and streams both
+directions.
+
 ## Packages
 
 - `vidgen.contracts`: canonical inter-stage contracts
@@ -389,6 +470,9 @@ The default application database is `postgresql+psycopg://vidgen:vidgen@localhos
 - `vidgen.storage`: content-addressed storage and asset service
 - `vidgen.providers`: provider protocols and deterministic fakes
 - `vidgen.review`: T18 row versions, idempotency, project events, and workflow control
+- `vidgen.storage.azure_blob`: the T24 Azure Blob Storage adapter for the same `BlobStore` protocol
+- `vidgen.telemetry.bootstrap`: the T24 entry point that exports T23 traces to Application Insights
+- `infra/bicep`: the T24 Azure infrastructure
 - `services.review`: T18 transactional review mutations and downstream invalidation
 - `apps/web`: the T18 React review application (`@vidgen/web`)
 

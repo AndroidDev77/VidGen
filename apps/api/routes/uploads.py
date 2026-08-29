@@ -17,7 +17,7 @@ from apps.api.settings import APISettings, get_settings
 from vidgen.db.models import Asset
 from vidgen.db.repositories import UploadRepository
 from vidgen.db.upload_models import UploadSession
-from vidgen.storage.blob import FilesystemBlobStore
+from vidgen.storage.blob import BlobStore
 from vidgen.uploads.service import UploadError, UploadService
 
 router = APIRouter(prefix="/uploads", tags=["uploads"])
@@ -25,7 +25,7 @@ router = APIRouter(prefix="/uploads", tags=["uploads"])
 SessionDependency = Annotated[Session, Depends(get_session)]
 PrincipalDependency = Annotated[Principal, Depends(get_current_user)]
 SettingsDependency = Annotated[APISettings, Depends(get_settings)]
-BlobDependency = Annotated[FilesystemBlobStore, Depends(get_blob_store)]
+BlobDependency = Annotated[BlobStore, Depends(get_blob_store)]
 
 
 def owned_upload(session: Session, upload_id: UUID, principal: Principal) -> UploadSession:
@@ -35,9 +35,7 @@ def owned_upload(session: Session, upload_id: UUID, principal: Principal) -> Upl
     return upload
 
 
-def service_for(
-    session: Session, settings: APISettings, blob_store: FilesystemBlobStore
-) -> UploadService:
+def service_for(session: Session, settings: APISettings, blob_store: BlobStore) -> UploadService:
     return UploadService(
         session,
         blob_store,

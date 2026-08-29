@@ -112,9 +112,21 @@ class FakeWorkflowController:
 class TemporalWorkflowController:
     """Adapter over the existing Temporal client and parent project workflow."""
 
-    def __init__(self, target_host: str, namespace: str = "default") -> None:
+    def __init__(
+        self,
+        target_host: str,
+        namespace: str = "default",
+        *,
+        api_key: str | None = None,
+        tls_enabled: bool | None = None,
+    ) -> None:
         self._target_host = target_host
         self._namespace = namespace
+        self._api_key = api_key
+        # Temporal Cloud is always TLS. Defaulting to "TLS whenever an API key
+        # is configured" means a deployed environment cannot accidentally
+        # connect in plaintext, while a local dev server still works.
+        self._tls_enabled = tls_enabled if tls_enabled is not None else api_key is not None
 
     def _run(self, coroutine: object) -> object:
         import asyncio
@@ -122,9 +134,14 @@ class TemporalWorkflowController:
         return asyncio.run(coroutine)  # type: ignore[arg-type]
 
     async def _client(self) -> object:
-        from temporalio.client import Client
+        from temporalio.client import Client, TLSConfig
 
-        return await Client.connect(self._target_host, namespace=self._namespace)
+        return await Client.connect(
+            self._target_host,
+            namespace=self._namespace,
+            api_key=self._api_key,
+            tls=TLSConfig() if self._tls_enabled else False,
+        )
 
     def start_project(self, request: ProjectWorkflowInput) -> tuple[str, str]:
         from temporalio.common import WorkflowIDReusePolicy

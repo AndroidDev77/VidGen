@@ -1,16 +1,16 @@
-.PHONY: install lint format typecheck test schemas verify infra-up infra-down observability-up migrate migrate-down verify-stack run-api run-web web-install web-lint web-typecheck web-test web-build web-e2e verify-web
+.PHONY: install lint format typecheck test schemas verify infra-validate infra-up infra-down observability-up migrate migrate-down verify-stack run-api run-web web-install web-lint web-typecheck web-test web-build web-e2e verify-web
 
 export UV_CACHE_DIR ?= .uv-cache
 
 install:
-	uv sync --all-groups
+	uv sync --all-groups --all-extras
 
 lint:
-	uv run ruff check src apps services packages tests scripts migrations
+	uv run ruff check src apps services packages tests scripts migrations infra workers
 
 format:
-	uv run ruff format src apps services packages tests scripts migrations
-	uv run ruff check --fix src apps services packages tests scripts migrations
+	uv run ruff format src apps services packages tests scripts migrations infra workers
+	uv run ruff check --fix src apps services packages tests scripts migrations infra workers
 
 typecheck:
 	uv run mypy --strict src apps services packages scripts
@@ -22,6 +22,9 @@ schemas:
 	uv run python scripts/export_schemas.py
 
 verify: lint typecheck test schemas
+
+infra-validate:
+	./infra/scripts/validate_infrastructure.sh
 
 infra-up:
 	docker compose up -d postgres redis azurite temporal

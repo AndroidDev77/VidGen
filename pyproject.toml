@@ -26,6 +26,16 @@ dependencies = [
   "runwayml>=3.10,<4",
 ]
 
+[project.optional-dependencies]
+# Installed in the deployed images and in CI. Kept optional so a local
+# filesystem/Prometheus deployment never needs the Azure SDKs, and so every
+# import of them stays lazy behind a configured backend.
+azure = [
+  "azure-identity>=1.19,<2",
+  "azure-monitor-opentelemetry-exporter>=1.0.0b30",
+  "azure-storage-blob>=12.24,<13",
+]
+
 [dependency-groups]
 dev = [
   "mypy>=1.16,<2",
@@ -40,9 +50,12 @@ packages = ["src/vidgen", "apps", "services", "packages"]
 
 [tool.pytest.ini_options]
 addopts = "-q --strict-markers --strict-config"
-testpaths = ["tests"]
+testpaths = ["tests", "infra/tests"]
 pythonpath = ["."]
-markers = ["postgres: requires a running PostgreSQL database"]
+markers = [
+  "postgres: requires a running PostgreSQL database",
+  "bicep: requires the Bicep CLI; compiles the infrastructure templates locally",
+]
 
 [tool.ruff]
 target-version = "py312"
