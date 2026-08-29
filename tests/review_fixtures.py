@@ -149,7 +149,8 @@ def build_project_graph(
             expected_size=1024,
             expected_sha256=digest("source.mp4"),
             part_size=1024,
-            status="completed",
+            # The terminal status ``UploadService.finalize`` actually records.
+            status="complete",
             completed_asset_id=source_asset.id,
         )
     )

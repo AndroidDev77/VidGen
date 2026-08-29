@@ -1,410 +1,837 @@
 # VidGen
 
-VidGen is an automated, restartable pipeline for turning long-form video into animated comedy recap videos.
+VidGen turns a long-form source video into an animated comedy recap. It ingests an episode,
+acquires a transcript, analyzes the episode, writes and narrates a comedy script, directs a
+deterministically timed storyboard, generates and QA-gates every shot, assembles a captioned
+render, and inspects that render as a whole before a project can be called complete.
 
-The complete system architecture and T01-T26 implementation roadmap are maintained in
-[`docs/TECHNICAL_DESIGN.md`](docs/TECHNICAL_DESIGN.md). Contributors and coding agents should
-read it together with `AGENTS.md` before planning the next roadmap task.
+This README is the working guide: install it, run it locally, test it, and fix it when it breaks.
 
-This repository implements roadmap tasks T01 through T23, and the T24 Azure infrastructure is
-implemented and reviewed but not yet validated by a real staging deployment. The pipeline runs end
-to end behind a customer-facing web application. The foundations include subtitle-first transcript
-acquisition, restartable episode analysis, comedy script generation, measured narration,
-deterministic storyboard timing, reviewed keyframe and video generation, deterministic captioned
-rendering, an owner-scoped review UI, and cloud-neutral observability/cost controls:
+- Architecture and the full T01-T26 roadmap: [`docs/TECHNICAL_DESIGN.md`](docs/TECHNICAL_DESIGN.md)
+- What each roadmap task delivered: [`docs/IMPLEMENTATION_STATUS.md`](docs/IMPLEMENTATION_STATUS.md)
+- Contributor rules: [`AGENTS.md`](AGENTS.md)
 
-T19 continuity references are complete and merged. The additive implementation defines evidence-linked
-immutable character/location identity versions, interval-scoped temporary state, deterministic
-source-frame ranking and reference compaction, shot-bundle identities, owner-scoped review
-projections, and a `continuity_references_v1` T14 adapter. Projects without an approved bundle keep
-the unchanged legacy image-generation behavior. T19 now also reuses the T14 provider boundary,
-technical validation and immutable `AssetService` writes with T23 attempt/budget accounting; waits
-durably for an idempotent human approval signal; and marks only affected T14/T15 outputs and the
-T17 render stale before dispatching content-bound T16 regeneration commands. The deterministic
-ten-shot acceptance fixture covers future-state isolation, anonymous identities, T14 injection,
-targeted regeneration, historical preservation and retry accounting.
+## What VidGen does
 
-T20 semantic visual QA is complete. Generated keyframes and canonical clips are evaluated against
-their approved storyboard intent, the exact approved T19 identity and location versions, T13
-continuity state and deterministic media thresholds. The score is always recomputed by application
-code from validated dimension values, a hard failure always blocks the shot, every actionable
-finding cites an exact frame and timestamp, and every non-pass result carries structured repair
-codes. T20 identifies repairs; T21 owns repair and fallback routing.
+A project moves through one durable Temporal workflow. Each stage is restartable, addresses its
+work by an idempotency key, and records provenance for everything it produces:
 
-T21 repair and fallback routing is complete. A failed T20 video-QA result is classified into one of
-five strict categories, repaired with a minimal validated prompt delta, and driven through a bounded
-policy: at most two same-provider repair generations, then one Google Veo alternate-provider
-generation, then a free deterministic 2.5D parallax render when the shot is eligible, and otherwise
-`HUMAN_REVIEW_REQUIRED`. Every repaired or fallback output is revalidated by T20 before it can be
-selected, the complete attempt lineage and its costs are persisted, and only the failed shot is
-touched.
+1. **Upload** an owner-scoped, resumable source video.
+2. **Media processing** probes the container, extracts audio, detects scenes, and extracts frames.
+3. **Transcript acquisition** prefers embedded or sidecar subtitles, then OpenSubtitles, and falls
+   back to audio transcription with speaker diarization.
+4. **Evidence** assembles per-scene evidence packages from the transcript and frames.
+5. **Episode analysis** produces the restartable structural read of the episode.
+6. **Script generation** compresses the plot and writes, reviews and revises a comedy script.
+7. **Narration** generates measured audio per script segment, normalizes it to 48 kHz mono PCM,
+   force-aligns it, and gates it on quality.
+8. **Storyboard** direction retimes shots to exact integer microseconds against the configured
+   visual-provider capability profile.
+9. **Per-shot generation** fans out one child workflow per shot: keyframe, semantic keyframe QA,
+   image-to-video animation, semantic video QA, and bounded repair or fallback routing.
+10. **Render** assembles the approved shots, narration and captions into the delivery.
+11. **Final editorial QA** inspects the assembled render as a whole and owns the completion gate.
 
-T24 Azure infrastructure is implemented and reviewed. `infra/bicep` describes a reproducible, private-by-default
-staging environment: a VNet-integrated Container Apps environment with an internal load balancer, the
-web, API and Temporal worker as Container Apps, finite Container Apps Jobs for migration, rendering,
-smoke testing and administration, PostgreSQL Flexible Server with VNet injection, private Blob
-Storage, Azure Managed Redis, Key Vault with RBAC authorisation, one managed identity per workload
-with least-privilege role assignments, private endpoints and private DNS for every linked service,
-Log Analytics and Application Insights carrying the existing T23 telemetry, and GitHub Actions
-deployment through Azure OIDC federation with no client secret anywhere. Public ingress requires
-changing a single parameter; it is false in staging and in the production template. Schema changes
-are applied exactly once by a dedicated migration job, before any new revision receives traffic, and
-rollback restores an application revision without ever downgrading the database.
-See [`infra/README.md`](infra/README.md).
+AI reasoning stays behind provider interfaces, orchestration stays deterministic, and every
+generated asset is content-addressed with its parents, hashes and provider request IDs.
 
-T24 is **not** marked complete on the roadmap: its acceptance - a private staging deploy, migrations
-run once, workers autoscaling - can only be demonstrated by a real deployment, and no Azure
-subscription has been available. Every static and CI check passes. `infra/README.md` lists what a
-first deployment needs.
+## Current capabilities
 
-T22 final editorial QA is complete. The assembled T17 delivery - not the individual shots - is
-inspected as a whole: its lineage is proved current, its media, audio and captions are measured
-deterministically, and only then is a bounded editorial analysis bought. The completion gate is
-recomputed from validated findings rather than asserted, so a project cannot reach its final
-completed state without a current `PASS` for the render it actually holds, and no human action can
-override a measured failure or a stale lineage.
+Roadmap tasks T01 through T23 are implemented, and T24 Azure infrastructure is implemented and
+reviewed but not yet validated by a real staging deployment. The per-task detail lives in
+[`docs/IMPLEMENTATION_STATUS.md`](docs/IMPLEMENTATION_STATUS.md); in short:
 
-- Python monorepo, CI, and local infrastructure
-- Versioned Pydantic contracts plus exported JSON Schema
-- PostgreSQL data model and Alembic migration
-- Content-addressed asset storage with provenance
-- Deterministic fake AI and media providers for offline tests
-- Owner-scoped resumable source-video uploads
-- Deterministic FFmpeg media probing, audio extraction, scene detection, and frame extraction
-- Restartable transcription, overlap reconciliation, and anonymous speaker diarization
-- Embedded, sidecar, and OpenSubtitles acquisition with audio-transcription fallback
-- Restartable plot compression and comedy script generation with editorial review and revision
-- Provider-neutral narration (fake, OpenAI, and optional ElevenLabs), deterministic 48 kHz mono
-  PCM normalization, bounded forced alignment, quality gates, and restartable relational checkpoints
-- Restartable storyboard direction with an exact-integer deterministic retimer, versioned visual
-  provider capability profiles, structured continuity state, and targeted per-segment repair
-- T14 image-generation foundations: strict provider-neutral keyframe contracts, a deterministic
-  versioned prompt compiler, bounded technical image validation, content-addressable provenance
-  projections, a network-free fake provider, and an OpenAI Image API adapter pinned by default to
-  `gpt-image-2-2026-04-21`. T14 review and CI are complete.
-- A customer-facing React review application and the owner-scoped control-plane APIs behind it
-- T20 semantic visual QA: deterministic sampling and media checks, a versioned weighted rubric,
-  application-side score recomputation, bounded adjudication, evidence-linked findings, structured
-  repair codes, T16 gating, T17 render eligibility, and review-UI panels
-- T21 repair and fallback routing: bounded failure classification, minimal validated prompt repair,
-  two same-provider repairs, one Google Veo alternate-provider attempt, a free deterministic 2.5D
-  parallax fallback, T20 revalidation before any selection, complete attempt lineage and costs
-- T22 final editorial QA: restartable phases over the assembled render, stale-lineage rejection
-  before any paid request, deterministic media/audio/caption measurement, bounded Luna/Terra
-  editorial analysis, evidence-linked findings, structured remediation routing, an immutable report
-  and a workflow-enforced completion gate
-- T24 Azure infrastructure: Bicep modules for a private staging environment, digest-pinned images,
-  one managed identity per workload, Key Vault references, a single-writer migration job, a private
-  in-network smoke test with fake providers only, revision rollback, and OIDC-authenticated CI
+- Versioned Pydantic contracts with exported JSON Schema, a PostgreSQL data model with Alembic
+  migrations, and content-addressed asset storage with provenance.
+- Deterministic fake AI and media providers for every paid provider, so the whole pipeline can run
+  offline with no credential.
+- Owner-scoped resumable uploads and deterministic FFmpeg probing, audio extraction, scene
+  detection and frame extraction.
+- Restartable transcription, subtitle-first transcript acquisition, episode analysis, comedy script
+  generation and provider-neutral narration.
+- Deterministic storyboard retiming, keyframe generation, Runway image-to-video generation and
+  per-shot child workflows.
+- Semantic visual QA with a versioned rubric, bounded repair and fallback routing including a Google
+  Veo alternate provider and a free 2.5D parallax fallback.
+- Deterministic captioned rendering, final editorial QA with a workflow-enforced completion gate,
+  a customer-facing React review application, and a cost ledger with budget caps.
+- Bicep infrastructure for a private-by-default Azure staging environment, with an Azure Blob
+  storage backend selected by `VIDGEN_BLOB_BACKEND` and telemetry that exports to Application
+  Insights (see [Azure deployment](#azure-deployment)).
 
-## T18 MVP review UI and control-plane APIs
+Two gaps affect what you can run locally today, and both are called out again where they bite:
 
-T18 is the first customer-facing VidGen application. An owner creates a project, uploads a source
-video, starts and monitors the workflow, reviews and edits the transcript and the recap script,
-inspects the storyboard and individual shots, regenerates a single shot without rerunning its
-siblings, previews the finished T17 render with selectable captions, approves it, and downloads the
-final MP4, SRT, and WebVTT assets.
+- **No supported command executes a render.** `POST /render:start` and
+  `scripts/render_project.py` create or queue the render job row; the T17 pipeline that would
+  execute it (`services/renderer/pipeline.py`) is driven only from tests, and the project workflow
+  has no render stage. A local run therefore stops before the final MP4, and final editorial QA has
+  no current render to inspect.
+- **No metrics reach a local Grafana.** The API and the worker do initialize the T23 telemetry
+  stack, but the bootstrap exports logs (stdout JSON) and traces only. Nothing exports metrics over
+  OTLP, so the provisioned dashboard stays empty locally.
 
-### Architecture
+## Architecture summary
 
-The web application never talks to a provider, a workflow, or the database. It calls one typed API
-client, which calls the owner-scoped FastAPI control plane, which delegates to the review services.
-Route handlers stay thin: HTTP validation lives in the schemas, owner authorization in
-`apps/api/routes/_common.py`, concurrency and idempotency in `vidgen.review`, domain mutation in
-`services.review`, and response projection in `vidgen.review.projections`. No route handler calls
-an AI provider, a media provider, FFmpeg, or a Temporal activity.
+| Path | What lives there |
+| --- | --- |
+| `src/vidgen/contracts` | Versioned Pydantic contracts exchanged between stages |
+| `src/vidgen/db` | SQLAlchemy models, repositories and projections |
+| `src/vidgen/storage` | Content-addressed blob storage and the asset service |
+| `src/vidgen/review` | Row versions, idempotency, project events and workflow control |
+| `src/vidgen/telemetry` | Structured logging, tracing, metrics and cost instrumentation |
+| `services/*` | One package per pipeline stage, each with a provider boundary and a fake |
+| `packages/workflows` | Temporal workflow and activity definitions |
+| `packages/providers` | Provider protocols and the deterministic fakes |
+| `packages/contracts`, `packages/ts-contracts` | Exported JSON Schema and its TypeScript mirror |
+| `workers/temporal_worker` | The Temporal worker process and its production handlers |
+| `apps/api` | The FastAPI control plane (`/api/v1`) |
+| `apps/web` | The React review application (`@vidgen/web`) |
+| `scripts/` | Per-stage CLIs for running and inspecting one stage at a time |
+| `migrations/` | Alembic migrations |
+| `infra/` | Bicep templates, deployment scripts and policy tests for the Azure environment |
 
-### Frontend stack
+Three processes make up a full local system: the **API** (`apps/api`), the **web application**
+(`apps/web`), and the **Temporal worker** (`workers/temporal_worker`). Docker Compose supplies
+PostgreSQL, Redis, Azurite and Temporal.
 
-`apps/web` is a workspace package built with React 18, TypeScript in strict mode, Vite, Fluent UI
-v9, TanStack Query, React Router, Vitest with React Testing Library, Mock Service Worker for
-deterministic API tests, and Playwright for browser acceptance tests. Canonical contracts are
-reused from `@vidgen/contracts` rather than restated as loose frontend interfaces.
+## Prerequisites
 
-### Local development
+| Tool | Tested version | Verify with |
+| --- | --- | --- |
+| Docker Desktop / Docker Engine with Compose v2 | Any release with `docker compose` | `docker --version && docker compose version` |
+| Python | 3.12 (`requires-python = ">=3.12"`, images use `python:3.12-slim`) | `python3 --version` |
+| `uv` | 0.11.33 (pinned in CI and in the Dockerfile) | `uv --version` |
+| Node.js | 22 LTS or newer (CI runs Node 24) | `node --version` |
+| pnpm | 11.19.0 (pinned by `packageManager` in `package.json`) | `pnpm --version` |
+| FFmpeg | 6 or newer (verified against 6.1.1) | `ffmpeg -version` |
+| ffprobe | ships with FFmpeg; must be the same build | `ffprobe -version` |
+| Git | 2.40 or newer | `git --version` |
+
+All eight at once:
 
 ```bash
-# Terminal 1: the API, using the deterministic fake workflow controller.
-make run-api
-
-# Terminal 2: the web application on http://localhost:5173.
-make run-web           # or: pnpm dev:web
+docker --version && docker compose version
+python3 --version
+uv --version
+node --version
+pnpm --version
+ffmpeg -version | head -1
+ffprobe -version | head -1
+git --version
 ```
 
-`apps/web/.env.example` documents the two browser variables:
+`uv` manages the Python toolchain itself, so a system Python older than 3.12 is fine as long as
+`uv` can fetch 3.12. FFmpeg and ffprobe are not optional: media processing, narration
+normalization, rendering and QA all shell out to them.
 
-```text
-VITE_VIDGEN_API_BASE_URL   # empty in local development: requests use the Vite dev proxy
-VITE_VIDGEN_DEV_USER       # the local X-VidGen-User development identity
-```
+## Quick local setup
 
-No server secret is ever exposed through a `VITE_` variable. T18 keeps the existing local
-`Principal` and `X-VidGen-User` development identity; production authentication is out of scope.
-
-The web container (`docker compose --profile web up --build web`) serves the built assets and
-reverse-proxies the API under `/api` on the same origin, so the browser never makes a cross-origin
-request and the API keeps CORS disabled. `VIDGEN_API_UPSTREAM` selects the API it proxies to.
-
-### Application routes
-
-```text
-/                              redirect to /projects
-/projects                      project list
-/projects/new                  create a project and upload its source video
-/projects/:projectId           dashboard, stage timeline, costs, and failures
-/projects/:projectId/transcript  transcript review and editing
-/projects/:projectId/script      script review, editing, and version selection
-/projects/:projectId/storyboard  storyboard grid, timeline, and shot inspector
-/projects/:projectId/review      final render preview, approval, and downloads
-```
-
-Selected tabs, the inspected shot ID, the transcript search term, and the caption toggle live in
-the URL so a view can be shared or reloaded. Media data and stage payloads never enter history
-state.
-
-### Project creation and upload
-
-The new-project flow collects a name, target recap duration, visual style, and humor intensity, and
-never exposes provider credentials or model routing. The upload integrates the existing T05
-multipart API: the browser validates the file type and size, hashes the file with a streaming
-SHA-256 in a Web Worker (one bounded slice resident at a time), slices the `File` into configured
-parts, uploads them with bounded concurrency, retries transient part failures with bounded backoff,
-treats a conflicting duplicate part as an actionable failure, and finalizes only after every part
-succeeds. Hashing and upload progress are reported separately, cancellation is supported, and a
-resume is refused when the reselected file's fingerprint does not match. Source bytes are never
-placed in application state, local storage, logs, or the query cache.
-
-### Workflow control and progress
-
-Starting a project reuses one stable workflow ID per project, refuses to start before the source
-upload completes, and is idempotent, so a retried or duplicated request adopts the existing run
-instead of creating a second workflow. Cancellation and compact query-visible status are exposed.
-Only compact identifiers, hashes, statuses, and counts cross the Temporal boundary.
-
-Progress reaches the browser through Server-Sent Events at
-`GET /api/v1/projects/{projectId}/events`. Owner authorization happens before streaming starts; the
-stream honours `Last-Event-ID`, deduplicates by sequence, sends heartbeat comments, uses bounded
-payloads with no transcript or script text, and reads durable events in short transactions rather
-than holding one open. The frontend reconnects with bounded exponential backoff and falls back to
-polling after repeated failures. Events invalidate only the queries they affect.
-
-The dashboard renders the fourteen known stages in repository order. A progress percentage is shown
-only when the backend computed one from real shot counts; it is never guessed from a status name.
-
-### Transcript and script editing
-
-Transcript review offers a searchable segment list with times, speaker labels, confidence, keyboard
-navigation, and per-segment saving. An edit preserves the original provider provenance, never
-silently overwrites a newer version, returns the downstream invalidation set, and reruns nothing.
-
-Script review is version-aware. A material change to an approved immutable version creates a new
-compatible version rather than mutating it in place, selects the new version, preserves the
-original rows, and invalidates only the required downstream lineage. Narration, storyboard, shots,
-and render are never regenerated automatically.
-
-### Storyboard, shot inspector, and single-shot regeneration
-
-The storyboard grid presents the canonical shots in sequence with exact T13 timing, trim
-information, camera and reference details, provider, model, attempt count, and cost. The T13 timing
-manifest is the timing authority, and the timeline is read-only in T18. The shot inspector shows
-the canonical definition, keyframe and video attempts, selected outputs, provider task IDs in
-expandable technical details, child-workflow status, and regeneration history, and supports refresh,
-targeted retry, cancellation, attempt selection, and regeneration.
-
-Regenerating one shot verifies project and shot ownership, requires an idempotency key and an
-expected row version, creates a new material regeneration identity, preserves the previously locked
-attempt, leaves sibling shot workflows untouched, invalidates only that shot's render dependency,
-and marks the previous verified render stale rather than deleting it. The exact invalidation set is
-returned before confirmation.
-
-### Final review, approval, and downloads
-
-The final-review page loads only a completed, verified T17 render. It shows the player, render
-status and version, expected and measured duration, verification result, caption controls, loudness
-summary, warnings, selected shot count, approval state, and expandable technical provenance.
-Captions come from the standalone WebVTT asset loaded into a `<track>` element, so the browser's own
-selectable captions work. Approval verifies ownership, `If-Match`, an idempotency key, completion,
-verification, freshness, and lineage, then persists the approving principal, the render ID, and a
-timestamp, preserves previous approval records, and emits a bounded event. Approval never publishes
-the video; T25 owns publication.
-
-Signed download URLs are requested shortly before playback or download, cached briefly, refreshed
-when they expire, and never written into permanent application state or browser storage.
-
-### Owner authorization, concurrency, and idempotency
-
-Every project, transcript, script, storyboard, shot, render, review, event, and asset lookup is
-verified against the authenticated `Principal`. Cross-project and cross-owner identifiers return the
-same `404` as a missing one, so a foreign resource's existence is never disclosed. Ownership is
-never accepted from a request body.
-
-Every mutable operation takes `If-Match: <row-version>` and `Idempotency-Key: <stable-client-key>`.
-A missing `If-Match` returns a structured precondition error, a stale one returns `409` with the
-current version, and row-version comparisons happen transactionally in `resource_versions`.
-Repeating a key with an equivalent request replays the original result; reusing it with a different
-request is a structured conflict. Duplicate browser submissions therefore cannot create a second
-script revision, shot workflow, render job, or approval.
-
-### T23 cost and failure visibility
-
-The dashboard reads the existing T23 APIs for the warning and hard budgets, reserved, committed and
-remaining amounts, cost by provider, model and operation, recent provider attempts, and recent
-pipeline failures. Costs are rendered as exact decimal strings and are never parsed into a binary
-float. No second cost system is introduced.
-
-### Test commands
-
-```bash
-make verify                          # ruff, mypy --strict, pytest, schema export
-uv run pytest -q                     # backend, including the T18 API and T20 visual-QA suites
-pnpm lint                            # workspace lint
-pnpm typecheck                       # workspace strict TypeScript
-pnpm test                            # workspace unit tests
-pnpm --filter @vidgen/web build      # production frontend build
-pnpm --filter @vidgen/web test:e2e   # Playwright MVP acceptance run
-```
-
-## T16 per-shot workflows
-
-T16 adds a deterministic child workflow for every canonical selected T13 shot. The parent resolves
-the authoritative ordered shot IDs through an activity and fans them out with a configurable limit
-of ten by default. Child IDs bind the project, storyboard and timing hashes, stable shot identity,
-T14 configuration, T15 capability profile, pipeline versions, and attempt-policy version. An
-unchanged input therefore reuses the same Temporal identity; a material change creates a new child
-without overwriting the locked result.
-
-Each child advances through `DEFINED`, `PROMPTING`, `KEYFRAME_GENERATING`, `KEYFRAME_QA`,
-`ANIMATING`, `VIDEO_QA`, and `LOCKED`, with explicit `FAILED` and `CANCELLED` outcomes. Workflow
-history contains compact IDs, hashes, states, durations, and failure codes only. Activities resolve
-lineage, invoke or resume the existing T14/T15 services, persist checkpoints, and query the T23
-ledger. Thus provider calls, media bytes, prompts, validation reports, storage, and database access
-remain outside workflow code. T15 polling resumes the persisted remote task rather than submitting
-another paid request.
-
-Failures remain local to a child and locked siblings are retained. Retry policies classify
-deterministic lineage, configuration, capability, hard budget, ambiguous submission, and
-cancellation outcomes as non-retryable; transient work has bounded backoff. Parent cancellation
-stops scheduling and requests cancellation of active children while durable outputs and remote task
-identities remain intact. Compact parent and child queries expose counts, stages, attempts, output
-references, failures, warnings, and cost totals. Idempotent per-shot status, retry, cancel, resume,
-outputs, and regenerate commands are supported; regenerate requires a new material input identity.
-
-Fake-provider development requires no paid credentials:
-
-```bash
-VIDGEN_TEMPORAL_ALLOW_FAKE_PROVIDERS=true \
-  uv run python -m workers.temporal_worker.main
-uv run python scripts/run_shot_workflow.py PROJECT_UUID \
-  --storyboard-run-id STORYBOARD_RUN_UUID --provider fake --concurrency 10
-uv run python scripts/inspect_shot_workflow.py PROJECT_UUID \
-  --storyboard-run-id STORYBOARD_RUN_UUID
-uv run python scripts/run_shot_workflow.py PROJECT_UUID \
-  --storyboard-run-id STORYBOARD_RUN_UUID --shot-id SHOT_UUID \
-  --child-workflow-id CHILD_WORKFLOW_ID --command retry
-```
-
-## T15 Runway image-to-video generation
-
-T15 loads only the selected, complete T13 storyboard and the newest completed T14 run for that
-exact storyboard version. It revalidates T10-T14 selection, project ownership, canonical artifact
-hashes, dense timing, and a selected technically valid `FIRST_FRAME` for every requested shot.
-Stale, cross-project, incomplete, invalid, or mismatched inputs fail with actionable lineage codes.
-
-The provider-neutral `VideoGenerationProvider` boundary separates task submission, retrieval, and
-cancellation from canonical orchestration. Production uses the official asynchronous Runway Python
-SDK; tests and local development use a deterministic fake that creates small H.264 MP4 files with
-FFmpeg and makes no network or paid calls. The versioned routing policy defaults to `gen4_turbo`.
-It selects `gen4.5` only for configured hero shots when the project quality profile, remaining
-budget, and capability registry permit the premium model. Current capability validation requires
-image-to-video, an exact supported 2-10 second T13 generation duration, a supported output ratio,
-an MP4 result, a bounded prompt, and a keyframe whose aspect ratio exactly matches the output.
-
-Motion prompts are compiled without an LLM in stable action, pose, camera, timing, environment,
-continuity, and restriction order. Runway receives the verified first keyframe as a bounded data
-URI. Unsupported last-frame controls are never sent; strict T13 last-frame enforcement fails
-rather than being silently ignored. Signed URLs, data URIs, output URLs, provider payloads, and
-video bytes are excluded from contracts, database JSON, logs, telemetry, and Temporal history.
-
-Before submission T15 creates or reuses a T23 provider attempt, estimates the configured per-second
-price, reserves budget, and commits a pre-call checkpoint. It commits the remote task ID immediately
-after submission and before polling. Restarts, activity retries, polling timeouts, and transient
-retrieval failures resume that task and never submit a replacement. If the submission response is
-lost before an ID is known, T15 records an ambiguous outcome and requires manual reconciliation;
-the Runway API does not document an application idempotency key that can prove exactly-once task
-creation.
-
-Successful output is streamed into bounded temporary storage, hashed, and checked with FFprobe and
-boundary FFmpeg decodes for container, codec, dimensions, frame rate, timebase, duration, streams,
-frame count, finite metadata, size, and truncation. AssetService preserves the immutable provider
-output with storyboard, timing, keyframe, task, attempt, prompt, capability, routing, configuration,
-and validation provenance. T13 trim values then drive deterministic single-threaded H.264
-re-encoding with zero-based timestamps; the canonical clip is probed again and stored as a child of
-the original. T15 performs technical validation only, not semantic motion or identity QA.
-
-Local commands are:
-
-```bash
-uv run python scripts/generate_shot_videos.py PROJECT_UUID --provider fake
-RUNWAYML_API_SECRET=... uv run python scripts/generate_shot_videos.py PROJECT_UUID --provider runway
-uv run python scripts/generate_shot_videos.py PROJECT_UUID --provider fake --shot-id SHOT_UUID
-RUNWAYML_API_SECRET=... uv run python scripts/generate_shot_videos.py PROJECT_UUID --provider runway --model gen4_turbo
-```
-
-## T14 image generation
-
-T14 consumes only the selected T13 storyboard and creates a required first keyframe plus a last
-keyframe only when the storyboard asks for one. It does not create the T19 character/location
-reference bibles and does not begin T15 animation or T16 child workflows. Prompt sections are
-compiled in a stable order without another LLM; required identity, location, pose, action, camera,
-and negative constraints are never discarded to fit a provider limit.
-
-The production adapter uses `images.generate` without references and `images.edit` with verified
-project-owned PNG, JPEG, or WebP references. The default is opaque PNG, medium quality, and
-1536x864. Dimensions must be divisible by 16, at most 3:1, and within centralized pixel and edge
-limits. Generated bytes are decoded and technically validated before immutable AssetService
-persistence. Application identities bind prompts, references, provider configuration, and
-validation configuration; unknown provider outcomes remain ambiguous rather than being blindly
-retried. Provider calls reuse the T23 attempt, reservation, reconciliation, telemetry, and cost
-ledger infrastructure.
-
-Run deterministic local keyframe generation without provider credentials:
-
-```bash
-uv run python scripts/generate_keyframes.py PROJECT_UUID --provider fake
-uv run python scripts/generate_keyframes.py PROJECT_UUID --provider fake --shot-id SHOT_UUID
-```
-
-For configured OpenAI generation:
-
-```bash
-VIDGEN_OPENAI_API_KEY=... \
-  uv run python scripts/generate_keyframes.py PROJECT_UUID --provider openai
-```
-
-## Quick start
+One time, from a clean checkout:
 
 ```bash
 cp .env.example .env
-uv sync --all-groups
-make verify
-
-# The web application and its workspace checks.
-pnpm install
 cp apps/web/.env.example apps/web/.env
-make verify-web
+
+uv sync --all-groups
+pnpm install
+
+make infra-up
+make migrate
 ```
 
-With Docker installed:
+`make infra-up` starts four containers; the Temporal dev server also serves its web UI:
+
+| Service | Address | Purpose |
+| --- | --- | --- |
+| PostgreSQL 16 | `localhost:5432` | Canonical relational state (`vidgen` / `vidgen` / `vidgen`) |
+| Redis 7 | `localhost:6379` | Cache, rate limiting and ephemeral semaphores |
+| Azurite | `localhost:10000` | Azure Blob emulator |
+| Temporal (dev server) | `localhost:7233` | Durable workflow execution |
+| Temporal UI | <http://localhost:8233> | Workflow history and queries |
+
+`make migrate` runs `uv run alembic upgrade head` against
+`postgresql+psycopg://vidgen:vidgen@localhost:5432/vidgen`.
+
+Confirm the stack is healthy — this checks PostgreSQL and runs Alembic up, down and up again
+against the local (disposable) database:
 
 ```bash
-docker compose up -d postgres redis azurite temporal
-uv run alembic upgrade head
 make verify-stack
 ```
 
-The default application database is `postgresql+psycopg://vidgen:vidgen@localhost:5432/vidgen`.
+### Make targets
 
-Infrastructure checks need no Azure credential and no deployment:
+| Target | What it does |
+| --- | --- |
+| `make install` | `uv sync --all-groups --all-extras` (adds the optional Azure SDKs) |
+| `make infra-up` | Start PostgreSQL, Redis, Azurite and Temporal |
+| `make infra-validate` | Compile and policy-check the Bicep templates (no Azure credential) |
+| `make infra-logs` | Follow the infrastructure container logs |
+| `make migrate` | `alembic upgrade head` |
+| `make run-worker` | Run the Temporal worker |
+| `make run-api` | Run the API on port 8000 with reload |
+| `make run-web` | Run the Vite dev server on port 5173 |
+| `make observability-up` | Start the collector, Prometheus and Grafana |
+| `make observability-logs` | Follow the collector logs |
+| `make verify` | Lint, typecheck, test and export schemas |
+| `make verify-web` | Lint, typecheck, test and build the web application |
+| `make verify-stack` | PostgreSQL reachability plus an Alembic up/down/up check |
+| `make infra-down` | Stop the containers, keeping the volumes |
+| `make local-reset` | **Destructive.** Delete the local database, blob store and uploads |
+
+## UI-only development mode
+
+The default `.env` sets `VIDGEN_TEMPORAL_USE_FAKE_WORKFLOW_CONTROLLER=true`. In that mode the API
+does not talk to Temporal at all: `workflow:start` records a deterministic fake run so the review
+UI has something to render. **No pipeline stage executes.** This is the right mode for frontend and
+control-plane work, and the wrong mode for anything that must actually produce media.
+
+Two terminals:
+
+```bash
+# Terminal 1
+make run-api
+
+# Terminal 2
+make run-web
+```
+
+| Surface | URL |
+| --- | --- |
+| Web application | <http://localhost:5173> |
+| API documentation (Swagger UI) | <http://localhost:8000/docs> |
+| API health | <http://localhost:8000/healthz> |
+
+The Vite dev server proxies `/api` to `http://127.0.0.1:8000` (override with the
+`VIDGEN_API_PROXY_TARGET` environment variable), so the browser stays same-origin and the API keeps
+CORS disabled. The development identity is sent as the `X-VidGen-User` header
+(`VITE_VIDGEN_DEV_USER`, default `local-user`); T18 deliberately implements no production
+authentication.
+
+### Fake workflow controller vs. fake AI providers
+
+These are two independent switches and confusing them is the most common local mistake:
+
+| Setting | What it fakes | What still runs |
+| --- | --- | --- |
+| `VIDGEN_TEMPORAL_USE_FAKE_WORKFLOW_CONTROLLER=true` | The **orchestrator**. The API invents workflow status instead of starting a Temporal workflow. | Nothing. No stage, no activity, no media. |
+| `VIDGEN_TEMPORAL_ALLOW_FAKE_PROVIDERS=true` | The **paid AI providers**. Deterministic synthetic images, video, narration, transcription and QA. | Everything else: Temporal, PostgreSQL, FFmpeg, persistence, QA logic and the workflow code. |
+
+A full local pipeline wants the first `false` and the second `true`.
+
+## Full local pipeline with fake providers
+
+Set these in `.env`:
+
+```text
+VIDGEN_TEMPORAL_USE_FAKE_WORKFLOW_CONTROLLER=false
+VIDGEN_TEMPORAL_ALLOW_FAKE_PROVIDERS=true
+VIDGEN_IMAGE_PROVIDER_NAME=fake
+VIDGEN_VIDEO_PROVIDER_NAME=fake
+VIDGEN_REPAIR_ALTERNATE_PROVIDER=none
+```
+
+Leave `VIDGEN_OPENAI_API_KEY` and `VIDGEN_RUNWAY_API_SECRET` empty. A set credential always wins
+over the fake provider (see the warning under
+[Full local pipeline with production providers](#full-local-pipeline-with-production-providers)).
+
+`VIDGEN_IMAGE_PROVIDER_NAME` and `VIDGEN_VIDEO_PROVIDER_NAME` do not choose the provider — the
+credentials do. They are the provider names bound into each shot's child-workflow identity, so
+setting them to `fake` keeps the workflow IDs that the review UI addresses consistent with what the
+worker actually ran.
+
+Three processes:
+
+```bash
+# Terminal 1
+uv run python -m workers.temporal_worker.main
+
+# Terminal 2
+make run-api
+
+# Terminal 3
+make run-web
+```
+
+`make run-worker` is the same command as Terminal 1.
+
+Fake-provider mode:
+
+- Uses the real PostgreSQL, Temporal, FFmpeg, rendering, persistence, QA and workflow code.
+- Makes no paid provider request.
+- Requires no OpenAI, Runway, Google, ElevenLabs or OpenSubtitles credential.
+- Produces deterministic synthetic outputs, so a repeated run reuses work instead of redoing it.
+
+### Local voice-profile bootstrap
+
+The narration stage resolves its voice from `project.settings["voice_profile_id"]`, and project
+creation stores empty settings. A freshly created project therefore fails narration with
+`project settings require a valid voice_profile_id` until a profile is selected.
+
+```bash
+uv run python scripts/create_local_voice_profile.py PROJECT_UUID --provider fake
+```
+
+The command verifies the project exists, creates or reuses one deterministic project-scoped fake
+voice profile, selects it in the project's settings, and prints its ID:
+
+```text
+project_id=e99109b0-cf64-4f1d-a3d5-35efe1ab39ec
+voice_profile_id=4838964e-ad0f-5f10-9b7c-f0d24224e1b1
+provider=fake
+action=created
+```
+
+`action` reports what happened: `created` (a new profile), `assigned` (an existing local profile
+re-selected), `unchanged` (the project already resolves to a usable profile — including a
+production one, which is never overwritten), or `repaired` (the selected ID did not resolve to a
+usable profile, so the local fake one replaced it). Re-running the command is safe: it is
+idempotent, needs no paid credential, and the profile ID is derived from the project ID, so it is
+stable across runs and across a recreated database.
+
+The command refuses any `--provider` other than `fake`; a production voice profile must be selected
+deliberately. Keep the command for inspection and repair even if project creation later assigns a
+default fake profile automatically in local fake-provider mode.
+
+### What a local fake-provider run does and does not reach
+
+The workflow runs upload, media processing, transcript acquisition, evidence, episode analysis,
+script generation, narration, storyboard, and the per-shot fan-out (keyframe, keyframe QA,
+animation, video QA, repair) against real infrastructure with synthetic provider output.
+
+It does **not** reach a finished delivery. No supported command executes the T17 render:
+`POST /projects/{id}/render:start` and `scripts/render_project.py` only create the render job row,
+and nothing consumes it. Because final editorial QA inspects an assembled render, T22 has nothing
+current to inspect and the project cannot reach `completed` locally. Do not expect a downloadable
+MP4 from a local run today.
+
+## Full local pipeline with production providers
+
+Production mode is the same three processes with real credentials. Set the keys in `.env`; values
+are never committed.
+
+| Variable | Stages that use it | Required? |
+| --- | --- | --- |
+| `VIDGEN_OPENAI_API_KEY` | Transcription and diarization, episode analysis, script compression/writing/editing, narration and forced alignment, storyboard direction, keyframe image generation, semantic visual QA (T20), final editorial QA (T22) | Required for a production run |
+| `VIDGEN_RUNWAY_API_SECRET` | Image-to-video shot animation (T15/T16) | Required for a production run |
+| `VIDGEN_GOOGLE_CLOUD_PROJECT`, `VIDGEN_GOOGLE_ACCESS_TOKEN`, `VIDGEN_VEO_MODEL`, `VIDGEN_VEO_LOCATION` | The Google Veo alternate-provider repair attempt (T21) | Optional; only when `VIDGEN_REPAIR_ALTERNATE_PROVIDER=veo` |
+| `VIDGEN_ELEVENLABS_API_KEY` | `scripts/generate_narration.py --provider elevenlabs` only | Optional; the worker's narration stage uses OpenAI or the fake provider |
+| `VIDGEN_OPENSUBTITLES_API_KEY`, `VIDGEN_OPENSUBTITLES_USERNAME`, `VIDGEN_OPENSUBTITLES_PASSWORD` | External subtitle search during transcript acquisition | Optional; without it, acquisition uses embedded/sidecar subtitles or audio transcription |
+
+Enablement flags, all safe to leave at their defaults:
+
+```text
+VIDGEN_REPAIR_ALTERNATE_PROVIDER=none        # set to "veo" to enable the Google Veo repair route
+VIDGEN_SUBTITLE_SYNC_ENABLED=false           # external subtitle search stays off unless enabled
+VIDGEN_FINAL_QA_ADJUDICATION_ENABLED=true    # the bounded T22 second opinion
+VIDGEN_REPAIR_ALLOW_PARALLAX_FALLBACK=true   # the free deterministic 2.5D fallback
+```
+
+There is no VoiceStudio integration in this repository. The optional third-party voice provider is
+ElevenLabs, and only through `scripts/generate_narration.py`.
+
+> **Warning — a set credential outranks the fake provider.** The worker chooses its provider by
+> credential presence, not by `VIDGEN_TEMPORAL_ALLOW_FAKE_PROVIDERS`. If `VIDGEN_OPENAI_API_KEY` or
+> `VIDGEN_RUNWAY_API_SECRET` is set, the worker uses OpenAI or Runway **even with
+> `VIDGEN_TEMPORAL_ALLOW_FAKE_PROVIDERS=true`**, and those calls cost money. To stay offline, leave
+> both empty. `VIDGEN_TEMPORAL_ALLOW_FAKE_PROVIDERS` only decides what happens when a credential is
+> absent: `true` falls back to the deterministic fake, `false` fails the stage loudly.
+
+Every project carries a T23 hard budget cap, and repairs can additionally be capped per shot with
+`VIDGEN_REPAIR_PER_SHOT_COST_LIMIT`. Set a project budget before a production run.
+
+## Required environment variables
+
+`.env` (loaded by `apps/api/settings.py`, prefix `VIDGEN_`) — the ones that must be right locally:
+
+| Variable | Local value |
+| --- | --- |
+| `VIDGEN_ENV` | `local` |
+| `VIDGEN_DATABASE_URL` | `postgresql+psycopg://vidgen:vidgen@localhost:5432/vidgen` |
+| `VIDGEN_REDIS_URL` | `redis://localhost:6379/0` |
+| `VIDGEN_BLOB_BACKEND` / `VIDGEN_BLOB_ROOT` | `filesystem` / `.local-data/blobs` |
+| `VIDGEN_UPLOAD_ROOT` | `.local-data/uploads` |
+| `VIDGEN_SIGNING_SECRET` | any non-empty local secret |
+| `VIDGEN_TEMPORAL_TARGET_HOST` / `VIDGEN_TEMPORAL_NAMESPACE` | `localhost:7233` / `default` |
+| `VIDGEN_TEMPORAL_USE_FAKE_WORKFLOW_CONTROLLER` | `true` for UI-only, `false` for the real pipeline |
+| `VIDGEN_TEMPORAL_ALLOW_FAKE_PROVIDERS` | `true` for an offline pipeline |
+| `VIDGEN_IMAGE_PROVIDER_NAME` / `VIDGEN_VIDEO_PROVIDER_NAME` | `fake` / `fake` offline, `openai` / `runway` in production |
+| `VIDGEN_CORS_ALLOWED_ORIGINS` | empty; the Vite proxy keeps the browser same-origin |
+| `VIDGEN_BLOB_BACKEND` | `filesystem`; a deployed environment sets `azure` |
+| `AZURE_STORAGE_CONNECTION_STRING` | `UseDevelopmentStorage=true` for Azurite |
+
+The Temporal worker additionally reads plain (unprefixed) variables: `TEMPORAL_ADDRESS`
+(default `localhost:7233`), `TEMPORAL_NAMESPACE`, `TEMPORAL_TASK_QUEUE` (default `vidgen-projects`),
+the Temporal Cloud settings `TEMPORAL_TLS_ENABLED` and `TEMPORAL_API_KEY` (both off by default, so
+a local dev server connects in plaintext), and the concurrency and shutdown bounds
+`TEMPORAL_ACTIVITY_THREADS` (4), `TEMPORAL_MAX_CONCURRENT_ACTIVITIES`,
+`TEMPORAL_MAX_CONCURRENT_WORKFLOW_TASKS` (100) and `TEMPORAL_GRACEFUL_SHUTDOWN_SECONDS` (30). The
+defaults match `make infra-up`; the deployment-only variables are listed at the bottom of
+`.env.example`.
+
+`apps/web/.env`:
+
+| Variable | Local value |
+| --- | --- |
+| `VITE_VIDGEN_API_BASE_URL` | empty, so requests go through the Vite dev proxy |
+| `VITE_VIDGEN_DEV_USER` | `local-user` |
+
+`.env.example` and `apps/web/.env.example` document every variable, including the optional ones.
+
+## Local service URLs
+
+| Surface | URL |
+| --- | --- |
+| Web application | <http://localhost:5173> |
+| API | <http://localhost:8000> |
+| API documentation | <http://localhost:8000/docs> |
+| API health | <http://localhost:8000/healthz> |
+| Temporal gRPC | `localhost:7233` |
+| Temporal UI | <http://localhost:8233> |
+| PostgreSQL | `localhost:5432` (`vidgen` / `vidgen` / `vidgen`) |
+| Redis | `localhost:6379` |
+| Azurite blob | <http://localhost:10000> |
+| Grafana (observability profile) | <http://localhost:3000> |
+| Prometheus (observability profile) | <http://localhost:9090> |
+
+## Creating and processing a project
+
+Everything below is also available in the web application; the HTTP calls are shown so the flow is
+reproducible from a terminal. `X-VidGen-User` is the local development identity.
+
+The fastest path — `scripts/upload_video.py` creates a project and performs the whole resumable
+upload against a running API, printing both JSON bodies:
+
+```bash
+uv run python scripts/upload_video.py sample.mp4 --name "Local run"
+```
+
+The steps below do the same thing one call at a time.
+
+**1. Create the project.**
+
+```bash
+curl -sS -X POST http://localhost:8000/api/v1/projects \
+  -H 'Content-Type: application/json' \
+  -H 'X-VidGen-User: local-user' \
+  -d '{"name":"Local run","target_duration_seconds":120,"visual_style":"flat editorial cartoon","humor_intensity":5}'
+```
+
+Keep the returned `id` as `PROJECT_ID`.
+
+**2. Create the local fake voice profile.**
+
+```bash
+uv run python scripts/create_local_voice_profile.py "$PROJECT_ID" --provider fake
+```
+
+**3. Make synthetic source media** (no real episode needed):
+
+```bash
+ffmpeg -f lavfi -i "testsrc=size=640x360:rate=30:duration=20" \
+       -f lavfi -i "sine=frequency=220:sample_rate=48000:duration=20" \
+       -c:v libx264 -pix_fmt yuv420p -c:a aac -shortest sample.mp4
+```
+
+**4. Upload it.** Parts are numbered from `0`, and every part except the last must be exactly
+`part_size` bytes.
+
+```bash
+SIZE=$(stat -c%s sample.mp4)
+SHA=$(sha256sum sample.mp4 | cut -d' ' -f1)
+
+UPLOAD_ID=$(curl -sS -X POST "http://localhost:8000/api/v1/projects/$PROJECT_ID/uploads" \
+  -H 'Content-Type: application/json' -H 'X-VidGen-User: local-user' \
+  -d "{\"filename\":\"sample.mp4\",\"media_type\":\"video/mp4\",\"expected_size\":$SIZE,\"expected_sha256\":\"$SHA\",\"part_size\":8388608}" \
+  | python3 -c 'import sys,json;print(json.load(sys.stdin)["id"])')
+
+curl -sS -X PUT "http://localhost:8000/api/v1/uploads/$UPLOAD_ID/parts/0" \
+  -H 'X-VidGen-User: local-user' -H 'Content-Type: application/octet-stream' \
+  --data-binary @sample.mp4
+
+curl -sS -X POST "http://localhost:8000/api/v1/uploads/$UPLOAD_ID/complete" \
+  -H 'X-VidGen-User: local-user'
+```
+
+**5. Start the workflow.** An `Idempotency-Key` header is required; a retried request adopts the
+existing run rather than starting a second workflow.
+
+```bash
+curl -sS -X POST "http://localhost:8000/api/v1/projects/$PROJECT_ID/workflow:start" \
+  -H 'Content-Type: application/json' -H 'X-VidGen-User: local-user' \
+  -H "Idempotency-Key: start-$PROJECT_ID" -d '{}'
+```
+
+With the fake workflow controller this only records a synthetic run. With
+`VIDGEN_TEMPORAL_USE_FAKE_WORKFLOW_CONTROLLER=false` and the worker running, this starts the real
+`ProjectWorkflow`.
+
+**6. Watch it.**
+
+```bash
+curl -sS "http://localhost:8000/api/v1/projects/$PROJECT_ID/workflow" -H 'X-VidGen-User: local-user'
+curl -sS "http://localhost:8000/api/v1/projects/$PROJECT_ID/events"   -H 'X-VidGen-User: local-user'
+
+uv run python scripts/project_workflow.py inspect "$PROJECT_ID"
+```
+
+The Temporal UI at <http://localhost:8233> shows the workflow history, the per-shot child
+workflows, and any activity failure with its stack.
+
+**7. Review, render and download.** The review application drives transcript and script edits,
+storyboard and shot review, `render:start`, approval and asset downloads
+(`GET /api/v1/projects/{id}/render`, `GET /api/v1/assets/{id}/download-url`). As noted above, `render:start`
+only queues the render job locally — nothing executes it — so the download step is not reachable in
+a local run today.
+
+## Running individual pipeline stages
+
+Each stage has a CLI in `scripts/`, all reading `VIDGEN_DATABASE_URL` and `VIDGEN_BLOB_ROOT` from
+the environment. They are the fastest way to work on one stage without the workflow:
+
+```bash
+uv run python scripts/process_media.py PROJECT_ID
+uv run python scripts/acquire_transcript.py PROJECT_ID
+uv run python scripts/transcribe_media.py PROJECT_ID
+uv run python scripts/build_references.py PROJECT_ID
+uv run python scripts/analyze_episode.py PROJECT_ID
+uv run python scripts/generate_script.py PROJECT_ID
+uv run python scripts/generate_narration.py PROJECT_ID --provider fake --voice-profile-id VOICE_ID
+uv run python scripts/generate_storyboard.py PROJECT_ID
+uv run python scripts/generate_keyframes.py PROJECT_ID
+uv run python scripts/generate_shot_videos.py PROJECT_ID
+uv run python scripts/run_shot_workflow.py PROJECT_ID
+uv run python scripts/run_visual_qa.py PROJECT_ID
+uv run python scripts/run_visual_repair.py PROJECT_ID
+uv run python scripts/render_project.py PROJECT_ID
+uv run python scripts/run_final_editorial_qa.py PROJECT_ID
+```
+
+Inspection-only commands that read persisted state without touching a provider:
+
+```bash
+uv run python scripts/inspect_references.py PROJECT_ID
+uv run python scripts/inspect_shot_workflow.py PROJECT_ID --storyboard-run-id STORYBOARD_RUN_ID
+uv run python scripts/inspect_visual_qa.py PROJECT_ID
+uv run python scripts/inspect_render.py PROJECT_ID
+uv run python scripts/cost_report.py PROJECT_ID
+```
+
+Every stage CLI that talks to a provider defaults to `--provider fake`, so the commands above are
+offline and free until you pass `--provider openai` or `--provider runway`.
+
+Every command takes `--help`; the exact flags for each stage, and the per-stage local commands and
+their caveats, are documented in
+[`docs/IMPLEMENTATION_STATUS.md`](docs/IMPLEMENTATION_STATUS.md).
+
+## Running tests
+
+```bash
+make verify        # ruff, mypy --strict, pytest with coverage, JSON Schema export
+make verify-web    # eslint, tsc, vitest, and the web production build
+```
+
+Individually:
+
+```bash
+make lint
+make typecheck
+make test
+make schemas
+
+make web-lint
+make web-typecheck
+make web-test
+make web-build
+make web-e2e       # Playwright; run `pnpm --filter @vidgen/web exec playwright install chromium` first
+```
+
+A single test file or test:
+
+```bash
+uv run pytest tests/test_local_voice_profile.py -q
+uv run pytest -k voice_profile -q
+```
+
+Tests never make a paid provider call: they run against SQLite, synthetic media and the
+deterministic fakes. Two things they do need locally:
+
+- **FFmpeg and ffprobe**, for the media, narration, render and QA suites.
+- **Network access to `temporal.download`**, for the handful of suites that start Temporal's
+  time-skipping test server (`tests/test_workflow_runtime.py`, `tests/test_t22_workflow.py`,
+  `tests/test_shot_workflow_t16.py`, `tests/test_repair_workflow_t21.py`). Behind a proxy that
+  blocks it, those tests fail with `Failed starting test server`; deselect them with
+  `uv run pytest -q --deselect tests/test_workflow_runtime.py` (and so on) to run the rest.
+
+The migration check that CI runs, against the local disposable database:
+
+```bash
+make verify-stack
+```
+
+`pytest` collects `infra/tests` as well as `tests` (see `testpaths` in `pyproject.toml`). Those are
+static policy checks over the compiled Bicep templates; the ones marked `bicep` need the Azure CLI's
+Bicep tooling and skip without it. Neither needs an Azure subscription:
+
+```bash
+uv run pytest infra/tests -q
+make infra-validate
+```
+
+## Observability
+
+```bash
+make observability-up
+```
+
+| Surface | URL |
+| --- | --- |
+| Grafana | <http://localhost:3000> (default login `admin` / `admin`) |
+| Prometheus | <http://localhost:9090> |
+| Temporal UI | <http://localhost:8233> |
+
+The OpenTelemetry Collector listens on `4317` (gRPC) and `4318` (HTTP) and exposes a Prometheus
+endpoint on `8889`, which Prometheus scrapes. Collector logs:
+
+```bash
+docker compose --profile observability logs -f otel-collector
+```
+
+`make observability-logs` runs the same command. Prometheus alert rules are in
+`observability/alerts.yml`, and the provisioned dashboard is
+`observability/grafana/dashboards/vidgen-operations.json`.
+
+**What actually reports today:** the API and the worker both call `initialize_telemetry`
+(`src/vidgen/telemetry/bootstrap.py`) at startup, which configures redacted JSON logging on stdout
+and, when an export target is configured, batched trace export — to Application Insights via
+`VIDGEN_APPLICATIONINSIGHTS_CONNECTION_STRING` (needs the `azure` extra), or to
+`VIDGEN_OTEL_EXPORTER_OTLP_ENDPOINT` (needs `opentelemetry-exporter-otlp`, which is not a
+dependency). **Metrics are not exported**, so Prometheus scrapes an empty collector and the
+provisioned Grafana dashboard stays blank locally; the Temporal UI is the useful local view. Cost
+and budget data is available through the API (`GET /api/v1/projects/{id}/costs`) and
+`scripts/cost_report.py`.
+
+## Stopping and resetting the environment
+
+Stop the three processes with Ctrl+C, then stop the containers — this keeps the PostgreSQL and
+Azurite volumes, so your projects survive:
+
+```bash
+make infra-down
+```
+
+### Destructive reset
+
+`make local-reset` **permanently deletes local data**. It is never run by another target, and it
+prompts for confirmation before doing anything. It removes exactly:
+
+- the `postgres-data` Docker volume — the entire local PostgreSQL database,
+- the `azurite-data` Docker volume — the local Azurite blob store,
+- `.local-data/uploads` (`VIDGEN_UPLOAD_ROOT`) — resumable source-video uploads,
+- `.local-data/blobs` (`VIDGEN_BLOB_ROOT`) — every content-addressed asset.
+
+Nothing outside those four locations is touched. Use it only for disposable local data.
+
+```bash
+make local-reset
+# then rebuild an empty environment:
+make infra-up
+make migrate
+```
+
+## Troubleshooting
+
+**Docker unavailable.** `make infra-up` fails with `Cannot connect to the Docker daemon`. Start
+Docker Desktop, or on Linux `sudo systemctl start docker`. Verify with `docker info`. If
+`docker compose` is not recognized, you are on Compose v1; install the Compose v2 plugin.
+
+**PostgreSQL not ready.** `make migrate` fails with `connection refused` or
+`the database system is starting up`. The container needs a few seconds after `make infra-up`:
+
+```bash
+docker compose ps postgres
+until docker compose exec -T postgres pg_isready -U vidgen -d vidgen; do sleep 2; done
+```
+
+**Alembic migration failure.** Read the actual error first: `uv run alembic upgrade head`. A
+`relation already exists` on a half-migrated local database is fastest to fix with `make local-reset`
+followed by `make infra-up && make migrate`. Confirm which revision you are on with
+`uv run alembic current`.
+
+**More than one Alembic head.** `uv run alembic upgrade head` fails with
+`Multiple head revisions are present`. List them:
+
+```bash
+uv run alembic heads
+uv run alembic history --verbose | head -40
+```
+
+Two branches were created in parallel. Merge them rather than deleting a migration:
+
+```bash
+uv run alembic merge -m "merge heads" HEAD_A HEAD_B
+uv run alembic upgrade head
+```
+
+**Temporal worker not connected.** `workflow:start` succeeds but the project never leaves
+`ingesting`, and the Temporal UI shows the workflow with no worker polling. Check that the worker
+process is running and on the right queue — it defaults to `vidgen-projects` at `localhost:7233`,
+matching `make infra-up`:
+
+```bash
+docker compose ps temporal
+uv run python -m workers.temporal_worker.main   # watch for a connection error on startup
+```
+
+A worker that exits immediately with `provider is not configured` is the fake-provider problem
+below.
+
+**Fake workflow controller accidentally enabled.** The UI shows progress and completed stages, but
+no worker activity appears in the Temporal UI and no assets are written. Check:
+
+```bash
+grep VIDGEN_TEMPORAL_USE_FAKE_WORKFLOW_CONTROLLER .env
+```
+
+It must be `false` for a real run. Restart the API after changing it — settings are cached per
+process.
+
+**Fake providers not enabled.** The worker fails a stage with
+`... provider is not configured` (script generation, narration, image generation, video generation,
+visual QA or final QA). With no credential set, the worker needs explicit permission to use the
+fakes:
+
+```text
+VIDGEN_TEMPORAL_ALLOW_FAKE_PROVIDERS=true
+```
+
+Restart the worker after changing it. The reverse symptom — an unexpected provider bill or a
+`401` from OpenAI or Runway — means a credential is set and outranks the fake provider; empty
+`VIDGEN_OPENAI_API_KEY` and `VIDGEN_RUNWAY_API_SECRET`.
+
+**Missing voice profile.** The narration activity fails with
+`project settings require a valid voice_profile_id`. Run the bootstrap and restart the stage:
+
+```bash
+uv run python scripts/create_local_voice_profile.py "$PROJECT_ID" --provider fake
+```
+
+If it prints `action=unchanged` and narration still fails, the project points at a profile that
+exists but belongs to another project or provider; inspect
+`SELECT settings FROM projects WHERE id = '...'` and clear the key to let the bootstrap repair it.
+
+**Missing FFmpeg or ffprobe.** Media processing, narration normalization, rendering and several
+test suites fail with `No such file or directory: 'ffmpeg'` or `'ffprobe'`. Install both from the
+same build (`brew install ffmpeg`, `sudo apt-get install ffmpeg`), then confirm:
+
+```bash
+ffmpeg -version | head -1 && ffprobe -version | head -1
+```
+
+**Port conflicts.** `make infra-up` fails with `port is already allocated`, or `make run-api` with
+`address already in use`. Find the holder and stop it:
+
+```bash
+lsof -i :5432 -i :6379 -i :7233 -i :8000 -i :8233 -i :10000 -i :5173
+```
+
+A previous VidGen stack is the usual culprit: `make infra-down`. A system PostgreSQL on 5432 is the
+other; stop it, or remap the container port in `docker-compose.yml` and update
+`VIDGEN_DATABASE_URL`.
+
+**Node or pnpm version mismatch.** `pnpm install` reports that the project's `packageManager`
+(`pnpm@11.19.0`) does not match your pnpm, or Vite fails on unsupported syntax. Use Corepack:
+
+```bash
+corepack enable
+corepack prepare pnpm@11.19.0 --activate
+node --version   # 22 or newer
+```
+
+Then `rm -rf node_modules apps/web/node_modules && pnpm install`.
+
+**Missing provider credentials.** In production mode a stage fails with a provider authentication
+error or `... provider is not configured`. Confirm the key is in `.env` (not only in your shell),
+that the API and worker were restarted after the change, and that the key matches the stage — see
+the table in [Full local pipeline with production providers](#full-local-pipeline-with-production-providers).
+To keep working offline instead, clear the credentials and set
+`VIDGEN_TEMPORAL_ALLOW_FAKE_PROVIDERS=true`.
+
+**Stale render or QA lineage.** Final editorial QA fails with a stale-lineage error, or a render
+refuses to start, after an upstream edit. This is deliberate: T22 rejects a report for a render that
+is no longer current before buying any analysis, and edited transcripts, scripts, storyboards or
+shots mark downstream outputs stale. Regenerate in order — the affected shots, then the render, then
+final QA:
+
+```bash
+uv run python scripts/inspect_render.py "$PROJECT_ID"     # what the render currently binds
+uv run python scripts/inspect_shot_workflow.py "$PROJECT_ID" --storyboard-run-id "$STORYBOARD_RUN_ID"
+```
+
+**Browser cannot reach the API.** The web application shows network errors or an empty project
+list. Check, in order: the API is up (<http://localhost:8000/healthz>); the Vite dev server is
+running on 5173; `VITE_VIDGEN_API_BASE_URL` in `apps/web/.env` is **empty**, so the browser uses the
+same-origin `/api` proxy. If the API listens somewhere other than `127.0.0.1:8000`, point the proxy
+at it with `VIDGEN_API_PROXY_TARGET` when starting the dev server. If you deliberately point the
+browser at a different origin, you must also set
+`VIDGEN_CORS_ALLOWED_ORIGINS=http://localhost:5173` in `.env` and restart the API — CORS is off by
+default.
+
+## Azure deployment
+
+`infra/` holds the infrastructure-as-code for a VidGen deployment. The complete operational
+reference — architecture, resource inventory, network topology, parameters, RBAC, Key Vault secret
+names, autoscaling rationale, observability, deployment and migration order, smoke testing,
+rollback, backup and recovery, cost drivers and known limitations — is in
+[`infra/README.md`](infra/README.md).
+
+```text
+infra/
+  bicep/main.bicep            resource-group scoped composition
+  bicep/modules/              identities, networking, private_dns, container_registry,
+                              container_apps_environment, container_apps, container_jobs,
+                              postgres, storage, redis, key_vault, monitoring,
+                              role_assignments, shared types and app configuration
+  bicep/environments/         staging.bicepparam (deployed) and
+                              production.example.bicepparam (documented, undeployed)
+  tests/                      compiled-template policy tests
+  scripts/                    bootstrap_oidc, bootstrap_secrets, validate_infrastructure,
+                              scan_secrets, deploy_staging, run_migrations, run_smoke_test,
+                              verify_deployment, rollback_revision
+  dashboards/                 an Azure Monitor workbook over the T23 signals
+```
+
+What it deploys: a VNet-integrated Container Apps environment with an internal load balancer; the
+web, API and Temporal worker as Container Apps; finite Container Apps Jobs for migration,
+out-of-band rendering, the smoke test and administration; PostgreSQL Flexible Server with VNet
+injection; private Blob Storage; Azure Managed Redis; Key Vault with RBAC; one managed identity per
+workload with least-privilege role assignments; private endpoints and private DNS for every linked
+service; Log Analytics and Application Insights carrying the T23 telemetry; and GitHub Actions
+deployment through Azure OIDC federation with no client secret anywhere.
+
+Staging is private by default (`publicIngressEnabled` is `false`), and the API is never externally
+reachable whatever that parameter is set to, because production authentication does not exist yet.
+`.github/workflows/deploy-staging.yml` enforces the deployment order: build and push
+commit-SHA-tagged images, resolve digests, validate and `what-if`, wait for the protected
+environment approval, deploy infrastructure, run the migration job exactly once, activate the new
+revisions, run the private smoke test, verify health and digests, and roll traffic back if the
+smoke test fails. A failed migration never reaches revision activation, and rollback never
+downgrades the database.
+
+**T24 is not marked complete.** Its acceptance — a private staging deploy, migrations run once,
+workers autoscaling — can only be demonstrated by a real deployment, and none has run. Every static
+and CI check passes; `infra/README.md` lists what a first deployment needs.
+
+Two deployment-facing settings are worth knowing locally, because both default to the local value:
+
+- `VIDGEN_BLOB_BACKEND` selects the asset store: `filesystem` (local and every test) or `azure`
+  (reached over a private endpoint with the workload's managed identity — no key, connection string
+  or SAS token is ever configured). Any other value is rejected at startup.
+- The Temporal worker reads `TEMPORAL_ADDRESS`, `TEMPORAL_NAMESPACE`, `TEMPORAL_TASK_QUEUE`,
+  `TEMPORAL_TLS_ENABLED` and `TEMPORAL_API_KEY`. TLS and the API key are off by default so a local
+  `temporal server start-dev` connects in plaintext with no key; Temporal Cloud requires both.
+
+Validate the templates locally, with no Azure credential and no deployment:
 
 ```bash
 az bicep build --file infra/bicep/main.bicep
@@ -412,1134 +839,16 @@ az bicep build --file infra/bicep/main.bicep
 uv run pytest infra/tests -q
 ```
 
-## T24 Azure infrastructure
+`make infra-validate` runs the second of those.
 
-`infra/` holds the authoritative infrastructure-as-code for a VidGen deployment. The complete
-operational reference - architecture, resource inventory, network topology, parameters, RBAC, Key
-Vault secret names, autoscaling rationale, observability, deployment and migration order, smoke
-testing, rollback, backup and recovery, cost drivers and known limitations - is in
-[`infra/README.md`](infra/README.md).
+## Additional documentation
 
-```text
-infra/
-  bicep/
-    main.bicep                 resource-group scoped composition
-    modules/                   identities, networking, private_dns, container_registry,
-                               container_apps_environment, container_apps, container_jobs,
-                               postgres, storage, redis, key_vault, monitoring,
-                               role_assignments, plus shared types and app configuration
-    environments/
-      staging.bicepparam                 the deployed environment
-      production.example.bicepparam      a documented, undeployed template
-  tests/                       compiled-template policy tests, run by `uv run pytest -q`
-  scripts/                     bootstrap_oidc, bootstrap_secrets, validate_infrastructure,
-                               scan_secrets, deploy_staging, run_migrations, run_smoke_test,
-                               verify_deployment, rollback_revision
-  dashboards/vidgen-workbook.json        Azure Monitor workbook over the T23 signals
-  README.md
-```
-
-Staging is private by default. `publicIngressEnabled` is `false`, which makes the Container Apps
-environment internal and disables public network access on Key Vault, Blob Storage and Redis;
-PostgreSQL is VNet injected and has no public endpoint at all. The API is never externally
-reachable, whatever that parameter is set to, because production authentication does not exist yet.
-
-Deployment order is enforced by `.github/workflows/deploy-staging.yml`: build and push
-commit-SHA-tagged images, resolve their digests, validate and `what-if`, wait for the protected
-GitHub environment approval, deploy infrastructure, run the migration job exactly once and wait for
-it, activate the new revisions, run the private smoke-test job, verify health and the deployed
-digests, and roll application traffic back if the smoke test fails. A failed migration never reaches
-revision activation, and rollback never downgrades the database.
-
-Staging enables `features.allowFakeProviders`, because every provider is off and
-the Temporal worker refuses to start with an unconfigured one. That flag must
-stay false wherever a paid provider is enabled, so a missing credential fails
-loudly rather than silently producing fake output.
-
-Blob storage is selected by `VIDGEN_BLOB_BACKEND`. Local development and every test keep the
-filesystem store; a deployed environment sets `azure` and reaches the account over a private
-endpoint with its managed identity, so no key, connection string or SAS token is ever configured.
-`AssetService`'s content-addressed identity and immutable provenance are preserved: the Azure
-adapter's `put_if_absent` uploads with an `If-None-Match: *` precondition and streams both
-directions.
-
-## Packages
-
-- `vidgen.contracts`: canonical inter-stage contracts
-- `vidgen.db`: relational models and repositories
-- `vidgen.storage`: content-addressed storage and asset service
-- `vidgen.providers`: provider protocols and deterministic fakes
-- `vidgen.review`: T18 row versions, idempotency, project events, and workflow control
-- `vidgen.storage.azure_blob`: the T24 Azure Blob Storage adapter for the same `BlobStore` protocol
-- `vidgen.telemetry.bootstrap`: the T24 entry point that exports T23 traces to Application Insights
-- `infra/bicep`: the T24 Azure infrastructure
-- `services.review`: T18 transactional review mutations and downstream invalidation
-- `apps/web`: the T18 React review application (`@vidgen/web`)
-
-## Contract schemas
-
-Run `make schemas` to export JSON Schema into `packages/contracts/schema`.
-
-## Upload and deterministic media processing
-
-Start the API:
-
-```bash
-make run-api
-```
-
-Upload an MP4 with streaming parts and exact byte/hash validation:
-
-```bash
-uv run python scripts/upload_video.py /absolute/path/to/episode.mp4
-```
-
-The command prints the project UUID and finalized source asset. The OpenAPI console at
-`http://localhost:8000/docs` exposes every individual endpoint and request schema.
-
-After finalization, process the source using the deterministic worker CLI:
-
-```bash
-uv run python scripts/process_media.py PROJECT_UUID
-```
-
-The command probes the source, extracts 16 kHz mono WAV audio, detects scenes, extracts one
-representative PNG per scene, persists provenance, and finishes with project status `media_ready`.
-
-## Transcription
-
-Run the restartable pipeline with the deterministic provider:
-
-```bash
-uv run python scripts/transcribe_media.py PROJECT_UUID --provider fake
-```
-
-To use the configured OpenAI provider, set `VIDGEN_OPENAI_API_KEY` and run:
-
-```bash
-uv run python scripts/transcribe_media.py PROJECT_UUID --provider openai --language en
-```
-
-Audio is encoded into content-addressed FLAC chunks below the configured byte ceiling. Each
-chunk is independently checkpointed, transcribed, and diarized. The canonical transcript removes
-overlap deterministically, retains source timestamps and anonymous speaker labels, and requires at
-least 98 percent voiced-audio coverage.
-
-Overlap reconciliation requires timestamp agreement for text matches and preserves distinct-time
-repeated dialogue when provider chunks disagree.
-
-## Subtitle-first transcript acquisition
-
-Configure `VIDGEN_OPENSUBTITLES_API_KEY` and optionally the matching username and password, then
-run:
-
-```bash
-uv run python scripts/acquire_transcript.py PROJECT_UUID
-```
-
-The command checks embedded text subtitle tracks first, then sidecar assets, then performs an
-OpenSubtitles movie-hash search with title/episode fallback. An adequate subtitle is normalized
-into the same selected canonical transcript tables used by T07. If none passes validation, the
-command falls back to the configured OpenAI transcription provider.
-
-For deterministic local verification with no network or paid calls:
-
-```bash
-uv run python scripts/acquire_transcript.py PROJECT_UUID \
-  --subtitle-provider fake --transcription-provider fake
-```
-
-Set `VIDGEN_SUBTITLE_SYNC_ENABLED=true` when the optional `ffsubsync` command is installed to
-audio-align downloaded provider subtitles and include its offset and correlation in candidate
-ranking. Embedded extraction stays FFmpeg-only; MKVToolNix is not required.
-
-## Temporal orchestration and scene evidence (T08-T09)
-
-`ProjectWorkflow` now owns the upload, deterministic media-processing, subtitle-first transcript
-acquisition, and evidence stages. Workflow history carries only UUID-based versioned contracts;
-all database, storage, FFmpeg, network, and provider work is delegated to idempotent activities.
-Start the local Temporal development server with `make infra-up`, then run the worker with:
-
-```bash
-uv run python -m workers.temporal_worker.main
-```
-
-Scene evidence remains provider-neutral. It clips overlapping transcript segments to source scene
-boundaries, retains anonymous speaker labels and subtitle/audio provenance, references frames and
-contact-sheet assets by UUID, and derives package identity from canonical input hashes.
-
-## Episode Analyst (T10)
-
-## Observability and cost ledger (T23)
-
-T23 adds structured JSON logging with recursive redaction, W3C trace propagation, bounded
-Prometheus/OpenTelemetry instruments, canonical failure classification, and a reusable
-`instrument_provider_attempt` context manager. Provider attempts, versioned pricing, transactional
-reservations, immutable reconciliation events, project budgets, and failed-work projections are
-persisted by migration `0007_observability_costs`.
-
-Start the unchanged base stack with `make infra-up`. Start the optional local stack with:
-
-```bash
-docker compose --profile observability up -d
-```
-
-Prometheus is at <http://localhost:9090/targets> and Grafana is at <http://localhost:3000>.
-Collector traces are available in `docker compose logs otel-collector`. Run deterministic fake
-providers using the existing `--provider fake` commands; no Azure or paid-provider credentials are
-needed. Generate a machine-readable report with:
-
-```bash
-uv run python scripts/cost_report.py PROJECT_UUID --json
-```
-
-The parent Temporal workflow runs Episode Analyst after the selected T09 evidence package is ready.
-The activity maps each evidence scene independently, commits successful scene checkpoints, then
-reduces only validated map results into canonical `EpisodeAnalysis` 1.0. Temporal history contains
-only project/source IDs and the normal versioned stage envelope; provider payloads and canonical JSON
-are persisted outside workflow history.
-
-Deterministic validation resolves every source reference against the selected evidence package and
-checks chronology, entity foreign keys, alias evidence, state events, relationships, mandatory beat
-evidence, and the acyclic chronological beat dependency graph. Invalid scene output is repaired once
-without rerunning valid scenes; invalid reduce output receives one targeted repair. A failed replacement
-does not deselect the prior valid analysis.
-
-Run the zero-cost deterministic provider locally:
-
-```bash
-uv run python scripts/analyze_episode.py PROJECT_UUID --provider fake
-```
-
-Run the configured OpenAI Responses adapter (the model remains configuration):
-
-```bash
-VIDGEN_OPENAI_API_KEY=... VIDGEN_ANALYSIS_MODEL=... \
-  uv run python scripts/analyze_episode.py PROJECT_UUID --provider openai
-```
-
-## Compression and comedy script pipeline (T11)
-
-T11 consumes the selected, validated T10 `EpisodeAnalysis` and produces a causally complete
-`CompressedPlotPlan`, an original comedy `RecapScript` draft, a deterministic validation report, a
-structured Comedy Editor review, up to two targeted revision passes, and a selected, versioned,
-diffable `RecapScript` suitable for T12 narration generation.
-
-The parent Temporal workflow runs script generation after Episode Analyst completes. Compression,
-writing, and editing each run inside their own activity; only project/source IDs and the normal
-versioned stage envelope cross workflow history, never plot plans, script text, or provider
-responses. Deterministic validation (word count, beat coverage, references, structure, joke
-annotations, near-verbatim transcript detection) never relies on an LLM to enforce a hard
-constraint. A failed replacement attempt never deselects a project's prior approved script.
-
-Run the zero-cost deterministic provider locally:
-
-```bash
-uv run python scripts/generate_script.py PROJECT_UUID --provider fake
-```
-
-Run the configured OpenAI Responses adapter (the model remains configuration):
-
-```bash
-VIDGEN_OPENAI_API_KEY=... \
-  uv run python scripts/generate_script.py PROJECT_UUID --provider openai
-```
-
-## Storyboard generation and deterministic timing (T13)
-
-T13 turns the approved T11 script and the measured T12 narration into a versioned `Storyboard`
-plus a deterministic timing manifest that T14, T15, and T16 consume. It never calls a visual
-generation provider; it only plans against that provider's declared capabilities.
-
-### Architecture
-
-Five concerns stay separated, and each has its own module under `services/storyboard/`:
-
-| Concern | Module | Responsibility |
-| --- | --- | --- |
-| Creative proposal | `providers.py`, `openai_adapter.py`, `fake_provider.py` | A provider-neutral Storyboard Director proposes semantic shots. It never decides timing. |
-| Deterministic timing | `retimer.py` | Owns final timing with exact integer microsecond arithmetic. |
-| Validation | `validator.py` | Structural and referential rules only; no model decides whether output is acceptable. |
-| Identity | `canonicalize.py`, `boundaries.py` | Stable IDs, canonical ordering, content hashes, and approved narration boundaries. |
-| Orchestration | `pipeline.py`, `commands.py` | Authoritative input selection, checkpoints, repair, persistence, and asset provenance. |
-
-Canonical contracts live in `src/vidgen/contracts/storyboard.py`, relational projections in
-`src/vidgen/db/storyboard_models.py`, and lineage queries in
-`src/vidgen/db/storyboard_repository.py`.
-
-### Authoritative input selection and lineage rules
-
-The pipeline refuses to combine outputs from different versions. Before any provider call it
-verifies that every input belongs to the requested project and that:
-
-- the T10 episode model is selected, complete, has a canonical asset, and no newer version exists;
-- the T11 script is selected, approved, has a dense segment sequence, and was generated from that
-  exact episode model;
-- the T12 narration run is selected, complete, and was generated from that exact approved script
-  ID and version;
-- every required script segment has a complete narration segment with a normalized audio asset,
-  a measured ffprobe duration, and persisted word timings;
-- referenced T09 evidence still exists inside the project's selected evidence package.
-
-Each rejection raises a structured `StoryboardLineageError` carrying a machine-readable code
-(`narration_script_mismatch`, `episode_model_stale`, `script_unapproved`, and so on). These are
-deterministic configuration failures and are never retried against a provider.
-
-### Storyboard Director abstraction
-
-`StoryboardDirector` is a Protocol taking a `StoryboardProviderRequest` and returning a
-`StoryboardProviderResult`. No OpenAI SDK object crosses that boundary. The request carries a
-stable idempotency key, upstream IDs and hashes, the exact measured duration, word timings,
-approved boundaries, evidence and character/location references, incoming continuity, the
-capability profile, contract and prompt versions, trace context, and the attempt number. The
-result carries proposals, continuity expectations, provider/model identity, usage quantities, and
-redacted metadata; credentials and raw payloads never appear in it.
-
-Two adapters ship: a configured OpenAI Responses adapter using strict structured output (schema
-`$defs` are inlined because strict mode rejects `$ref`), and a deterministic credential-free fake.
-Model names and provider configuration are centralized in `services/storyboard/providers.py`.
-
-### Capability profiles
-
-`VisualProviderCapability` is a versioned, provider-neutral contract describing supported
-generated durations, duration bounds and increments, aspect ratios and resolutions, maximum
-characters and reference images per shot, camera-motion and transition support, image-to-video and
-text-to-video support, continuity/seed support, the trimming policy, and a content-bound
-`capability_hash`. Two profiles are configured: `runway-gen4-turbo` (continuous, 100 ms steps,
-1-10 s) and `veo-3.1-fast` (discrete, {4, 6, 8} s). The timing solver reads only this contract, so
-no single vendor's limits are baked into it.
-
-### Deterministic retiming algorithm
-
-Measured T12 durations are the timing authority; narration is never stretched and the approved
-script is never changed. All canonical timing is exact integer microseconds, converted with
-`Decimal(str(seconds))` so no binary floating-point drift can accumulate.
-
-1. Build a boundary table from measured word timings, marking sentence, clause, and comedy-beat
-   boundaries (the latter derived from T11 joke setup and punchline spans).
-2. Map each proposal's word range onto those boundaries, snapping every interior boundary to a
-   word end and the final shot to the exact measured duration.
-3. Split any shot longer than the effective maximum at the approved boundary nearest the even
-   division point, preferring sentence over clause over beat over plain word.
-4. Merge any shot shorter than the configured minimum into a neighbour.
-5. Repeat 3 and 4 to a fixed point; if it cannot converge, reject the plan.
-6. Verify monotonic, gapless, non-overlapping, strictly positive intervals whose last shot ends at
-   the exact measured narration duration.
-
-Every deviation from the proposal is recorded as a `TimingAdjustment` (`boundary_snap`, `split`,
-`merge`, `generation_round_up`, `trim`, `final_end_snap`, `residual_allocation`).
-
-### Unsupported durations and trimming
-
-When an exact usable duration is not a supported generated duration, the retimer requests the
-smallest supported duration that covers it and records deterministic trim instructions under the
-profile's trimming policy (`trim_end`, `trim_start`, or `trim_center`, with the odd microsecond
-going to the tail). Where no interior boundary exists and a single narration word outlives the
-provider maximum, the interval is divided evenly and the rounding residual is allocated one
-microsecond at a time to the earliest shots. If no supported solution exists at all, the plan is
-rejected rather than fudged.
-
-Transition timing is explicit. A non-cut transition declares a duration and a handle; the handle is
-extra *generated* material recorded in the timing manifest and counted in the trimmed region, so
-usable shot intervals stay contiguous and no narration coverage is left unaccounted for.
-
-### Continuity state
-
-Continuity is structured, not prose: present characters, per-character appearance state, location
-and sub-location, time of day, props and ownership, subject screen positions, screen direction,
-emotional state, environment conditions, the previous shot reference, and unresolved warnings.
-Every shot declares its incoming assumptions and its expected outgoing state, and consecutive
-shots are checked for unexplained contradictions; a deliberate change is legitimate only when the
-shot carries a matching continuity warning. Anonymous speakers keep their anonymity - T13 never
-invents a character identity for them. T13 references logical characters and locations from the
-episode model; T14 and T15 create their visual reference assets later.
-
-### Targeted repair
-
-Each segment is validated before canonical persistence. A repairable creative failure (coverage
-gap, invalid overlap, impossible allocation, unsupported duration, excessive characters, too many
-references, missing continuity, invalid character/location reference, missing evidence, provider
-schema failure, continuity contradiction) sends only that segment and its structured diagnostics
-back to the Director under a stable repair idempotency key. Successful segment checkpoints are
-preserved, repair attempts are bounded and recorded with their input diagnostics and validation
-result, and unrelated segments are never regenerated. Deterministic lineage or configuration
-failures fail immediately with no provider retry.
-
-### T23 cost and telemetry integration
-
-Every production Director call runs inside the existing `instrument_provider_attempt` context:
-durable provider-attempt identity, pricing-catalog estimate, transactional budget reservation with
-warning and hard-cap enforcement, trace propagation, and a durable pre-call checkpoint, then usage
-recording, estimate/actual reconciliation, reservation release, bounded metrics, T23 failure
-classification, and redaction of prompts, credentials, and provider metadata. Idempotent retries
-reuse the same attempt and reservation, so they create no duplicate charges. No competing
-telemetry or cost tables are introduced.
-
-### Temporal integration
-
-`ProjectWorkflow` runs the `storyboard` stage after `narration` succeeds. Workflow history carries
-only the versioned stage envelope - project ID, source video ID, stage name, and idempotency key -
-never narration audio, script text, episode-model payloads, evidence, storyboard JSON, or provider
-responses. Project statuses move through `storyboard_queued`, `storyboard_directing`,
-`storyboard_retiming`, `storyboard_validating`, `storyboard_repairing`, and finally
-`storyboard_complete` or `storyboard_failed`.
-
-### CLI
-
-Run the zero-cost deterministic director locally (no credentials required):
-
-```bash
-uv run python scripts/generate_storyboard.py PROJECT_UUID --provider fake
-```
-
-Run the configured OpenAI Responses adapter (the model stays configuration):
-
-```bash
-VIDGEN_OPENAI_API_KEY=... VIDGEN_STORYBOARD_MODEL=gpt-5.6 \
-  uv run python scripts/generate_storyboard.py PROJECT_UUID --provider openai \
-  --capability-profile runway-gen4-turbo
-```
-
-The command finds the selected episode model, approved script, and completed narration run, loads
-the configured capability profile, runs or resumes the storyboard, and prints the storyboard run
-ID, segment and shot counts, exact total measured duration, repair-attempt count, storyboard and
-timing-manifest asset IDs, capability profile and hash, provider and model, cost summary, and final
-status. Supply `--idempotency-key` to resume a specific run.
-
-## T17 captions and deterministic rendering
-
-T17 derives approved caption wording from T11 and exact word timing from the selected T12
-narration, then binds the selected T13 timing manifest and every locked T16/T15 video asset into
-one immutable, canonical render manifest. Integer microseconds prevent timing drift. Caption cues
-are deterministically grouped at punctuation boundaries, reflowed to at most two lines, validated,
-and serialized as standalone UTF-8 SRT and WebVTT (with optional escaped ASS). The standard MP4
-uses a selectable `mov_text` subtitle stream.
-
-FFmpeg commands are argument arrays constructed only from the persisted manifest. Inputs are
-streamed into a contained attempt directory and hash-checked; shots are trimmed without stretching,
-scaled/padded or scaled/cropped to 1920x1080, converted to square-pixel H.264 `yuv420p`, and joined
-in canonical order. Hard cuts are the default; only manifest-declared crossfades are accepted.
-Narration remains the time authority. Audio is resampled to stereo 48 kHz, peak-limited, measured as
-structured JSON, and normalized toward -14 LUFS/-1.5 dBTP before AAC encoding. Verification checks
-streams, frame rate, duration, selectable subtitles, and a complete decode. Stable manifests,
-command-plan hashes, and normalized report fields—not encoder-dependent MP4 bytes—define
-reproducibility. Assets retain ordered parents and lineage; completed identities are reusable without
-new provider charges. Durable render/attempt/caption rows support resume and cancellation while T23
-continues trace and bounded-metric propagation without fabricated provider costs.
-
-Local entry points are `uv run python scripts/render_project.py PROJECT_UUID` and
-`uv run python scripts/inspect_render.py PROJECT_UUID` once a project has completed and locked T16
-outputs. T22 inspects the render this stage produces; T24 and later roadmap stages remain
-unfinished.
-
-The required synthetic acceptance test generates ten copyright-free clips and narration with
-FFmpeg at test time, persists SRT/WebVTT, renders and fully decodes a 1920x1080 H.264/yuv420p MP4
-with AAC 48 kHz audio and selectable `mov_text` subtitles, persists a reproducibility report, then
-proves that a second identical identity performs zero FFmpeg executions. T17 persistence extends
-the existing render-job placeholder and adds render-attempt and caption-track projections in
-Alembic revision `0013_render`.
-
-## T20 semantic visual QA
-
-T20 answers one question per generated asset: does this keyframe or clip actually show what the
-approved storyboard asked for, with the approved characters and location? It is a separate
-identity per target - keyframe QA and video QA have their own attempts, evidence, scores and
-outcomes - and it never regenerates anything.
-
-### Pipeline stages
-
-Each stage lives in its own module under `services/qa/`, and the boundaries are deliberate:
-
-| Stage | Module | Responsibility |
-| --- | --- | --- |
-| Authoritative input selection | `contracts.py` | Load and prove the project, selected T13 storyboard and shot, selected T14/T15 attempt, T16 identity, approved T19 versions, references, state snapshots and bundle. Every rejection is structured and non-retryable. |
-| Deterministic sampling | `sampler.py` | Exact integer/rational frame selection with a recorded reason per sample. |
-| Deterministic checks | `deterministic.py` | Probe, complete decode, geometry, duration, timestamps, black/freeze/flicker/exposure, plus frame-level text, face-region and style measurements. |
-| Identity comparison | `identity.py` | Build the expectations for the exact approved T19 identity version. |
-| Continuity comparison | `continuity.py` | Build the T13 incoming/outgoing and T19 state expectations, and the previous *passing* shot baseline. |
-| Visual agent | `visual_agent.py`, `openai_adapter.py`, `fake_visual_agent.py` | The provider-neutral evaluation boundary and its two adapters. |
-| Rubric and thresholds | `rubric.py` | Versioned weights, thresholds, deterministic limits and the repair-code taxonomy. |
-| Score recomputation | `scoring.py` | Rebuild every weighted contribution, derive the outcome and the routing recommendation. |
-| Adjudication | `adjudication.py` | The bounded second opinion and its confidence policy. |
-| Evidence | `evidence.py` | Frame evidence and the contact-sheet mapping. |
-| Orchestration | `pipeline.py`, `commands.py` | Restartable execution, persistence, T23 accounting and the T16 gates. |
-
-### Rubric and thresholds
-
-| Dimension | Weight |
-| --- | ---: |
-| Character identity | 25 |
-| Character count | 10 |
-| Location | 10 |
-| Wardrobe and state | 10 |
-| Action and motion | 15 |
-| Composition | 10 |
-| Anatomy and artifacts | 10 |
-| Continuity and style | 10 |
-
-The total is exactly 100, and the contract refuses any other total. Utility and normal shots pass
-at 85 or higher; hero shots pass at 90 or higher. A score from 75 up to the applicable threshold
-recommends `TARGETED_REPAIR`; below 75 the recommendation is a structural family
-(`NEW_SEED`, `COMPOSITION_SPLIT` or `PROMPT_SIMPLIFICATION`) chosen from the worst-scoring
-dimension. A genuinely non-applicable dimension redistributes its weight proportionally across the
-applicable ones, so an absent dimension can never hand the shot free credit.
-
-### Score recomputation and hard failures
-
-The provider contract has no overall-score field at all. `services/qa/scoring.py` rebuilds every
-dimension's `raw_score * effective_weight / 100`, sums the applicable contributions, and the
-`VisualQAScore` contract re-validates that arithmetic. A hard failure - deterministic or
-evidenced - forces `FAIL` regardless of the number, and both the contract and a database check
-constraint refuse to record a hard failure as anything else. A provider may *propose* a hard
-failure, but only a code in the bounded taxonomy that a dimension actually evidenced can block a
-shot; an unevidenced proposal becomes a warning and triggers adjudication instead.
-
-### Deterministic checks and warning thresholds
-
-Deterministic measurement runs before any paid request, so a corrupt, mis-sized, black, frozen or
-wrong-length asset is rejected without spending money. Defaults (all versioned in `rubric.py`):
-more than two black frames warns and an effectively black clip hard-fails; freeze ratio above 35%
-warns unless the storyboard explicitly expects stillness; duplicate-frame ratio above 50% warns;
-mean inter-frame luma delta above 26 warns as flicker; unintended readable text at or above 0.80
-detector confidence hard-fails; face-track continuity below 0.75 warns; style distance above 0.35
-warns; duration drift over 200 ms hard-fails and drift over 150 ms warns.
-
-The text, face-region and style measurements are documented Pillow-based proxies rather than
-trained detectors. They produce a measurement; the rubric decides what it means, and a deployment
-can configure a stronger representation without changing the pipeline or the thresholds.
-
-### Sampling
-
-Video sampling covers the first and final decodable frames, the midpoint, evenly spaced coverage,
-T13 clause, action, camera-change and transition boundaries, the required action window,
-measured high- and low-motion frames, frames a deterministic warning flagged, face-track
-checkpoints and an OCR frame. Timestamps are exact integers in microseconds, clamped to the
-measured duration, deduplicated, and ordered chronologically; each sample records why it was
-selected and both its requested and actual decoded timestamp. The final sample backs off by the
-configured margin or two measured frame intervals, whichever is larger, so it always lands on a
-real frame. Sampling is deterministic: identical inputs and configuration always produce identical
-timestamps.
-
-### Evidence and repair codes
-
-Every actionable finding carries a sample ID, the source-relative and shot-relative timestamps, the
-frame SHA-256, the contact-sheet tile, an optional bounding box, the compared approved reference,
-and a bounded explanation. A finding without evidence cannot become a hard failure unless it is a
-whole-file deterministic failure such as a decode failure. The repair-code taxonomy is bounded and
-every code maps to a failure category, severity, suggested T21 repair family, evidence requirement,
-retryability classification and whether it is a hard failure.
-
-### First pass, adjudication and human review
-
-The first pass uses the configured *Luna* role and adjudication the *Terra* role. The separation is
-a policy separation: an independent attempt, a different prompt, and a higher confidence bar.
-Adjudication is requested when identity or continuity confidence is below 0.70, when the
-deterministic report and the agent materially disagree, when a hard failure is proposed without
-resolvable evidence, when the score is near the threshold, when the approved evidence is itself
-ambiguous, or when a prior QA result for the same target disagrees. Terra decides only at or above
-0.80 confidence; below it the outcome is `REVIEW`. Adjudication is bounded and cannot loop, and a
-hard failure is never softened by low confidence. Both results persist.
-
-Human review resolves ambiguous `REVIEW` outcomes only. It is owner-scoped, requires `If-Match`
-and an `Idempotency-Key`, records the reviewer, decision, bounded reason and timestamp, emits a
-project event, never changes the generated asset, never rewrites the automated result, and can
-never clear a hard failure or a deterministic corruption.
-
-### T16, T17 and T18 integration
-
-The T16 child workflow now runs `DEFINED -> PROMPTING -> KEYFRAME_GENERATING -> KEYFRAME_QA ->
-ANIMATING -> VIDEO_QA -> LOCKED`. A keyframe must pass before animation begins and a clip must pass
-before the shot locks; a blocked or review-required shot stops the child with structured repair
-codes and is never regenerated automatically. Only compact IDs and codes enter Temporal history,
-completed QA results are reused after a worker restart, and a failed shot never touches a sibling.
-
-T17 render eligibility requires a passing canonical video-QA result for every shot of a project
-governed by the policy - a project is governed once any visual-QA run exists for it, so legacy
-projects and their historical renders are unaffected. A hard failure blocks outright and a `REVIEW`
-result blocks automatic completion until it is resolved. The selection helper
-`visual_qa_provenance` (in `services.renderer.selection`) turns a selection into the applicable QA
-result IDs, run IDs and policy version for a manifest builder to record under `provenance`; because
-manifest identity excludes `provenance`, adding it leaves an existing render's identity unchanged.
-This repository has no production manifest builder yet — `RenderManifest` is assembled by the T17
-render tests — so the helper is currently exercised there rather than from a shipping code path.
-
-The T18 shot inspector gains a visual-QA panel: keyframe and video outcomes, the recomputed score
-and applicable threshold, a hard-failure indicator, the dimension scorecard, confidence,
-deterministic diagnostics, repair codes, first-pass and adjudication status, human-review status,
-evidence frames with exact timestamps beside the compared approved references, and provider, model,
-cost and version details. The recommended repair family is shown as information only - there is no
-button that regenerates anything. Visual-QA status also appears in the storyboard grid, the project
-dashboard, the final-review eligibility banner and the project event stream.
-
-### Cost and observability
-
-Every production visual-agent and adjudication call goes through the existing T23 infrastructure:
-a provider attempt is created or reused, cost is estimated, budget is reserved transactionally
-before a durable pre-call checkpoint, usage and actual cost are reconciled afterwards, failures are
-classified with the T23 taxonomy, and metrics stay bounded (rubric version, outcome, repair code -
-never a project ID, shot ID, asset ID, prompt or signed URL). An idempotent retry creates no
-duplicate attempt, reservation or ledger entry.
-
-### Local commands
-
-```bash
-# Deterministic, offline, no paid credential required.
-uv run python scripts/run_visual_qa.py PROJECT_UUID --provider fake
-
-# One shot, one target, resumed by its idempotency key.
-uv run python scripts/run_visual_qa.py PROJECT_UUID --provider fake \
-    --shot-id SHOT_UUID --video-only --idempotency-key my-key
-
-# The configured production provider.
-VIDGEN_OPENAI_API_KEY=... uv run python scripts/run_visual_qa.py PROJECT_UUID --provider openai
-
-# Inspect persisted results without loading media or provider payloads.
-uv run python scripts/inspect_visual_qa.py PROJECT_UUID --json
-```
-
-Relevant configuration: `VIDGEN_OPENAI_API_KEY`, `VIDGEN_VISUAL_QA_FIRST_PASS_MODEL` and
-`VIDGEN_VISUAL_QA_ADJUDICATOR_MODEL` (both default to the model this repository already has
-configured and verified for its other agent roles), plus the usual `VIDGEN_BLOB_ROOT`,
-`VIDGEN_BLOB_SIGNING_SECRET` and `VIDGEN_DATABASE_URL`.
-
-### Troubleshooting
-
-- `missing_canonical_video` or `missing_keyframe`: the shot has no *selected* T14/T15 attempt. Run
-  T14/T15 first; T20 never generates an asset.
-- `incompatible_reference_version`: the shot-reference bundle names an identity version or asset
-  that is not approved. Approve the T19 reference set, which creates a new bundle.
-- `asset_hash_mismatch`: the stored asset no longer matches the generation record. Regenerate the
-  asset through T14/T15 rather than editing the row.
-- `mixed_lineage`: the persisted canonical shot contract does not validate. The storyboard is stale;
-  re-run T13.
-- `identity_conflict`: an idempotency key was reused for different material inputs. Use a new key.
-- A `DECODE_FAILURE` with no samples means deterministic validation proved the asset unusable, so
-  no paid request was made. Fix the upstream generation.
-- FFmpeg and ffprobe must be on `PATH`; every T20 media test synthesises its fixtures with them.
-
-T20 persistence adds `visual_qa_runs`, `visual_qa_samples`, `visual_qa_attempts`,
-`visual_qa_results`, `visual_qa_evidence` and `visual_qa_human_reviews` in Alembic revision
-`0016_visual_qa`.
-
-## T21 repair and fallback routing
-
-T20 decides whether a shot passes. T21 decides what to do about a shot that did not, and it does
-so within a policy that cannot spend unbounded money. It consumes one failed T20 result, classifies
-why the shot failed, and drives the safest, least expensive valid recovery path to a terminal
-state: a revalidated, selected output, or `HUMAN_REVIEW_REQUIRED`.
-
-T21 never reinterprets a T20 decision. The score, the applicable threshold and the hard-failure
-flag are read from the persisted T20 report and copied through unchanged; the only thing derived
-from them is *how much* has to change.
-
-### Architecture
-
-Each concern lives in its own module, and the boundaries are deliberate:
-
-| Module | Responsibility |
+| Document | What it covers |
 | --- | --- |
-| `services/qa/repair_classifier.py` | Why the shot failed, from T20 evidence alone |
-| `services/qa/repair_planner.py` | The minimal prompt delta, and its deterministic validation |
-| `services/qa/repair_policy.py` | The bounded route order and its attempt ceilings |
-| `services/qa/repair.py` | Restartable orchestration, persistence, spend and revalidation |
-| `services/animation/veo.py` | Every Veo model, capability and price, in exactly one place |
-| `services/animation/veo_adapter.py` | The provider-neutral alternate-provider boundary |
-| `services/animation/veo_fake.py` | A deterministic, credential-free stand-in |
-| `services/renderer/parallax_manifest.py` | Deterministic 2.5D planning and eligibility |
-| `services/renderer/parallax.py` | The FFmpeg execution of one plan |
-
-### Failure classification
-
-Every failed shot is classified into exactly one of five strict categories - `prompt_issue`,
-`reference_issue`, `seed_issue`, `provider_issue`, `impossible_shot` - with a decisive diagnostic
-code drawn from a bounded taxonomy. The classifier distinguishes wrong character identity, wrong
-character count, wrong location, wrong wardrobe or character state, missing or incorrect action,
-weak motion, composition failure, anatomy or visual-artifact failure, continuity failure, style
-mismatch, prompt overconstraint, prompt ambiguity, reference conflict, provider safety rejection,
-provider timeout or service failure, unsupported provider capability, impossible duration or motion
-request, and corrupt or incomplete downloaded media.
-
-Every T20 repair code maps to exactly one diagnostic; an unmapped code raises rather than being
-silently ignored, so the two taxonomies cannot drift apart unnoticed. Deterministic input, lineage,
-configuration and media-processing failures are marked `deterministic_only`, and the router is
-forbidden from spending money on them.
-
-### Score-aware severity
-
-The bands mirror T20 exactly:
-
-| T20 score | Severity |
-| --- | --- |
-| at or above the applicable threshold (85 normal, 90 hero) | not repaired; T20 already passed it |
-| 75 to below the threshold | targeted repair |
-| below 75 | structural repair - simplification, a new seed, reduced composition complexity |
-
-A hard failure always fails regardless of score, so it always earns at least a targeted repair, and
-a hard failure in a categorical dimension - the wrong person, the wrong place, the wrong number of
-people - is always structural.
-
-### The bounded repair policy
-
-```
-T20 QA failure
--> classify failure
--> same-provider repair 1        -> T20 QA
--> same-provider repair 2        -> T20 QA
--> one alternate-provider attempt -> T20 QA
--> deterministic 2.5D fallback when eligible -> T20 QA
--> otherwise HUMAN_REVIEW_REQUIRED
-```
-
-The original failed generation is recorded as attempt ordinal `0` and is **not** one of the two
-repair attempts. One shot therefore costs at most one original generation, two same-provider repair
-generations, one alternate-provider generation, and one deterministic fallback render, which costs
-no provider charge at all. There is no loop back and no unbounded retry: `repair_attempts` caps its
-ordinal in the database, and the route order is a total function of the attempts already spent.
-
-Network polling, media download, normalization and storage retries are not routes. When a durable
-provider operation already exists the router returns `resume_provider_operation`, which consumes no
-attempt and starts no new paid generation. An attempt interrupted between persisting its clip and
-running T20 on it is revalidated on resume rather than regenerated.
-
-### Minimal prompt repair
-
-A repaired prompt is a delta, never a rewrite. `extract_constraints` derives the ordered, stably
-identified constraints the original prompt asserted - required identities, character count,
-appearance and state, location, action, camera framing and movement, shot timing, continuity,
-approved T19 reference bindings, safety limits, provider capability limits, negative constraints and
-style - and marks which of them may move. Only the clauses a diagnostic actually implicates are
-touched; every other constraint is carried through and listed by name.
-
-Some constraints are enforced by the request rather than by prose. Shot timing, the capability
-profile and the reference bundle are carried by the request's duration parameter, its capability
-validation and its attached reference assets, so they are preserved and recorded but not written
-into the prompt text.
-
-The persisted `PromptDelta` records added, removed and rewritten clauses, preserved and touched
-constraint IDs, the repair reason and codes, the source QA finding IDs, the before and after prompt
-hashes, the seed change, and the planner version. `validate_delta` runs for *every* planner before
-any provider request: a delta that drops a required constraint, touches an immutable one, edits a
-clause its diagnostic never mentioned, or whose hash does not match the rendered prompt is rejected
-and costs nothing.
-
-`DeterministicRepairPlanner` is the default and the test planner; the same classification always
-produces the same delta. `LanguageModelRepairPlanner` is the production option: a configured model
-may *propose* a `RepairPlannerProposal`, and its proposal goes through exactly the same
-deterministic validation. There is no path from model prose to a provider request, and the bounded
-brief the model receives contains only the editable clauses.
-
-### Reference failures
-
-T21 never mutates an approved T19 character or location reference. When T20 evidence shows the
-approved reference itself is missing, stale, incompatible or in conflict, the shot is classified as
-a `reference_issue`, the evidence explaining the conflict is preserved, no replacement is
-fabricated, and the run is routed to `upstream_reference_correction` and `HUMAN_REVIEW_REQUIRED`.
-Money is never spent regenerating against a reference already known to be invalid. A generation that
-merely *failed to follow* a valid reference is a prompt issue and still earns its targeted repairs.
-
-### Attempt lineage
-
-Every attempt links to its immediate predecessor and to the root generation, and records the shot,
-the attempt ordinal and kind, the provider and model, the provider task or operation ID, the prompt
-hash and delta, the seed, the reference asset IDs and hashes, the capability-profile hash, the
-repair classification and code, the source QA result, the output assets, the output QA result, the
-estimated and actual cost, the status, the failure classification, trace context, and the created,
-started and completed timestamps.
-
-Attempt identities hash the ordinal together with every material input, so two attempts cannot
-collide. Only one attempt per shot may be `selected`, the database enforces it with a partial unique
-index, and selection is impossible without the attempt's own passing T20 result. Previous attempts
-stay in place as immutable historical records.
-
-### Google Veo as the alternate provider
-
-Every Veo fact lives in `services/animation/veo.py`: the supported model IDs, the fast and quality
-variants, durations, aspect ratios, resolutions, image-to-video, first- and last-frame control,
-reference-image support, native-audio behaviour, regional availability, request limits, polling
-behaviour and pricing identifiers. No other module names a Veo model.
-
-Capabilities are versioned and every attempt persists the profile hash it was generated under.
-Capability enforcement reads the profile, never the family: `veo-3.0-fast-generate-001` has no
-last-frame or reference-image control, and handing it one raises before any paid call rather than
-being silently dropped. The cost-controlled default is `veo-3.1-fast-generate-001`. Veo offers a
-small set of whole-second durations, so a shot whose canonical length is not one of them is
-generated at the smallest covering duration and trimmed by the same deterministic T15 trimmer.
-
-The adapter drives Vertex AI's long-running operation correctly. The operation name is persisted in
-the same transaction as the pre-call checkpoint, before the first poll, so an interrupted worker
-resumes the operation it already paid for. A transport failure that leaves the submission outcome
-unknown raises `VeoSubmissionAmbiguous`, which is routed to human review and **never** resubmitted.
-Output is streamed to temporary storage in bounded chunks, validated with ffprobe, normalized and
-trimmed through the existing T15 media infrastructure, and stored through `AssetService` with full
-provider and model provenance. Credentials, prompts, signed URLs and raw provider payloads are never
-logged or persisted.
-
-Veo 3 models generate native audio. T17 remains responsible for combining final visuals with
-approved narration, so T21 requests silent video wherever the model allows it.
-
-The application and the deterministic test suite work with no Google credentials, and no test or CI
-run makes a paid Veo call.
-
-### Deterministic 2.5D parallax fallback
-
-When every paid attempt is spent, a shot whose purpose can be conveyed through controlled
-still-image motion falls back to a deterministic 2.5D render of its approved keyframe. It needs no
-provider, no credential and no network.
-
-Layer transforms are derived from a stable render identity over the shot, the source asset and its
-hash, the geometry and the canonical duration, so the same shot always produces the same camera move
-and two shots never accidentally produce the same one. A second plane is added only when a real mask
-or depth map exists; without depth separation the render stays an honest single-plane camera move.
-The move is large and its easing is linear on purpose: a gentle eased move is nearly static at both
-ends, and T20's deterministic freeze check counts exactly those frames.
-
-The renderer invokes FFmpeg and FFprobe through argument arrays, never a shell command string, and
-never loads a whole video into memory. Output is repository-standard H.264 `yuv420p` MP4 at the
-shot's exact canonical duration, pinned by the same trimmer T15 applies to provider output. A
-versioned manifest recording every input asset, every transformation, the filter graph, both
-argument arrays and both tool versions is persisted as its own asset.
-
-Eligibility is decided deterministically and conservatively. A shot is rejected when it needs
-motion a 2.5D render cannot truthfully represent - essential complex character interaction or a
-mandatory physical action - and when its source keyframe already carries a T20 hard identity or
-location failure. Parallax is never used to conceal an invalid source image.
-
-### Budget and cost limits
-
-Every paid repair generation goes through the existing T23 infrastructure: a durable provider
-attempt is created or reused, cost is estimated from the active pricing catalog, budget is reserved
-transactionally, the pre-call checkpoint is persisted, and trace context is propagated. After
-completion the provider operation identity and actual usage are recorded, the reservation is
-reconciled and any unused amount released, failures are classified with the T23 taxonomy, and
-bounded, redacted metrics are emitted.
-
-There is no hard-coded numeric repair budget. The project's configured T23 hard cap is the money
-limit, with optional configured per-shot and per-repair-run limits on top. If the next attempt would
-exceed an applicable hard limit the provider is not called at all: the shot is routed to
-`HUMAN_REVIEW_REQUIRED` with a structured budget reason. Idempotent retries create no duplicate
-provider attempts, reservations, reconciliation events, ledger entries or charges.
-
-### Temporal integration
-
-A failed T20 video QA result starts or resumes T21 for that shot through the `run_shot_repair`
-activity. The child workflow adds `REPAIR_PLANNING`, `REPAIRING`, `ALTERNATE_PROVIDER`,
-`FALLBACK_RENDERING`, `REVALIDATING`, `HUMAN_REVIEW_REQUIRED` and `REPAIR_FAILED` alongside the
-existing states, and only reaches `LOCKED` when the selected output has passed its own T20
-evaluation.
-
-Messages are compact, versioned and ID-only in both directions. Prompts, QA evidence, video bytes,
-provider responses, fallback manifests and image payloads are not representable in the contracts the
-workflow passes. Activity idempotency keys are stable and stage-isolated, existing provider
-operations are resumed rather than resubmitted, cancellation is honoured between paid attempts, and
-a repair touches only the failed shot: siblings keep their locked results and their passing QA.
-
-Concurrent workers cannot advance the same repair run twice. `repair_runs.advance_token` is taken
-with a conditional update, so the loser is told to re-read rather than driving the same route again.
-
-T17 consumes only the selected passing animation output.
-
-### API and dashboard
-
-The owner-scoped control plane exposes the repair runs for a project and for a shot, and a detail
-projection with the failure classification, the T20 score and hard-failure reason, the repair code,
-the full attempt lineage with provider and model per attempt, prompt changes as a structured delta,
-output asset and QA-result links, estimated and actual cost, the current budget state, the fallback
-render and the human-review reason. Projections carry no prompts, provider payloads or signed URLs.
-
-`POST .../repairs/{id}:act` records one owner decision: `retry` resumes a durable technical
-operation (never a new paid generation), `cancel` stops the run before the next paid attempt,
-`acknowledge` and `resolve` record a human decision on a review state, and
-`restart_after_reference_correction` reopens a run whose upstream reference has been corrected. No
-action can mark a hard-failing visual as passed - selection requires a new valid T20 result, and only
-a repair attempt can produce one. The T18 shot inspector renders all of it in a repair panel beside
-the existing visual-QA panel.
-
-### Local commands
-
-Fake mode is fully deterministic and needs no credential:
-
-```bash
-uv run python scripts/run_visual_repair.py PROJECT_UUID SHOT_UUID     --provider fake --alternate-provider fake
-```
-
-Supported flags are `--provider`, `--alternate-provider`, `--idempotency-key`,
-`--max-same-provider-repairs`, `--allow-parallax-fallback` / `--no-parallax-fallback`, `--resume`,
-`--per-shot-repair-cost-limit`, `--width`, `--height`, `--qa-provider` and `--json`. The command
-prints the repair-run ID, the root animation-attempt ID, the current attempt and route, the failure
-classification and repair code, the provider and model, the provider operation ID where one applies,
-the QA score and decision, the selected output asset ID, the attempt lineage, a cost summary and the
-final status.
-
-The production command uses the configured providers:
-
-```bash
-RUNWAYML_API_SECRET=... VIDGEN_GOOGLE_CLOUD_PROJECT=... VIDGEN_GOOGLE_ACCESS_TOKEN=... VIDGEN_OPENAI_API_KEY=... VIDGEN_DATABASE_URL=... VIDGEN_BLOB_ROOT=... VIDGEN_BLOB_SIGNING_SECRET=... uv run python scripts/run_visual_repair.py PROJECT_UUID SHOT_UUID     --provider runway --alternate-provider veo --qa-provider openai
-```
-
-Relevant settings are `VIDGEN_REPAIR_ALTERNATE_PROVIDER` (`none` by default, `veo` to enable the
-single bounded alternate-provider attempt once Google credentials are configured),
-`VIDGEN_REPAIR_MAX_SAME_PROVIDER_REPAIRS`, `VIDGEN_REPAIR_ALLOW_PARALLAX_FALLBACK`,
-`VIDGEN_REPAIR_PER_SHOT_COST_LIMIT`, `VIDGEN_VEO_MODEL` and `VIDGEN_VEO_LOCATION`.
-
-### Known limitations
-
-- The Veo capability profile and pricing are verified against Google's published documentation on a
-  recorded date. Google has changed Veo model IDs and per-second prices more than once; re-check the
-  official documentation before changing a value, because a stale entry silently mis-estimates every
-  alternate-provider repair.
-- Without a mask or depth map the fallback is a single-plane camera move rather than true parallax.
-  The repository does not yet generate depth maps.
-- The deterministic planner's repair clauses are English and tuned for the current prompt compiler;
-  a project in another language should configure the language-model planner, whose output still
-  passes the same deterministic validation.
-- Routing to `HUMAN_REVIEW_REQUIRED` on a budget denial happens even when the free deterministic
-  fallback is still available, because the policy requires a structured budget stop.
-- The alternate-provider route is off by default. An unconfigured deployment keeps its
-  same-provider repairs and the free 2.5D fallback rather than failing every repair on a missing
-  Google credential; set `VIDGEN_REPAIR_ALTERNATE_PROVIDER=veo` to turn it on.
-- The Veo adapter reads inline output only. T21 never sets `storageUri`, so a Cloud Storage handle
-  in a completed operation is refused rather than fetched with a client this adapter does not have.
-- FFmpeg and ffprobe must be on `PATH`; every T21 media test synthesises its fixtures with them.
-
-T21 persistence adds `repair_runs`, `repair_attempts`, `repair_decisions`,
-`repair_fallback_renders` and `repair_veo_operations` in Alembic revision `0017_repair_fallback`.
-
-## T22 final editorial QA
-
-T20 asks whether one shot is right. T22 asks whether the *finished recap* is right, and it is the
-last gate before a project may complete. It inspects the canonical T17 delivery as a whole, so it
-sees the class of defect no shot-level result can: a concatenation seam, a caption file that lost
-its second half, an audio track that drifted two seconds from the picture, a story beat that never
-made it onto the screen.
-
-The design rests on one rule: **deterministic truth outranks semantic opinion.** A decode failure,
-a stale lineage, a missing caption cue or a drifting mix is a measured fact. No provider score, no
-averaged dimension and no human decision can turn one into a `PASS`.
-
-### Architecture and phase boundaries
-
-T22 runs as six restartable phases, each with its own checkpoint and stable idempotency identity:
-
-```text
-INPUT_VALIDATION → DETERMINISTIC_MEDIA_QA → CAPTION_QA → EDITORIAL_ANALYSIS
-                 → ADJUDICATION (when necessary) → COMPLETION_GATE
-```
-
-Separation is enforced by module, not by convention:
-
-| Module | Responsibility |
-| --- | --- |
-| `services/qa/final_inputs.py` | Authoritative input selection and stale-lineage rejection |
-| `services/qa/final_deterministic.py` | Measured media checks on the assembled render |
-| `services/qa/final_audio.py` | Measured checks on the delivered final mix |
-| `services/qa/final_captions.py` | Canonical manifest and delivered caption-asset checks |
-| `services/qa/final_evidence.py` | Deterministic sampling, contact sheet and evidence assembly |
-| `services/qa/final_editorial_provider.py` | The provider-neutral editorial interface and registry |
-| `services/qa/final_fake_provider.py` | The deterministic fake used by every test and by CI |
-| `services/qa/final_openai_adapter.py` | The configured production structured-output adapter |
-| `services/qa/final_gate.py` | Finding recomputation, remediation routing and the gate |
-| `services/qa/final_editorial.py` | Restartable orchestration and persistence |
-| `services/qa/final_human_review.py` | Bounded human adjudication of uncertain findings |
-
-A completed phase is reused whenever its inputs are unchanged. Because the final-QA identity binds
-every material input, a phase recorded against a run was computed from exactly those inputs, so a
-resumed run reattaches to its checkpoints instead of re-deriving them - and never re-stores an
-artefact it already wrote.
-
-### Canonical inputs and lineage rules
-
-T22 does not re-derive the render. It loads the current selected T17 render and its manifest, then
-proves the manifest still describes the project's current state. The run is rejected - before any
-paid provider request, and non-retryably - when:
-
-- an asset belongs to another project,
-- any required upstream output is missing,
-- the render was produced from a superseded selected animation, script, narration or storyboard,
-- a selected shot has no passing T20 video-QA result,
-- a T21 repair run is active, failed or `HUMAN_REVIEW_REQUIRED`,
-- the render does not contain the selected passing T21 attempt for a repaired shot,
-- a declared narration, storyboard, caption or render hash does not match the database,
-- shot ordering or an asset reference differs from the render manifest,
-- the final asset is empty or inaccessible.
-
-The answer to any of these is a new render, never a second evaluation of the same stale one.
-
-### Deterministic render checks
-
-FFmpeg and ffprobe are invoked exclusively through subprocess argument arrays; no command string is
-built from a manifest, an asset name or any other externally supplied value. The checks cover
-existence and size, container and codec, full video and audio decode, expected streams, resolution,
-pixel format, frame rate and time base, finite positive duration, video/audio/timeline duration
-agreement, A/V drift, shot coverage without gaps or overlaps, transition handles, unexpected black
-and excessive frozen intervals, corrupt sections, first and final frame decode, monotonic
-timestamps, start offset, non-finite measurements, and delivery byte rate and bitrate.
-
-These operate on the *assembled* output, so they detect damage introduced during concatenation,
-filtering, trimming, captioning, mixing or encoding. T20's shot-level scoring is neither reused nor
-altered; what is reused are the repository's existing measurement utilities.
-
-### Audio checks and thresholds
-
-Loudness and true peak come from `loudnorm`; peak, RMS and clipped-sample counts from `astats`;
-silence from `silencedetect`. Narration coverage is checked by intersecting the approved T12 word
-timings with the measured non-silent intervals of the delivered mix, so an omitted, duplicated or
-drifting segment is located by an exact global timestamp range rather than inferred from a score.
-
-Defaults: integrated loudness -14 LUFS ±1.5 LU, true peak ceiling -1.0 dBTP, clipping ratio
-≤0.0005, leading silence ≤1.5 s, trailing silence ≤2.5 s, internal silence inside narration ≤2.0 s,
-narration timing tolerance 250 ms, minimum narration headroom over music and effects 6 dB, and a
-48 kHz stereo delivery profile. A mix with nothing in it reports non-finite loudness; that is a
-measurement outcome, not a crash, and narration coverage does the blocking.
-
-### Caption checks and thresholds
-
-Two things are validated and never confused: the canonical caption track the manifest declared, and
-the selectable caption files that were actually delivered. A cue that is correct in the manifest but
-missing from the delivered SRT is a blocking failure, because the viewer sees the delivered file.
-
-Checks cover narration coverage, text fidelity against the approved script projection, monotonic
-ordering, nonnegative starts, positive durations, in-bounds cues, unintended overlaps, timing
-alignment with T12 word timings, missing and duplicated cues, delivered asset hashes, line count
-(≤2) and line length (≤42 characters), reading speed (≤21 cps), deterministic reflow against the
-declared caption identity, punctuation preservation, valid UTF-8, successful parsing, burned-in safe
-area, and delivered language metadata. Caption QA never rewrites the approved script; it reports the
-mismatch and names the repair target.
-
-Only the selectable formats are parsed for cues. A burned-in ASS asset is a rendering input rather
-than a file a viewer selects, so it is verified by hash and by the safe-area check but never fed to
-a cue parser. The delivered cues are carried in an unvalidated record rather than a `CaptionTrack`:
-that contract rejects overlapping and out-of-duration cues, which are exactly the defects caption
-QA exists to report.
-
-### Editorial dimensions, findings and evidence
-
-After deterministic checks permit it, a bounded structured analysis evaluates the assembled recap
-across 21 dimensions: story-beat coverage, narrative structure, scene completeness, character
-identity and state continuity, location continuity, prop and wardrobe continuity, visual
-contradictions, shot-to-shot continuity, transition coherence, narration-to-visual and
-caption-to-narration agreement, comprehensibility, setup and payoff, narrative jumps, repetition,
-pacing, dead air, ending completeness, and contradiction of the approved script or approved source
-evidence.
-
-T22 evaluates the assembled recap; it does not rescore individual shots as if it were T20. Findings
-are classified `blocking`, `review_required`, `warning` or `informational`, and severity is
-structural rather than derived from an average - **a high dimension score can never conceal a
-blocking finding.** Every finding carries a stable ID, category, severity, blocking flag,
-confidence, structured issue code, summary, exact global timestamp range, affected shot, script,
-narration and caption-cue references, evidence, expected and observed behaviour, a remediation
-target and its provenance. Findings are truncated most-severe-first against a strict bound, and
-unrestricted model prose is never stored.
-
-### Luna, Terra and human review
-
-Luna performs the first pass on the configured inexpensive vision model. Terra adjudicates
-borderline, contradictory or low-confidence findings on the stronger model, and **may only decide at
-confidence ≥ 0.80**; below that the disagreement becomes `REVIEW`, which is the correct outcome for
-a genuinely uncertain editorial question. A provider score is never canonical: a reply that answers
-a different attempt, scores a dimension it was not asked about, cites an unsampled frame or a shot
-outside the render, or leaves an actionable claim without evidence is a non-retryable provider
-contract failure.
-
-A human reviewer may resolve a semantic `REVIEW` finding only when no deterministic hard failure
-and no stale lineage exist, and only with a structured reason recorded against a row version under
-optimistic concurrency. A reviewer can never override corrupt media, stale lineage, a missing
-required asset, invalid timestamps, missing caption or narration coverage, a failing T20 hard
-result, or an unresolved T21 human-review state. Accepting a review finding can turn `REVIEW` into
-`PASS`; nothing can turn `FAIL` into anything.
-
-### Completion gate
-
-`PASS` is computed, never asserted. It requires current compatible lineage, successful deterministic
-media, audio and caption checks, no blocking editorial finding, no unresolved T21 human review, no
-missing passing T20 result, no unresolved final editorial review, and a persisted report and gate
-decision. `FAIL` is required when any blocking issue is confirmed; `REVIEW` when a semantic question
-remains genuinely uncertain after bounded adjudication.
-
-The gate is workflow state, not a UI affordance: the parent workflow advances a project to
-`completed` only on `PASS`, the database refuses to store a `PASS` alongside a blocking finding or an
-unresolved review, and the API exposes no action that marks a deterministic failure as passed.
-
-### Remediation routing
-
-T22 identifies and gates; it never starts another creative repair loop and never makes a paid
-generation call. Confirmed findings are grouped into structured routes - `RERENDER_T17`,
-`REBUILD_CAPTIONS_T17`, `REMIX_AUDIO_T17`, `REGENERATE_SHOT_T16`, `REPAIR_SHOT_T21`,
-`CORRECT_REFERENCE_T19`, `CORRECT_SCRIPT_UPSTREAM`, `HUMAN_EDITORIAL_REVIEW` - which the parent
-workflow or an authorized user action hands to the stage that already owns that repair. Only
-affected downstream outputs are invalidated; unaffected shot selections and every historical render
-and QA asset are preserved. Any route that changes a selected input requires a new T17 render and a
-new T22 run against the new render identity; a report is never reused for an older render.
-
-### Temporal integration
-
-The parent project workflow runs T22 after the shot fan-out reports every required shot eligible for
-assembly. The message is IDs only - project, render and manifest asset, run ID, idempotency key and
-trace context - so reports, findings, sampled frames, caption text, media bytes and provider
-payloads never enter workflow history. Progress is query-visible through `final_qa_state`, and the
-workflow-visible statuses are `FINAL_QA_QUEUED`, `FINAL_QA_VALIDATING_INPUTS`,
-`FINAL_QA_CHECKING_MEDIA`, `FINAL_QA_CHECKING_CAPTIONS`, `FINAL_QA_ANALYZING`,
-`FINAL_QA_ADJUDICATING`, `FINAL_QA_REVIEW_REQUIRED`, `FINAL_QA_PASSED` and `FINAL_QA_FAILED`.
-
-### T23 cost and telemetry integration
-
-Every production editorial call reuses the existing T23 infrastructure: a durable provider-attempt
-identity, a cost estimate, a transactional budget reservation under the project hard cap, a durable
-pre-call checkpoint, propagated trace context, then recorded usage, reconciliation, released
-reservation, bounded metrics, taxonomy-classified failures and redacted metadata. Deterministic
-checks create no provider charges, and an idempotent retry duplicates no attempt, reservation,
-reconciliation, ledger entry or cost. A budget denial stops the run without a decision, so nothing
-completes on that render.
-
-### API and dashboard
-
-`GET /api/v1/projects/{id}/final-qa` lists runs, `GET .../final-qa/{run_id}` returns measurements,
-checks, dimensions, findings and remediation routes, and `GET .../final-qa/gate` returns the
-backend's own completion answer. `POST .../final-qa:run`, `:cancel`, `:review` and `:remediate`
-carry `If-Match` and `Idempotency-Key` under existing owner scoping. The final-review page renders
-the gate verdict, phase and status, render and audio measurements, caption results, editorial
-dimensions, a timeline marker per finding with its evidence and affected shots or cues, the
-recommended remediation target, provider, model, cost and report identity. Cancellation is offered
-only before a paid analysis, and no control marks a deterministic failure as passed.
-
-### Local commands
-
-```bash
-uv run python scripts/run_final_editorial_qa.py PROJECT_UUID --provider fake
-VIDGEN_OPENAI_API_KEY=... uv run python scripts/run_final_editorial_qa.py PROJECT_UUID \
-    --provider openai
-```
-
-Fake mode is fully deterministic and needs no provider credential. The command prints the
-final-editorial run ID, the final-render asset ID, the input identity, deterministic check counts,
-audio and caption results, blocking/review/warning counts, provider and model, the adjudication
-result when one was used, the cost summary, the report asset ID, the gate decision and the final
-status.
-
-Production configuration: `VIDGEN_OPENAI_API_KEY`, `VIDGEN_FINAL_QA_FIRST_PASS_MODEL`,
-`VIDGEN_FINAL_QA_ADJUDICATOR_MODEL` and `VIDGEN_FINAL_QA_ADJUDICATION_ENABLED`. Both model defaults
-are the model this repository already has configured and verified for its other vision agent roles;
-check the provider's current official documentation before changing one.
-
-### Known limitations
-
-- Editorial analysis reads deterministically sampled frames and a contact sheet, not the moving
-  picture. A defect that is only visible in motion between two sampled timestamps - a single
-  glitched frame, for instance - is caught by the deterministic checks or not at all.
-- Story-beat coverage is judged against the approved script structure supplied in the request. The
-  request carries a beat summary rather than the full plot plan, so a project whose beats are
-  encoded only in prose gets a weaker signal than one with structured beats.
-- Narration coverage is measured from silence intervals, which detects an absent or displaced
-  segment but not one replaced by different speech at the right time. Text-level narration fidelity
-  remains T12's responsibility.
-- The audio masking check reads the manifest's declared ducking and gain rather than measuring
-  narration intelligibility against the bed, because a reliable intelligibility measure needs the
-  stems, which the delivery does not carry.
-- Single-pass loudness normalization lands within roughly 1 LU of target, so the delivery tolerance
-  is a configured value rather than an exact match.
-- Cancellation is only meaningful before the editorial phase. Once the provider request is issued
-  the cost is already committed, and the run completes rather than abandoning what was bought.
-- FFmpeg and ffprobe must be on `PATH`; every T22 media test synthesises its fixtures with them.
-
-T22 persistence adds `final_editorial_runs`, `final_editorial_checks`,
-`final_editorial_provider_attempts`, `final_editorial_reviews` and `final_completion_gates` in
-Alembic revision `0018_final_editorial_qa`, the repository's single current head.
+| [`docs/TECHNICAL_DESIGN.md`](docs/TECHNICAL_DESIGN.md) | Authoritative architecture, data model, stage specifications, and the T01-T26 roadmap |
+| [`docs/IMPLEMENTATION_STATUS.md`](docs/IMPLEMENTATION_STATUS.md) | What each implemented roadmap task delivered, with its per-stage local commands |
+| [`infra/README.md`](infra/README.md) | The Azure deployment's operational reference |
+| [`AGENTS.md`](AGENTS.md) | Contributor and coding-agent rules |
+| `.env.example`, `apps/web/.env.example` | Every environment variable with its local default |
+| `packages/contracts/schema` | Exported JSON Schema for the inter-stage contracts (`make schemas`) |
+| <http://localhost:8000/docs> | Generated OpenAPI documentation for the running API |
