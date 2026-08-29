@@ -8,6 +8,7 @@ from apps.api.routes import (
     assets,
     costs,
     events,
+    final_editorial,
     projects,
     references,
     renders,
@@ -54,6 +55,7 @@ def create_app() -> FastAPI:
         repair,
         reviews,
         visual_qa,
+        final_editorial,
     ):
         application.include_router(module.router, prefix="/api/v1")
     register_error_handlers(application)

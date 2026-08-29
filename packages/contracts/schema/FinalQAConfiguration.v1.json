@@ -1,0 +1,306 @@
+{
+  "additionalProperties": false,
+  "description": "Versioned thresholds. Every value here is bound into the final-QA identity.\n\nChanging any threshold is a configuration change, which produces a new\nidentity and therefore a new run rather than silently re-grading an old one.",
+  "properties": {
+    "adjudication_policy_version": {
+      "maxLength": 64,
+      "minLength": 1,
+      "title": "Adjudication Policy Version",
+      "type": "string"
+    },
+    "audio_check_version": {
+      "maxLength": 64,
+      "minLength": 1,
+      "title": "Audio Check Version",
+      "type": "string"
+    },
+    "av_drift_tolerance_us": {
+      "default": 150000,
+      "maximum": 2000000,
+      "minimum": 0,
+      "title": "Av Drift Tolerance Us",
+      "type": "integer"
+    },
+    "caption_check_version": {
+      "maxLength": 64,
+      "minLength": 1,
+      "title": "Caption Check Version",
+      "type": "string"
+    },
+    "caption_safe_area_percent": {
+      "default": 10,
+      "maximum": 30,
+      "minimum": 0,
+      "title": "Caption Safe Area Percent",
+      "type": "integer"
+    },
+    "caption_timing_tolerance_us": {
+      "default": 250000,
+      "maximum": 5000000,
+      "minimum": 0,
+      "title": "Caption Timing Tolerance Us",
+      "type": "integer"
+    },
+    "configuration_version": {
+      "maxLength": 64,
+      "minLength": 1,
+      "title": "Configuration Version",
+      "type": "string"
+    },
+    "contact_sheet_columns": {
+      "default": 6,
+      "maximum": 8,
+      "minimum": 1,
+      "title": "Contact Sheet Columns",
+      "type": "integer"
+    },
+    "deterministic_check_version": {
+      "maxLength": 64,
+      "minLength": 1,
+      "title": "Deterministic Check Version",
+      "type": "string"
+    },
+    "duration_tolerance_us": {
+      "default": 120000,
+      "maximum": 2000000,
+      "minimum": 0,
+      "title": "Duration Tolerance Us",
+      "type": "integer"
+    },
+    "editorial_rubric_version": {
+      "maxLength": 64,
+      "minLength": 1,
+      "title": "Editorial Rubric Version",
+      "type": "string"
+    },
+    "editorial_sample_count": {
+      "default": 24,
+      "maximum": 64,
+      "minimum": 1,
+      "title": "Editorial Sample Count",
+      "type": "integer"
+    },
+    "expected_audio_codec": {
+      "default": "aac",
+      "maxLength": 32,
+      "minLength": 1,
+      "title": "Expected Audio Codec",
+      "type": "string"
+    },
+    "expected_caption_language": {
+      "default": "en",
+      "pattern": "^[a-z]{2,3}(-[A-Z]{2})?$",
+      "title": "Expected Caption Language",
+      "type": "string"
+    },
+    "expected_channels": {
+      "default": 2,
+      "maximum": 8,
+      "minimum": 1,
+      "title": "Expected Channels",
+      "type": "integer"
+    },
+    "expected_container": {
+      "default": "mp4",
+      "maxLength": 32,
+      "minLength": 1,
+      "title": "Expected Container",
+      "type": "string"
+    },
+    "expected_frame_rate": {
+      "default": 24,
+      "exclusiveMinimum": 0,
+      "maximum": 240,
+      "title": "Expected Frame Rate",
+      "type": "integer"
+    },
+    "expected_height": {
+      "default": 1080,
+      "exclusiveMinimum": 0,
+      "maximum": 16384,
+      "title": "Expected Height",
+      "type": "integer"
+    },
+    "expected_pixel_format": {
+      "default": "yuv420p",
+      "maxLength": 32,
+      "minLength": 1,
+      "title": "Expected Pixel Format",
+      "type": "string"
+    },
+    "expected_sample_rate_hz": {
+      "default": 48000,
+      "exclusiveMinimum": 0,
+      "title": "Expected Sample Rate Hz",
+      "type": "integer"
+    },
+    "expected_video_codec": {
+      "default": "h264",
+      "maxLength": 32,
+      "minLength": 1,
+      "title": "Expected Video Codec",
+      "type": "string"
+    },
+    "expected_width": {
+      "default": 1920,
+      "exclusiveMinimum": 0,
+      "maximum": 16384,
+      "title": "Expected Width",
+      "type": "integer"
+    },
+    "loudness_tolerance_lu": {
+      "default": 1.5,
+      "maximum": 6,
+      "minimum": 0,
+      "title": "Loudness Tolerance Lu",
+      "type": "number"
+    },
+    "max_adjudications": {
+      "default": 8,
+      "maximum": 32,
+      "minimum": 0,
+      "title": "Max Adjudications",
+      "type": "integer"
+    },
+    "max_black_interval_us": {
+      "default": 500000,
+      "maximum": 10000000,
+      "minimum": 0,
+      "title": "Max Black Interval Us",
+      "type": "integer"
+    },
+    "max_bytes_per_second": {
+      "default": 3500000,
+      "exclusiveMinimum": 0,
+      "title": "Max Bytes Per Second",
+      "type": "integer"
+    },
+    "max_caption_line_characters": {
+      "default": 42,
+      "maximum": 120,
+      "minimum": 10,
+      "title": "Max Caption Line Characters",
+      "type": "integer"
+    },
+    "max_caption_lines": {
+      "default": 2,
+      "maximum": 4,
+      "minimum": 1,
+      "title": "Max Caption Lines",
+      "type": "integer"
+    },
+    "max_caption_reading_speed_cps": {
+      "default": 21.0,
+      "exclusiveMinimum": 0,
+      "maximum": 60,
+      "title": "Max Caption Reading Speed Cps",
+      "type": "number"
+    },
+    "max_clipping_ratio": {
+      "default": 0.0005,
+      "maximum": 1,
+      "minimum": 0,
+      "title": "Max Clipping Ratio",
+      "type": "number"
+    },
+    "max_findings": {
+      "default": 64,
+      "maximum": 256,
+      "minimum": 1,
+      "title": "Max Findings",
+      "type": "integer"
+    },
+    "max_freeze_interval_us": {
+      "default": 2000000,
+      "maximum": 30000000,
+      "minimum": 0,
+      "title": "Max Freeze Interval Us",
+      "type": "integer"
+    },
+    "max_internal_silence_us": {
+      "default": 2000000,
+      "maximum": 30000000,
+      "minimum": 0,
+      "title": "Max Internal Silence Us",
+      "type": "integer"
+    },
+    "max_leading_silence_us": {
+      "default": 1500000,
+      "maximum": 30000000,
+      "minimum": 0,
+      "title": "Max Leading Silence Us",
+      "type": "integer"
+    },
+    "max_trailing_silence_us": {
+      "default": 2500000,
+      "maximum": 30000000,
+      "minimum": 0,
+      "title": "Max Trailing Silence Us",
+      "type": "integer"
+    },
+    "min_bytes_per_second": {
+      "default": 8000,
+      "exclusiveMinimum": 0,
+      "title": "Min Bytes Per Second",
+      "type": "integer"
+    },
+    "min_narration_headroom_db": {
+      "default": 6.0,
+      "maximum": 40,
+      "minimum": 0,
+      "title": "Min Narration Headroom Db",
+      "type": "number"
+    },
+    "narration_timing_tolerance_us": {
+      "default": 250000,
+      "maximum": 5000000,
+      "minimum": 0,
+      "title": "Narration Timing Tolerance Us",
+      "type": "integer"
+    },
+    "prompt_version": {
+      "maxLength": 64,
+      "minLength": 1,
+      "title": "Prompt Version",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "start_offset_tolerance_us": {
+      "default": 50000,
+      "maximum": 1000000,
+      "minimum": 0,
+      "title": "Start Offset Tolerance Us",
+      "type": "integer"
+    },
+    "target_integrated_lufs": {
+      "default": -14.0,
+      "maximum": -5,
+      "minimum": -30,
+      "title": "Target Integrated Lufs",
+      "type": "number"
+    },
+    "true_peak_ceiling_dbtp": {
+      "default": -1.0,
+      "maximum": 0,
+      "minimum": -6,
+      "title": "True Peak Ceiling Dbtp",
+      "type": "number"
+    }
+  },
+  "required": [
+    "configuration_version",
+    "deterministic_check_version",
+    "audio_check_version",
+    "caption_check_version",
+    "editorial_rubric_version",
+    "prompt_version",
+    "adjudication_policy_version"
+  ],
+  "title": "FinalQAConfiguration",
+  "type": "object"
+}

@@ -1,0 +1,263 @@
+{
+  "$defs": {
+    "FinalQADecision": {
+      "enum": [
+        "PASS",
+        "FAIL",
+        "REVIEW"
+      ],
+      "title": "FinalQADecision",
+      "type": "string"
+    },
+    "FinalQAPhase": {
+      "description": "The restartable phases. Each one checkpoints and is reused when clean.",
+      "enum": [
+        "INPUT_VALIDATION",
+        "DETERMINISTIC_MEDIA_QA",
+        "CAPTION_QA",
+        "EDITORIAL_ANALYSIS",
+        "ADJUDICATION",
+        "COMPLETION_GATE"
+      ],
+      "title": "FinalQAPhase",
+      "type": "string"
+    },
+    "FinalQAStatus": {
+      "description": "Workflow-visible run status, mirrored by the Temporal project workflow.",
+      "enum": [
+        "FINAL_QA_QUEUED",
+        "FINAL_QA_VALIDATING_INPUTS",
+        "FINAL_QA_CHECKING_MEDIA",
+        "FINAL_QA_CHECKING_CAPTIONS",
+        "FINAL_QA_ANALYZING",
+        "FINAL_QA_ADJUDICATING",
+        "FINAL_QA_REVIEW_REQUIRED",
+        "FINAL_QA_PASSED",
+        "FINAL_QA_FAILED"
+      ],
+      "title": "FinalQAStatus",
+      "type": "string"
+    },
+    "FinalRemediationTarget": {
+      "description": "Where a confirmed issue is routed. T22 never executes the route itself.",
+      "enum": [
+        "NONE",
+        "RERENDER_T17",
+        "REBUILD_CAPTIONS_T17",
+        "REMIX_AUDIO_T17",
+        "REGENERATE_SHOT_T16",
+        "REPAIR_SHOT_T21",
+        "CORRECT_REFERENCE_T19",
+        "CORRECT_SCRIPT_UPSTREAM",
+        "HUMAN_EDITORIAL_REVIEW"
+      ],
+      "title": "FinalRemediationTarget",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "description": "The compact projection returned by the pipeline, CLI and activity.",
+  "properties": {
+    "adjudicated": {
+      "default": false,
+      "title": "Adjudicated",
+      "type": "boolean"
+    },
+    "adjudication_confidence": {
+      "anyOf": [
+        {
+          "maximum": 1,
+          "minimum": 0,
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Adjudication Confidence"
+    },
+    "audio_check_count": {
+      "default": 0,
+      "minimum": 0,
+      "title": "Audio Check Count",
+      "type": "integer"
+    },
+    "audio_failure_count": {
+      "default": 0,
+      "minimum": 0,
+      "title": "Audio Failure Count",
+      "type": "integer"
+    },
+    "blocking_finding_count": {
+      "default": 0,
+      "minimum": 0,
+      "title": "Blocking Finding Count",
+      "type": "integer"
+    },
+    "caption_check_count": {
+      "default": 0,
+      "minimum": 0,
+      "title": "Caption Check Count",
+      "type": "integer"
+    },
+    "caption_failure_count": {
+      "default": 0,
+      "minimum": 0,
+      "title": "Caption Failure Count",
+      "type": "integer"
+    },
+    "configuration_hash": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Configuration Hash",
+      "type": "string"
+    },
+    "cost_microusd": {
+      "default": 0,
+      "minimum": 0,
+      "title": "Cost Microusd",
+      "type": "integer"
+    },
+    "decision": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/FinalQADecision"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "deterministic_check_count": {
+      "default": 0,
+      "minimum": 0,
+      "title": "Deterministic Check Count",
+      "type": "integer"
+    },
+    "deterministic_failure_count": {
+      "default": 0,
+      "minimum": 0,
+      "title": "Deterministic Failure Count",
+      "type": "integer"
+    },
+    "error_code": {
+      "anyOf": [
+        {
+          "maxLength": 128,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Error Code"
+    },
+    "final_editorial_run_id": {
+      "format": "uuid",
+      "title": "Final Editorial Run Id",
+      "type": "string"
+    },
+    "final_qa_identity": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Final Qa Identity",
+      "type": "string"
+    },
+    "final_video_asset_id": {
+      "format": "uuid",
+      "title": "Final Video Asset Id",
+      "type": "string"
+    },
+    "first_pass_model": {
+      "default": "",
+      "maxLength": 128,
+      "title": "First Pass Model",
+      "type": "string"
+    },
+    "first_pass_provider": {
+      "default": "",
+      "maxLength": 64,
+      "title": "First Pass Provider",
+      "type": "string"
+    },
+    "input_hash": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Input Hash",
+      "type": "string"
+    },
+    "phase": {
+      "$ref": "#/$defs/FinalQAPhase"
+    },
+    "project_id": {
+      "format": "uuid",
+      "title": "Project Id",
+      "type": "string"
+    },
+    "remediation_targets": {
+      "items": {
+        "$ref": "#/$defs/FinalRemediationTarget"
+      },
+      "maxItems": 16,
+      "title": "Remediation Targets",
+      "type": "array"
+    },
+    "render_manifest_asset_id": {
+      "format": "uuid",
+      "title": "Render Manifest Asset Id",
+      "type": "string"
+    },
+    "report_asset_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Report Asset Id"
+    },
+    "reused": {
+      "default": false,
+      "title": "Reused",
+      "type": "boolean"
+    },
+    "review_finding_count": {
+      "default": 0,
+      "minimum": 0,
+      "title": "Review Finding Count",
+      "type": "integer"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "status": {
+      "$ref": "#/$defs/FinalQAStatus"
+    },
+    "warning_finding_count": {
+      "default": 0,
+      "minimum": 0,
+      "title": "Warning Finding Count",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "final_editorial_run_id",
+    "project_id",
+    "final_video_asset_id",
+    "render_manifest_asset_id",
+    "final_qa_identity",
+    "input_hash",
+    "configuration_hash",
+    "status",
+    "phase"
+  ],
+  "title": "FinalEditorialResult",
+  "type": "object"
+}

@@ -1,0 +1,79 @@
+{
+  "$defs": {
+    "FinalQAFailureCode": {
+      "description": "Structural failures raised before any paid provider request.",
+      "enum": [
+        "project_not_found",
+        "render_not_selected",
+        "render_incomplete",
+        "render_asset_missing",
+        "render_manifest_missing",
+        "render_manifest_invalid",
+        "cross_project_asset",
+        "stale_render_lineage",
+        "stale_shot_selection",
+        "missing_upstream_output",
+        "missing_video_qa_result",
+        "failing_video_qa_result",
+        "unresolved_repair_review",
+        "active_repair_run",
+        "failed_repair_run",
+        "narration_hash_mismatch",
+        "storyboard_hash_mismatch",
+        "caption_hash_mismatch",
+        "render_hash_mismatch",
+        "shot_order_mismatch",
+        "asset_reference_mismatch",
+        "incomplete_final_asset",
+        "identity_conflict",
+        "unvalidated_provider_output",
+        "budget_denied"
+      ],
+      "title": "FinalQAFailureCode",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "description": "A structured, non-retryable T22 lineage or configuration failure.",
+  "properties": {
+    "code": {
+      "$ref": "#/$defs/FinalQAFailureCode"
+    },
+    "message": {
+      "maxLength": 500,
+      "minLength": 1,
+      "title": "Message",
+      "type": "string"
+    },
+    "reference_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Reference Id"
+    },
+    "retryable": {
+      "default": false,
+      "title": "Retryable",
+      "type": "boolean"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    }
+  },
+  "required": [
+    "code",
+    "message"
+  ],
+  "title": "FinalQAFailure",
+  "type": "object"
+}

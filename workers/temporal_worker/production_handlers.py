@@ -10,11 +10,12 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 from temporalio import activity
+from temporalio.exceptions import ApplicationError
 
 from apps.api.settings import APISettings, get_settings
 from packages.providers import FakeSubtitleProvider
 from packages.providers.image_generation import DeterministicFakeImageProvider
-from packages.workflows.activities import StageHandler
+from packages.workflows.activities import FinalQAHandler, StageHandler
 from packages.workflows.shot_activities import ShotActivityHandler
 from packages.workflows.shot_policy import identity_hash, shot_activity_idempotency_key
 from services.analysis.contact_sheet import contact_sheet_manifest
@@ -47,6 +48,8 @@ from services.qa.commands import (
     evaluate_shot_stage,
     run_visual_repair,
 )
+from services.qa.final_commands import FinalQACommandOptions, run_final_editorial_qa
+from services.qa.final_inputs import FinalQALineageError
 from services.script.fake_provider import FakeScriptGenerationProvider
 from services.script.openai_adapter import OpenAIScriptConfig, OpenAIScriptGenerationProvider
 from services.script.pipeline import ScriptGenerationPipeline
@@ -77,7 +80,12 @@ from vidgen.contracts.shot_workflow import (
 )
 from vidgen.contracts.transcription import TranscriptSegment, TranscriptWord
 from vidgen.contracts.visual_qa import VisualQATargetType
-from vidgen.contracts.workflow import StageActivityInput, StageActivityResult
+from vidgen.contracts.workflow import (
+    FinalQAActivityInput,
+    FinalQAActivityResult,
+    StageActivityInput,
+    StageActivityResult,
+)
 from vidgen.db.animation_models import AnimationGeneratedVideo
 from vidgen.db.image_generation_models import GeneratedKeyframeImage, ImageGenerationRun
 from vidgen.db.image_generation_repository import ImageGenerationRepository
@@ -1111,3 +1119,66 @@ def _generate_keyframes(
         asset_id=asset_id,
         reused=result.reused_count == result.requested_count,
     )
+
+
+def build_final_qa_handler(settings: APISettings | None = None) -> FinalQAHandler:
+    """Build the T22 adapter.
+
+    The activity owns the session, the blob store and the provider client. It
+    returns IDs, counts and a gate decision; the report, its findings, the
+    sampled frames and every provider payload stay in durable storage.
+    """
+    configured = settings or get_settings()
+    engine = build_engine(configured.database_url)
+    blob_store = FilesystemBlobStore(configured.blob_root, configured.signing_secret.encode())
+    if configured.openai_api_key:
+        provider = "openai"
+    elif configured.temporal_allow_fake_providers:
+        provider = "fake"
+    else:
+        raise ValueError("T22 final editorial-QA provider is not configured")
+
+    def execute(request: FinalQAActivityInput) -> FinalQAActivityResult:
+        options = FinalQACommandOptions(
+            provider=request.provider if provider == "fake" else provider,
+            idempotency_key=request.idempotency_key,
+            adjudicate=request.adjudicate and configured.final_qa_adjudication_enabled,
+            openai_api_key=configured.openai_api_key,
+            first_pass_model=configured.final_qa_first_pass_model,
+            adjudicator_model=configured.final_qa_adjudicator_model,
+            trace_context=dict(request.trace_context),
+        )
+        with Session(engine, expire_on_commit=False) as session:
+            try:
+                result = asyncio.run(
+                    run_final_editorial_qa(
+                        session, blob_store, project_id=request.project_id, options=options
+                    )
+                )
+            except FinalQALineageError as error:
+                # A stale or incomplete render is not a transient failure. It is
+                # reported as a terminal, non-retryable outcome so the workflow
+                # stops rather than paying to analyse the same stale cut again.
+                raise ApplicationError(
+                    f"final QA rejected the current render: {error.code.value}",
+                    type="FinalQALineageError",
+                    non_retryable=True,
+                ) from error
+        return FinalQAActivityResult(
+            project_id=result.project_id,
+            final_editorial_run_id=result.final_editorial_run_id,
+            final_render_asset_id=result.final_video_asset_id,
+            status=result.status.value,
+            phase=result.phase.value,
+            decision=result.decision.value if result.decision is not None else None,
+            blocking_finding_count=result.blocking_finding_count,
+            review_finding_count=result.review_finding_count,
+            deterministic_failure_count=result.deterministic_failure_count,
+            remediation_targets=[target.value for target in result.remediation_targets],
+            report_asset_id=result.report_asset_id,
+            cost_microusd=result.cost_microusd,
+            error_code=result.error_code,
+            reused=result.reused,
+        )
+
+    return execute

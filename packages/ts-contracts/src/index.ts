@@ -1906,3 +1906,257 @@ export interface RepairActionResponse {
   code: string;
   row_version: number;
 }
+
+// --- T22 final editorial QA -------------------------------------------------
+
+export type FinalQADecision = "PASS" | "FAIL" | "REVIEW";
+
+export type FinalQAStatus =
+  | "FINAL_QA_QUEUED"
+  | "FINAL_QA_VALIDATING_INPUTS"
+  | "FINAL_QA_CHECKING_MEDIA"
+  | "FINAL_QA_CHECKING_CAPTIONS"
+  | "FINAL_QA_ANALYZING"
+  | "FINAL_QA_ADJUDICATING"
+  | "FINAL_QA_REVIEW_REQUIRED"
+  | "FINAL_QA_PASSED"
+  | "FINAL_QA_FAILED";
+
+export type FinalQAPhase =
+  | "INPUT_VALIDATION"
+  | "DETERMINISTIC_MEDIA_QA"
+  | "CAPTION_QA"
+  | "EDITORIAL_ANALYSIS"
+  | "ADJUDICATION"
+  | "COMPLETION_GATE";
+
+export type FinalFindingSeverity =
+  | "blocking"
+  | "review_required"
+  | "warning"
+  | "informational";
+
+export type FinalRemediationTarget =
+  | "NONE"
+  | "RERENDER_T17"
+  | "REBUILD_CAPTIONS_T17"
+  | "REMIX_AUDIO_T17"
+  | "REGENERATE_SHOT_T16"
+  | "REPAIR_SHOT_T21"
+  | "CORRECT_REFERENCE_T19"
+  | "CORRECT_SCRIPT_UPSTREAM"
+  | "HUMAN_EDITORIAL_REVIEW";
+
+export type FinalReviewDecision = "accept" | "reject" | "escalate";
+
+export interface FinalMeasurementProjection {
+  container_format: string;
+  byte_size: number;
+  video_codec: string;
+  audio_codec: string;
+  width: number | null;
+  height: number | null;
+  pixel_format: string;
+  frame_rate: string;
+  container_duration_us: number | null;
+  video_duration_us: number | null;
+  audio_duration_us: number | null;
+  sample_rate_hz: number | null;
+  channels: number | null;
+  integrated_lufs: number | null;
+  true_peak_dbtp: number | null;
+  clipping_ratio: number | null;
+  video_decoded: boolean;
+  audio_decoded: boolean;
+  black_interval_count: number;
+  freeze_interval_count: number;
+  silence_interval_count: number;
+  ffmpeg_version: string;
+  ffprobe_version: string;
+}
+
+export interface FinalCheckProjection {
+  check_id: UUID;
+  check_type: string;
+  code: string;
+  status: "pass" | "fail" | "warning" | "not_applicable" | string;
+  blocking: boolean;
+  measurement: number | null;
+  threshold: number | null;
+  unit: string;
+  start_us: number | null;
+  end_us: number | null;
+  cue_sequence: number | null;
+  tool: string;
+  tool_version: string;
+  message: string;
+}
+
+export interface FinalDimensionProjection {
+  category: string;
+  applicable: boolean;
+  score: number;
+  confidence: number;
+  blocking_finding_count: number;
+  review_finding_count: number;
+  warning_finding_count: number;
+  summary: string;
+}
+
+export interface FinalEvidenceProjection {
+  evidence_id: UUID;
+  evidence_type: string;
+  start_us: number;
+  end_us: number;
+  frame_asset_id: UUID | null;
+  sample_id: UUID | null;
+  contact_sheet_asset_id: UUID | null;
+  contact_sheet_position: number | null;
+  caption_cue_sequence: number | null;
+  shot_id: UUID | null;
+  measurement: number | null;
+  threshold: number | null;
+  explanation: string;
+}
+
+export interface FinalFindingProjection {
+  finding_id: UUID;
+  category: string;
+  severity: FinalFindingSeverity | string;
+  blocking: boolean;
+  confidence: number;
+  issue_code: string;
+  summary: string;
+  start_us: number;
+  end_us: number;
+  shot_ids: UUID[];
+  caption_cue_sequences: number[];
+  narration_segment_ids: UUID[];
+  evidence: FinalEvidenceProjection[];
+  expected_behavior: string;
+  observed_behavior: string;
+  remediation_target: FinalRemediationTarget | string;
+  provenance: string;
+  resolved_by_review: boolean;
+}
+
+export interface FinalRemediationProjection {
+  target: FinalRemediationTarget | string;
+  finding_ids: UUID[];
+  shot_ids: UUID[];
+  caption_cue_sequences: number[];
+  reason: string;
+  requires_new_render: boolean;
+}
+
+export interface FinalEditorialRunProjection {
+  final_editorial_run_id: UUID;
+  project_id: UUID;
+  final_render_asset_id: UUID;
+  render_manifest_asset_id: UUID;
+  render_identity: string;
+  final_qa_identity: string;
+  input_hash: string;
+  configuration_hash: string;
+  report_version: string;
+  status: FinalQAStatus | string;
+  phase: FinalQAPhase | string;
+  decision: FinalQADecision | null;
+  selected: boolean;
+  blocking_finding_count: number;
+  review_finding_count: number;
+  warning_finding_count: number;
+  deterministic_failure_count: number;
+  remediation_targets: string[];
+  provider: string;
+  model: string;
+  adjudicated: boolean;
+  cost_microusd: number;
+  report_asset_id: UUID | null;
+  contact_sheet_asset_id: UUID | null;
+  error_code: string | null;
+  row_version: number;
+  created_at: string;
+  completed_at: string | null;
+}
+
+export interface FinalEditorialRunDetailProjection extends FinalEditorialRunProjection {
+  measurements: FinalMeasurementProjection | null;
+  media_checks: FinalCheckProjection[];
+  audio_checks: FinalCheckProjection[];
+  caption_checks: FinalCheckProjection[];
+  dimensions: FinalDimensionProjection[];
+  findings: FinalFindingProjection[];
+  remediation_routes: FinalRemediationProjection[];
+  adjudication_confidence: number | null;
+  adjudication_decided: boolean;
+  gate_reasons: string[];
+  timeline_duration_us: number;
+}
+
+export interface FinalEditorialCollectionResponse {
+  project_id: UUID;
+  items: FinalEditorialRunProjection[];
+}
+
+export interface FinalEditorialRunRequest {
+  provider: "fake" | "openai";
+  adjudicate: boolean;
+}
+
+export interface FinalEditorialCancelRequest {
+  reason: string;
+}
+
+export interface FinalEditorialRunResponse {
+  status: "queued" | "cancelled";
+  project_id: UUID;
+  final_render_asset_id: UUID | null;
+  provider: string;
+  resource_id: UUID;
+  row_version: number;
+}
+
+export interface FinalEditorialReviewRequest {
+  finding_id: UUID;
+  decision: FinalReviewDecision;
+  reason_code: string;
+  reason: string;
+}
+
+export interface FinalEditorialReviewResponse {
+  final_editorial_run_id: UUID;
+  review_id: UUID;
+  finding_id: UUID;
+  decision: FinalReviewDecision;
+  resulting_gate: FinalQADecision;
+  row_version: number;
+}
+
+export interface FinalEditorialRemediationRequest {
+  target: FinalRemediationTarget | string;
+  finding_ids: UUID[];
+}
+
+export interface FinalEditorialRemediationResponse {
+  final_editorial_run_id: UUID;
+  target: string;
+  routed_finding_ids: UUID[];
+  requires_new_render: boolean;
+  resource_id: UUID;
+  row_version: number;
+}
+
+export interface FinalCompletionGateProjection {
+  project_id: UUID;
+  final_editorial_run_id: UUID | null;
+  final_render_asset_id: UUID | null;
+  decision: FinalQADecision | null;
+  allowed: boolean;
+  reason: string;
+  blocking_finding_count: number;
+  review_finding_count: number;
+  deterministic_failure_count: number;
+  gate_version: string;
+  row_version: number;
+}

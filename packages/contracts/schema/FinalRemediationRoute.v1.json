@@ -1,0 +1,78 @@
+{
+  "$defs": {
+    "FinalRemediationTarget": {
+      "description": "Where a confirmed issue is routed. T22 never executes the route itself.",
+      "enum": [
+        "NONE",
+        "RERENDER_T17",
+        "REBUILD_CAPTIONS_T17",
+        "REMIX_AUDIO_T17",
+        "REGENERATE_SHOT_T16",
+        "REPAIR_SHOT_T21",
+        "CORRECT_REFERENCE_T19",
+        "CORRECT_SCRIPT_UPSTREAM",
+        "HUMAN_EDITORIAL_REVIEW"
+      ],
+      "title": "FinalRemediationTarget",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "description": "One structured remediation route derived from confirmed findings.",
+  "properties": {
+    "caption_cue_sequences": {
+      "items": {
+        "type": "integer"
+      },
+      "maxItems": 64,
+      "title": "Caption Cue Sequences",
+      "type": "array"
+    },
+    "finding_ids": {
+      "items": {
+        "format": "uuid",
+        "type": "string"
+      },
+      "maxItems": 64,
+      "minItems": 1,
+      "title": "Finding Ids",
+      "type": "array"
+    },
+    "reason": {
+      "maxLength": 500,
+      "minLength": 1,
+      "title": "Reason",
+      "type": "string"
+    },
+    "requires_new_render": {
+      "default": true,
+      "title": "Requires New Render",
+      "type": "boolean"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "shot_ids": {
+      "items": {
+        "format": "uuid",
+        "type": "string"
+      },
+      "maxItems": 64,
+      "title": "Shot Ids",
+      "type": "array"
+    },
+    "target": {
+      "$ref": "#/$defs/FinalRemediationTarget"
+    }
+  },
+  "required": [
+    "target",
+    "finding_ids",
+    "reason"
+  ],
+  "title": "FinalRemediationRoute",
+  "type": "object"
+}

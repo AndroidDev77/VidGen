@@ -19,6 +19,16 @@ import { approveRender } from "../../api/reviews";
 import { getDownloadUrl } from "../../api/uploads";
 import { useApiClient } from "../../app/apiContext";
 import { getProjectVisualQa } from "../../api/visualQa";
+import {
+  cancelFinalQa,
+  getFinalQaGate,
+  getFinalQaRun,
+  getProjectFinalQa,
+  resolveFinalQaReview,
+  routeFinalQaRemediation,
+  startFinalQa,
+} from "../../api/finalQa";
+import { FinalQAPanel } from "../../components/FinalQAPanel";
 import { ApprovalBar } from "../../components/ApprovalBar";
 import { AssetDownloadMenu } from "../../components/AssetDownloadMenu";
 import { CaptionControls } from "../../components/CaptionControls";
@@ -57,6 +67,103 @@ export function FinalReviewPage(): JSX.Element {
     queryKey: queryKeys.render(projectId),
     queryFn: ({ signal }) => getRender(projectId, client, signal).then((r) => r.data),
     enabled: projectId !== "",
+  });
+  const finalQa = useQuery({
+    queryKey: queryKeys.finalQa(projectId),
+    queryFn: ({ signal }) => getProjectFinalQa(projectId, client, signal).then((r) => r.data),
+    enabled: projectId !== "",
+  });
+  // The current report is the selected one; an older report for a superseded
+  // render is history and never decides whether this project may complete.
+  const currentFinalQaRunId =
+    finalQa.data?.items.find((item) => item.selected)?.final_editorial_run_id ??
+    finalQa.data?.items[0]?.final_editorial_run_id ??
+    null;
+  const finalQaRun = useQuery({
+    queryKey: queryKeys.finalQaRun(projectId, currentFinalQaRunId ?? ""),
+    queryFn: ({ signal }) =>
+      getFinalQaRun(projectId, currentFinalQaRunId ?? "", client, signal).then((r) => r.data),
+    enabled: projectId !== "" && currentFinalQaRunId !== null,
+  });
+  const finalQaGate = useQuery({
+    queryKey: queryKeys.finalQaGate(projectId),
+    queryFn: ({ signal }) => getFinalQaGate(projectId, client, signal).then((r) => r.data),
+    enabled: projectId !== "",
+  });
+
+  const invalidateFinalQa = () => {
+    void queryClient.invalidateQueries({ queryKey: queryKeys.finalQa(projectId) });
+    void queryClient.invalidateQueries({ queryKey: queryKeys.finalQaGate(projectId) });
+    if (currentFinalQaRunId !== null) {
+      void queryClient.invalidateQueries({
+        queryKey: queryKeys.finalQaRun(projectId, currentFinalQaRunId),
+      });
+    }
+  };
+
+  const runFinalQa = useMutation({
+    mutationFn: () =>
+      startFinalQa(
+        projectId,
+        { provider: "fake", adjudicate: true },
+        finalQaGate.data?.row_version ?? 0,
+        newIdempotencyKey(`final-qa-${projectId}`),
+        client,
+      ).then((r) => r.data),
+    onSuccess: invalidateFinalQa,
+  });
+  const cancelFinalQaRun = useMutation({
+    mutationFn: () => {
+      if (currentFinalQaRunId === null) {
+        throw new Error("There is no final-QA run to cancel.");
+      }
+      return cancelFinalQa(
+        projectId,
+        currentFinalQaRunId,
+        { reason: "cancelled from the final review page" },
+        finalQaGate.data?.row_version ?? finalQaRun.data?.row_version ?? 0,
+        newIdempotencyKey(`final-qa-cancel-${currentFinalQaRunId}`),
+        client,
+      ).then((r) => r.data);
+    },
+    onSuccess: invalidateFinalQa,
+  });
+  const resolveReview = useMutation({
+    mutationFn: (findingId: string) => {
+      if (currentFinalQaRunId === null) {
+        throw new Error("There is no final-QA run to adjudicate.");
+      }
+      return resolveFinalQaReview(
+        projectId,
+        currentFinalQaRunId,
+        {
+          finding_id: findingId,
+          decision: "accept",
+          reason_code: "reviewer_accepted",
+          reason: "Reviewed on the final review page and judged acceptable.",
+        },
+        finalQaGate.data?.row_version ?? finalQaRun.data?.row_version ?? 0,
+        newIdempotencyKey(`final-qa-review-${findingId}`),
+        client,
+      ).then((r) => r.data);
+    },
+    onSuccess: invalidateFinalQa,
+  });
+  const routeRemediation = useMutation({
+    mutationFn: ({ target, findingIds }: { target: string; findingIds: readonly string[] }) => {
+      if (currentFinalQaRunId === null) {
+        throw new Error("There is no final-QA run to route.");
+      }
+      return routeFinalQaRemediation(
+        projectId,
+        currentFinalQaRunId,
+        { target, finding_ids: [...findingIds] },
+        finalQaGate.data?.row_version ?? finalQaRun.data?.row_version ?? 0,
+        newIdempotencyKey(`final-qa-route-${target}`),
+        client,
+      ).then((r) => r.data);
+    },
+    onSuccess: invalidateFinalQa,
   });
 
   const videoAssetId = render.data?.final_video_asset_id ?? null;
@@ -255,6 +362,17 @@ export function FinalReviewPage(): JSX.Element {
             </div>
           </section>
 
+          {finalQaGate.isSuccess && !finalQaGate.data.allowed && (
+            <MessageBar intent="warning">
+              <MessageBarBody>
+                <MessageBarTitle>Final editorial QA blocks completion</MessageBarTitle>
+                {"The project cannot reach its completed state until final QA records a current "}
+                {"PASS for this render. Reason: "}
+                {humanize(finalQaGate.data.reason)}.
+              </MessageBarBody>
+            </MessageBar>
+          )}
+
           {approve.isError && <ErrorState error={approve.error} />}
           {downloadError !== null && <ErrorState error={downloadError} />}
 
@@ -285,6 +403,21 @@ export function FinalReviewPage(): JSX.Element {
               ]}
             />
           </ApprovalBar>
+
+          <FinalQAPanel
+            run={finalQaRun.data ?? null}
+            gate={finalQaGate.data ?? null}
+            busy={
+              runFinalQa.isPending ||
+              cancelFinalQaRun.isPending ||
+              resolveReview.isPending ||
+              routeRemediation.isPending
+            }
+            onRunFinalQa={() => runFinalQa.mutate()}
+            onCancel={() => cancelFinalQaRun.mutate()}
+            onResolveReview={(findingId) => resolveReview.mutate(findingId)}
+            onRoute={(target, findingIds) => routeRemediation.mutate({ target, findingIds })}
+          />
 
           <TechnicalDetails
             title="Render provenance"

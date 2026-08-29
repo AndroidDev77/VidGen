@@ -33,6 +33,15 @@ class APISettings(BaseSettings):
     # check the provider's current official documentation before changing one.
     visual_qa_first_pass_model: str = "gpt-5.6"
     visual_qa_adjudicator_model: str = "gpt-5.6"
+    # T22 final editorial QA reuses the same two-role policy over the assembled
+    # recap: Luna evaluates on the inexpensive vision model, Terra adjudicates
+    # only borderline findings on the stronger one. Both default to the model
+    # this repository already has configured and verified.
+    final_qa_first_pass_model: str = "gpt-5.6"
+    final_qa_adjudicator_model: str = "gpt-5.6"
+    #: Off by default: an unconfigured deployment must not silently skip the
+    #: bounded second opinion and turn every borderline finding into a failure.
+    final_qa_adjudication_enabled: bool = True
     runway_api_secret: str | None = None
     # T21 repair and fallback routing. The alternate provider is Google Veo; the
     # model is pinned by a versioned capability profile rather than named at

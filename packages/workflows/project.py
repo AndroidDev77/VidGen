@@ -14,11 +14,22 @@ with workflow.unsafe.imports_passed_through():
     from packages.workflows.shot_policy import TASK_QUEUE
     from vidgen.contracts.shot_workflow import ProjectShotFanoutInput, ProjectShotFanoutResult
     from vidgen.contracts.workflow import (
+        FinalQAActivityInput,
+        FinalQAActivityResult,
         ProjectWorkflowInput,
         ProjectWorkflowState,
         StageActivityInput,
         StageActivityResult,
     )
+
+#: The workflow-visible T22 statuses. The project reaches ``completed`` only
+#: through ``FINAL_QA_PASSED``; every other terminal final-QA status is a
+#: stopping point the UI cannot talk its way past.
+FINAL_QA_PASSED = "FINAL_QA_PASSED"
+FINAL_QA_REVIEW_REQUIRED = "FINAL_QA_REVIEW_REQUIRED"
+FINAL_QA_FAILED = "FINAL_QA_FAILED"
+#: Fan-out outcomes that mean every required shot is eligible for assembly.
+ELIGIBLE_FANOUT_STATUSES = frozenset({"completed", "shot_generation_complete"})
 
 
 @workflow.defn
@@ -28,6 +39,7 @@ class ProjectWorkflow:
     def __init__(self) -> None:
         self._state: ProjectWorkflowState | None = None
         self._cancelled = False
+        self._final_qa: FinalQAActivityResult | None = None
         self._fanout: (
             workflow.ChildWorkflowHandle[ProjectShotFanoutWorkflow, ProjectShotFanoutResult] | None
         ) = None
@@ -100,6 +112,41 @@ class ProjectWorkflow:
         fanout_result = await self._fanout
         self._state.completed_stages.append("shot_generation")
         self._state.status = fanout_result.status
+        if self._cancelled or fanout_result.status not in ELIGIBLE_FANOUT_STATUSES:
+            # Final QA inspects an assembled recap. Without every required shot
+            # eligible for assembly there is nothing valid to inspect, and
+            # running it anyway would only buy a paid analysis of a stale cut.
+            return self._state
+        return await self._final_editorial_qa(request)
+
+    async def _final_editorial_qa(self, request: ProjectWorkflowInput) -> ProjectWorkflowState:
+        """Run T22 against the project's current T17 render and enforce its gate.
+
+        The message is IDs only. The activity resolves the selected render, its
+        manifest and every upstream output from durable storage, and returns
+        counts and a decision - never a report, a finding or a frame.
+        """
+        assert self._state is not None
+        self._state.status = "FINAL_QA_QUEUED"
+        result = await workflow.execute_activity(
+            "run_final_editorial_qa_activity",
+            FinalQAActivityInput(
+                project_id=request.project_id,
+                idempotency_key=f"{request.idempotency_key}:t22",
+                trace_context=request.trace_context,
+            ),
+            start_to_close_timeout=timedelta(hours=2),
+            heartbeat_timeout=timedelta(minutes=2),
+            retry_policy=provider_activity_retry_policy(),
+            result_type=FinalQAActivityResult,
+        )
+        self._final_qa = result
+        self._state.status = result.status
+        self._state.completed_stages.append("final_editorial_qa")
+        # The completion gate is workflow state, not a UI affordance: only a
+        # current PASS advances the project to ``completed``.
+        if result.decision == "PASS" and result.status == FINAL_QA_PASSED:
+            self._state.status = "completed"
         return self._state
 
     @workflow.signal
@@ -111,3 +158,8 @@ class ProjectWorkflow:
     @workflow.query
     def project_state(self) -> ProjectWorkflowState | None:
         return self._state
+
+    @workflow.query
+    def final_qa_state(self) -> FinalQAActivityResult | None:
+        """Query-visible T22 progress: IDs, counts and the current decision."""
+        return self._final_qa

@@ -1,0 +1,242 @@
+{
+  "$defs": {
+    "FinalIssueCode": {
+      "description": "The bounded structured issue taxonomy. Adding a member is a version change.",
+      "enum": [
+        "RENDER_MISSING",
+        "RENDER_EMPTY",
+        "RENDER_UNREADABLE",
+        "CONTAINER_MISMATCH",
+        "VIDEO_CODEC_MISMATCH",
+        "AUDIO_CODEC_MISMATCH",
+        "VIDEO_DECODE_FAILURE",
+        "AUDIO_DECODE_FAILURE",
+        "MISSING_VIDEO_STREAM",
+        "MISSING_AUDIO_STREAM",
+        "UNEXPECTED_STREAM",
+        "RESOLUTION_MISMATCH",
+        "PIXEL_FORMAT_MISMATCH",
+        "FRAME_RATE_INVALID",
+        "TIME_BASE_INVALID",
+        "DURATION_INVALID",
+        "VIDEO_DURATION_MISMATCH",
+        "AUDIO_DURATION_MISMATCH",
+        "AV_DURATION_DRIFT",
+        "TIMELINE_DURATION_MISMATCH",
+        "SHOT_COVERAGE_GAP",
+        "SHOT_COVERAGE_OVERLAP",
+        "TRANSITION_HANDLE_MISMATCH",
+        "UNEXPECTED_BLACK_INTERVAL",
+        "EXCESSIVE_FREEZE_INTERVAL",
+        "CORRUPT_RENDER_SECTION",
+        "INVALID_BOUNDARY_FRAME",
+        "NON_MONOTONIC_TIMESTAMPS",
+        "START_OFFSET_OUT_OF_RANGE",
+        "NON_FINITE_MEASUREMENT",
+        "FILE_SIZE_OUT_OF_RANGE",
+        "BITRATE_OUT_OF_RANGE",
+        "NARRATION_INTERVAL_MISSING",
+        "NARRATION_ORDER_MISMATCH",
+        "NARRATION_SEGMENT_DUPLICATED",
+        "NARRATION_SEGMENT_OMITTED",
+        "NARRATION_TIMING_DRIFT",
+        "AUDIO_VIDEO_DRIFT",
+        "LOUDNESS_OUT_OF_RANGE",
+        "TRUE_PEAK_EXCEEDED",
+        "AUDIO_CLIPPING",
+        "NON_FINITE_SAMPLE",
+        "LEADING_SILENCE_OUT_OF_RANGE",
+        "TRAILING_SILENCE_OUT_OF_RANGE",
+        "ABNORMAL_INTERNAL_SILENCE",
+        "NARRATION_MASKED_BY_BED",
+        "CHANNEL_LAYOUT_MISMATCH",
+        "SAMPLE_RATE_MISMATCH",
+        "AUDIO_DISCONTINUITY",
+        "BACKGROUND_AUDIO_OVERRUN",
+        "UNAPPROVED_PROVIDER_AUDIO",
+        "CAPTION_COVERAGE_MISSING",
+        "CAPTION_TEXT_MISMATCH",
+        "CAPTION_ORDER_INVALID",
+        "CAPTION_NEGATIVE_START",
+        "CAPTION_NONPOSITIVE_DURATION",
+        "CAPTION_OUT_OF_BOUNDS",
+        "CAPTION_OVERLAP",
+        "CAPTION_TIMING_DRIFT",
+        "CAPTION_CUE_MISSING",
+        "CAPTION_CUE_DUPLICATED",
+        "CAPTION_ASSET_HASH_MISMATCH",
+        "CAPTION_LINE_COUNT_EXCEEDED",
+        "CAPTION_LINE_LENGTH_EXCEEDED",
+        "CAPTION_READING_SPEED_EXCEEDED",
+        "CAPTION_REFLOW_NONDETERMINISTIC",
+        "CAPTION_PUNCTUATION_ALTERED",
+        "CAPTION_ENCODING_INVALID",
+        "CAPTION_PARSE_FAILURE",
+        "CAPTION_SAFE_AREA_VIOLATION",
+        "CAPTION_LANGUAGE_MISMATCH",
+        "MISSING_STORY_BEAT",
+        "DUPLICATED_SCENE",
+        "MISSING_SCENE",
+        "OUT_OF_ORDER_SCENE",
+        "CONTINUITY_CONTRADICTION",
+        "IDENTITY_CONTRADICTION",
+        "LOCATION_CONTRADICTION",
+        "PROP_CONTRADICTION",
+        "NARRATION_VISUAL_MISMATCH",
+        "CAPTION_NARRATION_MISMATCH",
+        "INCOMPREHENSIBLE_SEQUENCE",
+        "UNRESOLVED_SETUP",
+        "ABRUPT_NARRATIVE_JUMP",
+        "EXCESSIVE_REPETITION",
+        "PACING_PROBLEM",
+        "UNINTENDED_DEAD_AIR",
+        "INCOMPLETE_ENDING",
+        "SCRIPT_CONTRADICTION",
+        "SOURCE_CONTRADICTION",
+        "AMBIGUOUS_EDITORIAL_EVIDENCE"
+      ],
+      "title": "FinalIssueCode",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "description": "A deterministic audio-mix check, located against the global timeline.",
+  "properties": {
+    "blocking": {
+      "default": false,
+      "title": "Blocking",
+      "type": "boolean"
+    },
+    "check_id": {
+      "format": "uuid",
+      "title": "Check Id",
+      "type": "string"
+    },
+    "check_type": {
+      "const": "audio",
+      "default": "audio",
+      "title": "Check Type",
+      "type": "string"
+    },
+    "check_version": {
+      "maxLength": 64,
+      "minLength": 1,
+      "title": "Check Version",
+      "type": "string"
+    },
+    "code": {
+      "$ref": "#/$defs/FinalIssueCode"
+    },
+    "end_us": {
+      "anyOf": [
+        {
+          "minimum": 0,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "End Us"
+    },
+    "measurement": {
+      "anyOf": [
+        {
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Measurement"
+    },
+    "message": {
+      "default": "",
+      "maxLength": 500,
+      "title": "Message",
+      "type": "string"
+    },
+    "narration_segment_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Narration Segment Id"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "start_us": {
+      "anyOf": [
+        {
+          "minimum": 0,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Start Us"
+    },
+    "status": {
+      "enum": [
+        "pass",
+        "fail",
+        "warning",
+        "not_applicable"
+      ],
+      "title": "Status",
+      "type": "string"
+    },
+    "threshold": {
+      "anyOf": [
+        {
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Threshold"
+    },
+    "tool": {
+      "default": "",
+      "maxLength": 64,
+      "title": "Tool",
+      "type": "string"
+    },
+    "tool_version": {
+      "default": "",
+      "maxLength": 128,
+      "title": "Tool Version",
+      "type": "string"
+    },
+    "unit": {
+      "default": "",
+      "maxLength": 32,
+      "title": "Unit",
+      "type": "string"
+    }
+  },
+  "required": [
+    "check_id",
+    "check_version",
+    "code",
+    "status"
+  ],
+  "title": "FinalAudioCheck",
+  "type": "object"
+}

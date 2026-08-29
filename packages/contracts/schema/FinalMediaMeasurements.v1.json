@@ -1,0 +1,316 @@
+{
+  "additionalProperties": false,
+  "description": "Every measured property of the assembled render, with its tool versions.",
+  "properties": {
+    "audio_codec": {
+      "default": "",
+      "maxLength": 64,
+      "title": "Audio Codec",
+      "type": "string"
+    },
+    "audio_decoded": {
+      "default": false,
+      "title": "Audio Decoded",
+      "type": "boolean"
+    },
+    "audio_duration_us": {
+      "anyOf": [
+        {
+          "minimum": 0,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Audio Duration Us"
+    },
+    "audio_start_us": {
+      "default": 0,
+      "title": "Audio Start Us",
+      "type": "integer"
+    },
+    "audio_time_base": {
+      "default": "",
+      "maxLength": 32,
+      "title": "Audio Time Base",
+      "type": "string"
+    },
+    "bit_rate": {
+      "anyOf": [
+        {
+          "minimum": 0,
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Bit Rate"
+    },
+    "black_intervals": {
+      "items": {
+        "additionalProperties": {
+          "type": "integer"
+        },
+        "type": "object"
+      },
+      "maxItems": 512,
+      "title": "Black Intervals",
+      "type": "array"
+    },
+    "byte_size": {
+      "minimum": 0,
+      "title": "Byte Size",
+      "type": "integer"
+    },
+    "channels": {
+      "anyOf": [
+        {
+          "exclusiveMinimum": 0,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Channels"
+    },
+    "clipping_ratio": {
+      "anyOf": [
+        {
+          "maximum": 1,
+          "minimum": 0,
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Clipping Ratio"
+    },
+    "container_duration_us": {
+      "anyOf": [
+        {
+          "minimum": 0,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Container Duration Us"
+    },
+    "container_format": {
+      "default": "",
+      "maxLength": 128,
+      "title": "Container Format",
+      "type": "string"
+    },
+    "decode_error_count": {
+      "default": 0,
+      "minimum": 0,
+      "title": "Decode Error Count",
+      "type": "integer"
+    },
+    "ffmpeg_version": {
+      "default": "",
+      "maxLength": 256,
+      "title": "Ffmpeg Version",
+      "type": "string"
+    },
+    "ffprobe_version": {
+      "default": "",
+      "maxLength": 256,
+      "title": "Ffprobe Version",
+      "type": "string"
+    },
+    "first_frame_valid": {
+      "default": false,
+      "title": "First Frame Valid",
+      "type": "boolean"
+    },
+    "frame_rate": {
+      "default": "",
+      "maxLength": 32,
+      "title": "Frame Rate",
+      "type": "string"
+    },
+    "freeze_intervals": {
+      "items": {
+        "additionalProperties": {
+          "type": "integer"
+        },
+        "type": "object"
+      },
+      "maxItems": 512,
+      "title": "Freeze Intervals",
+      "type": "array"
+    },
+    "height": {
+      "anyOf": [
+        {
+          "exclusiveMinimum": 0,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Height"
+    },
+    "integrated_lufs": {
+      "anyOf": [
+        {
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Integrated Lufs"
+    },
+    "last_frame_valid": {
+      "default": false,
+      "title": "Last Frame Valid",
+      "type": "boolean"
+    },
+    "loudness_range": {
+      "anyOf": [
+        {
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Loudness Range"
+    },
+    "measured_at": {
+      "format": "date-time",
+      "title": "Measured At",
+      "type": "string"
+    },
+    "monotonic_video_timestamps": {
+      "default": true,
+      "title": "Monotonic Video Timestamps",
+      "type": "boolean"
+    },
+    "pixel_format": {
+      "default": "",
+      "maxLength": 32,
+      "title": "Pixel Format",
+      "type": "string"
+    },
+    "sample_rate_hz": {
+      "anyOf": [
+        {
+          "exclusiveMinimum": 0,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Sample Rate Hz"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "silence_intervals": {
+      "items": {
+        "additionalProperties": {
+          "type": "integer"
+        },
+        "type": "object"
+      },
+      "maxItems": 512,
+      "title": "Silence Intervals",
+      "type": "array"
+    },
+    "subtitle_stream_count": {
+      "default": 0,
+      "minimum": 0,
+      "title": "Subtitle Stream Count",
+      "type": "integer"
+    },
+    "true_peak_dbtp": {
+      "anyOf": [
+        {
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "True Peak Dbtp"
+    },
+    "video_codec": {
+      "default": "",
+      "maxLength": 64,
+      "title": "Video Codec",
+      "type": "string"
+    },
+    "video_decoded": {
+      "default": false,
+      "title": "Video Decoded",
+      "type": "boolean"
+    },
+    "video_duration_us": {
+      "anyOf": [
+        {
+          "minimum": 0,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Video Duration Us"
+    },
+    "video_start_us": {
+      "default": 0,
+      "title": "Video Start Us",
+      "type": "integer"
+    },
+    "video_time_base": {
+      "default": "",
+      "maxLength": 32,
+      "title": "Video Time Base",
+      "type": "string"
+    },
+    "width": {
+      "anyOf": [
+        {
+          "exclusiveMinimum": 0,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Width"
+    }
+  },
+  "required": [
+    "measured_at",
+    "byte_size"
+  ],
+  "title": "FinalMediaMeasurements",
+  "type": "object"
+}

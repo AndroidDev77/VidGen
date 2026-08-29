@@ -1,0 +1,94 @@
+{
+  "$defs": {
+    "FinalQADecision": {
+      "enum": [
+        "PASS",
+        "FAIL",
+        "REVIEW"
+      ],
+      "title": "FinalQADecision",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "description": "The completion gate's recomputed decision for one render identity.",
+  "properties": {
+    "blocking_finding_count": {
+      "minimum": 0,
+      "title": "Blocking Finding Count",
+      "type": "integer"
+    },
+    "decided_at": {
+      "format": "date-time",
+      "title": "Decided At",
+      "type": "string"
+    },
+    "decision": {
+      "$ref": "#/$defs/FinalQADecision"
+    },
+    "deterministic_failure_count": {
+      "minimum": 0,
+      "title": "Deterministic Failure Count",
+      "type": "integer"
+    },
+    "final_video_asset_id": {
+      "format": "uuid",
+      "title": "Final Video Asset Id",
+      "type": "string"
+    },
+    "gate_version": {
+      "maxLength": 64,
+      "minLength": 1,
+      "title": "Gate Version",
+      "type": "string"
+    },
+    "reasons": {
+      "items": {
+        "type": "string"
+      },
+      "maxItems": 32,
+      "title": "Reasons",
+      "type": "array"
+    },
+    "render_identity": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Render Identity",
+      "type": "string"
+    },
+    "review_finding_count": {
+      "minimum": 0,
+      "title": "Review Finding Count",
+      "type": "integer"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "unresolved_review_count": {
+      "minimum": 0,
+      "title": "Unresolved Review Count",
+      "type": "integer"
+    },
+    "warning_finding_count": {
+      "minimum": 0,
+      "title": "Warning Finding Count",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "gate_version",
+    "decision",
+    "final_video_asset_id",
+    "render_identity",
+    "blocking_finding_count",
+    "review_finding_count",
+    "warning_finding_count",
+    "deterministic_failure_count",
+    "unresolved_review_count",
+    "decided_at"
+  ],
+  "title": "FinalGateDecision",
+  "type": "object"
+}

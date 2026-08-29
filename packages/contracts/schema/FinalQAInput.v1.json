@@ -1,0 +1,312 @@
+{
+  "$defs": {
+    "FinalSelectedShot": {
+      "additionalProperties": false,
+      "description": "One selected shot as the render manifest recorded it, with its QA lineage.",
+      "properties": {
+        "global_end_us": {
+          "exclusiveMinimum": 0,
+          "title": "Global End Us",
+          "type": "integer"
+        },
+        "global_start_us": {
+          "minimum": 0,
+          "title": "Global Start Us",
+          "type": "integer"
+        },
+        "repair_run_id": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Repair Run Id"
+        },
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "selected_repair_attempt_id": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Selected Repair Attempt Id"
+        },
+        "sequence": {
+          "minimum": 0,
+          "title": "Sequence",
+          "type": "integer"
+        },
+        "shot_id": {
+          "format": "uuid",
+          "title": "Shot Id",
+          "type": "string"
+        },
+        "shot_workflow_identity": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Shot Workflow Identity",
+          "type": "string"
+        },
+        "video_asset_id": {
+          "format": "uuid",
+          "title": "Video Asset Id",
+          "type": "string"
+        },
+        "video_qa_result_id": {
+          "format": "uuid",
+          "title": "Video Qa Result Id",
+          "type": "string"
+        },
+        "video_qa_run_id": {
+          "format": "uuid",
+          "title": "Video Qa Run Id",
+          "type": "string"
+        },
+        "video_sha256": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Video Sha256",
+          "type": "string"
+        }
+      },
+      "required": [
+        "shot_id",
+        "sequence",
+        "video_asset_id",
+        "video_sha256",
+        "global_start_us",
+        "global_end_us",
+        "shot_workflow_identity",
+        "video_qa_run_id",
+        "video_qa_result_id"
+      ],
+      "title": "FinalSelectedShot",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "The exact canonical inputs one final-QA run was bound to.\n\nEvery field is part of the input hash. A newer selected animation, a new\nrender, a rebuilt caption asset or a different approved script produces a\ndifferent hash and therefore a different run: a report is never reused for\nmaterial that changed.",
+  "properties": {
+    "approved_script_hash": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Approved Script Hash",
+      "type": "string"
+    },
+    "approved_script_id": {
+      "format": "uuid",
+      "title": "Approved Script Id",
+      "type": "string"
+    },
+    "approved_script_version": {
+      "exclusiveMinimum": 0,
+      "title": "Approved Script Version",
+      "type": "integer"
+    },
+    "caption_asset_hashes": {
+      "items": {
+        "pattern": "^[a-f0-9]{64}$",
+        "type": "string"
+      },
+      "maxItems": 8,
+      "minItems": 1,
+      "title": "Caption Asset Hashes",
+      "type": "array"
+    },
+    "caption_asset_ids": {
+      "items": {
+        "format": "uuid",
+        "type": "string"
+      },
+      "maxItems": 8,
+      "minItems": 1,
+      "title": "Caption Asset Ids",
+      "type": "array"
+    },
+    "caption_identity": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Caption Identity",
+      "type": "string"
+    },
+    "caption_track_id": {
+      "format": "uuid",
+      "title": "Caption Track Id",
+      "type": "string"
+    },
+    "character_identity_version_ids": {
+      "items": {
+        "format": "uuid",
+        "type": "string"
+      },
+      "maxItems": 256,
+      "title": "Character Identity Version Ids",
+      "type": "array"
+    },
+    "final_audio_asset_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Final Audio Asset Id"
+    },
+    "final_video_asset_id": {
+      "format": "uuid",
+      "title": "Final Video Asset Id",
+      "type": "string"
+    },
+    "final_video_sha256": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Final Video Sha256",
+      "type": "string"
+    },
+    "location_identity_version_ids": {
+      "items": {
+        "format": "uuid",
+        "type": "string"
+      },
+      "maxItems": 256,
+      "title": "Location Identity Version Ids",
+      "type": "array"
+    },
+    "narration_asset_ids": {
+      "items": {
+        "format": "uuid",
+        "type": "string"
+      },
+      "maxItems": 1000,
+      "minItems": 1,
+      "title": "Narration Asset Ids",
+      "type": "array"
+    },
+    "narration_duration_us": {
+      "exclusiveMinimum": 0,
+      "title": "Narration Duration Us",
+      "type": "integer"
+    },
+    "narration_run_id": {
+      "format": "uuid",
+      "title": "Narration Run Id",
+      "type": "string"
+    },
+    "narration_word_timing_hash": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Narration Word Timing Hash",
+      "type": "string"
+    },
+    "project_id": {
+      "format": "uuid",
+      "title": "Project Id",
+      "type": "string"
+    },
+    "render_identity": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Render Identity",
+      "type": "string"
+    },
+    "render_job_id": {
+      "format": "uuid",
+      "title": "Render Job Id",
+      "type": "string"
+    },
+    "render_manifest_asset_id": {
+      "format": "uuid",
+      "title": "Render Manifest Asset Id",
+      "type": "string"
+    },
+    "render_manifest_hash": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Render Manifest Hash",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "shots": {
+      "items": {
+        "$ref": "#/$defs/FinalSelectedShot"
+      },
+      "maxItems": 500,
+      "minItems": 1,
+      "title": "Shots",
+      "type": "array"
+    },
+    "storyboard_hash": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Storyboard Hash",
+      "type": "string"
+    },
+    "storyboard_run_id": {
+      "format": "uuid",
+      "title": "Storyboard Run Id",
+      "type": "string"
+    },
+    "subtitle_mode": {
+      "default": "selectable",
+      "enum": [
+        "selectable",
+        "burn_in",
+        "both"
+      ],
+      "title": "Subtitle Mode",
+      "type": "string"
+    },
+    "timeline_duration_us": {
+      "exclusiveMinimum": 0,
+      "title": "Timeline Duration Us",
+      "type": "integer"
+    },
+    "timing_manifest_hash": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Timing Manifest Hash",
+      "type": "string"
+    }
+  },
+  "required": [
+    "project_id",
+    "render_job_id",
+    "render_identity",
+    "final_video_asset_id",
+    "final_video_sha256",
+    "render_manifest_asset_id",
+    "render_manifest_hash",
+    "approved_script_id",
+    "approved_script_version",
+    "approved_script_hash",
+    "narration_run_id",
+    "narration_asset_ids",
+    "narration_word_timing_hash",
+    "narration_duration_us",
+    "storyboard_run_id",
+    "storyboard_hash",
+    "timing_manifest_hash",
+    "caption_track_id",
+    "caption_identity",
+    "caption_asset_ids",
+    "caption_asset_hashes",
+    "shots",
+    "timeline_duration_us"
+  ],
+  "title": "FinalQAInput",
+  "type": "object"
+}
