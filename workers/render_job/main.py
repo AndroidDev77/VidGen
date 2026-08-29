@@ -24,11 +24,15 @@ import os
 import signal
 import sys
 import time
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from pathlib import Path
 from types import FrameType
+from typing import Any
 from uuid import UUID
 
 from sqlalchemy import select
+from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 
 from apps.api.settings import APISettings, get_settings
@@ -75,10 +79,26 @@ class _Shutdown:
 
     def __init__(self) -> None:
         self.requested = False
+        self._previous: dict[signal.Signals, Any] = {}
 
-    def install(self) -> None:
+    @contextmanager
+    def installed(self) -> Iterator[None]:
+        """Handle SIGTERM and SIGINT for the duration of one worker run.
+
+        The handlers are restored on the way out. As a process entry point that
+        makes no difference, but ``run`` is also called directly - by the
+        acceptance test, and by anything that embeds the worker - and a function
+        that permanently replaces the interpreter's signal handling is a trap.
+        """
         for received in (signal.SIGTERM, signal.SIGINT):
+            self._previous[received] = signal.getsignal(received)
             signal.signal(received, self._handle)
+        try:
+            yield
+        finally:
+            for received, handler in self._previous.items():
+                signal.signal(received, handler)
+            self._previous.clear()
 
     def _handle(self, signum: int, frame: FrameType | None) -> None:
         del frame
@@ -171,11 +191,12 @@ def run(arguments: argparse.Namespace, settings: APISettings | None = None) -> i
     work_root = arguments.work_root or DEFAULT_WORK_ROOT
     worker_id = arguments.worker_id or default_worker_id()
     shutdown = _Shutdown()
-    shutdown.install()
 
     def execute(render_job_id: UUID) -> RenderWorkerResult:
         with Session(engine, expire_on_commit=False) as session:
             if shutdown.requested:
+                # Stopping is not the same as finishing: ask the executor to
+                # terminate FFmpeg and record durable cancellation state.
                 request_cancellation(session, render_job_id)
                 session.commit()
             try:
@@ -201,14 +222,30 @@ def run(arguments: argparse.Namespace, settings: APISettings | None = None) -> i
                 )
         return worker_result(result)
 
-    if not arguments.poll:
-        render_job_id = arguments.resolved_render_job_id
-        record = execute(render_job_id)
-        print(record.model_dump_json())
-        return record.exit_code
+    with shutdown.installed():
+        if not arguments.poll:
+            record = execute(arguments.resolved_render_job_id)
+            print(record.model_dump_json())
+            return record.exit_code
+        return _poll(arguments, engine, execute, shutdown)
 
+
+def _poll(
+    arguments: argparse.Namespace,
+    engine: Engine,
+    execute: Callable[[UUID], RenderWorkerResult],
+    shutdown: _Shutdown,
+) -> int:
+    """Claim and execute queued render jobs until stopped.
+
+    Concurrency is one job at a time per process and the claim is transactional,
+    so several polling workers can share a queue without racing. The backoff
+    between claims is what keeps a permanently failing job from becoming a hot
+    loop against the database.
+    """
     completed = 0
     exit_code = EXIT_OK
+    interval = max(arguments.poll_interval_seconds, 0.1)
     while not shutdown.requested:
         with Session(engine, expire_on_commit=False) as session:
             candidate = session.scalar(
@@ -221,7 +258,7 @@ def run(arguments: argparse.Namespace, settings: APISettings | None = None) -> i
             )
             render_job_id = candidate.id if candidate is not None else None
         if render_job_id is None:
-            time.sleep(max(arguments.poll_interval_seconds, 0.1))
+            time.sleep(interval)
             continue
         record = execute(render_job_id)
         print(record.model_dump_json())
@@ -230,9 +267,7 @@ def run(arguments: argparse.Namespace, settings: APISettings | None = None) -> i
             exit_code = record.exit_code
         if arguments.max_jobs and completed >= arguments.max_jobs:
             break
-        # Back off between claims so a permanently failing job cannot become a
-        # hot loop against the database.
-        time.sleep(max(arguments.poll_interval_seconds, 0.1))
+        time.sleep(interval)
     return exit_code
 
 
