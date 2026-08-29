@@ -53,9 +53,18 @@ def bicep_command() -> tuple[str, ...] | None:
     return None
 
 
-def _run_bicep(*arguments: str) -> str:
+def _run_bicep(verb: str, path: Path) -> str:
+    """Run one Bicep verb against one file, printing the result to stdout.
+
+    The two front ends disagree about how the file is passed: the standalone
+    `bicep` binary takes it positionally, while `az bicep` requires `--file`.
+    """
     command = bicep_command()
     assert command is not None
+    if tuple(command) == ("az", "bicep"):
+        arguments = [verb, "--file", str(path), "--stdout"]
+    else:
+        arguments = [verb, "--stdout", str(path)]
     completed = subprocess.run(
         [*command, *arguments],
         capture_output=True,
@@ -73,14 +82,14 @@ def _run_bicep(*arguments: str) -> str:
 
 @lru_cache(maxsize=32)
 def compile_template(relative_path: str) -> dict[str, Any]:
-    output = _run_bicep("build", "--stdout", str(BICEP_DIR / relative_path))
+    output = _run_bicep("build", BICEP_DIR / relative_path)
     parsed: dict[str, Any] = json.loads(output)
     return parsed
 
 
 @lru_cache(maxsize=8)
 def compile_parameters(relative_path: str) -> dict[str, Any]:
-    output = _run_bicep("build-params", "--stdout", str(BICEP_DIR / relative_path))
+    output = _run_bicep("build-params", BICEP_DIR / relative_path)
     envelope: dict[str, Any] = json.loads(output)
     # `build-params --stdout` wraps the JSON parameter file in a small envelope.
     if "parametersJson" in envelope:

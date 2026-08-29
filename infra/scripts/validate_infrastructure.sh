@@ -14,12 +14,33 @@ source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
 BICEP_DIR="${REPO_ROOT}/infra/bicep"
 BICEP_BIN="${BICEP_BIN:-az bicep}"
 
-run_bicep() {
-  if [[ "${BICEP_BIN}" == "az bicep" ]]; then
-    az bicep "$@"
+# The two Bicep front ends take the target file differently: the standalone
+# `bicep` binary takes it positionally, while `az bicep` requires `--file`.
+# Every call goes through these wrappers so the script works with either.
+using_az_bicep() { [[ "${BICEP_BIN}" == "az bicep" ]]; }
+
+bicep_build_stdout() {
+  if using_az_bicep; then az bicep build --file "$1" --stdout; else "${BICEP_BIN}" build --stdout "$1"; fi
+}
+
+bicep_build_params_stdout() {
+  if using_az_bicep; then
+    az bicep build-params --file "$1" --stdout
   else
-    "${BICEP_BIN}" "$@"
+    "${BICEP_BIN}" build-params --stdout "$1"
   fi
+}
+
+bicep_lint() {
+  if using_az_bicep; then az bicep lint --file "$1"; else "${BICEP_BIN}" lint "$1"; fi
+}
+
+bicep_format_stdout() {
+  if using_az_bicep; then az bicep format --file "$1" --stdout; else "${BICEP_BIN}" format --stdout "$1"; fi
+}
+
+bicep_version() {
+  if using_az_bicep; then az bicep version; else "${BICEP_BIN}" --version; fi
 }
 
 # Placeholder values so `build-params` can evaluate readEnvironmentVariable().
@@ -31,26 +52,27 @@ export VIDGEN_DEPLOY_PRINCIPAL_ID="${VIDGEN_DEPLOY_PRINCIPAL_ID:-00000000-0000-0
 export VIDGEN_TEMPORAL_ADDRESS="${VIDGEN_TEMPORAL_ADDRESS:-placeholder.tmprl.cloud:7233}"
 export VIDGEN_TEMPORAL_NAMESPACE="${VIDGEN_TEMPORAL_NAMESPACE:-placeholder}"
 
+bicep_version >/dev/null
 log "checking Bicep formatting"
 format_failures=0
 while IFS= read -r file; do
-  formatted="$(run_bicep format --stdout "${file}")"
+  formatted="$(bicep_format_stdout "${file}")"
   if ! diff -q <(printf '%s\n' "${formatted}") "${file}" >/dev/null 2>&1; then
     log "not formatted: ${file#"${REPO_ROOT}/"}"
     format_failures=$((format_failures + 1))
   fi
 done < <(find "${BICEP_DIR}" -name '*.bicep' -o -name '*.bicepparam' | sort)
-[[ "${format_failures}" -eq 0 ]] || fail "${format_failures} file(s) are not formatted; run 'az bicep format --outfile <file> <file>'"
+[[ "${format_failures}" -eq 0 ]] || fail "${format_failures} file(s) are not formatted; run 'az bicep format --file <file>'"
 
 log "building and linting every template"
 while IFS= read -r file; do
-  run_bicep build --stdout "${file}" >/dev/null
-  run_bicep lint "${file}"
+  bicep_build_stdout "${file}" >/dev/null
+  bicep_lint "${file}"
 done < <(find "${BICEP_DIR}" -name '*.bicep' | sort)
 
 log "building every parameter file"
 while IFS= read -r file; do
-  run_bicep build-params --stdout "${file}" >/dev/null
+  bicep_build_params_stdout "${file}" >/dev/null
 done < <(find "${BICEP_DIR}/environments" -name '*.bicepparam' | sort)
 
 log "scanning parameter files and templates for secret-shaped values"
