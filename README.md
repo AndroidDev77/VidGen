@@ -6,9 +6,9 @@ The complete system architecture and T01-T26 implementation roadmap are maintain
 [`docs/TECHNICAL_DESIGN.md`](docs/TECHNICAL_DESIGN.md). Contributors and coding agents should
 read it together with `AGENTS.md` before planning the next roadmap task.
 
-This repository implements roadmap tasks T01 through T24, so the pipeline now runs end to
-end behind a customer-facing web application and can be deployed to a private Azure staging
-environment. The foundations include subtitle-first transcript
+This repository implements roadmap tasks T01 through T23, and the T24 Azure infrastructure is
+implemented and reviewed but not yet validated by a real staging deployment. The pipeline runs end
+to end behind a customer-facing web application. The foundations include subtitle-first transcript
 acquisition, restartable episode analysis, comedy script generation, measured narration,
 deterministic storyboard timing, reviewed keyframe and video generation, deterministic captioned
 rendering, an owner-scoped review UI, and cloud-neutral observability/cost controls:
@@ -39,7 +39,7 @@ generation, then a free deterministic 2.5D parallax render when the shot is elig
 selected, the complete attempt lineage and its costs are persisted, and only the failed shot is
 touched.
 
-T24 Azure infrastructure is complete. `infra/bicep` describes a reproducible, private-by-default
+T24 Azure infrastructure is implemented and reviewed. `infra/bicep` describes a reproducible, private-by-default
 staging environment: a VNet-integrated Container Apps environment with an internal load balancer, the
 web, API and Temporal worker as Container Apps, finite Container Apps Jobs for migration, rendering,
 smoke testing and administration, PostgreSQL Flexible Server with VNet injection, private Blob
@@ -51,6 +51,11 @@ changing a single parameter; it is false in staging and in the production templa
 are applied exactly once by a dedicated migration job, before any new revision receives traffic, and
 rollback restores an application revision without ever downgrading the database.
 See [`infra/README.md`](infra/README.md).
+
+T24 is **not** marked complete on the roadmap: its acceptance - a private staging deploy, migrations
+run once, workers autoscaling - can only be demonstrated by a real deployment, and no Azure
+subscription has been available. Every static and CI check passes. `infra/README.md` lists what a
+first deployment needs.
 
 T22 final editorial QA is complete. The assembled T17 delivery - not the individual shots - is
 inspected as a whole: its lineage is proved current, its media, audio and captions are measured
