@@ -196,17 +196,41 @@ def _covered(intervals: list[tuple[int, int]], start: int, end: int) -> int:
     return total
 
 
+def duration_bound(measurements: FinalMediaMeasurements) -> int | None:
+    """The longest timestamp any measured interval may legitimately carry.
+
+    ``None`` when nothing was measured, so an unknown duration never clamps a
+    real silence measurement down to zero and hides it.
+    """
+    candidates = [
+        measurements.container_duration_us,
+        measurements.video_duration_us,
+        measurements.audio_duration_us,
+    ]
+    measured = [value for value in candidates if value is not None]
+    return max(measured) if measured else None
+
+
 def leading_silence_us(measurements: FinalMediaMeasurements) -> int:
+    bound = duration_bound(measurements)
     for interval in measurements.silence_intervals:
         if int(interval.get("start_us", 0)) <= 1000:
-            return int(interval.get("end_us", 0))
+            end = int(interval.get("end_us", 0))
+            return max(0, end if bound is None else min(end, bound))
     return 0
 
 
 def trailing_silence_us(measurements: FinalMediaMeasurements, duration_us: int) -> int:
+    """Silence at the tail, clamped to the canonical timeline.
+
+    A detector can report an interval starting past the canonical end when the
+    delivered audio runs long. Left unclamped that yields a negative length and
+    a check row whose start is after its end, which the database refuses.
+    """
     for interval in measurements.silence_intervals:
         if int(interval.get("end_us", 0)) >= duration_us - 1000:
-            return duration_us - int(interval.get("start_us", 0))
+            start = min(int(interval.get("start_us", 0)), duration_us)
+            return max(0, duration_us - start)
     return 0
 
 

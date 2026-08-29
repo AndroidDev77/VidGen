@@ -62,23 +62,40 @@ class ContactSheet:
 
 
 def plan_sample_timestamps(inputs: FinalQAInput, configuration: FinalQAConfiguration) -> list[int]:
-    """Choose sample timestamps: one per shot, then evenly spaced filler.
+    """Choose sample timestamps that span the whole recap.
 
     Shot-anchored samples come first so continuity findings always have a frame
-    inside the shot they accuse. Filler samples spread across the timeline so a
-    defect between shot midpoints is still visible.
+    inside the shot they accuse, and filler samples spread across the timeline
+    so a defect between shot midpoints is still visible. When a recap has more
+    shots than the sample budget the shots are subsampled evenly rather than
+    truncated, because truncating would leave the ending unexamined.
     """
     duration = inputs.timeline_duration_us
-    chosen: list[int] = []
-    for shot in inputs.shots:
-        midpoint = shot.global_start_us + (shot.global_end_us - shot.global_start_us) // 2
-        chosen.append(min(max(midpoint, 0), max(duration - 1, 0)))
-    remaining = configuration.editorial_sample_count - len(chosen)
-    if remaining > 0 and duration > 0:
-        step = duration / (remaining + 1)
-        chosen.extend(min(round(step * (index + 1)), duration - 1) for index in range(remaining))
+    budget = configuration.editorial_sample_count
+    shots = list(inputs.shots)
+    midpoints = [
+        min(
+            max(shot.global_start_us + (shot.global_end_us - shot.global_start_us) // 2, 0),
+            max(duration - 1, 0),
+        )
+        for shot in shots
+    ]
+    if len(midpoints) > budget:
+        # More shots than the sample budget. Spread the samples evenly across
+        # the shot list rather than truncating it: taking the first N would
+        # leave the back half of the recap - its ending, its payoffs - unseen.
+        step = len(midpoints) / budget
+        chosen = [midpoints[min(int(index * step), len(midpoints) - 1)] for index in range(budget)]
+    else:
+        chosen = list(midpoints)
+        remaining = budget - len(chosen)
+        if remaining > 0 and duration > 0:
+            spacing = duration / (remaining + 1)
+            chosen.extend(
+                min(round(spacing * (index + 1)), duration - 1) for index in range(remaining)
+            )
     unique = sorted({timestamp for timestamp in chosen if timestamp >= 0})
-    return unique[: configuration.editorial_sample_count]
+    return unique[:budget]
 
 
 def _shot_for(inputs: FinalQAInput, timestamp_us: int) -> UUID | None:

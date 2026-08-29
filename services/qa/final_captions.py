@@ -16,6 +16,7 @@ serves, its exact timestamps and the repair target that owns it.
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass
 from typing import Any
 from uuid import UUID
 
@@ -29,7 +30,7 @@ from vidgen.contracts.final_editorial import (
     FinalQAInput,
     FinalRemediationTarget,
 )
-from vidgen.contracts.render import CaptionCue, CaptionTrack, CaptionWord
+from vidgen.contracts.render import CaptionCue, CaptionWord
 
 _SRT_BLOCK = re.compile(
     r"(?P<sequence>\d+)\s*\n"
@@ -40,6 +41,13 @@ _VTT_BLOCK = re.compile(
     r"(?P<start>\d{2}:\d{2}:\d{2}\.\d{3})\s*-->\s*(?P<end>\d{2}:\d{2}:\d{2}\.\d{3})\s*\n"
     r"(?P<text>(?:.+\n?)+)"
 )
+
+
+#: Media types of the *selectable* caption formats T22 parses. A burned-in ASS
+#: asset is a rendering input, not a delivered selectable file, so it is
+#: hash-checked but never fed to a cue parser.
+SELECTABLE_MEDIA_TYPES = frozenset({"application/x-subrip", "text/vtt"})
+BURN_IN_MEDIA_TYPES = frozenset({"text/x-ssa", "text/x-ass", "application/x-ass"})
 
 
 class CaptionParseError(ValueError):
@@ -161,19 +169,36 @@ def reading_speed_cps(cue: CaptionCue) -> float:
     return characters / seconds if seconds > 0 else float("inf")
 
 
+@dataclass(frozen=True, slots=True)
+class DeliveredCaptions:
+    """The caption track as actually delivered, before any invariant is assumed.
+
+    Deliberately not a :class:`CaptionTrack`: that contract rejects overlapping
+    and out-of-duration cues, and those are exactly the defects caption QA
+    exists to report. Forcing the delivered cues through it would turn a
+    finding into a crash.
+    """
+
+    cues: tuple[CaptionCue, ...]
+    language: str
+    duration_us: int
+    safe_zone_percent: int = 10
+
+
 def evaluate(
     inputs: FinalQAInput,
     configuration: FinalQAConfiguration,
     *,
-    canonical: CaptionTrack,
+    canonical: DeliveredCaptions,
     delivered: dict[UUID, bytes],
     approved_words: list[CaptionWord],
     narration_segments: list[tuple[UUID, int, int]],
     delivered_hashes: dict[UUID, str],
     declared_caption_identity: str,
+    delivered_media_types: dict[UUID, str] | None = None,
     burned_in: bool = False,
 ) -> list[FinalCaptionCheck]:
-    """Grade the canonical caption manifest and every delivered caption asset."""
+    """Grade the declared caption manifest and every delivered caption asset."""
     identity = inputs.render_identity
     checks: list[FinalCaptionCheck] = []
 
@@ -263,9 +288,10 @@ def evaluate(
     )
 
     # --- text fidelity and deterministic reflow ----------------------------
+    rebuilt_cues: tuple[CaptionCue, ...] = tuple(cues)
     try:
         rebuilt, _ = build_caption_track(
-            track_id=canonical.caption_track_id,
+            track_id=inputs.caption_track_id,
             words=approved_words,
             duration_us=canonical.duration_us,
             config=CaptionConfig(
@@ -285,8 +311,8 @@ def evaluate(
             False,
             message="the approved words cannot be deterministically reflowed",
         )
-        rebuilt = canonical
     else:
+        rebuilt_cues = tuple(rebuilt.cues)
         # The declared identity is what T17 bound into the render manifest.
         # Rebuilding it from the approved words proves the reflow that produced
         # the delivered captions is reproducible, not merely self-consistent.
@@ -297,7 +323,7 @@ def evaluate(
         )
     mismatched = [
         cue.sequence
-        for cue, expected in zip(cues, rebuilt.cues, strict=False)
+        for cue, expected in zip(cues, rebuilt_cues, strict=False)
         if cue.lines != expected.lines
     ]
     add(
@@ -315,7 +341,7 @@ def evaluate(
         _punctuation(approved_text) == _punctuation(delivered_text),
         message="approved punctuation and wording must be preserved",
     )
-    missing_cues = len(rebuilt.cues) - len(cues)
+    missing_cues = len(rebuilt_cues) - len(cues)
     add(
         FinalIssueCode.CAPTION_CUE_MISSING,
         missing_cues <= 0,
@@ -389,10 +415,18 @@ def evaluate(
             message="delivered caption asset hashes must match the render manifest",
         )
         content = delivered.get(asset_id)
+        media_type = (delivered_media_types or {}).get(asset_id, "")
         if content is None:
             continue
+        if media_type in BURN_IN_MEDIA_TYPES or (
+            media_type and media_type not in SELECTABLE_MEDIA_TYPES
+        ):
+            # A burn-in source is verified by its hash and by the safe-area
+            # check below. Parsing it as SRT would fail for every project that
+            # burns its captions in, which is a configuration, not a defect.
+            continue
         try:
-            parsed = parse_webvtt(content) if _is_vtt(content) else parse_srt(content)
+            parsed = parse_webvtt(content) if is_webvtt(content) else parse_srt(content)
         except CaptionParseError as error:
             add(
                 FinalIssueCode.CAPTION_PARSE_FAILURE,
@@ -431,8 +465,9 @@ def evaluate(
     return checks
 
 
-def _is_vtt(content: bytes) -> bool:
-    return content.lstrip()[:6].lstrip(b"\xef\xbb\xbf")[:6].upper().startswith(b"WEBVTT")
+def is_webvtt(content: bytes) -> bool:
+    """Recognise WebVTT, tolerating the byte-order mark ``parse_webvtt`` allows."""
+    return content.lstrip().lstrip(b"\xef\xbb\xbf").lstrip()[:6].upper() == b"WEBVTT"
 
 
 def _punctuation(text: str) -> str:

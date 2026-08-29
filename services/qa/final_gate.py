@@ -278,7 +278,18 @@ def apply_adjudication(
     dismissed = set(adjudication.dismissed_finding_ids)
     resolved: list[FinalEditorialFinding] = []
     for finding in findings:
-        if finding.finding_id in confirmed and finding.category in BLOCKING_CATEGORIES:
+        blocking_category = finding.category in BLOCKING_CATEGORIES
+        if finding.finding_id in confirmed and blocking_category and not finding.evidence:
+            # A blocking finding must carry evidence, by contract. Confirming
+            # one that cites nothing resolvable would write a report that fails
+            # its own validation the next time it is read. Downgrading it to a
+            # warning would be worse still: that silently clears the gate on a
+            # finding the adjudicator just confirmed. It stays a review
+            # question, which is the honest outcome for an unevidenced claim.
+            resolved.append(
+                finding.model_copy(update={"confidence": adjudication.confidence})
+            )
+        elif finding.finding_id in confirmed and blocking_category:
             resolved.append(
                 finding.model_copy(
                     update={

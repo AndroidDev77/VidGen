@@ -8,6 +8,7 @@ deterministic check that never saw a real file proves nothing.
 from __future__ import annotations
 
 import shutil
+from collections.abc import Sequence
 from datetime import UTC, datetime
 from pathlib import Path
 from uuid import UUID, uuid4
@@ -15,6 +16,7 @@ from uuid import UUID, uuid4
 import pytest
 
 from services.qa import final_audio, final_captions, final_deterministic
+from services.qa.final_captions import DeliveredCaptions
 from services.qa.final_editorial_provider import (
     FinalEditorialProviderError,
     adjudicator_decided,
@@ -69,7 +71,7 @@ from vidgen.contracts.final_editorial import (
     FinalRemediationTarget,
     FinalSelectedShot,
 )
-from vidgen.contracts.render import CaptionWord
+from vidgen.contracts.render import CaptionCue, CaptionWord
 
 FFMPEG_AVAILABLE = shutil.which("ffmpeg") is not None and shutil.which("ffprobe") is not None
 SHOT_US = 1_000_000
@@ -573,23 +575,41 @@ def caption_words() -> list[CaptionWord]:
     ]
 
 
-def caption_setup() -> tuple[object, list[CaptionWord], FinalQAInput]:
+def caption_setup() -> tuple[DeliveredCaptions, list[CaptionWord], FinalQAInput]:
     words = caption_words()
     track, validation = build_caption_track(
         track_id=UUID(int=16), words=words, duration_us=TIMELINE_US
     )
     assert validation.valid
     inputs = make_input(caption_identity=caption_identity(track))
-    return track, words, inputs
+    return delivered_from(track.cues), words, inputs
+
+
+def delivered_from(
+    cues: Sequence[CaptionCue], *, duration_us: int = TIMELINE_US
+) -> DeliveredCaptions:
+    """The delivered record, which deliberately carries no cue invariants."""
+    return DeliveredCaptions(cues=tuple(cues), language="en", duration_us=duration_us)
+
+
+def _serialize(delivered: DeliveredCaptions) -> bytes:
+    """Serialize the delivered cues as the SRT a viewer would receive."""
+    track, _ = build_caption_track(
+        track_id=UUID(int=16), words=caption_words(), duration_us=TIMELINE_US
+    )
+    assert [cue.model_dump() for cue in track.cues] == [
+        cue.model_dump() for cue in delivered.cues
+    ]
+    return serialize_srt(track).encode()
 
 
 def test_a_faithful_caption_delivery_passes_every_caption_check() -> None:
     track, words, inputs = caption_setup()
-    delivered = serialize_srt(track).encode()  # type: ignore[arg-type]
+    delivered = _serialize(track)
     checks = final_captions.evaluate(
         inputs,
         configuration(),  # type: ignore[arg-type]
-        canonical=track,  # type: ignore[arg-type]
+        canonical=track,
         delivered={inputs.caption_asset_ids[0]: delivered},
         approved_words=words,
         narration_segments=narration_intervals(),
@@ -602,9 +622,7 @@ def test_a_faithful_caption_delivery_passes_every_caption_check() -> None:
 
 def test_caption_qa_reports_missing_coverage_with_the_narration_segment_it_serves() -> None:
     track, words, inputs = caption_setup()
-    truncated = track.model_copy(  # type: ignore[attr-defined]
-        update={"cues": [cue for cue in track.cues if cue.end_us <= SHOT_US]}  # type: ignore[attr-defined]
-    )
+    truncated = delivered_from([cue for cue in track.cues if cue.end_us <= SHOT_US])
     checks = final_captions.evaluate(
         inputs,
         configuration(),  # type: ignore[arg-type]
@@ -625,10 +643,10 @@ def test_caption_qa_reports_missing_coverage_with_the_narration_segment_it_serve
 
 def test_caption_qa_rejects_overlapping_out_of_bounds_and_unreadable_cues() -> None:
     track, words, inputs = caption_setup()
-    cues = list(track.cues)  # type: ignore[attr-defined]
+    cues = list(track.cues)
     cues[1] = cues[1].model_copy(update={"start_us": cues[0].end_us - 100_000})
     cues[-1] = cues[-1].model_copy(update={"end_us": TIMELINE_US + 500_000})
-    broken = track.model_copy(update={"cues": cues})  # type: ignore[attr-defined]
+    broken = delivered_from(cues)
     checks = final_captions.evaluate(
         inputs,
         configuration(),  # type: ignore[arg-type]
@@ -649,7 +667,7 @@ def test_caption_qa_rejects_a_delivered_file_that_will_not_parse() -> None:
     checks = final_captions.evaluate(
         inputs,
         configuration(),  # type: ignore[arg-type]
-        canonical=track,  # type: ignore[arg-type]
+        canonical=track,
         delivered={inputs.caption_asset_ids[0]: b"\xff\xfe not a caption file"},
         approved_words=words,
         narration_segments=narration_intervals(),
@@ -668,7 +686,7 @@ def test_caption_reflow_is_verified_against_the_declared_identity() -> None:
     checks = final_captions.evaluate(
         inputs.model_copy(update={"caption_identity": sha(555)}),
         configuration(),  # type: ignore[arg-type]
-        canonical=track,  # type: ignore[arg-type]
+        canonical=track,
         delivered={},
         approved_words=words,
         narration_segments=narration_intervals(),
@@ -685,11 +703,11 @@ def test_caption_reflow_is_verified_against_the_declared_identity() -> None:
 
 def test_caption_reading_speed_and_line_length_limits_are_enforced() -> None:
     track, words, inputs = caption_setup()
-    cues = list(track.cues)  # type: ignore[attr-defined]
+    cues = list(track.cues)
     cues[0] = cues[0].model_copy(
         update={"lines": ["x" * 120], "end_us": cues[0].start_us + 100_000}
     )
-    broken = track.model_copy(update={"cues": cues})  # type: ignore[attr-defined]
+    broken = delivered_from(cues)
     checks = final_captions.evaluate(
         inputs,
         configuration(),  # type: ignore[arg-type]
@@ -1096,3 +1114,186 @@ def test_the_fake_provider_is_deterministic_for_the_same_request() -> None:
     assert first.model_dump(mode="json") == second.model_dump(mode="json")
     assert len(first.dimension_scores) == len(EDITORIAL_DIMENSIONS)
     assert first.findings[0].issue_code is FinalIssueCode.INCOMPLETE_ENDING
+
+
+# --- regressions from review -------------------------------------------------
+def test_a_burned_in_ass_asset_is_hash_checked_but_never_parsed_as_a_cue_file() -> None:
+    """A burn-in source is a rendering input, not a delivered selectable file.
+
+    Feeding it to a cue parser fails for every project that burns its captions
+    in, which is a configuration rather than a defect.
+    """
+    track, words, inputs = caption_setup()
+    ass_id = UUID(int=77)
+    ass = (
+        b"[Script Info]\nScriptType: v4.00+\n\n[Events]\n"
+        b"Dialogue: 0,0:00:00.00,0:00:02.00,Default,,0,0,0,,Hello\n"
+    )
+    with_ass = inputs.model_copy(
+        update={
+            "caption_asset_ids": [*inputs.caption_asset_ids, ass_id],
+            "caption_asset_hashes": [*inputs.caption_asset_hashes, sha(78)],
+            "subtitle_mode": "both",
+        }
+    )
+    checks = final_captions.evaluate(
+        with_ass,
+        configuration(),  # type: ignore[arg-type]
+        canonical=track,
+        delivered={with_ass.caption_asset_ids[0]: _serialize(track), ass_id: ass},
+        approved_words=words,
+        narration_segments=narration_intervals(),
+        delivered_hashes={
+            with_ass.caption_asset_ids[0]: with_ass.caption_asset_hashes[0],
+            ass_id: sha(78),
+        },
+        declared_caption_identity=with_ass.caption_identity,
+        delivered_media_types={ass_id: "text/x-ssa"},
+        burned_in=True,
+    )
+    parse_failures = [
+        check
+        for check in checks
+        if check.code is FinalIssueCode.CAPTION_PARSE_FAILURE and check.status == "fail"
+    ]
+    assert not parse_failures, "a burn-in source must never be parsed as a cue file"
+    # It is still verified: its hash is checked like every other delivered asset.
+    assert any(
+        check.code is FinalIssueCode.CAPTION_ASSET_HASH_MISMATCH
+        and check.caption_asset_id == ass_id
+        for check in checks
+    )
+
+
+def test_a_byte_order_marked_webvtt_file_is_recognised_as_webvtt() -> None:
+    """The BOM ``parse_webvtt`` tolerates must not route the file to the SRT parser."""
+    content = "﻿WEBVTT\n\n00:00:00.000 --> 00:00:02.000\nHello.\n".encode()
+    assert final_captions.is_webvtt(content)
+    assert len(final_captions.parse_webvtt(content)) == 1
+
+
+def test_overlapping_delivered_cues_are_reported_rather_than_raising() -> None:
+    """The defect caption QA exists to find must not abort the run.
+
+    A ``CaptionTrack`` rejects overlapping cues by contract, so the delivered
+    cues are carried in an unvalidated record instead.
+    """
+    track, words, inputs = caption_setup()
+    cues = list(track.cues)
+    cues[1] = cues[1].model_copy(update={"start_us": cues[0].start_us})
+    overlapping = delivered_from(cues)
+    checks = final_captions.evaluate(
+        inputs,
+        configuration(),  # type: ignore[arg-type]
+        canonical=overlapping,
+        delivered={},
+        approved_words=words,
+        narration_segments=narration_intervals(),
+        delivered_hashes={inputs.caption_asset_ids[0]: inputs.caption_asset_hashes[0]},
+        declared_caption_identity=inputs.caption_identity,
+    )
+    overlap = next(check for check in checks if check.code is FinalIssueCode.CAPTION_OVERLAP)
+    assert overlap.status == "fail" and overlap.blocking
+
+
+def test_cues_beyond_the_render_duration_are_reported_rather_than_raising() -> None:
+    track, words, inputs = caption_setup()
+    cues = list(track.cues)
+    cues[-1] = cues[-1].model_copy(update={"end_us": TIMELINE_US + 5_000_000})
+    overrunning = delivered_from(cues, duration_us=TIMELINE_US + 5_000_000)
+    checks = final_captions.evaluate(
+        inputs,
+        configuration(),  # type: ignore[arg-type]
+        canonical=overrunning,
+        delivered={},
+        approved_words=words,
+        narration_segments=narration_intervals(),
+        delivered_hashes={inputs.caption_asset_ids[0]: inputs.caption_asset_hashes[0]},
+        declared_caption_identity=inputs.caption_identity,
+    )
+    bounds = next(check for check in checks if check.code is FinalIssueCode.CAPTION_OUT_OF_BOUNDS)
+    assert bounds.status == "fail" and bounds.blocking
+
+
+def test_an_adjudicator_cannot_promote_an_evidence_less_finding_to_blocking() -> None:
+    """A blocking finding must carry evidence, so confirming a bare one keeps it in review.
+
+    Promoting it would write a report that fails its own validation the next
+    time it is read, which would 500 the review endpoint.
+    """
+    result = provider_result(
+        [
+            proposal(
+                category=FinalEditorialCategory.LOCATION_CONTINUITY,
+                severity=FinalFindingSeverity.REVIEW_REQUIRED,
+                confidence=0.6,
+                code=FinalIssueCode.LOCATION_CONTRADICTION,
+            ).model_copy(update={"sample_ids": [], "shot_ids": [], "caption_cue_sequences": []})
+        ]
+    )
+    findings = findings_from_provider(result, timeline_duration_us=TIMELINE_US)
+    assert not findings[0].evidence
+    decided = FinalEditorialAdjudication(
+        adjudication_id=uuid4(),
+        policy_version="final-adjudication/1.0",
+        disputed_finding_ids=[findings[0].finding_id],
+        confirmed_finding_ids=[findings[0].finding_id],
+        confidence=0.95,
+        decided=True,
+        resulting_decision_hint=FinalQADecision.FAIL,
+    )
+    resolved = apply_adjudication(findings, decided)
+    assert not resolved[0].blocking
+    assert resolved[0].severity is FinalFindingSeverity.REVIEW_REQUIRED
+    # Every resulting finding must still round-trip through its own contract.
+    for finding in resolved:
+        finding.__class__.model_validate(finding.model_dump())
+
+
+def test_sampling_spans_the_whole_timeline_when_shots_outnumber_the_budget() -> None:
+    """Truncating the sample plan would leave the recap's ending unseen."""
+    config = DEFAULT_CONFIGURATION
+    shots = [
+        FinalSelectedShot(
+            shot_id=UUID(int=1000 + index),
+            sequence=index,
+            video_asset_id=UUID(int=2000 + index),
+            video_sha256=sha(3000 + index),
+            global_start_us=index * SHOT_US,
+            global_end_us=(index + 1) * SHOT_US,
+            shot_workflow_identity=sha(4000 + index),
+            video_qa_run_id=UUID(int=5000 + index),
+            video_qa_result_id=UUID(int=6000 + index),
+        )
+        for index in range(config.editorial_sample_count * 2)
+    ]
+    duration = len(shots) * SHOT_US
+    inputs = make_input(shots=shots, narration_duration_us=duration, timeline_duration_us=duration)
+    timestamps = plan_sample_timestamps(inputs, config)
+    assert len(timestamps) <= config.editorial_sample_count
+    # The last sample must land in the final tenth of the recap.
+    assert timestamps[-1] >= duration * 0.9
+    assert timestamps == sorted(set(timestamps))
+
+
+def test_trailing_silence_past_the_canonical_end_never_reports_a_negative_length(
+    tmp_path: Path,
+) -> None:
+    """A negative length would build a check row whose start is after its end."""
+    duration = TIMELINE_US
+    measurements = measurements_with(
+        silence_intervals=[{"start_us": duration + 1_000_000, "end_us": duration + 2_000_000}]
+    )
+    assert final_audio.trailing_silence_us(measurements, duration) >= 0
+    checks, _ = final_audio.evaluate(
+        tmp_path / "unused.mp4",
+        make_input(),
+        configuration(),  # type: ignore[arg-type]
+        measurements,
+        narration_intervals=narration_intervals(),
+        loudness={"integrated_lufs": -14.0, "true_peak_dbtp": -1.5},
+        statistics={"Number_of_samples": 1000.0, "Number_of_clipped_samples": 0.0},
+    )
+    for check in checks:
+        if check.start_us is not None and check.end_us is not None:
+            assert check.end_us >= check.start_us, check.code.value

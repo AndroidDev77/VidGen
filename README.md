@@ -1321,6 +1321,12 @@ declared caption identity, punctuation preservation, valid UTF-8, successful par
 area, and delivered language metadata. Caption QA never rewrites the approved script; it reports the
 mismatch and names the repair target.
 
+Only the selectable formats are parsed for cues. A burned-in ASS asset is a rendering input rather
+than a file a viewer selects, so it is verified by hash and by the safe-area check but never fed to
+a cue parser. The delivered cues are carried in an unvalidated record rather than a `CaptionTrack`:
+that contract rejects overlapping and out-of-duration cues, which are exactly the defects caption
+QA exists to report.
+
 ### Editorial dimensions, findings and evidence
 
 After deterministic checks permit it, a bounded structured analysis evaluates the assembled recap

@@ -511,11 +511,13 @@ class FinalEditorialPipeline:
         inputs = selected.inputs
         delivered: dict[UUID, bytes] = {}
         hashes: dict[UUID, str] = {}
+        media_types: dict[UUID, str] = {}
         for asset_id in inputs.caption_asset_ids:
             asset = self.session.get(Asset, asset_id)
             if asset is None:
                 continue
             hashes[asset_id] = asset.sha256
+            media_types[asset_id] = asset.media_type
             if self.blob_store.exists(asset.storage_key):
                 delivered[asset_id] = self.blob_store.read(asset.storage_key)
         canonical = self._canonical_track(selected, delivered)
@@ -528,13 +530,19 @@ class FinalEditorialPipeline:
             narration_segments=list(selected.narration_intervals),
             delivered_hashes=hashes,
             declared_caption_identity=inputs.caption_identity,
+            delivered_media_types=media_types,
             burned_in=inputs.subtitle_mode in {"burn_in", "both"},
         )
 
     def _canonical_track(
         self, selected: AuthoritativeFinalInputs, delivered: dict[UUID, bytes]
-    ) -> CaptionTrack:
-        """The delivered selectable track, which is what a viewer actually sees."""
+    ) -> final_captions.DeliveredCaptions:
+        """The delivered selectable track, which is what a viewer actually sees.
+
+        Deliberately not a ``CaptionTrack``: that contract rejects overlapping
+        and out-of-duration cues, which are exactly the defects caption QA must
+        report rather than crash on.
+        """
         inputs = selected.inputs
         cues: list[CaptionCue] = []
         for asset_id in inputs.caption_asset_ids:
@@ -542,7 +550,11 @@ class FinalEditorialPipeline:
             if content is None:
                 continue
             try:
-                cues = final_captions.parse_srt(content)
+                cues = (
+                    final_captions.parse_webvtt(content)
+                    if final_captions.is_webvtt(content)
+                    else final_captions.parse_srt(content)
+                )
             except final_captions.CaptionParseError:
                 continue
             break
@@ -562,11 +574,13 @@ class FinalEditorialPipeline:
             if selected.caption_track is not None
             else self.options.configuration.expected_caption_language
         )
-        return CaptionTrack(
-            caption_track_id=inputs.caption_track_id,
+        return final_captions.DeliveredCaptions(
+            cues=tuple(
+                cue.model_copy(update={"sequence": index + 1}) for index, cue in enumerate(cues)
+            ),
             language=language,
-            cues=[cue.model_copy(update={"sequence": index + 1}) for index, cue in enumerate(cues)],
-            duration_us=max(inputs.timeline_duration_us, cues[-1].end_us),
+            duration_us=max(inputs.timeline_duration_us, max(cue.end_us for cue in cues)),
+            safe_zone_percent=self.options.configuration.caption_safe_area_percent,
         )
 
     # --- provider ---------------------------------------------------------
