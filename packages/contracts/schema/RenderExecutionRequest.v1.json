@@ -1,0 +1,71 @@
+{
+  "additionalProperties": false,
+  "description": "One execution of one already-queued render job.",
+  "properties": {
+    "execution_timeout_seconds": {
+      "default": 3600,
+      "maximum": 86400,
+      "minimum": 60,
+      "title": "Execution Timeout Seconds",
+      "type": "integer"
+    },
+    "heartbeat_seconds": {
+      "default": 30,
+      "maximum": 600,
+      "minimum": 5,
+      "title": "Heartbeat Seconds",
+      "type": "integer"
+    },
+    "lease_seconds": {
+      "default": 300,
+      "maximum": 3600,
+      "minimum": 30,
+      "title": "Lease Seconds",
+      "type": "integer"
+    },
+    "max_attempts": {
+      "default": 3,
+      "maximum": 20,
+      "minimum": 1,
+      "title": "Max Attempts",
+      "type": "integer"
+    },
+    "minimum_free_bytes": {
+      "default": 10737418240,
+      "minimum": 0,
+      "title": "Minimum Free Bytes",
+      "type": "integer"
+    },
+    "render_job_id": {
+      "format": "uuid",
+      "title": "Render Job Id",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "trace_context": {
+      "additionalProperties": {
+        "type": "string"
+      },
+      "maxProperties": 16,
+      "title": "Trace Context",
+      "type": "object"
+    },
+    "worker_id": {
+      "maxLength": 128,
+      "minLength": 1,
+      "title": "Worker Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "render_job_id",
+    "worker_id"
+  ],
+  "title": "RenderExecutionRequest",
+  "type": "object"
+}

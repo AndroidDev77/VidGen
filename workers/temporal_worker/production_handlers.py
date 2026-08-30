@@ -15,7 +15,7 @@ from temporalio.exceptions import ApplicationError
 from apps.api.settings import APISettings, get_settings
 from packages.providers import FakeSubtitleProvider
 from packages.providers.image_generation import DeterministicFakeImageProvider
-from packages.workflows.activities import FinalQAHandler, StageHandler
+from packages.workflows.activities import FinalQAHandler, RenderHandler, StageHandler
 from packages.workflows.shot_activities import ShotActivityHandler
 from packages.workflows.shot_policy import identity_hash, shot_activity_idempotency_key
 from services.analysis.contact_sheet import contact_sheet_manifest
@@ -50,6 +50,8 @@ from services.qa.commands import (
 )
 from services.qa.final_commands import FinalQACommandOptions, run_final_editorial_qa
 from services.qa.final_inputs import FinalQALineageError
+from services.render_execution.commands import execute_render_job, queue_render_job
+from services.renderer.selection import RenderLineageError
 from services.script.fake_provider import FakeScriptGenerationProvider
 from services.script.openai_adapter import OpenAIScriptConfig, OpenAIScriptGenerationProvider
 from services.script.pipeline import ScriptGenerationPipeline
@@ -67,6 +69,7 @@ from services.transcription.fake import FakeTranscriptionProvider
 from services.transcription.openai_adapter import OpenAITranscriptionAdapter
 from services.transcription.pipeline import TranscriptionPipeline
 from vidgen.contracts.media import ExtractedFrame, SceneBoundary
+from vidgen.contracts.render_execution import RenderExecutionResult, RenderExecutionStatus
 from vidgen.contracts.repair import RepairRunState
 from vidgen.contracts.shot_workflow import (
     ProjectShotFanoutInput,
@@ -83,6 +86,8 @@ from vidgen.contracts.visual_qa import VisualQATargetType
 from vidgen.contracts.workflow import (
     FinalQAActivityInput,
     FinalQAActivityResult,
+    RenderActivityInput,
+    RenderActivityResult,
     StageActivityInput,
     StageActivityResult,
 )
@@ -1183,3 +1188,75 @@ def build_final_qa_handler(settings: APISettings | None = None) -> FinalQAHandle
         )
 
     return execute
+
+
+def build_render_handler(settings: APISettings | None = None) -> RenderHandler:
+    """Build the T17b adapter.
+
+    The activity owns the session, the blob store and the temporary workspace.
+    It queues the render job when the workflow has not been given one, then runs
+    the canonical executor. Retrying it resumes the same job from its durable
+    checkpoint; it never creates a second render job or a second render.
+    """
+    configured = settings or get_settings()
+    engine = build_engine(configured.database_url)
+    blob_store = build_blob_store(configured)
+
+    def execute(request: RenderActivityInput) -> RenderActivityResult:
+        with Session(engine, expire_on_commit=False) as session:
+            render_job_id = request.render_job_id
+            try:
+                if render_job_id is None:
+                    queued = queue_render_job(
+                        session,
+                        request.project_id,
+                        idempotency_key=request.idempotency_key[:255],
+                    )
+                    render_job_id = queued.job.id
+                    session.commit()
+            except RenderLineageError as error:
+                # A lineage refusal is deterministic: the project cannot render
+                # in its current state, and retrying buys nothing but another
+                # identical refusal.
+                session.rollback()
+                raise ApplicationError(
+                    f"render inputs rejected: {error.code}",
+                    type="RenderLineageError",
+                    non_retryable=True,
+                ) from error
+            result = execute_render_job(
+                session,
+                blob_store,
+                render_job_id,
+                worker_id=f"temporal:{activity.info().activity_id}"
+                if activity.in_activity()
+                else None,
+                trace_context=dict(request.trace_context),
+            )
+        # Terminal outcomes are reported, not raised: the durable render job
+        # already records why it stopped, and the workflow branches on the
+        # bounded status rather than on an exception type.
+        return _render_result(request, result)
+
+    return execute
+
+
+def _render_result(
+    request: RenderActivityInput, result: RenderExecutionResult
+) -> RenderActivityResult:
+    return RenderActivityResult(
+        project_id=request.project_id,
+        render_job_id=result.render_job_id,
+        status=result.status.value,
+        reused=result.reused,
+        progress_percent=100 if result.status is RenderExecutionStatus.COMPLETE else 0,
+        render_identity=result.render_identity,
+        input_hash=result.input_hash,
+        output_sha256=result.output_sha256,
+        final_render_asset_id=result.final_video_asset_id,
+        render_manifest_asset_id=result.manifest_asset_id,
+        measured_duration_us=result.measured_duration_us,
+        attempt=result.attempt,
+        error_code=result.failure.code if result.failure else None,
+        failure_classification=result.failure.classification if result.failure else None,
+    )

@@ -314,6 +314,11 @@ class AssetServiceArtifactStore:
         self.job.output_asset_id = result.final_video.asset_id
         self.job.verification_report_asset_id = result.verification_report.asset_id
         self.job.measured_duration_us = result.measured_duration_us
+        # The output hash and the completion timestamp are part of what makes a
+        # render job "complete" - the table's own constraint enforces that - so
+        # they are written in the same flush as the status, never afterwards.
+        self.job.output_sha256 = result.final_video.sha256
+        self.job.renderer_version = self.job.renderer_version or "t17/1"
         self.job.status = "render_complete"
         self.job.completed_at = datetime.now(UTC)
         self.service.session.flush()

@@ -1,0 +1,123 @@
+{
+  "$defs": {
+    "RenderExecutionStatus": {
+      "description": "The durable render-job state machine T17b advances.\n\nThe values are the persisted ``render_jobs.status`` values, so a projection\nnever has to translate between a workflow status and a database status.\n``QUEUED`` is the state T18 and the CLI create; every other value is written\nby the executor.",
+      "enum": [
+        "render_queued",
+        "render_claiming",
+        "render_preparing",
+        "render_manifest_ready",
+        "render_rendering",
+        "render_verifying",
+        "render_persisting",
+        "render_complete",
+        "render_failed",
+        "render_cancelled"
+      ],
+      "title": "RenderExecutionStatus",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "description": "A durable resume point. Written inside the same transaction as the status.",
+  "properties": {
+    "attempt": {
+      "minimum": 1,
+      "title": "Attempt",
+      "type": "integer"
+    },
+    "caption_asset_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Caption Asset Id"
+    },
+    "final_video_asset_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Final Video Asset Id"
+    },
+    "input_hash": {
+      "anyOf": [
+        {
+          "pattern": "^[a-f0-9]{64}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Input Hash"
+    },
+    "manifest_asset_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Manifest Asset Id"
+    },
+    "phase": {
+      "maxLength": 64,
+      "minLength": 1,
+      "title": "Phase",
+      "type": "string"
+    },
+    "progress_percent": {
+      "maximum": 100,
+      "minimum": 0,
+      "title": "Progress Percent",
+      "type": "integer"
+    },
+    "render_job_id": {
+      "format": "uuid",
+      "title": "Render Job Id",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "status": {
+      "$ref": "#/$defs/RenderExecutionStatus"
+    },
+    "updated_at": {
+      "format": "date-time",
+      "title": "Updated At",
+      "type": "string"
+    }
+  },
+  "required": [
+    "render_job_id",
+    "status",
+    "attempt",
+    "progress_percent",
+    "phase",
+    "updated_at"
+  ],
+  "title": "RenderExecutionCheckpoint",
+  "type": "object"
+}

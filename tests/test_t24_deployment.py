@@ -371,9 +371,12 @@ def test_the_worker_uses_a_real_shutdown_api() -> None:
     assert hasattr(Worker, "__aenter__") and hasattr(Worker, "__aexit__")
 
     source = Path("workers/temporal_worker/main.py").read_text()
-    assert "async with worker:" in source
+    # Both workers - the project queue and the T17b render queue - are entered
+    # in one `async with`, so a SIGTERM drains an in-flight render instead of
+    # killing FFmpeg mid-encode.
+    assert "async with worker, render_worker:" in source
     assert "shutdown_event" not in source
-    assert "graceful_shutdown_timeout" in source
+    assert source.count("graceful_shutdown_timeout") == 2
 
 
 def test_the_api_authenticates_to_temporal_cloud() -> None:

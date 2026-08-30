@@ -558,10 +558,9 @@ reproducibility. Assets retain ordered parents and lineage; completed identities
 new provider charges. Durable render/attempt/caption rows support resume and cancellation while T23
 continues trace and bounded-metric propagation without fabricated provider costs.
 
-Local entry points are `uv run python scripts/render_project.py PROJECT_UUID` and
-`uv run python scripts/inspect_render.py PROJECT_UUID` once a project has completed and locked T16
-outputs. T22 inspects the render this stage produces; T24 and later roadmap stages remain
-unfinished.
+T17 is the rendering *library*. Executing a render against real project inputs is T17b's
+responsibility; see [T17b render execution and integration](#t17b-render-execution-and-integration)
+for the commands, the lifecycle and the entry points.
 
 The required synthetic acceptance test generates ten copyright-free clips and narration with
 FFmpeg at test time, persists SRT/WebVTT, renders and fully decodes a 1920x1080 H.264/yuv420p MP4
@@ -569,6 +568,190 @@ with AAC 48 kHz audio and selectable `mov_text` subtitles, persists a reproducib
 proves that a second identical identity performs zero FFmpeg executions. T17 persistence extends
 the existing render-job placeholder and adds render-attempt and caption-track projections in
 Alembic revision `0013_render`.
+
+## T17b render execution and integration
+
+### Why T17b exists
+
+T17's roadmap row asked for a deterministic captioning and rendering library, and T17 delivered
+exactly that: strict contracts, deterministic caption reflow, canonical manifests and identities,
+bounded FFmpeg argument plans, media verification, immutable asset provenance and restartable
+relational projections. All of it is tested. **T17 remains correctly marked complete for that
+scope.**
+
+What no roadmap row owned was the boundary between that library and the application. The seam was
+real and visible in the code:
+
+- `RenderManifest` was constructed only by tests. No production code assembled one.
+- T18's `render:start` could insert a render-job row, and nothing consumed it.
+- The parent Temporal workflow had no render stage at all; it went from shot fan-out straight to
+  T22, which then had no current render to inspect.
+- The documented worker entry point `workers/render_job/main.py` did not exist.
+- The T24 Container Apps Job ran `scripts.render_project --from-env`, which created a render-job row
+  and exited - so a green job execution said nothing about whether a render had happened.
+
+T17b is the corrective task that owns that boundary. It does not rewrite T17's renderer, T18's
+review UI, T20's visual QA, T21's repair pipeline, T22's editorial QA, T23's telemetry or T24's
+Azure foundation.
+
+### The canonical execution service
+
+`services/render_execution` is one application service, and every entry point calls it:
+
+| Module | Responsibility |
+| --- | --- |
+| `inputs.py` | Resolve and validate the authoritative inputs, and compute the canonical input hash |
+| `manifest_builder.py` | Build the canonical caption track and the immutable `RenderManifest` |
+| `claims.py` | Transactional claiming, leases, heartbeats, checkpoints and cancellation |
+| `ffmpeg.py` | A cancellable, heartbeating FFmpeg executor with bounded diagnostics |
+| `executor.py` | The lifecycle: claim, prepare, render, verify, persist, complete |
+| `commands.py` | `queue_render_job` and `execute_render_job`, plus the current-render lookups |
+
+There is deliberately no second implementation. The local CLI, the Temporal render activity, the
+out-of-band worker and the Azure Container Apps Job all reach FFmpeg through
+`execute_render_job(session, blob_store, render_job_id, ...)`.
+
+### Authoritative input selection
+
+Input resolution reuses `services.renderer.selection.select_authoritative_inputs` - T17's existing,
+tested definition of the T11-T16 lineage - and layers the T17b concerns on top: the narration bed,
+the caption configuration, the render settings, audio beds, T21 repair state, T19 reference
+provenance, and a deterministic hash over all of it.
+
+The executor rejects, always non-retryably: cross-project assets, missing or unapproved assets,
+stale upstream versions, incompatible lineage, shots without a passing T20 video-QA result, active
+or failed or review-blocked T21 repairs, a locked T21 repair whose selected output is not the clip
+being rendered, missing narration, missing storyboard timing, unsupported render settings, a job
+already held by another active executor, and a job whose stored input identity no longer matches the
+resolved inputs.
+
+The resolved selection and its hash are persisted on the render job **before** any FFmpeg work
+begins. Identical inputs and configuration produce the same hash, the same manifest and the same
+render identity; a materially different input produces a new identity and therefore needs a new
+render job.
+
+No upstream stage produces music or sound-effect assets yet. The resolution path for them exists and
+is bounded by the canonical timeline, so a bed that would overrun the picture is refused rather than
+silently trimmed - but today every render is narration-only.
+
+### The production manifest
+
+`manifest_builder.py` converts the resolved selection into T17's existing contract without weakening
+any of its validation. Timing is taken as integer microseconds straight from T13's canonical timing
+manifest, so a long timeline cannot accumulate binary floating-point drift. Storage is resolved
+through `AssetService`: the manifest references assets by ID and content hash, and a temporary
+signed URL is never part of stable identity.
+
+### Caption production
+
+The deliverable caption track is built by T17's `build_caption_track` from the approved script's
+words and T12's measured narration timings, through the same projection T22 uses to reconstruct
+captions independently. The SRT, WebVTT and (for burn-in modes) ASS assets are persisted through
+`AssetService` **before** the manifest is built, because the manifest references them by hash. Their
+idempotency keys are derived from the input identity, so an interrupted run reuses the caption
+assets it already produced rather than writing a second copy. T22's caption reconstruction remains a
+verification of this track, never its source.
+
+### The render-job lifecycle
+
+```
+render_queued -> render_claiming -> render_preparing -> render_manifest_ready
+              -> render_rendering -> render_verifying -> render_persisting -> render_complete
+                                                       \-> render_failed | render_cancelled
+```
+
+A completed render job references its canonical manifest, caption assets, final MP4, verification
+report, input hash, output SHA-256, exact measured duration, stream metadata, renderer and FFmpeg
+versions, completion timestamp and trace identity. The job is marked complete only after FFmpeg
+exited successfully, verification passed, every output is stored through `AssetService`, all
+database references are committed, and the final asset reads back through normal asset storage. The
+table's own constraints enforce the asset references and the measurements.
+
+### Claims, leases and recovery
+
+Concurrency safety is a conditional `UPDATE`, not a process-local lock: exactly one concurrent
+caller wins, a live lease belongs to its holder, a heartbeat extends it during a long encode, a
+stale lease is reclaimable after its timeout, attempts are bounded, and a completed job is reused
+rather than re-executed. A worker that dies leaves the job reclaimable rather than permanently
+locked.
+
+A run that persisted every output but died before completing is recovered without re-encoding, when
+- and only when - the stored outputs belong to the same manifest identity and are still readable. A
+run that died earlier resumes from its durable checkpoint: the caption assets and the manifest
+identity are reused, and no duplicate asset rows are created.
+
+### Temporal integration
+
+The parent workflow gains a render stage between the shot fan-out and T22, on the dedicated `render`
+task queue named by the design, so a CPU-bound encode never competes with provider-bound activities
+for the project worker's bounded concurrency. The message is IDs only: manifests, captions, media
+bytes, FFmpeg output and diagnostics are not representable in `RenderActivityInput` or
+`RenderActivityResult`. The activity queues or resumes the project's render job itself, so an
+activity retry re-enters the same job rather than forking a second one. T22 does not start unless
+the render completed and its final asset is persisted.
+
+### T18 integration
+
+`render:start` queues a job whose input identity is already stamped, so a worker can execute it
+without anyone constructing a manifest by hand. When the project cannot currently render, the job is
+still queued with the structured refusal recorded on it, because the review UI needs to show why a
+render is blocked. The render projection carries real progress, checkpoint, attempt count,
+cancellation and failure state, plus a `downloadable` flag that is true only for a complete,
+verified, non-stale render with a stored final asset.
+`GET /api/v1/projects/{id}/render/download` resolves that asset through the existing signed-download
+mechanism; an incomplete, failed or stale render is a `409`, never a download.
+
+### T22 integration
+
+T22 resolves the project's current render through the one shared lookup
+(`services.render_execution.commands.current_render_job`), so the dashboard and final QA can never
+disagree about which render is current. A completed T17b render is selected on completion, and T22
+evaluates exactly that render, by asset and by hash. The completion gate is bound to the render
+asset it was decided for, so a rerender invalidates an older decision rather than inheriting it.
+
+### T24 Container Apps Job
+
+The job now runs `python -m workers.render_job.main --from-env`, with `VIDGEN_RENDER_JOB_ID`
+supplied per execution by `az containerapp job start --env-vars`. It executes an existing render job
+and its exit status is the render result. Managed identity, Key Vault secrets and the existing
+storage and database access are unchanged, and no static cloud credential is introduced.
+`VIDGEN_RENDER_WORK_ROOT` points at the writable `/tmp/vidgen` the image creates for its non-root
+user. Automatic dispatch of that job is deliberately absent: the in-workflow Temporal activity is
+the intended production path, and the job exists for the finite out-of-band case.
+
+### Local commands
+
+```bash
+RENDER_JOB_ID="$(uv run python -m scripts.render_project PROJECT_UUID --output-id-only)"
+uv run python -m workers.render_job.main --render-job-id "$RENDER_JOB_ID"
+uv run python scripts/inspect_render.py PROJECT_UUID
+uv run python scripts/run_final_editorial_qa.py PROJECT_UUID --provider fake
+```
+
+`uv run python -m scripts.render_project PROJECT_UUID --execute` queues and executes in one process.
+The worker also accepts `--from-env` and a bounded `--poll` loop, handles `SIGTERM`/`SIGINT` by
+requesting cancellation, and exits `0` for a completed render or an idempotent reuse, `1` for a
+failure, `2` for a usage error and `3` for a cancellation. None of this requires Azure or a paid
+provider credential.
+
+### Observability
+
+T17b records bounded telemetry through the existing T23 stack: structured log events for queue,
+claim, manifest, captions, FFmpeg start, verification, persistence, completion, failure,
+cancellation and lease recovery; the render real-time factor and verification outcome as metrics;
+and per-phase wall-clock timings plus tool versions on the render-attempt row. FFmpeg is local
+compute, not a paid provider call, so no provider charge is fabricated. Signed URLs, credentials,
+caption text, script text, media bytes and unbounded FFmpeg output are never logged.
+
+### Known limitations
+
+- Music and sound-effect beds resolve and validate, but no upstream stage produces them, so every
+  render today is narration-only.
+- A failure between FFmpeg finishing and the outputs committing re-renders on retry. The output is
+  deterministic and content-addressed, so no duplicate asset is created, but the CPU is spent again.
+  Recovery without re-encoding only applies once the outputs are committed.
+- Crossfade transitions remain refused by T17's `validate_transitions`; hard cuts only.
+- The Container Apps Job is not dispatched automatically; see above.
 
 ## T18 MVP review UI and control-plane APIs
 
@@ -864,8 +1047,8 @@ result blocks automatic completion until it is resolved. The selection helper
 `visual_qa_provenance` (in `services.renderer.selection`) turns a selection into the applicable QA
 result IDs, run IDs and policy version for a manifest builder to record under `provenance`; because
 manifest identity excludes `provenance`, adding it leaves an existing render's identity unchanged.
-This repository has no production manifest builder yet — `RenderManifest` is assembled by the T17
-render tests — so the helper is currently exercised there rather than from a shipping code path.
+T17b's production manifest builder is the shipping caller: every render it assembles records the
+applicable QA result IDs, run IDs and policy version under `provenance`.
 
 The T18 shot inspector gains a visual-QA panel: keyframe and video outcomes, the recomputed score
 and applicable threshold, a hard-failure indicator, the dimension scorecard, confidence,

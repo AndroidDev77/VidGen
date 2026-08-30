@@ -1010,6 +1010,7 @@ export interface AnimationResult extends AnimationRunResult { items: ShotAnimati
 export interface RenderInputReference { schema_version: "1.0"; asset_id: UUID; sha256: string; media_type: string; role: string }
 export interface RenderTransition { schema_version: "1.0"; kind: "cut" | "crossfade"; duration_us: number; handle_in_us: number; handle_out_us: number }
 export interface CaptionWord { schema_version: "1.0"; sequence: number; text: string; start_us: number; end_us: number }
+export interface CaptionValidationDiagnostic { schema_version: "1.0"; code: string; severity: "warning" | "error"; message: string; cue_sequence: number | null }
 export interface CaptionCue { schema_version: "1.0"; sequence: number; start_us: number; end_us: number; lines: string[]; word_start: number; word_end: number }
 export interface CaptionTrack { schema_version: "1.0"; caption_track_id: UUID; language: string; cues: CaptionCue[]; duration_us: number; safe_zone_percent: number; pipeline_version: "captions/1" }
 export interface RenderVideoProfile { schema_version: "1.0"; width: 1920; height: 1080; frame_rate: 24 | 30; codec: "libx264"; codec_profile: "high"; pixel_format: "yuv420p"; normalization_policy: "scale_crop" | "scale_pad" }
@@ -1346,6 +1347,169 @@ export interface RenderApprovalProjection {
   applies_to_current_lineage: boolean;
 }
 
+export interface RenderFailure {
+  schema_version: "1.0";
+  classification: "lineage" | "validation" | "transient" | "cancelled" | "execution";
+  code: string;
+  message: string;
+  retryable: boolean;
+  diagnostics: CaptionValidationDiagnostic[];
+}
+
+export interface RenderInputSelection {
+  schema_version: "1.0";
+  project_id: UUID;
+  render_job_id: UUID;
+  approved_script_id: UUID;
+  approved_script_version: number;
+  approved_script_hash: string;
+  narration_run_id: UUID;
+  narration_asset_id: UUID;
+  narration_duration_us: number;
+  narration_word_timing_hash: string;
+  storyboard_run_id: UUID;
+  storyboard_hash: string;
+  timing_manifest_id: UUID;
+  timing_manifest_hash: string;
+  shot_count: number;
+  references: RenderInputReference[];
+  visual_qa_result_ids: UUID[];
+  repair_result_ids: UUID[];
+  character_reference_ids: UUID[];
+  location_reference_ids: UUID[];
+  audio_asset_ids: UUID[];
+  subtitle_mode: "selectable" | "burn_in" | "both";
+  render_profile: string;
+  target_duration_us: number;
+  aspect_ratio: string;
+  output_width: number;
+  output_height: number;
+  frame_rate: number;
+  caption_configuration_hash: string;
+  visual_qa_policy_version: string;
+  pipeline_version: string;
+  input_hash: string;
+  resolved_at: string;
+}
+
+export interface RenderExecutionRequest {
+  schema_version: "1.0";
+  render_job_id: UUID;
+  worker_id: string;
+  lease_seconds: number;
+  max_attempts: number;
+  heartbeat_seconds: number;
+  execution_timeout_seconds: number;
+  minimum_free_bytes: number;
+  trace_context: Record<string, string>;
+}
+
+export interface RenderExecutionCheckpoint {
+  schema_version: "1.0";
+  render_job_id: UUID;
+  status: RenderExecutionStatus;
+  attempt: number;
+  progress_percent: number;
+  phase: string;
+  input_hash: string | null;
+  manifest_asset_id: UUID | null;
+  caption_asset_id: UUID | null;
+  final_video_asset_id: UUID | null;
+  updated_at: string;
+}
+
+/** The durable T17b render-job states. */
+export type RenderExecutionStatus =
+  | "render_queued"
+  | "render_claiming"
+  | "render_preparing"
+  | "render_manifest_ready"
+  | "render_rendering"
+  | "render_verifying"
+  | "render_persisting"
+  | "render_complete"
+  | "render_failed"
+  | "render_cancelled";
+
+export interface RenderExecutionProgress {
+  schema_version: "1.0";
+  render_job_id: UUID;
+  project_id: UUID;
+  status: RenderExecutionStatus;
+  progress_percent: number;
+  phase: string | null;
+  attempt: number;
+  claimed_by: string | null;
+  lease_expires_at: string | null;
+  heartbeat_at: string | null;
+  cancel_requested: boolean;
+  failure_code: string | null;
+  failure_classification: string | null;
+}
+
+export interface RenderExecutionResult {
+  schema_version: "1.0";
+  render_job_id: UUID;
+  project_id: UUID;
+  status: RenderExecutionStatus;
+  reused: boolean;
+  render_identity: string | null;
+  input_hash: string | null;
+  output_sha256: string | null;
+  manifest_asset_id: UUID | null;
+  caption_srt_asset_id: UUID | null;
+  caption_webvtt_asset_id: UUID | null;
+  final_video_asset_id: UUID | null;
+  verification_report_asset_id: UUID | null;
+  measured_duration_us: number | null;
+  expected_duration_us: number | null;
+  renderer_version: string | null;
+  ffmpeg_version: string | null;
+  attempt: number;
+  warning_codes: string[];
+  failure: RenderFailure | null;
+  completed_at: string | null;
+}
+
+export interface RenderWorkerResult {
+  schema_version: "1.0";
+  render_job_id: UUID;
+  status: RenderExecutionStatus;
+  reused: boolean;
+  exit_code: number;
+  final_video_asset_id: UUID | null;
+  output_sha256: string | null;
+  measured_duration_us: number | null;
+  failure_code: string | null;
+  failure_classification: string | null;
+}
+
+export interface RenderActivityInput {
+  schema_version: "1.0";
+  project_id: UUID;
+  render_job_id: UUID | null;
+  idempotency_key: string;
+  trace_context: Record<string, string>;
+}
+
+export interface RenderActivityResult {
+  schema_version: "1.0";
+  project_id: UUID;
+  render_job_id: UUID;
+  status: string;
+  reused: boolean;
+  progress_percent: number;
+  render_identity: string | null;
+  input_hash: string | null;
+  output_sha256: string | null;
+  final_render_asset_id: UUID | null;
+  render_manifest_asset_id: UUID | null;
+  measured_duration_us: number | null;
+  attempt: number;
+  error_code: string | null;
+  failure_classification: string | null;
+}
+
 export interface RenderProjection {
   schema_version: "1.0";
   render_job_id: UUID;
@@ -1378,6 +1542,18 @@ export interface RenderProjection {
   narration_run_id: UUID | null;
   ffmpeg_version: string | null;
   lineage_hash: string | null;
+  /** T17b execution state: real progress, and the real reason a render failed. */
+  progress_percent: number;
+  checkpoint: string | null;
+  attempt_count: number;
+  cancel_requested: boolean;
+  failure_code: string | null;
+  failure_classification: string | null;
+  output_sha256: string | null;
+  input_hash: string | null;
+  renderer_version: string | null;
+  /** True only for a complete, verified, non-stale render with a stored asset. */
+  downloadable: boolean;
   approval: RenderApprovalProjection | null;
   row_version: number;
   completed_at: string | null;

@@ -1,26 +1,48 @@
-"""Validate authoritative T17 inputs and create or reuse the durable render job."""
+"""Queue a T17 render job - and, with ``--execute``, run it here and now.
+
+Queueing and rendering are separate operations, and this command says which one
+it performed. By default it only validates the project's authoritative inputs
+and creates (or reuses) the durable render-job row; nothing is rendered until a
+worker executes that job:
+
+    uv run python -m scripts.render_project PROJECT_UUID
+    uv run python -m workers.render_job.main --render-job-id RENDER_JOB_UUID
+
+``--execute`` runs the canonical executor in this process instead, which is the
+convenient path for local development:
+
+    uv run python -m scripts.render_project PROJECT_UUID --execute
+
+``--output-id-only`` prints just the render job id, for shell pipelines.
+"""
 
 from __future__ import annotations
 
 import argparse
 import json
 import os
-from uuid import UUID, uuid4
+from pathlib import Path
+from uuid import UUID
 
 from sqlalchemy.orm import Session
 
-from services.renderer.manifest import render_identity
-from services.renderer.selection import RenderLineageError, select_authoritative_inputs
-from vidgen.db.models import RenderJob
-from vidgen.db.render_repository import RenderRepository
+from apps.api.settings import get_settings
+from services.render_execution.commands import execute_render_job, queue_render_job
+from services.render_execution.executor import RenderExecutionError
+from services.renderer.selection import RenderLineageError
+from vidgen.contracts.render_execution import RenderExecutionStatus
 from vidgen.db.session import build_engine
+from vidgen.storage.factory import build_blob_store
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser()
-    # The deployed render job is project-neutral: the project is supplied per
-    # execution with `az containerapp job start --env-vars VIDGEN_PROJECT_ID=...`,
-    # so the job definition never has to be redeployed to render a project.
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="scripts.render_project",
+        description="Queue a render job for a project, optionally executing it in process.",
+    )
+    # The deployed job is project-neutral: the project is supplied per execution
+    # with `az containerapp job start --env-vars VIDGEN_PROJECT_ID=...`, so the
+    # job definition never has to be redeployed to render a project.
     parser.add_argument("project_id", type=UUID, nargs="?", default=None)
     parser.add_argument(
         "--from-env",
@@ -32,8 +54,29 @@ def main() -> None:
     parser.add_argument(
         "--subtitle-mode", choices=("selectable", "burn_in", "both"), default="selectable"
     )
-    parser.add_argument("--ass-burn-in", action="store_true")
-    arguments = parser.parse_args()
+    parser.add_argument("--language", default="en")
+    parser.add_argument(
+        "--ass-burn-in",
+        action="store_true",
+        help="shorthand for --subtitle-mode both",
+    )
+    parser.add_argument(
+        "--execute",
+        action="store_true",
+        help="execute the queued render job in this process instead of only queueing it",
+    )
+    parser.add_argument("--work-root", type=Path, default=None)
+    parser.add_argument(
+        "--output-id-only",
+        action="store_true",
+        help="print only the render job id, for shell pipelines",
+    )
+    return parser
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = build_parser()
+    arguments = parser.parse_args(argv)
     if arguments.from_env:
         raw = os.environ.get("VIDGEN_PROJECT_ID", "").strip()
         if not raw:
@@ -41,70 +84,57 @@ def main() -> None:
         arguments.project_id = UUID(raw)
     elif arguments.project_id is None:
         parser.error("a project id is required unless --from-env is given")
+    settings = get_settings()
+    engine = build_engine(settings.database_url)
+    subtitle_mode = "both" if arguments.ass_burn_in else arguments.subtitle_mode
     try:
-        with Session(build_engine()) as session, session.begin():
-            selected = select_authoritative_inputs(session, arguments.project_id)
-            material = {
-                "project_id": str(arguments.project_id),
-                "script_id": str(selected.script.id),
-                "script_version": selected.script.version,
-                "narration_run_id": str(selected.narration.id),
-                "storyboard_run_id": str(selected.storyboard.id),
-                "timing_manifest_hash": selected.timing_manifest_asset.sha256,
-                "shots": [
-                    (
-                        str(item.shot.stable_shot_id),
-                        str(item.asset.id),
-                        item.asset.sha256,
-                        item.shot.global_start_us,
-                        item.shot.global_end_us,
-                    )
-                    for item in selected.shots
-                ],
-                "caption_profile": "captions/1",
-                "render_profile": arguments.profile,
-                "subtitle_mode": "both" if arguments.ass_burn_in else arguments.subtitle_mode,
-                "pipeline_version": "t17/1",
-            }
-            identity = render_identity(material)
-            repository = RenderRepository(session)
-            completed = repository.completed_by_identity(identity)
-            if completed is not None:
-                job, reused = completed, True
-            else:
-                job, reused = repository.create_or_resume(
-                    RenderJob(
-                        id=uuid4(),
-                        project_id=arguments.project_id,
-                        status="render_queued",
-                        render_identity=identity,
-                        idempotency_key=arguments.idempotency_key or f"t17:{identity}",
-                        input_hash=identity,
-                        script_id=selected.script.id,
-                        script_version=selected.script.version,
-                        narration_run_id=selected.narration.id,
-                        storyboard_run_id=selected.storyboard.id,
-                        t16_result_reference=f"t16:{selected.storyboard.id}",
-                        expected_duration_us=selected.storyboard.total_duration_us,
-                        video_profile={"name": arguments.profile},
-                        audio_profile={"name": "aac-48k-320"},
-                        caption_profile={"subtitle_mode": material["subtitle_mode"]},
-                        pipeline_version="t17/1",
-                    )
-                )
-            print(
-                json.dumps(
-                    {
-                        "render_job_id": str(job.id),
-                        "render_identity": identity,
-                        "shot_count": len(selected.shots),
-                        "expected_duration_us": selected.storyboard.total_duration_us,
-                        "status": job.status,
-                        "reused": reused,
-                    },
-                    sort_keys=True,
-                )
+        with Session(engine, expire_on_commit=False) as session:
+            queued = queue_render_job(
+                session,
+                arguments.project_id,
+                profile=arguments.profile,
+                subtitle_mode=subtitle_mode,
+                language=arguments.language,
+                idempotency_key=arguments.idempotency_key,
             )
+            payload = {
+                "action": "queued",
+                "render_job_id": str(queued.job.id),
+                "input_hash": queued.input_hash,
+                "shot_count": queued.shot_count,
+                "expected_duration_us": queued.expected_duration_us,
+                "status": queued.job.status,
+                "reused": queued.reused,
+                "executed": False,
+            }
+            session.commit()
+            render_job_id = queued.job.id
+        if arguments.execute:
+            blob_store = build_blob_store(settings)
+            with Session(engine, expire_on_commit=False) as session:
+                result = execute_render_job(
+                    session,
+                    blob_store,
+                    render_job_id,
+                    work_root=arguments.work_root,
+                )
+            payload.update(
+                {
+                    "action": "executed",
+                    "executed": True,
+                    "status": result.status.value,
+                    "reused": result.reused,
+                    "final_video_asset_id": str(result.final_video_asset_id)
+                    if result.final_video_asset_id
+                    else None,
+                    "output_sha256": result.output_sha256,
+                    "measured_duration_us": result.measured_duration_us,
+                    "failure_code": result.failure.code if result.failure else None,
+                }
+            )
+            if result.status is not RenderExecutionStatus.COMPLETE:
+                print(json.dumps(payload, sort_keys=True))
+                return 1
     except RenderLineageError as error:
         raise SystemExit(
             json.dumps(
@@ -117,7 +147,24 @@ def main() -> None:
                 sort_keys=True,
             )
         ) from error
+    except RenderExecutionError as error:
+        raise SystemExit(
+            json.dumps(
+                {
+                    "code": error.failure.code,
+                    "message": error.failure.message,
+                    "retryable": error.failure.retryable,
+                    "classification": error.failure.classification,
+                },
+                sort_keys=True,
+            )
+        ) from error
+    if arguments.output_id_only:
+        print(payload["render_job_id"])
+    else:
+        print(json.dumps(payload, sort_keys=True))
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

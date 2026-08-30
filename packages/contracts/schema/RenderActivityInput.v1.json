@@ -1,0 +1,49 @@
+{
+  "additionalProperties": false,
+  "description": "Compact T17b message. Manifests, captions, media bytes, FFmpeg output and\ndiagnostics never enter workflow history: the activity resolves everything\nfrom durable storage using these IDs alone.",
+  "properties": {
+    "idempotency_key": {
+      "maxLength": 255,
+      "minLength": 1,
+      "title": "Idempotency Key",
+      "type": "string"
+    },
+    "project_id": {
+      "format": "uuid",
+      "title": "Project Id",
+      "type": "string"
+    },
+    "render_job_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Render Job Id"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "trace_context": {
+      "additionalProperties": {
+        "type": "string"
+      },
+      "title": "Trace Context",
+      "type": "object"
+    }
+  },
+  "required": [
+    "project_id",
+    "idempotency_key"
+  ],
+  "title": "RenderActivityInput",
+  "type": "object"
+}

@@ -26,15 +26,18 @@ from temporalio.worker import Worker
 from packages.workflows.activities import (
     configure_activity_handlers,
     configure_final_qa_handler,
+    configure_render_handler,
 )
+from packages.workflows.project import RENDER_TASK_QUEUE
 from packages.workflows.shot_activities import configure_shot_activity_handlers
 from vidgen.telemetry.bootstrap import initialize_telemetry
 from workers.temporal_worker.production_handlers import (
     build_final_qa_handler,
     build_production_handlers,
+    build_render_handler,
     build_shot_production_handlers,
 )
-from workers.temporal_worker.registry import ACTIVITIES, WORKFLOWS
+from workers.temporal_worker.registry import ACTIVITIES, RENDER_ACTIVITIES, WORKFLOWS
 
 _LOGGER = logging.getLogger("vidgen.worker")
 
@@ -76,6 +79,7 @@ async def run() -> None:
     configure_activity_handlers(build_production_handlers())
     configure_shot_activity_handlers(build_shot_production_handlers())
     configure_final_qa_handler(build_final_qa_handler())
+    configure_render_handler(build_render_handler())
 
     client = await _connect()
     task_queue = os.getenv("TEMPORAL_TASK_QUEUE", "vidgen-projects")
@@ -110,19 +114,37 @@ async def run() -> None:
             max_concurrent_workflow_tasks=max_workflow_tasks,
             graceful_shutdown_timeout=timedelta(seconds=graceful_seconds),
         )
+        # T17b rendering polls its own queue. An encode is CPU, memory and disk
+        # bound and runs for minutes; sharing the project queue's concurrency
+        # budget with it would starve the provider-bound activities that are
+        # mostly waiting on the network. Its concurrency is separately bounded
+        # because each concurrent render holds a CPU, a working directory and a
+        # PostgreSQL connection.
+        render_task_queue = os.getenv("TEMPORAL_RENDER_TASK_QUEUE", RENDER_TASK_QUEUE)
+        max_renders = _int_env("TEMPORAL_MAX_CONCURRENT_RENDERS", 1)
+        render_worker = Worker(
+            client,
+            task_queue=render_task_queue,
+            activities=RENDER_ACTIVITIES,
+            activity_executor=executor,
+            max_concurrent_activities=max_renders,
+            graceful_shutdown_timeout=timedelta(seconds=graceful_seconds),
+        )
         _LOGGER.info(
             "worker starting",
             extra={
                 "task_queue": task_queue,
+                "render_task_queue": render_task_queue,
                 "namespace": client.namespace,
                 "max_concurrent_activities": max_activities,
+                "max_concurrent_renders": max_renders,
             },
         )
         # `async with` runs the worker and, on exit, performs the graceful
         # shutdown the timeout above bounds. Waiting on the signal event inside
         # the block is what turns a Container Apps SIGTERM into that shutdown
         # rather than an abrupt cancellation of in-flight activities.
-        async with worker:
+        async with worker, render_worker:
             await stop.wait()
             _LOGGER.info("shutdown signal received; draining in-flight activities")
     _LOGGER.info("worker stopped")

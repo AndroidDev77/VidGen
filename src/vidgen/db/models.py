@@ -330,10 +330,37 @@ class RenderJob(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     error_code: Mapped[str | None] = mapped_column(String(128))
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # T17b durable execution state. A render job is claimed by exactly one
+    # worker at a time; the lease is what makes that true across processes and
+    # hosts, and the heartbeat is what keeps a long FFmpeg run from losing it.
+    claimed_by: Mapped[str | None] = mapped_column(String(128))
+    claimed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    lease_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    heartbeat_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    attempt_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    progress_percent: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    checkpoint: Mapped[str | None] = mapped_column(String(64))
+    cancel_requested: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    failure_classification: Mapped[str | None] = mapped_column(String(32))
+    input_selection: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict, nullable=False)
+    output_sha256: Mapped[str | None] = mapped_column(String(64))
+    renderer_version: Mapped[str | None] = mapped_column(String(32))
+    trace_id: Mapped[str | None] = mapped_column(String(64))
     __table_args__ = (
         CheckConstraint(
             "render_identity IS NULL OR length(render_identity) = 64",
             name="render_identity_hash_length",
+        ),
+        CheckConstraint(
+            "output_sha256 IS NULL OR length(output_sha256) = 64",
+            name="render_output_hash_length",
+        ),
+        CheckConstraint("progress_percent BETWEEN 0 AND 100", name="render_progress_percent_range"),
+        CheckConstraint("attempt_count >= 0", name="render_attempt_count_nonnegative"),
+        CheckConstraint(
+            "status <> 'render_complete' OR (output_sha256 IS NOT NULL AND "
+            "measured_duration_us IS NOT NULL AND completed_at IS NOT NULL)",
+            name="render_complete_has_measurements",
         ),
         CheckConstraint(
             "input_hash IS NULL OR length(input_hash) = 64", name="render_input_hash_length"
@@ -352,6 +379,9 @@ class RenderJob(UUIDPrimaryKeyMixin, TimestampMixin, Base):
             "final_video_asset_id IS NOT NULL AND verification_report_asset_id IS NOT NULL)",
             name="render_complete_has_outputs",
         ),
+        # The lease-recovery query: a worker looking for a claimable job scans
+        # by status and expiry, and both are hot columns on every claim.
+        Index("ix_render_jobs_lease", "status", "lease_expires_at"),
         Index(
             "uq_render_jobs_identity",
             "render_identity",

@@ -27,7 +27,7 @@ from packages.workflows.activities import (
     configure_final_qa_handler,
     run_final_editorial_qa_activity,
 )
-from packages.workflows.project import ProjectWorkflow
+from packages.workflows.project import RENDER_TASK_QUEUE, ProjectWorkflow
 from packages.workflows.shot import ProjectShotFanoutWorkflow, ShotWorkflow
 from packages.workflows.shot_policy import TASK_QUEUE
 from services.qa.final_commands import FinalQACommandOptions, run_final_editorial_qa
@@ -43,6 +43,8 @@ from vidgen.contracts.workflow import (
     FinalQAActivityResult,
     ProjectWorkflowInput,
     ProjectWorkflowState,
+    RenderActivityInput,
+    RenderActivityResult,
     StageActivityInput,
     StageActivityResult,
 )
@@ -66,6 +68,7 @@ RENDER_ASSET = UUID(int=5001)
 MANIFEST_ASSET = UUID(int=5002)
 RUN_ID = UUID(int=5003)
 STORYBOARD_RUN = UUID(int=5004)
+RENDER_JOB = UUID(int=5005)
 
 
 # --- ID-only message contracts ----------------------------------------------
@@ -109,6 +112,61 @@ def test_the_activity_message_cannot_carry_a_payload(field: str) -> None:
             project_id=PROJECT,
             idempotency_key="project:t22",
             **{field: "anything at all"},  # type: ignore[arg-type]
+        )
+
+
+def test_the_render_activity_message_carries_references_and_nothing_else() -> None:
+    message = RenderActivityInput(
+        project_id=PROJECT,
+        render_job_id=RENDER_JOB,
+        idempotency_key="project:t17b",
+        trace_context={"traceparent": "00-abc-def-01"},
+    )
+    assert set(message.model_dump()) == {
+        "schema_version",
+        "project_id",
+        "render_job_id",
+        "idempotency_key",
+        "trace_context",
+    }
+
+
+@pytest.mark.parametrize(
+    "field",
+    ["manifest", "captions", "media", "ffmpeg_output", "diagnostics", "command_plan"],
+)
+def test_the_render_activity_message_cannot_carry_a_payload(field: str) -> None:
+    with pytest.raises(ValidationError):
+        RenderActivityInput(
+            project_id=PROJECT,
+            idempotency_key="project:t17b",
+            **{field: "anything at all"},  # type: ignore[arg-type]
+        )
+
+
+def test_the_render_activity_result_carries_ids_and_counts_only() -> None:
+    result = RenderActivityResult(
+        project_id=PROJECT,
+        render_job_id=RENDER_JOB,
+        status="render_complete",
+        progress_percent=100,
+        final_render_asset_id=RENDER_ASSET,
+        render_manifest_asset_id=MANIFEST_ASSET,
+    )
+    assert result.final_render_asset_id == RENDER_ASSET
+    with pytest.raises(ValidationError):
+        RenderActivityResult(
+            project_id=PROJECT,
+            render_job_id=RENDER_JOB,
+            status="render_complete",
+            ffmpeg_stderr="a" * 100,  # type: ignore[call-arg]
+        )
+    with pytest.raises(ValidationError):
+        RenderActivityResult(
+            project_id=PROJECT,
+            render_job_id=RENDER_JOB,
+            status="render_complete",
+            progress_percent=101,
         )
 
 
@@ -176,12 +234,36 @@ def stage_activities() -> list[Callable[..., Awaitable[object]]]:
     return [make(stage) for stage in STAGES]
 
 
+async def render_activity(
+    seen: list[RenderActivityInput] | None = None,
+    *,
+    status: str = "render_complete",
+) -> Callable[..., Awaitable[RenderActivityResult]]:
+    """A T17b stub standing in for the real render on the render task queue."""
+
+    async def handler(request: RenderActivityInput) -> RenderActivityResult:
+        if seen is not None:
+            seen.append(request)
+        return RenderActivityResult(
+            project_id=request.project_id,
+            render_job_id=RENDER_JOB,
+            status=status,
+            progress_percent=100 if status == "render_complete" else 0,
+            final_render_asset_id=RENDER_ASSET if status == "render_complete" else None,
+            render_manifest_asset_id=MANIFEST_ASSET if status == "render_complete" else None,
+            error_code=None if status == "render_complete" else "render_execution_failed",
+        )
+
+    return handler
+
+
 async def run_project(
     final_qa: Callable[..., Awaitable[FinalQAActivityResult]],
     *,
     shots: list[object] | None = None,
+    render: Callable[..., Awaitable[RenderActivityResult]] | None = None,
 ) -> ProjectWorkflowState:
-    """Drive the real parent workflow with stubbed stages and one T22 stub."""
+    """Drive the real parent workflow with stubbed stages, T17b and T22 stubs."""
 
     async def resolve_fanout(request: object) -> ResolveShotFanoutResult:
         return ResolveShotFanoutResult(shots=list(shots or []))  # type: ignore[arg-type]
@@ -195,14 +277,25 @@ async def run_project(
         activity.defn(name="persist_shot_fanout_checkpoint")(fanout_checkpoint),
         activity.defn(name="run_final_editorial_qa_activity")(final_qa),
     ]
+    render_handler = render or await render_activity()
+    render_activities: list[Callable[..., Awaitable[object]]] = [
+        activity.defn(name="run_render_activity")(render_handler)
+    ]
     async with await WorkflowEnvironment.start_time_skipping(
         data_converter=pydantic_data_converter
     ) as environment:
-        async with Worker(
-            environment.client,
-            task_queue=TASK_QUEUE,
-            workflows=[ProjectWorkflow, ProjectShotFanoutWorkflow, ShotWorkflow],
-            activities=activities,
+        async with (
+            Worker(
+                environment.client,
+                task_queue=TASK_QUEUE,
+                workflows=[ProjectWorkflow, ProjectShotFanoutWorkflow, ShotWorkflow],
+                activities=activities,
+            ),
+            Worker(
+                environment.client,
+                task_queue=RENDER_TASK_QUEUE,
+                activities=render_activities,
+            ),
         ):
             handle = await environment.client.start_workflow(
                 ProjectWorkflow.run,
@@ -243,6 +336,41 @@ async def test_a_passing_gate_advances_the_project_to_completed() -> None:
     assert seen[0].project_id == PROJECT
     assert seen[0].idempotency_key == "project-1:t22"
     assert seen[0].final_render_asset_id is None
+
+
+@pytest.mark.asyncio
+async def test_the_render_stage_runs_before_final_qa() -> None:
+    """T17b renders first; T22 only ever inspects a completed render."""
+    seen_render: list[RenderActivityInput] = []
+    seen_qa: list[FinalQAActivityInput] = []
+    state = await run_project(
+        gate_activity("PASS", "FINAL_QA_PASSED", seen_qa),
+        render=await render_activity(seen_render),
+    )
+    assert state.status == "completed"
+    assert len(seen_render) == 1
+    assert seen_render[0].project_id == PROJECT
+    assert seen_render[0].idempotency_key == "project-1:t17b"
+    # The render activity is not given a job id: it queues or resumes the
+    # project's render itself, so a workflow retry cannot fork a second one.
+    assert seen_render[0].render_job_id is None
+    assert state.completed_stages.index("render") < state.completed_stages.index(
+        "final_editorial_qa"
+    )
+    assert len(seen_qa) == 1
+
+
+@pytest.mark.asyncio
+async def test_final_qa_never_starts_when_the_render_did_not_complete() -> None:
+    seen_qa: list[FinalQAActivityInput] = []
+    state = await run_project(
+        gate_activity("PASS", "FINAL_QA_PASSED", seen_qa),
+        render=await render_activity(status="render_failed"),
+    )
+    assert state.status == "render_failed"
+    assert seen_qa == []
+    assert "render" not in state.completed_stages
+    assert "final_editorial_qa" not in state.completed_stages
 
 
 @pytest.mark.asyncio
@@ -349,9 +477,7 @@ def test_the_editorial_call_reserves_and_reconciles_exactly_once(
         assert attempts[0].status == "succeeded"
 
         provider_attempts = session.scalars(select(ProviderAttempt)).all()
-        final_attempts = [
-            row for row in provider_attempts if row.operation == "final_editorial_qa"
-        ]
+        final_attempts = [row for row in provider_attempts if row.operation == "final_editorial_qa"]
         assert len(final_attempts) == 1
         assert final_attempts[0].status == "SUCCEEDED"
         assert final_attempts[0].actual_cost > 0
@@ -458,9 +584,7 @@ def test_a_provider_timeout_is_recorded_and_the_retry_reuses_the_attempt_identit
         assert (
             len(
                 session.scalars(
-                    select(ProviderAttempt).where(
-                        ProviderAttempt.operation == "final_editorial_qa"
-                    )
+                    select(ProviderAttempt).where(ProviderAttempt.operation == "final_editorial_qa")
                 ).all()
             )
             <= 2

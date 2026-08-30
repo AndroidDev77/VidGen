@@ -21,7 +21,7 @@ from services.continuity.bindings import make_bundle
 from services.continuity.regeneration import ContinuityRegenerator
 from tests.review_fixtures import SHOT_COUNT, ProjectGraph, build_project_graph
 from vidgen.db.animation_models import AnimationGeneratedVideo, AnimationItem
-from vidgen.db.models import Project
+from vidgen.db.models import Project, RenderJob
 from vidgen.db.review_models import ApiIdempotencyRecord, ProjectUIEvent, RenderApproval
 from vidgen.db.script_models import Script, ScriptSegment
 from vidgen.db.storyboard_models import StoryboardShotRecord
@@ -737,6 +737,66 @@ def test_render_retrieval(client: TestClient, graph: ProjectGraph) -> None:
     assert body["integrated_loudness_lufs"] == -16.0
     assert body["srt_asset_id"] == str(graph.srt_asset_id)
     assert body["webvtt_asset_id"] == str(graph.webvtt_asset_id)
+
+
+def test_render_projection_reports_t17b_execution_state(
+    client: TestClient, graph: ProjectGraph
+) -> None:
+    body = client.get(api(graph.project_id, "/render"), headers=OWNER).json()
+    # A completed, verified, current render is downloadable; the projection
+    # carries the execution state the dashboard shows while one is running.
+    assert body["downloadable"] is True
+    assert body["output_sha256"] is not None
+    assert body["failure_code"] is None
+    assert body["progress_percent"] >= 0
+    assert body["cancel_requested"] is False
+
+
+def test_downloading_the_render_resolves_the_persisted_final_asset(
+    client: TestClient, graph: ProjectGraph
+) -> None:
+    render = client.get(api(graph.project_id, "/render"), headers=OWNER).json()
+    response = client.get(api(graph.project_id, "/render/download"), headers=OWNER)
+    assert response.status_code == 200
+    body = response.json()
+    # The download is the render's own persisted final asset, not a placeholder.
+    assert body["asset_id"] == render["final_video_asset_id"]
+    assert body["url"]
+    assert body["expires_in_seconds"] == 900
+
+
+def test_an_incomplete_render_is_never_offered_as_the_deliverable(
+    client: TestClient,
+    graph: ProjectGraph,
+    review_client: tuple[TestClient, sessionmaker[Session], FakeWorkflowController],
+) -> None:
+    with review_client[1]() as session:
+        job = session.scalars(
+            select(RenderJob).where(RenderJob.project_id == graph.project_id)
+        ).one()
+        job.status = "render_rendering"
+        job.output_sha256 = None
+        job.measured_duration_us = None
+        job.completed_at = None
+        job.progress_percent = 55
+        job.checkpoint = "ffmpeg"
+        session.commit()
+    response = client.get(api(graph.project_id, "/render/download"), headers=OWNER)
+    assert response.status_code == 409
+    assert response.json()["code"] == "render_not_verified"
+    body = client.get(api(graph.project_id, "/render"), headers=OWNER).json()
+    assert body["downloadable"] is False
+    assert body["progress_percent"] == 55
+    assert body["checkpoint"] == "ffmpeg"
+
+
+def test_a_foreign_project_cannot_download_a_render(
+    client: TestClient, graph: ProjectGraph
+) -> None:
+    response = client.get(
+        api(graph.project_id, "/render/download"), headers={"X-VidGen-User": "owner-b"}
+    )
+    assert response.status_code == 404
 
 
 def test_verified_render_can_be_approved(
