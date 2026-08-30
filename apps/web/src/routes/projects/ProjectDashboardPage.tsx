@@ -152,7 +152,12 @@ export function ProjectDashboardPage(): JSX.Element {
       void queryClient.invalidateQueries({ queryKey: queryKeys.projects() });
       void navigate("/projects");
     },
+    onError: () => {},
   });
+  const removeErrorMessage =
+    remove.isError
+      ? "Delete failed — this project has generated data that cannot yet be removed automatically. Delete support for projects with pipeline data is coming soon."
+      : null;
 
   if (project.isPending) {
     return <LoadingState label="Loading the project" rows={3} />;
@@ -223,7 +228,7 @@ export function ProjectDashboardPage(): JSX.Element {
 
       {start.isError && <ErrorState error={start.error} />}
       {cancel.isError && <ErrorState error={cancel.error} />}
-      {remove.isError && <ErrorState error={remove.error} />}
+      {removeErrorMessage && <Body1 as="p">{removeErrorMessage}</Body1>}
 
       <StatTiles>
         <StatTile

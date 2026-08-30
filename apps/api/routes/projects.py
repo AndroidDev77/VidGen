@@ -4,7 +4,7 @@ from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
-from sqlalchemy import select
+from sqlalchemy import delete as sql_delete, exc as sql_exc, select
 from sqlalchemy.orm import Session
 
 from apps.api.auth import Principal, get_current_user
@@ -36,7 +36,7 @@ from services.narration.voice_profiles import (
 )
 from vidgen.contracts.review import ApiErrorField
 from vidgen.db.cost_models import ProjectBudget
-from vidgen.db.models import Asset, Project, SourceVideo
+from vidgen.db.models import Asset, Project, SourceVideo, asset_dependencies
 from vidgen.db.workflow_models import ProjectWorkflowRun
 from vidgen.review.workflow_control import WorkflowController
 from vidgen.db.repositories import ProjectRepository
@@ -374,8 +374,24 @@ def delete_project(
             blob_store.delete(asset.storage_key)
         except Exception:
             pass
-    session.delete(project)
-    session.commit()
+    # asset_dependencies.parent_asset_id has RESTRICT — clear dependency rows
+    # that point to this project's assets before the cascade hits the assets table.
+    asset_ids = [a.id for a in assets]
+    if asset_ids:
+        session.execute(
+            sql_delete(asset_dependencies).where(
+                asset_dependencies.c.parent_asset_id.in_(asset_ids)
+            )
+        )
+    try:
+        session.delete(project)
+        session.commit()
+    except sql_exc.IntegrityError as exc:
+        session.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="project_has_references",
+        ) from exc
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
