@@ -18,6 +18,15 @@
       "title": "Schema Version",
       "type": "string"
     },
+    "sidecar_asset_ids": {
+      "default": [],
+      "items": {
+        "format": "uuid",
+        "type": "string"
+      },
+      "title": "Sidecar Asset Ids",
+      "type": "array"
+    },
     "source_video_id": {
       "format": "uuid",
       "title": "Source Video Id",
