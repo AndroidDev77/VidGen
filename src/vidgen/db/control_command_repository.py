@@ -196,18 +196,29 @@ class ControlCommandRepository:
 
     # -- claiming ---------------------------------------------------------
     def claimable(self, *, limit: int, now: datetime | None = None) -> list[ControlCommandRecord]:
-        """Candidate commands: pending and due, or claimed past their lease.
+        """Candidate commands: pending and due, or holding an expired lease.
 
         A lease that has expired is recovered rather than abandoned; the worker
         that held it may be gone, and the command's own attempt bound is what
-        stops a genuinely poisonous command from cycling forever.
+        stops a genuinely poisonous command from cycling forever. That covers
+        ``dispatching`` as well as ``claimed``: a dispatcher can die at either
+        point, and re-running the handler adopts the deterministic workflow
+        instead of starting a second one.
         """
         moment = now or _now()
         statement = (
             select(ControlCommandRecord)
             .where(
                 ControlCommandRecord.status.in_(
-                    [ControlCommandStatus.PENDING.value, ControlCommandStatus.CLAIMED.value]
+                    [
+                        ControlCommandStatus.PENDING.value,
+                        ControlCommandStatus.CLAIMED.value,
+                        # A dispatcher killed between taking the lease and
+                        # recording the started workflow leaves the row here.
+                        # Without this it would never be looked at again, so
+                        # the command would be permanently stranded.
+                        ControlCommandStatus.DISPATCHING.value,
+                    ]
                 ),
                 ControlCommandRecord.attempt < ControlCommandRecord.max_attempts,
             )
@@ -250,7 +261,11 @@ class ControlCommandRepository:
                 ControlCommandRecord.id == record.id,
                 ControlCommandRecord.row_version == expected_version,
                 ControlCommandRecord.status.in_(
-                    [ControlCommandStatus.PENDING.value, ControlCommandStatus.CLAIMED.value]
+                    [
+                        ControlCommandStatus.PENDING.value,
+                        ControlCommandStatus.CLAIMED.value,
+                        ControlCommandStatus.DISPATCHING.value,
+                    ]
                 ),
                 ControlCommandRecord.attempt < ControlCommandRecord.max_attempts,
             )
@@ -463,6 +478,64 @@ class ControlCommandRepository:
                 "progress_phase": "cancelled",
             },
             now=moment,
+        )
+
+    def request_cancellation(
+        self, record: ControlCommandRecord, *, now: datetime | None = None
+    ) -> bool:
+        """Record durably that the owner wants a dispatched command stopped.
+
+        The request thread must not be what cancels a Temporal workflow: it can
+        die between marking the row and reaching the cluster, and the command
+        would then read ``cancelled`` while the workflow kept spending. The
+        dispatcher owns the cancellation, and this row is what tells it to.
+
+        ``False`` means the request changed nothing - the command already had a
+        cancellation pending, or it moved on before the update landed.
+        """
+        moment = now or _now()
+        changed = self._update(
+            update(ControlCommandRecord)
+            .where(
+                ControlCommandRecord.id == record.id,
+                ControlCommandRecord.row_version == record.row_version,
+                ControlCommandRecord.cancel_requested_at.is_(None),
+                ControlCommandRecord.status.in_(
+                    [
+                        ControlCommandStatus.DISPATCHING.value,
+                        ControlCommandStatus.RUNNING.value,
+                        ControlCommandStatus.AWAITING_REVIEW.value,
+                    ]
+                ),
+            )
+            .values(
+                cancel_requested_at=moment,
+                waiting_reason="cancellation_requested",
+                row_version=record.row_version + 1,
+                updated_at=moment,
+            )
+        )
+        self._session.expire(record)
+        return changed == 1
+
+    def cancellation_requested(self, *, limit: int = 50) -> list[ControlCommandRecord]:
+        """Dispatched commands whose owner has asked for them to stop."""
+        return list(
+            self._session.scalars(
+                select(ControlCommandRecord)
+                .where(
+                    ControlCommandRecord.cancel_requested_at.is_not(None),
+                    ControlCommandRecord.status.in_(
+                        [
+                            ControlCommandStatus.DISPATCHING.value,
+                            ControlCommandStatus.RUNNING.value,
+                            ControlCommandStatus.AWAITING_REVIEW.value,
+                        ]
+                    ),
+                )
+                .order_by(ControlCommandRecord.cancel_requested_at, ControlCommandRecord.id)
+                .limit(limit)
+            )
         )
 
     def supersede(self, record: ControlCommandRecord, *, reason: str) -> bool:

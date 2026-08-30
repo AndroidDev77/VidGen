@@ -39,6 +39,18 @@ from vidgen.review.errors import ReviewError, conflict, not_found
 from vidgen.review.events import ProjectEventService
 
 #: Which pipeline stage each command belongs to, for the project event stream.
+#: Statuses where a real workflow may already be running, so a cancellation
+#: has to reach the cluster rather than only the row. ``dispatching`` is
+#: included because the start may have succeeded and the crash may have come
+#: before the row recorded it.
+_DISPATCHED_OR_STARTING = frozenset(
+    {
+        ControlCommandStatus.DISPATCHING,
+        ControlCommandStatus.RUNNING,
+        ControlCommandStatus.AWAITING_REVIEW,
+    }
+)
+
 _COMMAND_STAGE: dict[ControlCommandType, PipelineStage] = {
     ControlCommandType.REFERENCE_BUILD: PipelineStage.KEYFRAMES,
     ControlCommandType.REFERENCE_GENERATE: PipelineStage.KEYFRAMES,
@@ -154,11 +166,25 @@ class ControlPlaneService:
         return CommandOutcome(command_projection(creation.record), creation.created)
 
     def cancel(self, project: Project, command_id: UUID) -> ControlCommand:
+        """Stop a command, reaching the workflow when one was actually started.
+
+        A command that has not been dispatched has nothing running behind it, so
+        it is cancelled here and now. A dispatched command owns a live Temporal
+        workflow that keeps spending until something tells it to stop, and this
+        request thread is the wrong place to do that: it can die between writing
+        the row and reaching the cluster. So the cancellation is *requested*
+        durably and the dispatcher performs it; the command keeps its current
+        status, and only reaches ``cancelled`` once the workflow has been.
+        """
         record = self._repository.get(project.id, command_id)
         if record is None or record.owner_subject != self._owner:
             raise not_found("command")
+        status = ControlCommandStatus(record.status)
         try:
-            self._repository.cancel(record)
+            if status in _DISPATCHED_OR_STARTING:
+                self._repository.request_cancellation(record)
+            else:
+                self._repository.cancel(record)
         except ControlCommandError as error:
             raise conflict(ApiErrorCode.VALIDATION_FAILED, error.summary) from error
         self._session.flush()

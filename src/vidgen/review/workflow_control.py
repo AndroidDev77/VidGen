@@ -118,6 +118,9 @@ class WorkflowController(Protocol):
 
     def describe_render(self, workflow_id: str) -> RenderActivityResult | None: ...
 
+    def cancel_workflow(self, workflow_id: str) -> bool:
+        """Cancel any dispatched workflow by ID. ``False`` if it is already gone."""
+
 
 class FakeWorkflowController:
     """Deterministic in-memory controller used by tests and local development."""
@@ -143,6 +146,9 @@ class FakeWorkflowController:
         self.final_qa_states: dict[str, FinalQAActivityResult] = {}
         self.renders: dict[str, RenderActivityInput] = {}
         self.render_states: dict[str, RenderActivityResult] = {}
+        self.cancelled_workflows: list[str] = []
+        #: Workflow IDs the fake cluster reports as already gone.
+        self.missing_workflows: set[str] = set()
 
     def start_project(self, request: ProjectWorkflowInput) -> tuple[str, str]:
         workflow_id = project_workflow_id(request.project_id)
@@ -249,6 +255,10 @@ class FakeWorkflowController:
 
     def describe_render(self, workflow_id: str) -> RenderActivityResult | None:
         return self.render_states.get(workflow_id)
+
+    def cancel_workflow(self, workflow_id: str) -> bool:
+        self.cancelled_workflows.append(workflow_id)
+        return workflow_id not in self.missing_workflows
 
 
 class TemporalWorkflowController:
@@ -606,3 +616,23 @@ class TemporalWorkflowController:
 
         result = self._run(run())
         return result if isinstance(result, RenderActivityResult) else None
+
+    def cancel_workflow(self, workflow_id: str) -> bool:
+        """Ask the cluster to cancel a dispatched workflow.
+
+        A workflow that no longer exists is reported as ``False`` rather than
+        raised: the command it belonged to is finished either way, and the
+        dispatcher must still be able to settle the row.
+        """
+        from temporalio.service import RPCError
+
+        async def run() -> bool:
+            client = await self._client()
+            handle = client.get_workflow_handle(workflow_id)  # type: ignore[attr-defined]
+            try:
+                await handle.cancel()
+            except RPCError:
+                return False
+            return True
+
+        return bool(self._run(run()))

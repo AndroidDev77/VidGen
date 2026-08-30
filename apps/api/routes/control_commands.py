@@ -71,8 +71,12 @@ def cancel_command(
 ) -> ControlCommandResponse:
     """Cancel a command that has not reached a terminal state.
 
-    Cancelling records the owner's decision durably; it does not claim to have
-    stopped work that a provider has already been paid for. A command that is
+    A command that was never dispatched has no workflow behind it and is
+    cancelled here. A dispatched command owns a live workflow, so the request is
+    recorded durably (``cancel_requested``) and the command keeps its current
+    status until the dispatcher has actually cancelled that workflow: this
+    endpoint never claims to have stopped work it has not stopped, and never
+    unpays a provider attempt that has already been charged. A command that is
     already terminal is a conflict, not a silent success.
     """
     project = owned_project(session, project_id, principal)

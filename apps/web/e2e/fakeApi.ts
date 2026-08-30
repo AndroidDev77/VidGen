@@ -826,6 +826,7 @@ function commandCollection(state: FakeApiState) {
       dispatched_at: "2026-08-02T10:00:30Z",
       started_at: "2026-08-02T10:00:30Z",
       completed_at: null,
+      cancel_requested: false,
       permitted_actions: ["cancel"],
     })),
     generation_runs: [

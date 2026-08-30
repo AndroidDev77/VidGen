@@ -1042,6 +1042,18 @@ curl -s -X POST -H "$H" $BASE/commands/$COMMAND_ID:retry
 The project dashboard shows the same list, stops polling once nothing can change, and exposes the
 retry that a failed command permits.
 
+Cancelling follows the same rule as dispatching: nothing may claim more than actually happened. A
+command that has not been dispatched has no workflow behind it and is cancelled immediately. A
+command that *has* been dispatched owns a live Temporal workflow, so `:cancel` records the request
+durably (`cancel_requested`) and the command keeps its current status; the dispatcher cancels the
+workflow and only then moves the row to `cancelled`. A cluster that cannot be reached leaves the
+request standing to be retried on the next pass rather than reporting a stop that never happened.
+
+A dispatcher can be killed at any point, including between taking the lease and recording the
+workflow it started. That leaves the command in `dispatching` holding an expired lease, which the
+next dispatcher reclaims within the command's attempt bound; re-running the handler adopts the
+deterministic workflow instead of starting a second one.
+
 ### Continuing a paused project
 
 A project workflow now *completes* at every human pause: references awaiting approval, shots

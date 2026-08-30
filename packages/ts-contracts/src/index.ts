@@ -2685,6 +2685,12 @@ export interface ControlCommand {
   dispatched_at: string | null;
   started_at: string | null;
   completed_at: string | null;
+  /**
+   * True once the owner asked to stop a command that had already been
+   * dispatched. The status stays as it is until the dispatcher has actually
+   * cancelled the workflow, so this never claims a stop that has not happened.
+   */
+  cancel_requested: boolean;
   /** What the owner may do next. Rendered directly; never inferred. */
   permitted_actions: Array<"cancel" | "retry">;
 }

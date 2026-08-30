@@ -118,6 +118,10 @@ class ControlCommandRecord(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     available_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    #: When the owner asked to stop a command that had already been dispatched.
+    #: The request is durable so the dispatcher, not the request thread, is what
+    #: cancels the workflow; the row only reaches ``cancelled`` once it has.
+    cancel_requested_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     generation_run_id: Mapped[UUID | None] = mapped_column(
         ForeignKey("project_generation_runs.id", ondelete="SET NULL")
     )

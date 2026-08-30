@@ -90,6 +90,7 @@ class DispatchReport:
     completed: int = 0
     failed: int = 0
     skipped: int = 0
+    cancelled: int = 0
 
 
 class ControlCommandDispatcher:
@@ -151,6 +152,7 @@ class ControlCommandDispatcher:
                 else:
                     failed += 1
                 session.commit()
+        cancelled = self.honour_cancellations()
         completed = self.settle_running()
         return DispatchReport(
             claimed=claimed,
@@ -158,7 +160,42 @@ class ControlCommandDispatcher:
             completed=completed,
             failed=failed,
             skipped=skipped,
+            cancelled=cancelled,
         )
+
+    # -- owner cancellations ----------------------------------------------
+    def honour_cancellations(self) -> int:
+        """Cancel the workflows behind commands whose owner asked them to stop.
+
+        The API only records the request: a request thread that dies between
+        writing the row and reaching Temporal would otherwise leave a cancelled
+        command with a workflow still spending. Cancelling here means the row
+        reaches ``cancelled`` only after the cluster has been told, and a
+        dispatcher that dies mid-cancellation simply retries on the next pass.
+        """
+        cancelled = 0
+        with self._sessions() as session:
+            repository = ControlCommandRepository(session)
+            for record in repository.cancellation_requested():
+                workflow_id = record.workflow_id
+                if workflow_id:
+                    try:
+                        self._controller.cancel_workflow(workflow_id)
+                    except Exception:
+                        # Leave the request standing; the next pass tries again
+                        # rather than reporting a stop that did not happen.
+                        _LOGGER.warning(
+                            "control command cancellation could not reach the workflow",
+                            extra={
+                                "commandId": str(record.id),
+                                "workflowId": workflow_id,
+                            },
+                        )
+                        continue
+                if repository.cancel(record):
+                    cancelled += 1
+            session.commit()
+        return cancelled
 
     def _dispatch_one(
         self,
@@ -488,13 +525,14 @@ class ControlCommandDispatcher:
                 return
             report = self.run_once()
             passes += 1
-            if report.claimed or report.completed:
+            if report.claimed or report.completed or report.cancelled:
                 _LOGGER.info(
                     "control dispatcher pass",
                     extra={
                         "claimed": report.claimed,
                         "dispatched": report.dispatched,
                         "completed": report.completed,
+                        "cancelled": report.cancelled,
                         "failed": report.failed,
                     },
                 )

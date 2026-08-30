@@ -183,6 +183,11 @@
       "title": "Attempt",
       "type": "integer"
     },
+    "cancel_requested": {
+      "default": false,
+      "title": "Cancel Requested",
+      "type": "boolean"
+    },
     "command_id": {
       "format": "uuid",
       "title": "Command Id",

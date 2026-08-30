@@ -130,6 +130,7 @@ export const commands = {
       dispatched_at: "2026-08-02T10:01:00Z",
       started_at: "2026-08-02T10:01:00Z",
       completed_at: null,
+      cancel_requested: false,
       permitted_actions: ["cancel"],
     },
     {
@@ -159,6 +160,7 @@ export const commands = {
       dispatched_at: null,
       started_at: null,
       completed_at: "2026-08-02T09:10:00Z",
+      cancel_requested: false,
       permitted_actions: ["retry"],
     },
   ],

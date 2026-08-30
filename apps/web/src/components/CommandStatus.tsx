@@ -108,6 +108,9 @@ export function CommandStatus({ projectId, commandId, label }: CommandStatusProp
       {command.workflow_id !== null && (
         <Caption1>Workflow {command.workflow_id}</Caption1>
       )}
+      {command.cancel_requested && (
+        <Caption1>Stopping — waiting for the workflow to cancel.</Caption1>
+      )}
       {command.failure !== null && (
         <Caption1 role="alert">
           {command.failure.code}

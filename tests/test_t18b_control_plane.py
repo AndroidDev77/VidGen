@@ -18,7 +18,7 @@ from uuid import UUID, uuid4
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import MetaData, create_mock_engine, select
+from sqlalchemy import MetaData, create_mock_engine, select, update
 from sqlalchemy.dialects.sqlite import dialect as SQLiteDialect
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.schema import CreateTable
@@ -316,6 +316,147 @@ def test_an_owner_can_cancel_and_retry_a_command_through_the_api(
     assert cancelled.status_code == 200
     assert cancelled.json()["command"]["status"] == "cancelled"
     assert cancelled.json()["command"]["permitted_actions"] == []
+
+
+def test_cancelling_a_dispatched_command_stops_the_workflow_it_started(
+    client: TestClient,
+    graph: ProjectGraph,
+    dispatcher: ControlCommandDispatcher,
+    controller: FakeWorkflowController,
+) -> None:
+    """A cancelled command must stop spending, not only stop being displayed.
+
+    Marking the row alone would leave the Temporal workflow running: the
+    dispatcher owns the cancellation, so the command stays ``running`` until the
+    cluster has actually been told.
+    """
+    created = client.post(
+        api(graph.project_id, "/final-qa:run"),
+        json={"provider": "fake", "adjudicate": False},
+        headers=headers(if_match=1, key="final-qa-1"),
+    ).json()
+    dispatcher.run_once()
+    workflow_id = next(iter(controller.final_qa))
+
+    cancelled = client.post(
+        api(graph.project_id, f"/commands/{created['command_id']}:cancel"), headers=OWNER
+    )
+    assert cancelled.status_code == 200
+    command = cancelled.json()["command"]
+    # The row does not get to claim a stop the cluster has not heard about.
+    assert command["status"] == "running"
+    assert command["cancel_requested"] is True
+    assert command["permitted_actions"] == []
+    assert controller.cancelled_workflows == []
+
+    assert dispatcher.run_once().cancelled == 1
+    assert controller.cancelled_workflows == [workflow_id]
+    settled = client.get(
+        api(graph.project_id, f"/commands/{created['command_id']}"), headers=OWNER
+    ).json()["command"]
+    assert settled["status"] == "cancelled"
+
+
+def test_a_cancellation_that_cannot_reach_the_workflow_is_retried(
+    client: TestClient,
+    graph: ProjectGraph,
+    dispatcher: ControlCommandDispatcher,
+    controller: FakeWorkflowController,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A cluster that is unreachable must not turn into a false ``cancelled``."""
+    created = client.post(
+        api(graph.project_id, "/final-qa:run"),
+        json={"provider": "fake", "adjudicate": False},
+        headers=headers(if_match=1, key="final-qa-1"),
+    ).json()
+    dispatcher.run_once()
+    client.post(api(graph.project_id, f"/commands/{created['command_id']}:cancel"), headers=OWNER)
+
+    def unreachable(workflow_id: str) -> bool:
+        raise RuntimeError("the cluster is unreachable")
+
+    monkeypatch.setattr(controller, "cancel_workflow", unreachable)
+    assert dispatcher.run_once().cancelled == 0
+    still_running = client.get(
+        api(graph.project_id, f"/commands/{created['command_id']}"), headers=OWNER
+    ).json()["command"]
+    assert still_running["status"] == "running"
+    assert still_running["cancel_requested"] is True
+
+    monkeypatch.undo()
+    assert dispatcher.run_once().cancelled == 1
+    assert (
+        client.get(
+            api(graph.project_id, f"/commands/{created['command_id']}"), headers=OWNER
+        ).json()["command"]["status"]
+        == "cancelled"
+    )
+
+
+def test_a_dispatcher_killed_while_starting_a_workflow_recovers_the_command(
+    client: TestClient,
+    graph: ProjectGraph,
+    dispatcher: ControlCommandDispatcher,
+    controller: FakeWorkflowController,
+    review_client: tuple[TestClient, sessionmaker[Session], FakeWorkflowController],
+) -> None:
+    """``dispatching`` is a real interruption point and must be recoverable.
+
+    The worst case is the ambiguous one: Temporal accepted the start and the
+    transaction that would have recorded it never committed. The row is then
+    ``dispatching`` with no workflow identity while a workflow is genuinely
+    running. Nothing settles that state, so without lease recovery the command
+    would be stranded forever and the workflow would have no owner. Recovery
+    re-runs the handler, which adopts the deterministic workflow rather than
+    starting - and paying for - a second one.
+    """
+    _, factory, _ = review_client
+    created = client.post(
+        api(graph.project_id, "/final-qa:run"),
+        json={"provider": "fake", "adjudicate": False},
+        headers=headers(if_match=1, key="final-qa-1"),
+    ).json()
+    command_id = UUID(created["command_id"])
+
+    assert dispatcher.run_once().dispatched == 1
+    started = dict(controller.final_qa)
+    assert len(started) == 1
+    workflow_id = next(iter(started))
+
+    # The start reached Temporal; the transaction recording it did not commit.
+    with factory() as session:
+        session.execute(
+            update(ControlCommandRecord)
+            .where(ControlCommandRecord.id == command_id)
+            .values(
+                status=ControlCommandStatus.DISPATCHING.value,
+                workflow_id=None,
+                run_id=None,
+                lease_expires_at=datetime.now(UTC) - timedelta(minutes=5),
+                claim_owner="dispatcher-a",
+            )
+        )
+        session.commit()
+
+    # Settling never looks at a dispatching row, so on its own it stays stranded.
+    assert dispatcher.settle_running() == 0
+    with factory() as session:
+        stranded = session.get(ControlCommandRecord, command_id)
+        assert stranded is not None
+        assert stranded.status == ControlCommandStatus.DISPATCHING.value
+
+    report = dispatcher.run_once()
+    assert (report.claimed, report.dispatched) == (1, 1)
+    recovered = client.get(api(graph.project_id, f"/commands/{command_id}"), headers=OWNER).json()[
+        "command"
+    ]
+    assert recovered["status"] == "running"
+    assert recovered["workflow_id"] == workflow_id
+    # Adopted, not duplicated: the interruption cost an attempt, not a second
+    # workflow and not a second paid run.
+    assert dict(controller.final_qa) == started
+    assert recovered["attempt"] == 2
 
 
 def test_a_command_is_not_visible_to_another_owner(client: TestClient, graph: ProjectGraph) -> None:

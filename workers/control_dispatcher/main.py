@@ -121,7 +121,8 @@ def run(arguments: argparse.Namespace) -> int:
         report = dispatcher.run_once()
         print(
             f"claimed={report.claimed} dispatched={report.dispatched} "
-            f"completed={report.completed} failed={report.failed}"
+            f"completed={report.completed} cancelled={report.cancelled} "
+            f"failed={report.failed}"
         )
         return EXIT_OK
     dispatcher.run_forever(

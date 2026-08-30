@@ -126,6 +126,11 @@ ALLOWED_TRANSITIONS: dict[ControlCommandStatus, frozenset[ControlCommandStatus]]
         {
             ControlCommandStatus.RUNNING,
             ControlCommandStatus.PENDING,
+            # A dispatcher that dies mid-start leaves the row here holding an
+            # expired lease. The next dispatcher reclaims it and re-runs the
+            # handler, which adopts the deterministic workflow rather than
+            # starting a second one.
+            ControlCommandStatus.CLAIMED,
             ControlCommandStatus.FAILED,
             ControlCommandStatus.CANCELLED,
         }
@@ -249,6 +254,11 @@ class ControlCommand(StrictContract):
     dispatched_at: datetime | None = None
     started_at: datetime | None = None
     completed_at: datetime | None = None
+    #: True once the owner asked to stop a command that had already been
+    #: dispatched. The command stays in its current status until the dispatcher
+    #: has actually cancelled the workflow, so this never claims a stop that
+    #: has not happened.
+    cancel_requested: bool = False
     #: What the owner may do next. Rendered as buttons; never inferred client-side.
     permitted_actions: list[Literal["cancel", "retry"]] = Field(default_factory=list, max_length=4)
 

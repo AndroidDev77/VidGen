@@ -33,6 +33,10 @@ def permitted_actions(record: ControlCommandRecord) -> list[str]:
         return ["retry"]
     if status in TERMINAL_STATUSES:
         return []
+    if record.cancel_requested_at is not None:
+        # A cancellation is already in flight. Offering the button again would
+        # invite the owner to believe the first request did not take.
+        return []
     return ["cancel"]
 
 
@@ -84,5 +88,6 @@ def command_projection(record: ControlCommandRecord) -> ControlCommand:
         dispatched_at=record.dispatched_at,
         started_at=record.started_at,
         completed_at=record.completed_at,
+        cancel_requested=record.cancel_requested_at is not None,
         permitted_actions=permitted_actions(record),  # type: ignore[arg-type]
     )
