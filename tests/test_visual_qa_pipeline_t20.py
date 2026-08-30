@@ -25,6 +25,7 @@ from services.qa.contracts import AuthoritativeInputSelector, VisualQALineageErr
 from services.qa.fake_visual_agent import FakeDefect, FakeFinding, FakeVisualAgent
 from services.qa.human_review import VisualQAHumanReviewService
 from services.qa.pipeline import VisualQAPipeline
+from tests.project_template import materialize_project
 from tests.visual_qa_fixtures import VisualQAFixture, build_visual_qa_project
 from vidgen.contracts.visual_qa import (
     VisualQADimension,
@@ -49,15 +50,26 @@ def resolver(_session: Session, _storyboard: object, _shot: object) -> str:
     return "a" * 64
 
 
+def build_pipeline_project(session: Session, blob_root: Path, workspace: Path) -> VisualQAFixture:
+    return build_visual_qa_project(session, blob_root, workspace, shot_count=2)
+
+
 @pytest.fixture
 def graph(tmp_path: Path) -> Iterator[tuple[Session, FilesystemBlobStore, VisualQAFixture]]:
+    # Copy the prebuilt project in before opening an engine on the file.
+    fixture = materialize_project(
+        "t20-pipeline",
+        build_pipeline_project,
+        database_path=tmp_path / "pipeline.db",
+        blob_root=tmp_path / "blobs",
+        workspace=tmp_path,
+    )
     engine = create_engine(f"sqlite+pysqlite:///{tmp_path / 'pipeline.db'}")
     Base.metadata.create_all(engine)
     factory = sessionmaker(bind=engine, expire_on_commit=False)
     blob_root = tmp_path / "blobs"
     store = FilesystemBlobStore(blob_root, b"test-secret")
     with factory() as session:
-        fixture = build_visual_qa_project(session, blob_root, tmp_path, shot_count=2)
         yield session, store, fixture
 
 

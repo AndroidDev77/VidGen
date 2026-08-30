@@ -12,6 +12,8 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from services.qa.commands import VisualQACommandOptions, run_visual_qa
 from services.qa.fake_visual_agent import FakeDefect
+from tests.client_fixtures import review_client_context
+from tests.project_template import materialize_project
 from tests.visual_qa_fixtures import VisualQAFixture, build_visual_qa_project
 from vidgen.contracts.visual_qa import VisualQADimension, VisualQATargetType
 from vidgen.db.visual_qa_repository import VisualQARepository
@@ -25,52 +27,63 @@ def resolver(_session: Session, _storyboard: object, _shot: object) -> str:
     return "a" * 64
 
 
+def build_qa_project(session: Session, blob_root: Path, workspace: Path) -> VisualQAFixture:
+    """Two shots, QA already run: one passes, one cannot be adjudicated."""
+    store = FilesystemBlobStore(blob_root, b"test-secret")
+    fixture = build_visual_qa_project(
+        session, blob_root, workspace, owner_subject="owner-a", shot_count=2
+    )
+    asyncio.run(
+        run_visual_qa(
+            session,
+            store,
+            project_id=fixture.project_id,
+            options=VisualQACommandOptions(
+                provider="fake",
+                shot_id=fixture.shot_ids[0],
+                targets=(VisualQATargetType.KEYFRAME, VisualQATargetType.VIDEO),
+            ),
+            identity_resolver=resolver,
+        )
+    )
+    asyncio.run(
+        run_visual_qa(
+            session,
+            store,
+            project_id=fixture.project_id,
+            options=VisualQACommandOptions(
+                provider="fake",
+                shot_id=fixture.shot_ids[1],
+                targets=(VisualQATargetType.VIDEO,),
+                fake_defects={
+                    fixture.shot_ids[1]: FakeDefect(
+                        dimension_confidence={VisualQADimension.CHARACTER_IDENTITY: 0.4},
+                        overall_confidence=0.4,
+                    )
+                },
+            ),
+            identity_resolver=resolver,
+        )
+    )
+    session.commit()
+    return fixture
+
+
 @pytest.fixture
 def qa_client(
-    review_client: tuple[TestClient, sessionmaker[Session], object], tmp_path: Path
+    tmp_path: Path,
 ) -> Iterator[tuple[TestClient, sessionmaker[Session], VisualQAFixture]]:
-    client, factory, _ = review_client
-    blob_root = tmp_path / "blobs"
-    store = FilesystemBlobStore(blob_root, b"test-secret")
-    with factory() as session:
-        fixture = build_visual_qa_project(
-            session, blob_root, tmp_path / "media", owner_subject="owner-a", shot_count=2
-        )
-        # One passing shot and one shot whose adjudication cannot decide.
-        asyncio.run(
-            run_visual_qa(
-                session,
-                store,
-                project_id=fixture.project_id,
-                options=VisualQACommandOptions(
-                    provider="fake",
-                    shot_id=fixture.shot_ids[0],
-                    targets=(VisualQATargetType.KEYFRAME, VisualQATargetType.VIDEO),
-                ),
-                identity_resolver=resolver,
-            )
-        )
-        asyncio.run(
-            run_visual_qa(
-                session,
-                store,
-                project_id=fixture.project_id,
-                options=VisualQACommandOptions(
-                    provider="fake",
-                    shot_id=fixture.shot_ids[1],
-                    targets=(VisualQATargetType.VIDEO,),
-                    fake_defects={
-                        fixture.shot_ids[1]: FakeDefect(
-                            dimension_confidence={VisualQADimension.CHARACTER_IDENTITY: 0.4},
-                            overall_confidence=0.4,
-                        )
-                    },
-                ),
-                identity_resolver=resolver,
-            )
-        )
-        session.commit()
-    yield client, factory, fixture
+    # The project is copied into the control plane's database before the app
+    # opens an engine on it, so the client sees a project that already exists.
+    fixture = materialize_project(
+        "t20-api",
+        build_qa_project,
+        database_path=tmp_path / "review.db",
+        blob_root=tmp_path / "blobs",
+        workspace=tmp_path / "media",
+    )
+    with review_client_context(tmp_path) as (client, factory, _):
+        yield client, factory, fixture
 
 
 def test_project_listing_is_owner_scoped(
