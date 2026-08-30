@@ -1,0 +1,127 @@
+{
+  "$defs": {
+    "PrivacyState": {
+      "description": "The privacy states YouTube accepts. Mirrors the capability registry.",
+      "enum": [
+        "private",
+        "unlisted",
+        "public"
+      ],
+      "title": "PrivacyState",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "description": "The editable YouTube metadata for one publication, at one version.\n\nLimits come from the capability registry and are enforced twice: here, and\nagain by the provider request builder immediately before a write.",
+  "properties": {
+    "caption_language": {
+      "default": "en",
+      "maxLength": 16,
+      "minLength": 2,
+      "title": "Caption Language",
+      "type": "string"
+    },
+    "caption_track_name": {
+      "default": "VidGen recap",
+      "maxLength": 150,
+      "minLength": 1,
+      "title": "Caption Track Name",
+      "type": "string"
+    },
+    "category_id": {
+      "default": "24",
+      "maxLength": 8,
+      "minLength": 1,
+      "pattern": "^[0-9]+$",
+      "title": "Category Id",
+      "type": "string"
+    },
+    "contains_synthetic_media": {
+      "default": true,
+      "title": "Contains Synthetic Media",
+      "type": "boolean"
+    },
+    "default_language": {
+      "default": "en",
+      "maxLength": 16,
+      "minLength": 2,
+      "title": "Default Language",
+      "type": "string"
+    },
+    "description": {
+      "default": "",
+      "maxLength": 5000,
+      "title": "Description",
+      "type": "string"
+    },
+    "embeddable": {
+      "default": true,
+      "title": "Embeddable",
+      "type": "boolean"
+    },
+    "initial_privacy": {
+      "const": "private",
+      "default": "private",
+      "title": "Initial Privacy",
+      "type": "string"
+    },
+    "made_for_kids": {
+      "default": false,
+      "title": "Made For Kids",
+      "type": "boolean"
+    },
+    "metadata_version": {
+      "default": 1,
+      "minimum": 1,
+      "title": "Metadata Version",
+      "type": "integer"
+    },
+    "notify_subscribers": {
+      "default": false,
+      "title": "Notify Subscribers",
+      "type": "boolean"
+    },
+    "requested_privacy": {
+      "$ref": "#/$defs/PrivacyState",
+      "default": "private"
+    },
+    "scheduled_publish_at": {
+      "anyOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Scheduled Publish At"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "tags": {
+      "items": {
+        "type": "string"
+      },
+      "maxItems": 60,
+      "title": "Tags",
+      "type": "array"
+    },
+    "title": {
+      "maxLength": 100,
+      "minLength": 1,
+      "title": "Title",
+      "type": "string"
+    }
+  },
+  "required": [
+    "title"
+  ],
+  "title": "PublicationMetadata",
+  "type": "object"
+}

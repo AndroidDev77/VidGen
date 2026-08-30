@@ -135,6 +135,10 @@ export class VidGenClient {
     return this.request<T>(path, { ...options, method: "PUT" });
   }
 
+  async delete<T>(path: string, options: Omit<RequestOptions, "method" | "body"> = {}) {
+    return this.request<T>(path, { ...options, method: "DELETE" });
+  }
+
   /** The absolute URL of a streaming endpoint. */
   streamUrl(path: string, query: Record<string, string | number> = {}): string {
     return this.buildUrl(path, query);

@@ -15,6 +15,7 @@ from apps.api.routes import (
     events,
     final_editorial,
     projects,
+    publications,
     references,
     renders,
     repair,
@@ -26,6 +27,7 @@ from apps.api.routes import (
     uploads,
     visual_qa,
     workflows,
+    youtube_connections,
 )
 from apps.api.settings import get_settings
 from vidgen.telemetry.bootstrap import initialize_telemetry
@@ -67,6 +69,8 @@ def create_app() -> FastAPI:
         reviews,
         visual_qa,
         final_editorial,
+        youtube_connections,
+        publications,
     ):
         application.include_router(module.router, prefix="/api/v1")
     register_error_handlers(application)

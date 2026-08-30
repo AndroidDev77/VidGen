@@ -10,13 +10,18 @@ from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
+import vidgen.db
 import vidgen.db.models
 import vidgen.db.script_models
 import vidgen.db.upload_models  # noqa: F401
 from apps.api.dependencies import get_blob_store, get_session
 from apps.api.main import create_app
 from apps.api.settings import APISettings, get_settings
-from tests.client_fixtures import ReviewClient, review_client_context
+from tests.client_fixtures import (
+    ReviewClient,
+    publication_client_context,
+    review_client_context,
+)
 from vidgen.db.base import Base
 from vidgen.storage.blob import FilesystemBlobStore
 
@@ -148,4 +153,10 @@ def file_sha256(path: Path) -> str:
 @pytest.fixture
 def review_client(tmp_path: Path) -> Iterator[ReviewClient]:
     with review_client_context(tmp_path) as client:
+        yield client
+
+
+@pytest.fixture
+def publication_client(tmp_path: Path) -> Iterator[ReviewClient]:
+    with publication_client_context(tmp_path) as client:
         yield client

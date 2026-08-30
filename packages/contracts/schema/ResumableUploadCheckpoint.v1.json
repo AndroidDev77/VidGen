@@ -1,0 +1,151 @@
+{
+  "additionalProperties": false,
+  "description": "The durable state of one resumable upload session.\n\nThe session URI itself is a bearer credential: it is encrypted at rest and\nis deliberately absent from this contract. What is projected is its\n*identity hash*, which is enough to prove two checkpoints refer to the same\nsession without being enough to upload to it.",
+  "properties": {
+    "chunk_bytes": {
+      "exclusiveMinimum": 0,
+      "title": "Chunk Bytes",
+      "type": "integer"
+    },
+    "confirmed_offset": {
+      "default": 0,
+      "minimum": 0,
+      "title": "Confirmed Offset",
+      "type": "integer"
+    },
+    "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+    },
+    "encryption_key_version": {
+      "maxLength": 64,
+      "minLength": 1,
+      "title": "Encryption Key Version",
+      "type": "string"
+    },
+    "expires_at": {
+      "anyOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Expires At"
+    },
+    "last_confirmed_at": {
+      "anyOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Last Confirmed At"
+    },
+    "last_response_code": {
+      "anyOf": [
+        {
+          "maximum": 599,
+          "minimum": 100,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Last Response Code"
+    },
+    "provider_attempt_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Provider Attempt Id"
+    },
+    "publication_run_id": {
+      "format": "uuid",
+      "title": "Publication Run Id",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "session_id": {
+      "format": "uuid",
+      "title": "Session Id",
+      "type": "string"
+    },
+    "session_uri_hash": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Session Uri Hash",
+      "type": "string"
+    },
+    "status": {
+      "default": "active",
+      "enum": [
+        "active",
+        "completed",
+        "expired",
+        "ambiguous",
+        "cancelled"
+      ],
+      "title": "Status",
+      "type": "string"
+    },
+    "total_bytes": {
+      "exclusiveMinimum": 0,
+      "title": "Total Bytes",
+      "type": "integer"
+    },
+    "updated_at": {
+      "format": "date-time",
+      "title": "Updated At",
+      "type": "string"
+    },
+    "video_id": {
+      "anyOf": [
+        {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_\\-]+$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Video Id"
+    }
+  },
+  "required": [
+    "session_id",
+    "publication_run_id",
+    "session_uri_hash",
+    "encryption_key_version",
+    "total_bytes",
+    "chunk_bytes",
+    "created_at",
+    "updated_at"
+  ],
+  "title": "ResumableUploadCheckpoint",
+  "type": "object"
+}

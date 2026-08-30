@@ -1,7 +1,7 @@
 metadata description = 'The three continuously running workloads: the review UI, the FastAPI control plane and the Temporal worker.'
 
-import { ContainerResources, ScaleBounds, ProviderToggles, TemporalConfig, FeatureFlags } from './types.bicep'
-import { secretReference, env, applicationSecretNames, commonEnv, temporalEnv } from './app_config.bicep'
+import { ContainerResources, ScaleBounds, ProviderToggles, TemporalConfig, FeatureFlags, YouTubePublisherConfig } from './types.bicep'
+import { secretReference, env, applicationSecretNames, commonEnv, temporalEnv, youtubeEnv } from './app_config.bicep'
 
 @description('Azure region.')
 param location string
@@ -56,6 +56,22 @@ param providers ProviderToggles
 @description('Application feature flags.')
 param features FeatureFlags
 
+@description('T25 YouTube publication configuration.')
+param youtube YouTubePublisherConfig
+
+@description('Per-replica resources for the dedicated publisher worker.')
+param publisherResources ContainerResources = { cpu: '0.5', memory: '1Gi' }
+
+@description('''Replica bounds for the publisher worker. Deliberately small: each
+replica may hold a multi-gigabyte resumable upload open, and the daily YouTube
+upload allowance is far smaller than this worker could saturate.''')
+param publisherScale ScaleBounds = { minReplicas: 1, maxReplicas: 2 }
+
+@description('Concurrent resumable uploads per publisher replica.')
+@minValue(1)
+@maxValue(8)
+param publisherMaxConcurrentUploads int = 2
+
 @description('Per-replica resources for the API.')
 param apiResources ContainerResources
 
@@ -97,14 +113,9 @@ param publicIngressEnabled bool = false
 // the migration role.
 var databaseSecretName = 'postgres-app-url'
 var appSecretNames = applicationSecretNames(providers, databaseSecretName)
-var appEnv = commonEnv(
-  deploymentEnvironment,
-  blobEndpoint,
-  assetsContainerName,
-  databaseSecretName,
-  temporal,
-  providers,
-  features
+var appEnv = concat(
+  commonEnv(deploymentEnvironment, blobEndpoint, assetsContainerName, databaseSecretName, temporal, providers, features),
+  youtubeEnv(youtube, providers)
 )
 var workerTemporalEnv = temporalEnv(temporal)
 
@@ -336,6 +347,92 @@ resource worker 'Microsoft.App/containerApps@2025-01-01' = {
   }
 }
 
+// -- YouTube publisher worker -------------------------------------------------
+// A separate app on a separate task queue. A resumable upload can hold an
+// activity slot for hours, and sharing the project queue would let one long
+// video starve every other project in this environment.
+
+resource publisher 'Microsoft.App/containerApps@2025-01-01' = {
+  name: '${namePrefix}-publisher'
+  location: location
+  tags: tags
+  identity: {
+    type: 'UserAssigned'
+    userAssignedIdentities: {
+      // The same worker identity: ACR pull, Key Vault secret read, Blob read
+      // and telemetry. It is deliberately not granted Blob write - the
+      // publisher only ever reads the final render, the caption and the
+      // thumbnail, and writes nothing back to storage.
+      '${workerIdentity.id}': {}
+    }
+  }
+  properties: {
+    environmentId: environmentId
+    workloadProfileName: 'Consumption'
+    configuration: {
+      // No ingress at all. Like the Temporal worker, this app is reached only
+      // by polling Temporal Cloud outbound, so it exposes no port and has no
+      // address; the OAuth callback is served by the API, never by this worker.
+      activeRevisionsMode: 'Single'
+      maxInactiveRevisions: 10
+      registries: [
+        {
+          server: registryLoginServer
+          identity: workerIdentity.id
+        }
+      ]
+      secrets: [for name in appSecretNames: secretReference(keyVaultUri, workerIdentity.id, name)]
+    }
+    template: {
+      containers: [
+        {
+          name: 'publisher'
+          // The same application image as the API and the worker: one build,
+          // one digest, three entry points.
+          image: appImage
+          resources: {
+            cpu: json(publisherResources.cpu)
+            memory: publisherResources.memory
+          }
+          command: ['python']
+          args: ['-m', 'workers.youtube_publisher.main']
+          env: concat(appEnv, workerTemporalEnv, [
+            env('AZURE_CLIENT_ID', workerIdentity.clientId)
+            env('VIDGEN_SERVICE_NAME', 'vidgen-publisher')
+            env('VIDGEN_PUBLISHER_MAX_CONCURRENT_UPLOADS', string(publisherMaxConcurrentUploads))
+            env('VIDGEN_PUBLISHER_ACTIVITY_THREADS', string(publisherMaxConcurrentUploads))
+            // Long enough for an in-flight chunk to finish and commit its
+            // confirmed offset. Anything unfinished resumes from that offset.
+            env('VIDGEN_PUBLISHER_GRACEFUL_SHUTDOWN_SECONDS', '60')
+          ])
+        }
+      ]
+      scale: {
+        // Never zero while the publisher queue requires polling, and a small
+        // ceiling: this is the backstop on concurrent uploads and on the daily
+        // YouTube upload allowance, not a throughput knob.
+        minReplicas: publisherScale.minReplicas
+        maxReplicas: publisherScale.maxReplicas
+        rules: [
+          {
+            name: 'cpu-utilisation'
+            custom: {
+              type: 'cpu'
+              metadata: {
+                type: 'Utilization'
+                value: '70'
+              }
+            }
+          }
+        ]
+      }
+      // Comfortably above the worker's own graceful-shutdown window, so a
+      // scale-in never cancels an active resumable upload mid-chunk.
+      terminationGracePeriodSeconds: 120
+    }
+  }
+}
+
 // -- Web ----------------------------------------------------------------------
 
 resource web 'Microsoft.App/containerApps@2025-01-01' = {
@@ -448,6 +545,8 @@ output apiFqdn string = api.properties.configuration.ingress.fqdn
 output apiLatestRevision string = api.properties.latestRevisionName
 output workerName string = worker.name
 output workerLatestRevision string = worker.properties.latestRevisionName
+output publisherName string = publisher.name
+output publisherLatestRevision string = publisher.properties.latestRevisionName
 output webName string = web.name
 output webFqdn string = web.properties.configuration.ingress.fqdn
 output webLatestRevision string = web.properties.latestRevisionName

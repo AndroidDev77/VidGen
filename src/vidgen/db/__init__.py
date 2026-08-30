@@ -15,6 +15,7 @@ from . import final_editorial_models as final_editorial_models
 from . import image_generation_models as image_generation_models
 from . import models as models
 from . import narration_models as narration_models
+from . import publication_models as publication_models
 from . import render_models as render_models
 from . import repair_models as repair_models
 from . import review_models as review_models

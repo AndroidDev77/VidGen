@@ -37,8 +37,9 @@ generated asset is content-addressed with its parents, hashes and provider reque
 
 ## Current capabilities
 
-Roadmap tasks T01 through T23 are implemented, and T24 Azure infrastructure is implemented and
-reviewed but not yet validated by a real staging deployment. The per-task detail lives in
+Roadmap tasks T01 through T23 are implemented, T24 Azure infrastructure is implemented and
+reviewed but not yet validated by a real staging deployment, and T25 YouTube publication is
+implemented against a deterministic fake provider and a mocked production adapter. The per-task detail lives in
 [`docs/IMPLEMENTATION_STATUS.md`](docs/IMPLEMENTATION_STATUS.md); in short:
 
 - Versioned Pydantic contracts with exported JSON Schema, a PostgreSQL data model with Alembic
@@ -58,6 +59,9 @@ reviewed but not yet validated by a real staging deployment. The per-task detail
 - Bicep infrastructure for a private-by-default Azure staging environment, with an Azure Blob
   storage backend selected by `VIDGEN_BLOB_BACKEND` and telemetry that exports to Application
   Insights (see [Azure deployment](#azure-deployment)).
+- Restartable YouTube publication: OAuth 2.0 with PKCE, envelope-encrypted refresh credentials, a
+  resumable upload that resumes from YouTube's own confirmed byte offset, captions, thumbnails, and
+  an explicit visibility transition (see [Publishing to YouTube](#publishing-to-youtube)).
 
 One gap still affects what you can observe locally, and it is called out again where it bites:
 
@@ -510,6 +514,71 @@ The worker is the same code path the deployed Azure Container Apps Job runs; it 
 for a completed render or an idempotent reuse, `1` for a failure and `3` for a cancellation, and it
 never creates a render job. Nothing in this path requires Azure or a paid provider credential.
 
+## Publishing to YouTube
+
+The publisher uploads an approved, current, T22-`PASS` render to a YouTube channel the user has
+connected. Every upload starts **private**, never notifies subscribers, and always sets YouTube's
+synthetic-media disclosure; making a video unlisted or public is a separate, explicit action.
+
+### Fake mode (no Google project, no credential, no network)
+
+```bash
+uv run python scripts/connect_youtube.py --provider fake
+uv run python scripts/publish_youtube.py PROJECT_UUID --provider fake
+uv run python scripts/inspect_publication.py PROJECT_UUID
+```
+
+### Connecting a real channel
+
+1. Enable the **YouTube Data API v3** in a Google Cloud project and create an OAuth client ID of
+   type *Web application*.
+2. Register the redirect URI byte for byte. Google permits plaintext only for loopback, so local
+   development uses `http://localhost:8000/api/v1/youtube/oauth:callback`.
+3. Set `VIDGEN_YOUTUBE_OAUTH_CLIENT_ID`, `VIDGEN_YOUTUBE_OAUTH_CLIENT_SECRET`,
+   `VIDGEN_YOUTUBE_OAUTH_REDIRECT_URI` and a token-encryption key (see `.env.example`).
+4. Run the local flow, which opens the consent screen, receives the callback on the loopback
+   redirect, exchanges the code on the backend and seals the refresh credential:
+
+```bash
+uv run python scripts/connect_youtube.py --local
+```
+
+### Publishing
+
+```bash
+uv run python scripts/publish_youtube.py PROJECT_UUID \
+  --provider youtube \
+  --connection-id CONNECTION_UUID \
+  --privacy private
+```
+
+Then, only after checking the private video:
+
+```bash
+uv run python scripts/publish_youtube.py PROJECT_UUID \
+  --visibility unlisted --publication-id PUBLICATION_UUID
+```
+
+A project may publish only when its final render is selected and current, T17 verification passed,
+a T18 approval exists for that exact render, T22 recorded a current `PASS` completion gate for it,
+nothing was invalidated after rendering, and no shot repair is waiting for a human. A refusal names
+the missing prerequisite; it never fabricates a render or bypasses the gate.
+
+An interrupted upload resumes from the offset **YouTube confirms**, never from a local counter and
+never from byte zero. When the outcome genuinely cannot be established - the final chunk's response
+was lost and the session is gone - the publication stops at `HUMAN_REVIEW_REQUIRED` with the
+session evidence preserved, rather than uploading a second copy.
+
+The required scope set is `youtube.upload`, `youtube.force-ssl` and `youtube.readonly`.
+`youtube.upload` alone cannot insert a caption track, which is why the second scope is not optional.
+No YouTube Partner or CMS scope is ever requested.
+
+**Production limitation.** The API still identifies callers with the development `X-VidGen-User`
+header, so this is supported for local development and for an authorised user of a private staging
+environment. Public multi-tenant YouTube OAuth is not production-ready here; real application
+authentication is the blocker. Details in
+[`infra/README.md`](infra/README.md#t25-youtube-publication).
+
 ## Running individual pipeline stages
 
 Each stage has a CLI in `scripts/`, all reading `VIDGEN_DATABASE_URL` and `VIDGEN_BLOB_ROOT` from
@@ -531,6 +600,7 @@ uv run python scripts/run_visual_qa.py PROJECT_ID
 uv run python scripts/run_visual_repair.py PROJECT_ID
 uv run python -m scripts.render_project PROJECT_ID --execute
 uv run python scripts/run_final_editorial_qa.py PROJECT_ID
+uv run python scripts/publish_youtube.py PROJECT_ID --provider fake
 ```
 
 Inspection-only commands that read persisted state without touching a provider:
@@ -540,6 +610,7 @@ uv run python scripts/inspect_references.py PROJECT_ID
 uv run python scripts/inspect_shot_workflow.py PROJECT_ID --storyboard-run-id STORYBOARD_RUN_ID
 uv run python scripts/inspect_visual_qa.py PROJECT_ID
 uv run python scripts/inspect_render.py PROJECT_ID
+uv run python scripts/inspect_publication.py PROJECT_ID
 uv run python scripts/cost_report.py PROJECT_ID
 ```
 

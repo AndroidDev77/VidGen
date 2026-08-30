@@ -1,0 +1,175 @@
+{
+  "$defs": {
+    "ProcessingState": {
+      "description": "A normalized processing outcome, independent of provider spelling.",
+      "enum": [
+        "processing",
+        "succeeded",
+        "failed",
+        "rejected",
+        "unknown"
+      ],
+      "title": "ProcessingState",
+      "type": "string"
+    },
+    "PublicationFailureCode": {
+      "description": "The T23 failure classification for every YouTube operation.\n\nEvery member maps to exactly one operator action, which is why there is no\ngeneric ``ERROR``.",
+      "enum": [
+        "NO_ELIGIBLE_RENDER",
+        "RENDER_NOT_SELECTED",
+        "RENDER_NOT_APPROVED",
+        "COMPLETION_GATE_NOT_PASSED",
+        "STALE_RENDER",
+        "UNRESOLVED_HUMAN_REVIEW",
+        "CROSS_PROJECT_REFERENCE",
+        "MISSING_FINAL_ASSET",
+        "MISSING_CAPTION_ASSET",
+        "INVALID_THUMBNAIL_ASSET",
+        "INVALID_METADATA",
+        "INVALID_SCHEDULE",
+        "CONNECTION_NOT_OWNED",
+        "AUTHENTICATION_REQUIRED",
+        "INVALID_GRANT",
+        "INSUFFICIENT_SCOPE",
+        "CHANNEL_MISMATCH",
+        "QUOTA_EXCEEDED",
+        "UPLOAD_LIMIT_EXCEEDED",
+        "RATE_LIMITED",
+        "RETRYABLE_SERVER_ERROR",
+        "EXPIRED_RESUMABLE_SESSION",
+        "AMBIGUOUS_COMPLETION",
+        "PROCESSING_FAILED",
+        "CAPTION_CONFLICT",
+        "THUMBNAIL_NOT_PERMITTED",
+        "PRIVACY_RESTRICTED",
+        "PROVIDER_REJECTED",
+        "CANCELLED"
+      ],
+      "title": "PublicationFailureCode",
+      "type": "string"
+    },
+    "PublicationPhase": {
+      "description": "The restartable phase a publication run is currently executing.",
+      "enum": [
+        "ELIGIBILITY",
+        "AUTHORIZATION",
+        "UPLOAD_INITIALIZATION",
+        "MEDIA_UPLOAD",
+        "PROCESSING_POLL",
+        "CAPTIONS",
+        "THUMBNAIL",
+        "VERIFICATION",
+        "VISIBILITY",
+        "FINALIZATION"
+      ],
+      "title": "PublicationPhase",
+      "type": "string"
+    },
+    "PublicationStatus": {
+      "description": "The publication state machine.\n\nThe happy path is strictly ordered. Every other member is terminal or a\ndocumented waiting state that a human or an explicit command leaves.",
+      "enum": [
+        "DRAFT",
+        "AUTHORIZATION_REQUIRED",
+        "READY",
+        "UPLOAD_INITIALIZING",
+        "UPLOADING",
+        "PROCESSING",
+        "UPLOADING_CAPTIONS",
+        "UPLOADING_THUMBNAIL",
+        "PRIVATE_READY",
+        "VISIBILITY_UPDATING",
+        "PUBLISHED",
+        "REAUTHORIZATION_REQUIRED",
+        "QUOTA_BLOCKED",
+        "PROCESSING_FAILED",
+        "HUMAN_REVIEW_REQUIRED",
+        "FAILED",
+        "CANCELLED"
+      ],
+      "title": "PublicationStatus",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "description": "The compact ID-only projection an activity returns to the workflow.",
+  "properties": {
+    "confirmed_offset": {
+      "default": 0,
+      "minimum": 0,
+      "title": "Confirmed Offset",
+      "type": "integer"
+    },
+    "failure_code": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/PublicationFailureCode"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "phase": {
+      "$ref": "#/$defs/PublicationPhase"
+    },
+    "processing_state": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ProcessingState"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "publication_run_id": {
+      "format": "uuid",
+      "title": "Publication Run Id",
+      "type": "string"
+    },
+    "retryable": {
+      "default": false,
+      "title": "Retryable",
+      "type": "boolean"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "status": {
+      "$ref": "#/$defs/PublicationStatus"
+    },
+    "total_bytes": {
+      "default": 0,
+      "minimum": 0,
+      "title": "Total Bytes",
+      "type": "integer"
+    },
+    "video_id": {
+      "anyOf": [
+        {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_\\-]+$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Video Id"
+    }
+  },
+  "required": [
+    "publication_run_id",
+    "status",
+    "phase"
+  ],
+  "title": "PublicationActivityResult",
+  "type": "object"
+}

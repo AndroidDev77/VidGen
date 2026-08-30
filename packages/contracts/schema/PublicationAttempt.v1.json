@@ -1,0 +1,264 @@
+{
+  "$defs": {
+    "PublicationFailure": {
+      "additionalProperties": false,
+      "description": "A structured, renderable publication failure. Never carries a secret.",
+      "properties": {
+        "code": {
+          "$ref": "#/$defs/PublicationFailureCode"
+        },
+        "http_status": {
+          "anyOf": [
+            {
+              "maximum": 599,
+              "minimum": 100,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Http Status"
+        },
+        "occurred_at": {
+          "format": "date-time",
+          "title": "Occurred At",
+          "type": "string"
+        },
+        "provider_reason": {
+          "default": "",
+          "maxLength": 128,
+          "title": "Provider Reason",
+          "type": "string"
+        },
+        "reference_id": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Reference Id"
+        },
+        "remediation": {
+          "default": "",
+          "maxLength": 500,
+          "title": "Remediation",
+          "type": "string"
+        },
+        "retryable": {
+          "default": false,
+          "title": "Retryable",
+          "type": "boolean"
+        },
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "summary": {
+          "maxLength": 500,
+          "title": "Summary",
+          "type": "string"
+        }
+      },
+      "required": [
+        "code",
+        "summary"
+      ],
+      "title": "PublicationFailure",
+      "type": "object"
+    },
+    "PublicationFailureCode": {
+      "description": "The T23 failure classification for every YouTube operation.\n\nEvery member maps to exactly one operator action, which is why there is no\ngeneric ``ERROR``.",
+      "enum": [
+        "NO_ELIGIBLE_RENDER",
+        "RENDER_NOT_SELECTED",
+        "RENDER_NOT_APPROVED",
+        "COMPLETION_GATE_NOT_PASSED",
+        "STALE_RENDER",
+        "UNRESOLVED_HUMAN_REVIEW",
+        "CROSS_PROJECT_REFERENCE",
+        "MISSING_FINAL_ASSET",
+        "MISSING_CAPTION_ASSET",
+        "INVALID_THUMBNAIL_ASSET",
+        "INVALID_METADATA",
+        "INVALID_SCHEDULE",
+        "CONNECTION_NOT_OWNED",
+        "AUTHENTICATION_REQUIRED",
+        "INVALID_GRANT",
+        "INSUFFICIENT_SCOPE",
+        "CHANNEL_MISMATCH",
+        "QUOTA_EXCEEDED",
+        "UPLOAD_LIMIT_EXCEEDED",
+        "RATE_LIMITED",
+        "RETRYABLE_SERVER_ERROR",
+        "EXPIRED_RESUMABLE_SESSION",
+        "AMBIGUOUS_COMPLETION",
+        "PROCESSING_FAILED",
+        "CAPTION_CONFLICT",
+        "THUMBNAIL_NOT_PERMITTED",
+        "PRIVACY_RESTRICTED",
+        "PROVIDER_REJECTED",
+        "CANCELLED"
+      ],
+      "title": "PublicationFailureCode",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "description": "One instrumented YouTube operation, projected for the dashboard and CLI.",
+  "properties": {
+    "attempt_id": {
+      "format": "uuid",
+      "title": "Attempt Id",
+      "type": "string"
+    },
+    "attempt_number": {
+      "minimum": 1,
+      "title": "Attempt Number",
+      "type": "integer"
+    },
+    "bytes_uploaded": {
+      "default": 0,
+      "minimum": 0,
+      "title": "Bytes Uploaded",
+      "type": "integer"
+    },
+    "completed_at": {
+      "anyOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Completed At"
+    },
+    "confirmed_offset": {
+      "default": 0,
+      "minimum": 0,
+      "title": "Confirmed Offset",
+      "type": "integer"
+    },
+    "failure": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/PublicationFailure"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "http_status": {
+      "anyOf": [
+        {
+          "maximum": 599,
+          "minimum": 100,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Http Status"
+    },
+    "latency_ms": {
+      "default": 0,
+      "minimum": 0,
+      "title": "Latency Ms",
+      "type": "integer"
+    },
+    "operation": {
+      "maxLength": 64,
+      "minLength": 1,
+      "title": "Operation",
+      "type": "string"
+    },
+    "provider": {
+      "maxLength": 64,
+      "minLength": 1,
+      "title": "Provider",
+      "type": "string"
+    },
+    "provider_attempt_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Provider Attempt Id"
+    },
+    "provider_request_id": {
+      "default": "",
+      "maxLength": 255,
+      "title": "Provider Request Id",
+      "type": "string"
+    },
+    "publication_run_id": {
+      "format": "uuid",
+      "title": "Publication Run Id",
+      "type": "string"
+    },
+    "quota_units": {
+      "default": 0,
+      "minimum": 0,
+      "title": "Quota Units",
+      "type": "integer"
+    },
+    "retry_count": {
+      "default": 0,
+      "minimum": 0,
+      "title": "Retry Count",
+      "type": "integer"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "started_at": {
+      "format": "date-time",
+      "title": "Started At",
+      "type": "string"
+    },
+    "status": {
+      "default": "started",
+      "enum": [
+        "started",
+        "succeeded",
+        "failed"
+      ],
+      "title": "Status",
+      "type": "string"
+    }
+  },
+  "required": [
+    "attempt_id",
+    "publication_run_id",
+    "operation",
+    "attempt_number",
+    "provider",
+    "started_at"
+  ],
+  "title": "PublicationAttempt",
+  "type": "object"
+}

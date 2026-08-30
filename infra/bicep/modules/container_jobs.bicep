@@ -77,7 +77,10 @@ param keyVaultName string
 
 // -- migration ----------------------------------------------------------------
 
-var migrationSecretNames = applicationSecretNames(providers, 'postgres-migration-url')
+// The migration job applies a schema; it never publishes. Mounting the YouTube
+// secrets here would widen their blast radius for no benefit.
+var jobProviders ProviderToggles = union(providers, { youtube: false })
+var migrationSecretNames = applicationSecretNames(jobProviders, 'postgres-migration-url')
 var migrationEnv = commonEnv(
   deploymentEnvironment,
   blobEndpoint,
@@ -153,7 +156,7 @@ resource migration 'Microsoft.App/jobs@2025-01-01' = {
 
 // -- render -------------------------------------------------------------------
 
-var renderSecretNames = applicationSecretNames(providers, 'postgres-app-url')
+var renderSecretNames = applicationSecretNames(jobProviders, 'postgres-app-url')
 var appEnv = commonEnv(
   deploymentEnvironment,
   blobEndpoint,
@@ -303,6 +306,10 @@ var smokeProviders ProviderToggles = {
   elevenlabs: false
   voicestudio: false
   opensubtitles: false
+  // T25 included: the smoke test must never mount the YouTube OAuth client
+  // secret or the credential-envelope key, and must never call YouTube. It
+  // runs against the deterministic fake publisher like every other route.
+  youtube: false
 }
 var smokeSecretNames = applicationSecretNames(smokeProviders, 'postgres-app-url')
 var smokeEnv = commonEnv(

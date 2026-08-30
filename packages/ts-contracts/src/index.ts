@@ -2336,3 +2336,249 @@ export interface FinalCompletionGateProjection {
   gate_version: string;
   row_version: number;
 }
+
+// --- T25 YouTube publication --------------------------------------------------
+// Mirrors src/vidgen/contracts/publication.py and apps/api/schemas/publications.py.
+// Nothing here has a field for a token, an authorization code, a resumable
+// session URI or a raw provider payload, because none of those ever reaches the
+// browser.
+
+export type PublicationStatus =
+  | "DRAFT"
+  | "AUTHORIZATION_REQUIRED"
+  | "READY"
+  | "UPLOAD_INITIALIZING"
+  | "UPLOADING"
+  | "PROCESSING"
+  | "UPLOADING_CAPTIONS"
+  | "UPLOADING_THUMBNAIL"
+  | "PRIVATE_READY"
+  | "VISIBILITY_UPDATING"
+  | "PUBLISHED"
+  | "REAUTHORIZATION_REQUIRED"
+  | "QUOTA_BLOCKED"
+  | "PROCESSING_FAILED"
+  | "HUMAN_REVIEW_REQUIRED"
+  | "FAILED"
+  | "CANCELLED";
+
+export type PublicationPhase =
+  | "ELIGIBILITY"
+  | "AUTHORIZATION"
+  | "UPLOAD_INITIALIZATION"
+  | "MEDIA_UPLOAD"
+  | "PROCESSING_POLL"
+  | "CAPTIONS"
+  | "THUMBNAIL"
+  | "VERIFICATION"
+  | "VISIBILITY"
+  | "FINALIZATION";
+
+export type PrivacyState = "private" | "unlisted" | "public";
+
+export type ProcessingState =
+  | "processing"
+  | "succeeded"
+  | "failed"
+  | "rejected"
+  | "unknown";
+
+export type PublicationAssetKind = "video" | "caption" | "thumbnail";
+
+export type PublicationAssetStatus =
+  | "pending"
+  | "in_progress"
+  | "succeeded"
+  | "skipped"
+  | "failed";
+
+export type YouTubeConnectionStatus =
+  | "connected"
+  | "reauthorization_required"
+  | "revoked"
+  | "disconnected";
+
+export interface YouTubeChannelProjection {
+  channel_id: string;
+  title: string;
+  thumbnail_url: string;
+  custom_url: string;
+}
+
+export interface YouTubeConnectionProjection {
+  connection_id: UUID;
+  channel: YouTubeChannelProjection;
+  status: YouTubeConnectionStatus | string;
+  granted_scopes: string[];
+  /** The envelope key *version* only. Never the key and never ciphertext. */
+  encryption_key_version: string;
+  credential_expires_at: string | null;
+  last_verified_at: string | null;
+  error_code: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface YouTubeConnectionCollection {
+  items: YouTubeConnectionProjection[];
+  oauth_configured: boolean;
+  /** False until real application authentication exists; stated, not implied. */
+  production_authentication_available: boolean;
+}
+
+export interface OAuthStartRequest {
+  redirect_target: string;
+}
+
+export interface OAuthStartResponse {
+  state_id: UUID;
+  authorization_url: string;
+  expires_at: string;
+  row_version: number;
+}
+
+export interface OAuthCallbackResponse {
+  connection_id: UUID;
+  channel: YouTubeChannelProjection;
+  status: string;
+  redirect_target: string;
+}
+
+export interface DisconnectResponse {
+  connection_id: UUID;
+  status: string;
+  revoked: boolean;
+}
+
+export interface PublicationMetadataRequest {
+  title: string;
+  description: string;
+  tags: string[];
+  category_id: string;
+  default_language: string;
+  caption_language: string;
+  caption_track_name: string;
+  made_for_kids: boolean;
+  /** YouTube's status.containsSyntheticMedia. Always sent for VidGen output. */
+  contains_synthetic_media: boolean;
+  embeddable: boolean;
+  notify_subscribers: boolean;
+  requested_privacy: PrivacyState;
+  scheduled_publish_at: string | null;
+}
+
+export interface PublicationCreateRequest {
+  connection_id: UUID;
+  thumbnail_asset_id?: UUID | null;
+  metadata?: PublicationMetadataRequest | null;
+}
+
+export interface PublicationStartRequest {
+  resume: boolean;
+}
+
+export interface PublicationCancelRequest {
+  reason: string;
+}
+
+export interface PublicationVisibilityRequest {
+  privacy: PrivacyState;
+  scheduled_publish_at: string | null;
+  notify_subscribers: boolean;
+}
+
+export interface PublicationFailureProjection {
+  code: string;
+  summary: string;
+  retryable: boolean;
+  http_status: number | null;
+  remediation: string;
+}
+
+export interface PublicationAssetProjection {
+  kind: PublicationAssetKind | string;
+  status: PublicationAssetStatus | string;
+  local_asset_id: UUID | null;
+  provider_resource_id: string;
+  language: string;
+  name: string;
+  byte_size: number;
+  error_code: string | null;
+  error_summary: string | null;
+}
+
+export interface PublicationAttemptProjection {
+  attempt_id: UUID;
+  operation: string;
+  status: string;
+  provider: string;
+  latency_ms: number;
+  /** A YouTube rate-limit quantity, never a monetary charge. */
+  quota_units: number;
+  failure_code: string | null;
+  started_at: string;
+  completed_at: string | null;
+}
+
+export interface PublicationProjection {
+  publication_id: UUID;
+  project_id: UUID;
+  connection_id: UUID;
+  channel_id: string;
+  final_render_asset_id: UUID;
+  final_editorial_run_id: UUID;
+  approval_id: UUID | null;
+  publication_identity: string;
+  metadata_version: number;
+  status: PublicationStatus | string;
+  phase: PublicationPhase | string;
+  video_id: string | null;
+  video_url: string;
+  total_bytes: number;
+  confirmed_offset: number;
+  processing_state: ProcessingState | null;
+  caption_status: PublicationAssetStatus | null;
+  caption_track_id: string;
+  thumbnail_status: PublicationAssetStatus | null;
+  requested_privacy: PrivacyState;
+  /** What YouTube reports, not what was requested. */
+  actual_privacy: PrivacyState | null;
+  scheduled_publish_at: string | null;
+  contains_synthetic_media: boolean;
+  made_for_kids: boolean;
+  notify_subscribers: boolean;
+  quota_units: number;
+  capability_profile_version: string;
+  publisher_version: string;
+  gate_version: string;
+  render_identity: string;
+  metadata: PublicationMetadataRequest | null;
+  failure: PublicationFailureProjection | null;
+  row_version: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PublicationDetailProjection extends PublicationProjection {
+  assets: PublicationAssetProjection[];
+  attempts: PublicationAttemptProjection[];
+}
+
+export interface PublicationGateProjection {
+  project_id: UUID;
+  allowed: boolean;
+  final_render_asset_id: UUID | null;
+  final_editorial_run_id: UUID | null;
+  approval_id: UUID | null;
+  caption_asset_id: UUID | null;
+  gate_version: string;
+  failures: PublicationFailureProjection[];
+  warnings: string[];
+  row_version: number;
+}
+
+export interface PublicationCollectionResponse {
+  project_id: UUID;
+  items: PublicationProjection[];
+  gate: PublicationGateProjection;
+}

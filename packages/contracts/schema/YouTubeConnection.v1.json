@@ -1,0 +1,156 @@
+{
+  "$defs": {
+    "ConnectionStatus": {
+      "enum": [
+        "connected",
+        "reauthorization_required",
+        "revoked",
+        "disconnected"
+      ],
+      "title": "ConnectionStatus",
+      "type": "string"
+    },
+    "YouTubeChannel": {
+      "additionalProperties": false,
+      "description": "A channel identity resolved from YouTube, never supplied by a browser.",
+      "properties": {
+        "channel_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_\\-]+$",
+          "title": "Channel Id",
+          "type": "string"
+        },
+        "custom_url": {
+          "default": "",
+          "maxLength": 255,
+          "title": "Custom Url",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "supports_custom_thumbnails": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Supports Custom Thumbnails"
+        },
+        "thumbnail_url": {
+          "default": "",
+          "maxLength": 1000,
+          "title": "Thumbnail Url",
+          "type": "string"
+        },
+        "title": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Title",
+          "type": "string"
+        }
+      },
+      "required": [
+        "channel_id",
+        "title"
+      ],
+      "title": "YouTubeChannel",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "One owner's connected channel. Carries no token, only their fingerprint.",
+  "properties": {
+    "channel": {
+      "$ref": "#/$defs/YouTubeChannel"
+    },
+    "connection_id": {
+      "format": "uuid",
+      "title": "Connection Id",
+      "type": "string"
+    },
+    "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+    },
+    "credential_expires_at": {
+      "anyOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Credential Expires At"
+    },
+    "encryption_key_version": {
+      "default": "",
+      "maxLength": 64,
+      "title": "Encryption Key Version",
+      "type": "string"
+    },
+    "granted_scopes": {
+      "items": {
+        "type": "string"
+      },
+      "maxItems": 16,
+      "title": "Granted Scopes",
+      "type": "array"
+    },
+    "last_verified_at": {
+      "anyOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Last Verified At"
+    },
+    "owner_subject": {
+      "maxLength": 255,
+      "minLength": 1,
+      "title": "Owner Subject",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "status": {
+      "$ref": "#/$defs/ConnectionStatus"
+    },
+    "updated_at": {
+      "format": "date-time",
+      "title": "Updated At",
+      "type": "string"
+    }
+  },
+  "required": [
+    "connection_id",
+    "owner_subject",
+    "channel",
+    "status",
+    "created_at",
+    "updated_at"
+  ],
+  "title": "YouTubeConnection",
+  "type": "object"
+}

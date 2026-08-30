@@ -1,0 +1,492 @@
+{
+  "$defs": {
+    "PrivacyState": {
+      "description": "The privacy states YouTube accepts. Mirrors the capability registry.",
+      "enum": [
+        "private",
+        "unlisted",
+        "public"
+      ],
+      "title": "PrivacyState",
+      "type": "string"
+    },
+    "ProcessingState": {
+      "description": "A normalized processing outcome, independent of provider spelling.",
+      "enum": [
+        "processing",
+        "succeeded",
+        "failed",
+        "rejected",
+        "unknown"
+      ],
+      "title": "ProcessingState",
+      "type": "string"
+    },
+    "PublicationAssetStatus": {
+      "enum": [
+        "pending",
+        "in_progress",
+        "succeeded",
+        "skipped",
+        "failed"
+      ],
+      "title": "PublicationAssetStatus",
+      "type": "string"
+    },
+    "PublicationFailure": {
+      "additionalProperties": false,
+      "description": "A structured, renderable publication failure. Never carries a secret.",
+      "properties": {
+        "code": {
+          "$ref": "#/$defs/PublicationFailureCode"
+        },
+        "http_status": {
+          "anyOf": [
+            {
+              "maximum": 599,
+              "minimum": 100,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Http Status"
+        },
+        "occurred_at": {
+          "format": "date-time",
+          "title": "Occurred At",
+          "type": "string"
+        },
+        "provider_reason": {
+          "default": "",
+          "maxLength": 128,
+          "title": "Provider Reason",
+          "type": "string"
+        },
+        "reference_id": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Reference Id"
+        },
+        "remediation": {
+          "default": "",
+          "maxLength": 500,
+          "title": "Remediation",
+          "type": "string"
+        },
+        "retryable": {
+          "default": false,
+          "title": "Retryable",
+          "type": "boolean"
+        },
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "summary": {
+          "maxLength": 500,
+          "title": "Summary",
+          "type": "string"
+        }
+      },
+      "required": [
+        "code",
+        "summary"
+      ],
+      "title": "PublicationFailure",
+      "type": "object"
+    },
+    "PublicationFailureCode": {
+      "description": "The T23 failure classification for every YouTube operation.\n\nEvery member maps to exactly one operator action, which is why there is no\ngeneric ``ERROR``.",
+      "enum": [
+        "NO_ELIGIBLE_RENDER",
+        "RENDER_NOT_SELECTED",
+        "RENDER_NOT_APPROVED",
+        "COMPLETION_GATE_NOT_PASSED",
+        "STALE_RENDER",
+        "UNRESOLVED_HUMAN_REVIEW",
+        "CROSS_PROJECT_REFERENCE",
+        "MISSING_FINAL_ASSET",
+        "MISSING_CAPTION_ASSET",
+        "INVALID_THUMBNAIL_ASSET",
+        "INVALID_METADATA",
+        "INVALID_SCHEDULE",
+        "CONNECTION_NOT_OWNED",
+        "AUTHENTICATION_REQUIRED",
+        "INVALID_GRANT",
+        "INSUFFICIENT_SCOPE",
+        "CHANNEL_MISMATCH",
+        "QUOTA_EXCEEDED",
+        "UPLOAD_LIMIT_EXCEEDED",
+        "RATE_LIMITED",
+        "RETRYABLE_SERVER_ERROR",
+        "EXPIRED_RESUMABLE_SESSION",
+        "AMBIGUOUS_COMPLETION",
+        "PROCESSING_FAILED",
+        "CAPTION_CONFLICT",
+        "THUMBNAIL_NOT_PERMITTED",
+        "PRIVACY_RESTRICTED",
+        "PROVIDER_REJECTED",
+        "CANCELLED"
+      ],
+      "title": "PublicationFailureCode",
+      "type": "string"
+    },
+    "PublicationPhase": {
+      "description": "The restartable phase a publication run is currently executing.",
+      "enum": [
+        "ELIGIBILITY",
+        "AUTHORIZATION",
+        "UPLOAD_INITIALIZATION",
+        "MEDIA_UPLOAD",
+        "PROCESSING_POLL",
+        "CAPTIONS",
+        "THUMBNAIL",
+        "VERIFICATION",
+        "VISIBILITY",
+        "FINALIZATION"
+      ],
+      "title": "PublicationPhase",
+      "type": "string"
+    },
+    "PublicationStatus": {
+      "description": "The publication state machine.\n\nThe happy path is strictly ordered. Every other member is terminal or a\ndocumented waiting state that a human or an explicit command leaves.",
+      "enum": [
+        "DRAFT",
+        "AUTHORIZATION_REQUIRED",
+        "READY",
+        "UPLOAD_INITIALIZING",
+        "UPLOADING",
+        "PROCESSING",
+        "UPLOADING_CAPTIONS",
+        "UPLOADING_THUMBNAIL",
+        "PRIVATE_READY",
+        "VISIBILITY_UPDATING",
+        "PUBLISHED",
+        "REAUTHORIZATION_REQUIRED",
+        "QUOTA_BLOCKED",
+        "PROCESSING_FAILED",
+        "HUMAN_REVIEW_REQUIRED",
+        "FAILED",
+        "CANCELLED"
+      ],
+      "title": "PublicationStatus",
+      "type": "string"
+    },
+    "PublicationWarning": {
+      "additionalProperties": false,
+      "description": "A non-blocking observation surfaced to the dashboard and the CLI.",
+      "properties": {
+        "code": {
+          "maxLength": 64,
+          "minLength": 1,
+          "title": "Code",
+          "type": "string"
+        },
+        "reference_id": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Reference Id"
+        },
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "summary": {
+          "maxLength": 500,
+          "title": "Summary",
+          "type": "string"
+        }
+      },
+      "required": [
+        "code",
+        "summary"
+      ],
+      "title": "PublicationWarning",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "The compact projection returned by the pipeline, API, CLI and activity.\n\nDeliberately free of every credential-shaped field. The dashboard renders\nthis verbatim.",
+  "properties": {
+    "actual_privacy": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/PrivacyState"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "approval_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Approval Id"
+    },
+    "capability_profile_version": {
+      "default": "",
+      "maxLength": 64,
+      "title": "Capability Profile Version",
+      "type": "string"
+    },
+    "caption_status": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/PublicationAssetStatus"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "caption_track_id": {
+      "default": "",
+      "maxLength": 128,
+      "title": "Caption Track Id",
+      "type": "string"
+    },
+    "channel_id": {
+      "maxLength": 128,
+      "minLength": 1,
+      "pattern": "^[A-Za-z0-9_\\-]+$",
+      "title": "Channel Id",
+      "type": "string"
+    },
+    "confirmed_offset": {
+      "default": 0,
+      "minimum": 0,
+      "title": "Confirmed Offset",
+      "type": "integer"
+    },
+    "connection_id": {
+      "format": "uuid",
+      "title": "Connection Id",
+      "type": "string"
+    },
+    "contains_synthetic_media": {
+      "default": true,
+      "title": "Contains Synthetic Media",
+      "type": "boolean"
+    },
+    "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+    },
+    "failure": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/PublicationFailure"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "final_editorial_run_id": {
+      "format": "uuid",
+      "title": "Final Editorial Run Id",
+      "type": "string"
+    },
+    "final_render_asset_id": {
+      "format": "uuid",
+      "title": "Final Render Asset Id",
+      "type": "string"
+    },
+    "idempotency_key": {
+      "maxLength": 255,
+      "minLength": 1,
+      "title": "Idempotency Key",
+      "type": "string"
+    },
+    "made_for_kids": {
+      "default": false,
+      "title": "Made For Kids",
+      "type": "boolean"
+    },
+    "metadata_version": {
+      "default": 1,
+      "minimum": 1,
+      "title": "Metadata Version",
+      "type": "integer"
+    },
+    "notify_subscribers": {
+      "default": false,
+      "title": "Notify Subscribers",
+      "type": "boolean"
+    },
+    "phase": {
+      "$ref": "#/$defs/PublicationPhase"
+    },
+    "processing_state": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ProcessingState"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "project_id": {
+      "format": "uuid",
+      "title": "Project Id",
+      "type": "string"
+    },
+    "publication_identity": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Publication Identity",
+      "type": "string"
+    },
+    "publication_run_id": {
+      "format": "uuid",
+      "title": "Publication Run Id",
+      "type": "string"
+    },
+    "publisher_version": {
+      "default": "",
+      "maxLength": 64,
+      "title": "Publisher Version",
+      "type": "string"
+    },
+    "quota_units": {
+      "default": 0,
+      "minimum": 0,
+      "title": "Quota Units",
+      "type": "integer"
+    },
+    "requested_privacy": {
+      "$ref": "#/$defs/PrivacyState",
+      "default": "private"
+    },
+    "reused": {
+      "default": false,
+      "title": "Reused",
+      "type": "boolean"
+    },
+    "scheduled_publish_at": {
+      "anyOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Scheduled Publish At"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "status": {
+      "$ref": "#/$defs/PublicationStatus"
+    },
+    "thumbnail_status": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/PublicationAssetStatus"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "total_bytes": {
+      "default": 0,
+      "minimum": 0,
+      "title": "Total Bytes",
+      "type": "integer"
+    },
+    "updated_at": {
+      "format": "date-time",
+      "title": "Updated At",
+      "type": "string"
+    },
+    "video_id": {
+      "anyOf": [
+        {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_\\-]+$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Video Id"
+    },
+    "video_url": {
+      "default": "",
+      "maxLength": 255,
+      "title": "Video Url",
+      "type": "string"
+    },
+    "warnings": {
+      "items": {
+        "$ref": "#/$defs/PublicationWarning"
+      },
+      "maxItems": 32,
+      "title": "Warnings",
+      "type": "array"
+    }
+  },
+  "required": [
+    "publication_run_id",
+    "project_id",
+    "connection_id",
+    "channel_id",
+    "final_render_asset_id",
+    "final_editorial_run_id",
+    "publication_identity",
+    "idempotency_key",
+    "status",
+    "phase",
+    "created_at",
+    "updated_at"
+  ],
+  "title": "PublicationResult",
+  "type": "object"
+}

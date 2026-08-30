@@ -15,6 +15,7 @@ from __future__ import annotations
 from typing import Protocol
 from uuid import UUID
 
+from vidgen.contracts.publication import PublicationActivityInput, PublicationActivityResult
 from vidgen.contracts.shot_workflow import (
     ShotWorkflowCommand,
     ShotWorkflowCommandResult,
@@ -24,11 +25,23 @@ from vidgen.contracts.shot_workflow import (
 from vidgen.contracts.workflow import ProjectWorkflowInput, ProjectWorkflowState
 
 TASK_QUEUE = "vidgen-projects"
+#: T25 uploads run on their own queue so a multi-hour video cannot starve the
+#: ordinary project activities.
+PUBLISHER_TASK_QUEUE = "vidgen-publisher"
 
 
 def project_workflow_id(project_id: UUID) -> str:
     """Return the stable per-project workflow ID a retried start reuses."""
     return f"vidgen-project-{project_id}"
+
+
+def publication_workflow_id(publication_run_id: UUID) -> str:
+    """The stable per-publication workflow ID. A retried start adopts it.
+
+    Keyed by the publication run rather than the project: a project may publish
+    more than one render over its life, and each is its own workflow.
+    """
+    return f"vidgen-publication-{publication_run_id}"
 
 
 class WorkflowController(Protocol):
@@ -47,6 +60,13 @@ class WorkflowController(Protocol):
 
     def describe_shot(self, workflow_id: str) -> ShotWorkflowProgress | None: ...
 
+    def start_publication(self, request: PublicationActivityInput) -> tuple[str, str]:
+        """Start (or adopt) the T25 publication workflow on the publisher queue."""
+
+    def cancel_publication(self, workflow_id: str) -> None: ...
+
+    def describe_publication(self, workflow_id: str) -> PublicationActivityResult | None: ...
+
 
 class FakeWorkflowController:
     """Deterministic in-memory controller used by tests and local development."""
@@ -58,6 +78,10 @@ class FakeWorkflowController:
         self.shot_commands: list[tuple[str, ShotWorkflowCommand]] = []
         self.shot_states: dict[str, ShotWorkflowProgress] = {}
         self.start_calls = 0
+        self.publications: dict[str, PublicationActivityInput] = {}
+        self.publication_states: dict[str, PublicationActivityResult] = {}
+        self.cancelled_publications: list[str] = []
+        self.publication_start_calls = 0
 
     def start_project(self, request: ProjectWorkflowInput) -> tuple[str, str]:
         workflow_id = project_workflow_id(request.project_id)
@@ -107,6 +131,20 @@ class FakeWorkflowController:
 
     def describe_shot(self, workflow_id: str) -> ShotWorkflowProgress | None:
         return self.shot_states.get(workflow_id)
+
+    def start_publication(self, request: PublicationActivityInput) -> tuple[str, str]:
+        workflow_id = publication_workflow_id(request.publication_run_id)
+        self.publication_start_calls += 1
+        # Adopt rather than duplicate: a repeated start must never produce a
+        # second workflow driving the same upload.
+        self.publications.setdefault(workflow_id, request)
+        return workflow_id, f"{workflow_id}-run"
+
+    def cancel_publication(self, workflow_id: str) -> None:
+        self.cancelled_publications.append(workflow_id)
+
+    def describe_publication(self, workflow_id: str) -> PublicationActivityResult | None:
+        return self.publication_states.get(workflow_id)
 
 
 class TemporalWorkflowController:
@@ -221,3 +259,61 @@ class TemporalWorkflowController:
 
         result = self._run(run())
         return result if isinstance(result, ShotWorkflowProgress) else None
+
+    def start_publication(self, request: PublicationActivityInput) -> tuple[str, str]:
+        from temporalio.common import WorkflowIDReusePolicy
+        from temporalio.exceptions import WorkflowAlreadyStartedError
+
+        from packages.workflows.publication import YouTubePublicationWorkflow
+
+        workflow_id = publication_workflow_id(request.publication_run_id)
+
+        async def run() -> tuple[str, str]:
+            client = await self._client()
+            try:
+                handle = await client.start_workflow(  # type: ignore[attr-defined]
+                    YouTubePublicationWorkflow.run,
+                    request,
+                    id=workflow_id,
+                    task_queue=PUBLISHER_TASK_QUEUE,
+                    # Not ALLOW_DUPLICATE_FAILED_ONLY: this workflow *completes*
+                    # at every waiting state - quota blocked, reauthorization
+                    # required, held for review - so a later resume of the same
+                    # publication run is a new execution of a workflow that
+                    # closed successfully, not a retry of a failed one.
+                    id_reuse_policy=WorkflowIDReusePolicy.ALLOW_DUPLICATE,
+                )
+            except WorkflowAlreadyStartedError:
+                # One is already running for this publication. Adopting it is
+                # the right answer: the upload is durable and idempotent, and a
+                # second execution would only race the first for the same
+                # resumable session.
+                existing = client.get_workflow_handle(workflow_id)  # type: ignore[attr-defined]
+                return workflow_id, existing.first_execution_run_id or ""
+            return workflow_id, handle.result_run_id or handle.first_execution_run_id or ""
+
+        result = self._run(run())
+        assert isinstance(result, tuple)
+        return result
+
+    def cancel_publication(self, workflow_id: str) -> None:
+        from packages.workflows.publication import YouTubePublicationWorkflow
+
+        async def run() -> None:
+            client = await self._client()
+            handle = client.get_workflow_handle(workflow_id)  # type: ignore[attr-defined]
+            await handle.signal(YouTubePublicationWorkflow.cancel_publication)
+
+        self._run(run())
+
+    def describe_publication(self, workflow_id: str) -> PublicationActivityResult | None:
+        from packages.workflows.publication import YouTubePublicationWorkflow
+
+        async def run() -> PublicationActivityResult | None:
+            client = await self._client()
+            handle = client.get_workflow_handle(workflow_id)  # type: ignore[attr-defined]
+            state = await handle.query(YouTubePublicationWorkflow.state)
+            return state if isinstance(state, PublicationActivityResult) else None
+
+        result = self._run(run())
+        return result if isinstance(result, PublicationActivityResult) else None

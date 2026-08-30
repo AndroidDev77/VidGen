@@ -1,0 +1,54 @@
+{
+  "additionalProperties": false,
+  "description": "The compact ID-only message a Temporal activity receives.\n\nNo metadata text, no credential, no session URI, no caption or thumbnail\nbytes and no provider payload: everything else is loaded from the database\nby the worker inside the activity.",
+  "properties": {
+    "connection_id": {
+      "format": "uuid",
+      "title": "Connection Id",
+      "type": "string"
+    },
+    "final_render_asset_id": {
+      "format": "uuid",
+      "title": "Final Render Asset Id",
+      "type": "string"
+    },
+    "idempotency_key": {
+      "maxLength": 255,
+      "minLength": 1,
+      "title": "Idempotency Key",
+      "type": "string"
+    },
+    "project_id": {
+      "format": "uuid",
+      "title": "Project Id",
+      "type": "string"
+    },
+    "publication_run_id": {
+      "format": "uuid",
+      "title": "Publication Run Id",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "trace_context": {
+      "additionalProperties": {
+        "type": "string"
+      },
+      "title": "Trace Context",
+      "type": "object"
+    }
+  },
+  "required": [
+    "project_id",
+    "publication_run_id",
+    "connection_id",
+    "final_render_asset_id",
+    "idempotency_key"
+  ],
+  "title": "PublicationActivityInput",
+  "type": "object"
+}

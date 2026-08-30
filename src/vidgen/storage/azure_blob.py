@@ -111,6 +111,18 @@ class AzureBlobStore:
     def read(self, key: str) -> bytes:
         return bytes(self._container.get_blob_client(key).download_blob().readall())
 
+    def read_range(self, key: str, start: int, length: int) -> bytes:
+        """Return at most ``length`` bytes from ``start``, as a ranged GET.
+
+        This is what lets the T25 publisher stream a multi-gigabyte final render
+        into YouTube's resumable upload one chunk at a time without ever holding
+        the whole file, and without staging it on the worker's disposable disk.
+        """
+        if start < 0 or length <= 0:
+            raise ValueError("a ranged read needs a nonnegative start and a positive length")
+        downloader = self._container.get_blob_client(key).download_blob(offset=start, length=length)
+        return bytes(downloader.readall())
+
     def exists(self, key: str) -> bool:
         return bool(self._container.get_blob_client(key).exists())
 

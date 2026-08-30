@@ -1,0 +1,42 @@
+{
+  "additionalProperties": false,
+  "description": "A non-blocking observation surfaced to the dashboard and the CLI.",
+  "properties": {
+    "code": {
+      "maxLength": 64,
+      "minLength": 1,
+      "title": "Code",
+      "type": "string"
+    },
+    "reference_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Reference Id"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "summary": {
+      "maxLength": 500,
+      "title": "Summary",
+      "type": "string"
+    }
+  },
+  "required": [
+    "code",
+    "summary"
+  ],
+  "title": "PublicationWarning",
+  "type": "object"
+}

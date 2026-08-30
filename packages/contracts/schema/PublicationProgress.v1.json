@@ -1,0 +1,173 @@
+{
+  "$defs": {
+    "ProcessingState": {
+      "description": "A normalized processing outcome, independent of provider spelling.",
+      "enum": [
+        "processing",
+        "succeeded",
+        "failed",
+        "rejected",
+        "unknown"
+      ],
+      "title": "ProcessingState",
+      "type": "string"
+    },
+    "PublicationAssetStatus": {
+      "enum": [
+        "pending",
+        "in_progress",
+        "succeeded",
+        "skipped",
+        "failed"
+      ],
+      "title": "PublicationAssetStatus",
+      "type": "string"
+    },
+    "PublicationPhase": {
+      "description": "The restartable phase a publication run is currently executing.",
+      "enum": [
+        "ELIGIBILITY",
+        "AUTHORIZATION",
+        "UPLOAD_INITIALIZATION",
+        "MEDIA_UPLOAD",
+        "PROCESSING_POLL",
+        "CAPTIONS",
+        "THUMBNAIL",
+        "VERIFICATION",
+        "VISIBILITY",
+        "FINALIZATION"
+      ],
+      "title": "PublicationPhase",
+      "type": "string"
+    },
+    "PublicationStatus": {
+      "description": "The publication state machine.\n\nThe happy path is strictly ordered. Every other member is terminal or a\ndocumented waiting state that a human or an explicit command leaves.",
+      "enum": [
+        "DRAFT",
+        "AUTHORIZATION_REQUIRED",
+        "READY",
+        "UPLOAD_INITIALIZING",
+        "UPLOADING",
+        "PROCESSING",
+        "UPLOADING_CAPTIONS",
+        "UPLOADING_THUMBNAIL",
+        "PRIVATE_READY",
+        "VISIBILITY_UPDATING",
+        "PUBLISHED",
+        "REAUTHORIZATION_REQUIRED",
+        "QUOTA_BLOCKED",
+        "PROCESSING_FAILED",
+        "HUMAN_REVIEW_REQUIRED",
+        "FAILED",
+        "CANCELLED"
+      ],
+      "title": "PublicationStatus",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "description": "The live, bounded progress projection the dashboard polls.",
+  "properties": {
+    "caption_status": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/PublicationAssetStatus"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "chunk_bytes": {
+      "default": 0,
+      "minimum": 0,
+      "title": "Chunk Bytes",
+      "type": "integer"
+    },
+    "confirmed_offset": {
+      "default": 0,
+      "minimum": 0,
+      "title": "Confirmed Offset",
+      "type": "integer"
+    },
+    "phase": {
+      "$ref": "#/$defs/PublicationPhase"
+    },
+    "processing_percent": {
+      "anyOf": [
+        {
+          "maximum": 100,
+          "minimum": 0,
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Processing Percent"
+    },
+    "processing_state": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ProcessingState"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "publication_run_id": {
+      "format": "uuid",
+      "title": "Publication Run Id",
+      "type": "string"
+    },
+    "quota_units": {
+      "default": 0,
+      "minimum": 0,
+      "title": "Quota Units",
+      "type": "integer"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "status": {
+      "$ref": "#/$defs/PublicationStatus"
+    },
+    "thumbnail_status": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/PublicationAssetStatus"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "total_bytes": {
+      "default": 0,
+      "minimum": 0,
+      "title": "Total Bytes",
+      "type": "integer"
+    },
+    "updated_at": {
+      "format": "date-time",
+      "title": "Updated At",
+      "type": "string"
+    }
+  },
+  "required": [
+    "publication_run_id",
+    "status",
+    "phase",
+    "updated_at"
+  ],
+  "title": "PublicationProgress",
+  "type": "object"
+}

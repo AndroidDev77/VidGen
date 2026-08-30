@@ -8,7 +8,11 @@ import {
   makeStyles,
   tokens,
 } from "@fluentui/react-components";
-import type { VisualQARunProjection } from "@vidgen/contracts";
+import type {
+  PrivacyState,
+  PublicationMetadataRequest,
+  VisualQARunProjection,
+} from "@vidgen/contracts";
 import { useEffect, useState, type JSX } from "react";
 import { useSearchParams } from "react-router-dom";
 
@@ -28,7 +32,21 @@ import {
   routeFinalQaRemediation,
   startFinalQa,
 } from "../../api/finalQa";
+import {
+  cancelPublication,
+  changePublicationVisibility,
+  createPublication,
+  disconnectYouTube,
+  getProjectPublications,
+  getPublication,
+  getYouTubeConnections,
+  resumePublication,
+  startPublication,
+  startYouTubeOAuth,
+  updatePublicationDraft,
+} from "../../api/publications";
 import { FinalQAPanel } from "../../components/FinalQAPanel";
+import { PublicationPanel } from "../../components/PublicationPanel";
 import { ApprovalBar } from "../../components/ApprovalBar";
 import { AssetDownloadMenu } from "../../components/AssetDownloadMenu";
 import { CaptionControls } from "../../components/CaptionControls";
@@ -175,6 +193,184 @@ export function FinalReviewPage(): JSX.Element {
       ).then((r) => r.data);
     },
     onSuccess: invalidateFinalQa,
+  });
+
+  // -- T25 publication -------------------------------------------------------
+  // Connections are owner-scoped and carry no credential: the projection has
+  // the channel, the granted scopes and the envelope key *version*, and there
+  // is nowhere in it for a token.
+  const connections = useQuery({
+    queryKey: queryKeys.youtubeConnections(),
+    queryFn: ({ signal }) => getYouTubeConnections(client, signal).then((r) => r.data),
+  });
+  const publications = useQuery({
+    queryKey: queryKeys.publications(projectId),
+    queryFn: ({ signal }) => getProjectPublications(projectId, client, signal).then((r) => r.data),
+    enabled: projectId !== "",
+  });
+  // Read defensively, exactly as the final-QA gate above is. An unavailable or
+  // unexpected publications response must not take the whole final-review page
+  // down: the render preview, its stale warning and the approval control matter
+  // more than the publication panel.
+  const publicationItems = Array.isArray(publications.data?.items)
+    ? publications.data.items
+    : [];
+  const currentPublicationId = publicationItems[0]?.publication_id ?? null;
+  const publication = useQuery({
+    queryKey: queryKeys.publication(projectId, currentPublicationId ?? ""),
+    queryFn: ({ signal }) =>
+      getPublication(projectId, currentPublicationId ?? "", client, signal).then((r) => r.data),
+    enabled: projectId !== "" && currentPublicationId !== null,
+    // An upload in flight moves; a finished one does not. Polling is cheap and
+    // is the only way byte progress reaches the page.
+    refetchInterval: currentPublicationId === null ? false : 5_000,
+  });
+  const publicationGate =
+    typeof publications.data?.gate?.allowed === "boolean" ? publications.data.gate : null;
+  const publicationRowVersion = publicationGate?.row_version ?? 0;
+
+  const invalidatePublications = () => {
+    void queryClient.invalidateQueries({ queryKey: queryKeys.publications(projectId) });
+    void queryClient.invalidateQueries({ queryKey: queryKeys.youtubeConnections() });
+    if (currentPublicationId !== null) {
+      void queryClient.invalidateQueries({
+        queryKey: queryKeys.publication(projectId, currentPublicationId),
+      });
+    }
+  };
+
+  const connectYouTube = useMutation({
+    mutationFn: () =>
+      startYouTubeOAuth(
+        { redirect_target: "/" },
+        newIdempotencyKey(`youtube-oauth-${projectId}`),
+        client,
+      ).then((r) => r.data),
+    onSuccess: (response) => {
+      // Google's own consent screen. The URL carries the public client ID, the
+      // scopes, a one-time state and the PKCE challenge - nothing secret.
+      window.location.assign(response.authorization_url);
+    },
+  });
+  const disconnect = useMutation({
+    mutationFn: (connectionId: string) =>
+      disconnectYouTube(
+        connectionId,
+        newIdempotencyKey(`youtube-disconnect-${connectionId}`),
+        client,
+      ).then((r) => r.data),
+    onSuccess: invalidatePublications,
+  });
+  const createDraft = useMutation({
+    mutationFn: ({
+      connectionId,
+      thumbnailAssetId,
+    }: {
+      connectionId: string;
+      thumbnailAssetId: string | null;
+    }) =>
+      createPublication(
+        projectId,
+        { connection_id: connectionId, thumbnail_asset_id: thumbnailAssetId },
+        publicationRowVersion,
+        newIdempotencyKey(`publication-${projectId}`),
+        client,
+      ).then((r) => r.data),
+    onSuccess: invalidatePublications,
+  });
+  const saveDraft = useMutation({
+    mutationFn: (metadata: PublicationMetadataRequest) => {
+      if (currentPublicationId === null) {
+        throw new Error("There is no publication draft to save.");
+      }
+      // Edits the existing publication in place. Saving through the create
+      // endpoint would carry the metadata into the publication identity and
+      // mint a new publication row for every save.
+      return updatePublicationDraft(
+        projectId,
+        currentPublicationId,
+        metadata,
+        publicationRowVersion,
+        newIdempotencyKey(`publication-draft-${currentPublicationId}`),
+        client,
+      ).then((r) => r.data);
+    },
+    onSuccess: invalidatePublications,
+  });
+  const beginUpload = useMutation({
+    mutationFn: () => {
+      if (currentPublicationId === null) {
+        throw new Error("There is no publication to start.");
+      }
+      return startPublication(
+        projectId,
+        currentPublicationId,
+        { resume: false },
+        publicationRowVersion,
+        newIdempotencyKey(`publication-start-${currentPublicationId}`),
+        client,
+      ).then((r) => r.data);
+    },
+    onSuccess: invalidatePublications,
+  });
+  const resumeUpload = useMutation({
+    mutationFn: () => {
+      if (currentPublicationId === null) {
+        throw new Error("There is no publication to resume.");
+      }
+      return resumePublication(
+        projectId,
+        currentPublicationId,
+        publicationRowVersion,
+        newIdempotencyKey(`publication-resume-${currentPublicationId}`),
+        client,
+      ).then((r) => r.data);
+    },
+    onSuccess: invalidatePublications,
+  });
+  const cancelUpload = useMutation({
+    mutationFn: () => {
+      if (currentPublicationId === null) {
+        throw new Error("There is no publication to cancel.");
+      }
+      return cancelPublication(
+        projectId,
+        currentPublicationId,
+        { reason: "cancelled from the final review page" },
+        publicationRowVersion,
+        newIdempotencyKey(`publication-cancel-${currentPublicationId}`),
+        client,
+      ).then((r) => r.data);
+    },
+    onSuccess: invalidatePublications,
+  });
+  const changeVisibility = useMutation({
+    mutationFn: ({
+      privacy,
+      scheduledPublishAt,
+      notifySubscribers,
+    }: {
+      privacy: PrivacyState;
+      scheduledPublishAt: string | null;
+      notifySubscribers: boolean;
+    }) => {
+      if (currentPublicationId === null) {
+        throw new Error("There is no publication to make visible.");
+      }
+      return changePublicationVisibility(
+        projectId,
+        currentPublicationId,
+        {
+          privacy,
+          scheduled_publish_at: scheduledPublishAt,
+          notify_subscribers: notifySubscribers,
+        },
+        publicationRowVersion,
+        newIdempotencyKey(`publication-visibility-${currentPublicationId}`),
+        client,
+      ).then((r) => r.data);
+    },
+    onSuccess: invalidatePublications,
   });
 
   const videoAssetId = render.data?.final_video_asset_id ?? null;
@@ -428,6 +624,43 @@ export function FinalReviewPage(): JSX.Element {
             onCancel={() => cancelFinalQaRun.mutate()}
             onResolveReview={(findingId) => resolveReview.mutate(findingId)}
             onRoute={(target, findingIds) => routeRemediation.mutate({ target, findingIds })}
+          />
+
+          <PublicationPanel
+            connections={
+              Array.isArray(connections.data?.items) ? connections.data : null
+            }
+            gate={publicationGate}
+            publication={
+              typeof publication.data?.publication_id === "string" ? publication.data : null
+            }
+            busy={
+              connectYouTube.isPending ||
+              disconnect.isPending ||
+              createDraft.isPending ||
+              saveDraft.isPending ||
+              beginUpload.isPending ||
+              resumeUpload.isPending ||
+              cancelUpload.isPending ||
+              changeVisibility.isPending
+            }
+            thumbnailChoices={
+              render.data?.final_video_asset_id
+                ? [{ assetId: render.data.final_video_asset_id, label: "Selected keyframe" }]
+                : []
+            }
+            onConnect={() => connectYouTube.mutate()}
+            onDisconnect={(connectionId) => disconnect.mutate(connectionId)}
+            onCreate={(connectionId, thumbnailAssetId) =>
+              createDraft.mutate({ connectionId, thumbnailAssetId })
+            }
+            onSaveDraft={(metadata) => saveDraft.mutate(metadata)}
+            onStart={() => beginUpload.mutate()}
+            onResume={() => resumeUpload.mutate()}
+            onCancel={() => cancelUpload.mutate()}
+            onChangeVisibility={(privacy, scheduledPublishAt, notifySubscribers) =>
+              changeVisibility.mutate({ privacy, scheduledPublishAt, notifySubscribers })
+            }
           />
 
           <TechnicalDetails

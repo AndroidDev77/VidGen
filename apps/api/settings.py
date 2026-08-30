@@ -92,6 +92,33 @@ class APISettings(BaseSettings):
     # workflows as running while nothing was started. Local development and the
     # test suites enable it explicitly.
     temporal_use_fake_workflow_controller: bool = False
+    # --- T25 YouTube publication ---
+    # The OAuth client ID is ordinary configuration: it appears in the
+    # authorization URL the browser follows. The client secret and the token
+    # encryption key are secrets and are resolved from Key Vault in a
+    # deployment; neither has a default here.
+    youtube_oauth_client_id: str | None = None
+    youtube_oauth_client_secret: str | None = None
+    #: Must be byte-identical to a redirect URI registered with Google.
+    youtube_oauth_redirect_uri: str = "http://localhost:8000/api/v1/youtube/oauth:callback"
+    #: Post-authorization targets the callback may send a browser to. Same-site
+    #: paths only by default; anything else is refused.
+    youtube_oauth_redirect_targets: tuple[str, ...] = ("/",)
+    #: Base64 AES-256 key for the credential envelope, and the version that
+    #: names it. Rotation keeps retired keys decryptable until every ciphertext
+    #: has been re-sealed.
+    youtube_token_encryption_key: str | None = None
+    youtube_token_encryption_key_version: str | None = None
+    youtube_token_encryption_retired_keys: str | None = None
+    #: Off by default. The development key lives in this repository, so it is
+    #: never acceptable in a shared or deployed environment; local development
+    #: and the test suites opt in explicitly.
+    youtube_allow_dev_encryption_key: bool = False
+    #: "fake" keeps local development and every test free of a YouTube project.
+    youtube_provider: str = "fake"
+    youtube_publisher_task_queue: str = "vidgen-publisher"
+    youtube_upload_chunk_bytes: int = 8 * 1024 * 1024
+    youtube_processing_timeout_seconds: int = 6 * 60 * 60
     # CORS stays disabled unless an explicit development allowlist is configured.
     cors_allowed_origins: tuple[str, ...] = ()
 
@@ -116,6 +143,30 @@ class APISettings(BaseSettings):
         if isinstance(value, str):
             return tuple(item.strip() for item in value.split(",") if item.strip())
         return value
+
+    @field_validator("youtube_oauth_redirect_targets", mode="before")
+    @classmethod
+    def parse_redirect_targets(cls, value: object) -> object:
+        if isinstance(value, str):
+            return tuple(item.strip() for item in value.split(",") if item.strip())
+        return value
+
+    @field_validator("youtube_provider")
+    @classmethod
+    def validate_youtube_provider(cls, value: str) -> str:
+        normalized = value.strip().lower()
+        if normalized not in {"fake", "youtube"}:
+            raise ValueError("youtube_provider must be 'fake' or 'youtube'")
+        return normalized
+
+    @field_validator("youtube_upload_chunk_bytes")
+    @classmethod
+    def validate_chunk_bytes(cls, value: int) -> int:
+        from services.publisher.youtube import normalize_chunk_bytes
+
+        # Rounded to a legal 256 KiB multiple here rather than rejected, so a
+        # misconfigured value never fails at byte zero of a large upload.
+        return normalize_chunk_bytes(value)
 
     @field_validator("subtitle_languages", mode="before")
     @classmethod

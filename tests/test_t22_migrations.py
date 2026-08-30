@@ -75,7 +75,9 @@ def test_the_migration_is_additive_and_preserves_existing_tables(
     engine = create_engine(url)
     command.upgrade(config(), "0017_repair_fallback")
     before = set(inspect(engine).get_table_names())
-    command.upgrade(config(), "head")
+    # Upgrade to T22 exactly, not to head: later tasks add their own tables and
+    # this assertion is about what T22 itself contributes.
+    command.upgrade(config(), "0018_final_editorial_qa")
     after = set(inspect(engine).get_table_names())
     assert before <= after, "T22 removes nothing that T01-T21 created"
     assert after - before == T22_TABLES

@@ -596,8 +596,10 @@ def test_the_smoke_test_job_cannot_call_a_paid_provider() -> None:
     block = source[source.index("var smokeProviders ProviderToggles = {") :]
     block = block[: block.index("}")]
     for line in block.splitlines()[1:]:
-        if ":" in line:
-            assert line.strip().endswith("false"), line
+        stripped = line.strip()
+        if stripped.startswith("//") or ":" not in stripped:
+            continue
+        assert stripped.endswith("false"), line
     jobs = resources_of_type(module("container_jobs"), "Microsoft.App/jobs")
     smoke = by_name(jobs, "job-smoke")
     secrets = property_text(smoke, "properties", "configuration", "secrets")
@@ -608,6 +610,10 @@ def test_the_smoke_test_job_cannot_call_a_paid_provider() -> None:
         "elevenlabs-api-key",
         "google-credentials-json",
         "voicestudio-api-key",
+        # T25: the smoke test must never hold real YouTube material, and must
+        # never be able to publish to anyone's channel.
+        "youtube-oauth-client-secret",
+        "youtube-token-encryption-key",
     ):
         assert provider_secret not in secrets
         assert provider_secret not in container
@@ -704,6 +710,8 @@ def test_optional_providers_are_off_in_staging(staging_parameters: dict[str, Any
         "elevenlabs": False,
         "voicestudio": False,
         "opensubtitles": False,
+        # T25 stays on the deterministic fake publisher in staging.
+        "youtube": False,
     }
     features = staging_parameters["parameters"]["features"]["value"]
     # A disabled Veo provider must not leave the repair route pointing at it.
@@ -869,3 +877,181 @@ def test_the_deploy_workflow_makes_no_key_vault_data_plane_call_from_a_runner() 
     code = "\n".join(line for line in workflow.splitlines() if not line.lstrip().startswith("#"))
     assert "bootstrap_secrets.sh" not in code
     assert "az keyvault" not in code
+
+
+# -- T25 YouTube publication ---------------------------------------------------
+
+
+def test_the_publisher_is_a_container_app_with_no_ingress() -> None:
+    apps = resources_of_type(module("container_apps"), "Microsoft.App/containerApps")
+    publisher = by_name(apps, "publisher")
+    configuration = publisher["properties"]["configuration"]
+    # No ingress at all: the publisher is reached only by polling Temporal
+    # outbound, so it exposes no port and has no address. The OAuth callback is
+    # served by the API, never by this worker.
+    assert "ingress" not in configuration
+    assert configuration["activeRevisionsMode"] == "Single"
+
+
+def test_the_publisher_uses_the_application_image_and_a_managed_identity() -> None:
+    apps = resources_of_type(module("container_apps"), "Microsoft.App/containerApps")
+    publisher = by_name(apps, "publisher")
+    container = publisher["properties"]["template"]["containers"][0]
+    # The same image as the API and the worker: one build, three entry points.
+    assert container["image"] == "[parameters('appImage')]"
+    assert container["args"] == ["-m", "workers.youtube_publisher.main"]
+    identity = publisher["identity"]
+    assert identity["type"] == "UserAssigned"
+    assert "workerIdentity" in json.dumps(identity)
+    # Registry access is by identity, never by a stored registry credential.
+    registries = json.dumps(publisher["properties"]["configuration"]["registries"])
+    assert "identity" in registries
+    assert "passwordSecretRef" not in registries
+
+
+def test_the_publisher_has_bounded_replicas_and_bounded_upload_concurrency() -> None:
+    apps = resources_of_type(module("container_apps"), "Microsoft.App/containerApps")
+    publisher = by_name(apps, "publisher")
+    scale = publisher["properties"]["template"]["scale"]
+    assert scale["minReplicas"] == "[parameters('publisherScale').minReplicas]"
+    assert scale["maxReplicas"] == "[parameters('publisherScale').maxReplicas]"
+    environment = json.dumps(publisher["properties"]["template"]["containers"][0]["env"])
+    assert "VIDGEN_PUBLISHER_MAX_CONCURRENT_UPLOADS" in environment
+    template = compile_template("modules/container_apps.bicep")
+    bounds = template["parameters"]["publisherMaxConcurrentUploads"]
+    assert bounds["minValue"] == 1
+    assert bounds["maxValue"] == 8
+
+
+def test_an_active_upload_is_never_scaled_away_without_a_grace_period() -> None:
+    apps = resources_of_type(module("container_apps"), "Microsoft.App/containerApps")
+    publisher = by_name(apps, "publisher")
+    template = publisher["properties"]["template"]
+    # Comfortably above the worker's own 60-second shutdown window, so an
+    # in-flight chunk can finish and commit its confirmed offset.
+    assert template["terminationGracePeriodSeconds"] >= 120
+    environment = json.dumps(template["containers"][0]["env"])
+    assert "VIDGEN_PUBLISHER_GRACEFUL_SHUTDOWN_SECONDS" in environment
+
+
+def test_the_youtube_secrets_are_key_vault_references_and_never_literals() -> None:
+    source = (MODULES_DIR / "app_config.bicep").read_text()
+    assert "'youtube-oauth-client-secret'" in source
+    assert "'youtube-token-encryption-key'" in source
+    # Both reach a workload only through envSecret, which resolves a Container
+    # Apps secret that is itself a Key Vault reference.
+    assert (
+        "envSecret('VIDGEN_YOUTUBE_OAUTH_CLIENT_SECRET', 'youtube-oauth-client-secret')" in source
+    )
+    assert (
+        "envSecret('VIDGEN_YOUTUBE_TOKEN_ENCRYPTION_KEY', 'youtube-token-encryption-key')" in source
+    )
+    # No template creates a YouTube secret *value*: a placeholder secret would
+    # be a credential this repository had chosen, which is exactly what
+    # bootstrap_secrets.sh exists to avoid.
+    secrets = resources_of_type(compile_template("main.bicep"), "Microsoft.KeyVault/vaults/secrets")
+    for secret in secrets:
+        assert "youtube" not in json.dumps(secret.get("name", "")).lower()
+
+
+def test_the_oauth_client_id_and_redirect_uri_are_plain_configuration() -> None:
+    template = module("container_apps")
+    apps = resources_of_type(template, "Microsoft.App/containerApps")
+    # Every application workload composes `appEnv`, which is where the shared
+    # non-secret publication configuration lives.
+    for name in ("api", "worker", "publisher"):
+        app = by_name(apps, name)
+        assert "variables('appEnv')" in json.dumps(
+            app["properties"]["template"]["containers"][0]["env"]
+        )
+    assert "youtubeEnv" in json.dumps(template["variables"]["appEnv"])
+
+    body = json.dumps(user_defined_function(module("app_config"), "youtubeEnv"))
+    for name in (
+        "VIDGEN_YOUTUBE_PROVIDER",
+        "VIDGEN_YOUTUBE_OAUTH_CLIENT_ID",
+        "VIDGEN_YOUTUBE_OAUTH_REDIRECT_URI",
+        "VIDGEN_YOUTUBE_OAUTH_REDIRECT_TARGETS",
+        "VIDGEN_YOUTUBE_TOKEN_ENCRYPTION_KEY_VERSION",
+        "VIDGEN_YOUTUBE_PUBLISHER_TASK_QUEUE",
+        "VIDGEN_YOUTUBE_UPLOAD_CHUNK_BYTES",
+        "VIDGEN_YOUTUBE_PROCESSING_TIMEOUT_SECONDS",
+    ):
+        assert name in body
+    # The development envelope key is never acceptable in a deployment: it
+    # lives in this repository, so sealing a real refresh token with it would
+    # be worse than failing to start.
+    assert "VIDGEN_YOUTUBE_ALLOW_DEV_ENCRYPTION_KEY" in body
+    compact = body.replace(" ", "").replace("\\", "")
+    assert "'VIDGEN_YOUTUBE_ALLOW_DEV_ENCRYPTION_KEY','false'" in compact
+    # The client secret and the encryption key are never plain configuration.
+    assert "VIDGEN_YOUTUBE_OAUTH_CLIENT_SECRET" not in body
+    assert '"VIDGEN_YOUTUBE_TOKEN_ENCRYPTION_KEY"' not in body
+
+
+def test_the_publisher_is_granted_no_blob_write() -> None:
+    """The publisher reads the render, the caption and the thumbnail. Nothing else."""
+    source = (MODULES_DIR / "role_assignments.bicep").read_text()
+    # It shares the worker identity, whose storage role is asserted elsewhere;
+    # what matters here is that T25 added no new write grant.
+    assert "Storage Blob Data Contributor" not in source or "worker" in source
+    apps = resources_of_type(module("container_apps"), "Microsoft.App/containerApps")
+    publisher = by_name(apps, "publisher")
+    assert "webIdentity" not in json.dumps(publisher["identity"])
+
+
+def test_the_api_is_still_never_publicly_addressable() -> None:
+    """T25 adds an OAuth callback to the API; it must not publish the API."""
+    apps = resources_of_type(module("container_apps"), "Microsoft.App/containerApps")
+    api = by_name(apps, "api")
+    assert api["properties"]["configuration"]["ingress"]["external"] is False
+
+
+def test_staging_keeps_the_youtube_provider_off(staging_parameters: dict[str, Any]) -> None:
+    assert staging_parameters["parameters"]["providers"]["value"]["youtube"] is False
+    publisher = staging_parameters["parameters"]["youtube"]["value"]
+    # No client ID is configured while the provider is off, so a misread
+    # parameter file cannot start a real authorization.
+    assert publisher["oauthClientId"] == ""
+    assert publisher["oauthRedirectUri"] == ""
+    assert publisher["taskQueue"] == "vidgen-publisher"
+    assert publisher["uploadChunkBytes"] % (256 * 1024) == 0
+
+
+def test_production_keeps_youtube_off_until_real_authentication_exists(
+    production_parameters: dict[str, Any],
+) -> None:
+    assert production_parameters["parameters"]["providers"]["value"]["youtube"] is False
+
+
+def test_the_bootstrap_documentation_names_both_youtube_secrets() -> None:
+    script = (REPO_ROOT / "infra" / "scripts" / "bootstrap_secrets.sh").read_text()
+    assert "youtube-oauth-client-secret" in script
+    assert "youtube-token-encryption-key" in script
+    readme = (REPO_ROOT / "infra" / "README.md").read_text()
+    assert "youtube-oauth-client-secret" in readme
+    assert "youtube-token-encryption-key" in readme
+
+
+def test_the_workbook_charts_the_publication_signals() -> None:
+    """T25 adds no telemetry table: the panels read the existing T23 spans."""
+    workbook = json.loads((REPO_ROOT / "infra" / "dashboards" / "vidgen-workbook.json").read_text())
+    text = json.dumps(workbook)
+    for name in (
+        "t25-publication-outcomes",
+        "t25-publication-latency",
+        "t25-publication-failures",
+        "t25-publisher-worker",
+        "t25-quota-usage",
+    ):
+        assert name in text, name
+    # Quota units are a rate limit, so they must never be charted as spend.
+    quota_panel = [
+        line
+        for line in text.split('"name": "t25-quota-usage"')[0].splitlines()
+        if "quota_units" in line
+    ]
+    assert quota_panel, "the quota panel must read the recorded unit count"
+    assert "recap_generation_cost_usd" not in json.dumps(
+        [item for item in text.split("t25-") if "quota" in item]
+    )
