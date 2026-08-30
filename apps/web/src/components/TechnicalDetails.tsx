@@ -12,6 +12,17 @@ import type { JSX } from "react";
 import { shortId } from "../state/format";
 
 const useStyles = makeStyles({
+  // The accordion supplies no surface of its own, so a bare one floats on the
+  // page ground between two cards. This gives it the same edges as everything
+  // else without turning a collapsed row into a full-height panel.
+  surface: {
+    borderRadius: tokens.borderRadiusLarge,
+    border: `1px solid ${tokens.colorNeutralStroke2}`,
+    backgroundColor: tokens.colorNeutralBackground1,
+    paddingLeft: tokens.spacingHorizontalS,
+    paddingRight: tokens.spacingHorizontalS,
+    overflow: "hidden",
+  },
   grid: {
     display: "grid",
     gridTemplateColumns: "minmax(140px, max-content) 1fr",
@@ -35,7 +46,7 @@ export function TechnicalDetails({ title, entries }: TechnicalDetailsProps): JSX
   const styles = useStyles();
   const rows = entries.filter(([, value]) => value !== null && value !== undefined && value !== "");
   return (
-    <Accordion collapsible>
+    <Accordion collapsible className={styles.surface}>
       <AccordionItem value="technical">
         <AccordionHeader>{title ?? "Technical details"}</AccordionHeader>
         <AccordionPanel>

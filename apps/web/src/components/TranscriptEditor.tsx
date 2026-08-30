@@ -18,17 +18,25 @@ import type { DraftState } from "../state/editorState";
 import { formatDurationSeconds } from "../state/format";
 
 const useStyles = makeStyles({
-  wrapper: { display: "flex", flexDirection: "column", gap: tokens.spacingVerticalL },
+  // Matches the script editor: a measured column keeps a transcript line
+  // scannable instead of running the full width of a desk monitor.
+  wrapper: {
+    display: "flex",
+    flexDirection: "column",
+    gap: tokens.spacingVerticalL,
+    maxWidth: "1040px",
+  },
   toolbar: { display: "flex", gap: tokens.spacingHorizontalM, flexWrap: "wrap", alignItems: "end" },
   list: { listStyle: "none", margin: 0, padding: 0, display: "grid", gap: tokens.spacingVerticalM },
   segment: {
     display: "flex",
     flexDirection: "column",
     gap: tokens.spacingVerticalS,
-    padding: tokens.spacingVerticalM,
-    borderRadius: tokens.borderRadiusMedium,
+    padding: tokens.spacingHorizontalL,
+    borderRadius: tokens.borderRadiusLarge,
     backgroundColor: tokens.colorNeutralBackground1,
     border: `1px solid ${tokens.colorNeutralStroke2}`,
+    boxShadow: tokens.shadow2,
   },
   meta: { display: "flex", gap: tokens.spacingHorizontalM, flexWrap: "wrap", alignItems: "center" },
   actions: { display: "flex", gap: tokens.spacingHorizontalS, flexWrap: "wrap" },

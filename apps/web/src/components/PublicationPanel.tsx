@@ -16,7 +16,6 @@ import {
   ProgressBar,
   Subtitle2,
   Textarea,
-  Title3,
   makeStyles,
   tokens,
 } from "@fluentui/react-components";
@@ -27,21 +26,17 @@ import type {
   PublicationMetadataRequest,
   YouTubeConnectionCollection,
 } from "@vidgen/contracts";
+import { VideoRegular } from "@fluentui/react-icons";
 import { useState, type JSX } from "react";
 
 import { humanize } from "../state/format";
+import { SectionCard, StatTile, StatTiles } from "./Surface";
 import { TechnicalDetails } from "./TechnicalDetails";
 
 const useStyles = makeStyles({
   wrapper: { display: "flex", flexDirection: "column", gap: tokens.spacingVerticalM },
   row: { display: "flex", gap: tokens.spacingHorizontalM, flexWrap: "wrap", alignItems: "center" },
   actions: { display: "flex", gap: tokens.spacingHorizontalS, flexWrap: "wrap" },
-  facts: {
-    display: "grid",
-    gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
-    gap: tokens.spacingHorizontalM,
-  },
-  fact: { display: "flex", flexDirection: "column" },
   form: { display: "flex", flexDirection: "column", gap: tokens.spacingVerticalS },
 });
 
@@ -128,17 +123,25 @@ export function PublicationPanel({
 
   if (!connections) {
     return (
-      <section className={styles.wrapper}>
-        <Title3>Publish to YouTube</Title3>
+      <SectionCard title="Publish to YouTube" icon={<VideoRegular />}>
         <Caption1>Loading connections…</Caption1>
-      </section>
+      </SectionCard>
     );
   }
 
   return (
-    <section className={styles.wrapper} aria-label="YouTube publication">
-      <Title3>Publish to YouTube</Title3>
-
+    <SectionCard
+      title="Publish to YouTube"
+      ariaLabel="YouTube publication"
+      icon={<VideoRegular />}
+      actions={
+        status === "" ? undefined : (
+          <Badge appearance="tint" shape="rounded" color={tone}>
+            {humanize(status)}
+          </Badge>
+        )
+      }
+    >
       {/* The limitation is stated, never implied by a missing button. */}
       {!connections.production_authentication_available ? (
         <MessageBar intent="warning">
@@ -342,53 +345,50 @@ export function PublicationPanel({
           </div>
 
           {/* -- progress ---------------------------------------------------- */}
-          <div className={styles.facts}>
-            <div className={styles.fact}>
-              <Caption1>Upload</Caption1>
-              <Body1>
-                {formatBytes(publication.confirmed_offset)} of{" "}
-                {formatBytes(publication.total_bytes)}
-              </Body1>
-            </div>
-            <div className={styles.fact}>
-              <Caption1>Processing</Caption1>
-              <Body1>{publication.processing_state ?? "not started"}</Body1>
-            </div>
-            <div className={styles.fact}>
-              <Caption1>Captions</Caption1>
-              <Body1>
-                {publication.caption_status ?? "pending"}
-                {publication.caption_track_id ? ` (${publication.caption_track_id})` : ""}
-              </Body1>
-            </div>
-            <div className={styles.fact}>
-              <Caption1>Thumbnail</Caption1>
-              <Body1>{publication.thumbnail_status ?? "pending"}</Body1>
-            </div>
-            <div className={styles.fact}>
-              <Caption1>Requested privacy</Caption1>
-              <Body1>{publication.requested_privacy}</Body1>
-            </div>
-            <div className={styles.fact}>
-              {/* What YouTube reports, never what was asked for. */}
-              <Caption1>Actual privacy</Caption1>
-              <Body1>{publication.actual_privacy ?? "not uploaded"}</Body1>
-            </div>
-            <div className={styles.fact}>
-              <Caption1>YouTube quota units</Caption1>
-              <Body1>{publication.quota_units} (rate limit, not a charge)</Body1>
-            </div>
-            <div className={styles.fact}>
-              <Caption1>Video</Caption1>
-              {publication.video_url ? (
-                <Link href={publication.video_url} target="_blank" rel="noreferrer">
-                  {publication.video_id}
-                </Link>
-              ) : (
-                <Body1>not created</Body1>
-              )}
-            </div>
-          </div>
+          <StatTiles>
+            <StatTile
+              label="Upload"
+              value={`${formatBytes(publication.confirmed_offset)} of ${formatBytes(
+                publication.total_bytes,
+              )}`}
+            />
+            <StatTile
+              label="Processing"
+              value={publication.processing_state ?? "not started"}
+            />
+            <StatTile
+              label="Captions"
+              value={`${publication.caption_status ?? "pending"}${
+                publication.caption_track_id ? ` (${publication.caption_track_id})` : ""
+              }`}
+            />
+            <StatTile label="Thumbnail" value={publication.thumbnail_status ?? "pending"} />
+            <StatTile label="Requested privacy" value={publication.requested_privacy} />
+            {/* What YouTube reports, never what was asked for. */}
+            <StatTile
+              label="Actual privacy"
+              value={publication.actual_privacy ?? "not uploaded"}
+              tone={publication.actual_privacy === "public" ? "success" : "neutral"}
+            />
+            {/* The caveat stays in the value: a quota unit is not money, and
+                that has to travel with the number wherever it is read. */}
+            <StatTile
+              label="YouTube quota units"
+              value={`${publication.quota_units} (rate limit, not a charge)`}
+            />
+            <StatTile
+              label="Video"
+              value={
+                publication.video_url ? (
+                  <Link href={publication.video_url} target="_blank" rel="noreferrer">
+                    {publication.video_id}
+                  </Link>
+                ) : (
+                  "not created"
+                )
+              }
+            />
+          </StatTiles>
           {publication.total_bytes > 0 ? (
             <ProgressBar
               value={publication.confirmed_offset / publication.total_bytes}
@@ -491,6 +491,6 @@ export function PublicationPanel({
           />
         </>
       ) : null}
-    </section>
+    </SectionCard>
   );
 }

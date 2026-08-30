@@ -33,6 +33,7 @@ import { StoryboardGrid } from "../../components/StoryboardGrid";
 import { TimelinePreview } from "../../components/TimelinePreview";
 import { VisualQAResultPanel } from "../../components/VisualQAResultPanel";
 import { VisualQAReviewDialog } from "../../components/VisualQAReviewDialog";
+import { PageStack } from "../../components/Surface";
 import { EmptyState, ErrorState, LoadingState } from "../../components/states";
 import { useProjectContext } from "./useProjectContext";
 
@@ -44,11 +45,19 @@ const useStyles = makeStyles({
     alignItems: "start",
     "@media (max-width: 1100px)": { gridTemplateColumns: "minmax(0, 1fr)" },
   },
+  column: { display: "flex", flexDirection: "column", gap: tokens.spacingVerticalL, minWidth: 0 },
   panel: {
     padding: tokens.spacingVerticalL,
-    borderRadius: tokens.borderRadiusMedium,
+    borderRadius: tokens.borderRadiusLarge,
     backgroundColor: tokens.colorNeutralBackground1,
     border: `1px solid ${tokens.colorNeutralStroke2}`,
+    boxShadow: tokens.shadow2,
+    // Long inspectors should scroll within the sticky column, not push the
+    // whole page down past the shot grid.
+    position: "sticky",
+    top: tokens.spacingVerticalXXL,
+    maxHeight: "calc(100vh - 120px)",
+    overflowY: "auto",
   },
 });
 
@@ -331,7 +340,7 @@ export function StoryboardPage(): JSX.Element {
     regenerate.isPending || retry.isPending || cancelOne.isPending || chooseAttempt.isPending;
 
   return (
-    <div>
+    <PageStack>
       <ProjectStatusHeader
         projectId={projectId}
         projectName={project.data?.name ?? "Project"}
@@ -372,7 +381,7 @@ export function StoryboardPage(): JSX.Element {
 
       {storyboard.isSuccess && storyboard.data.shots.length > 0 && (
         <div className={styles.layout}>
-          <div>
+          <div className={styles.column}>
             <TimelinePreview
               shots={storyboard.data.shots}
               totalDurationUs={storyboard.data.total_duration_us}
@@ -460,6 +469,6 @@ export function StoryboardPage(): JSX.Element {
           decideQa.mutate({ decision: qaDecision ?? "approve", reason })
         }
       />
-    </div>
+    </PageStack>
   );
 }

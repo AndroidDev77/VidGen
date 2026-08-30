@@ -22,17 +22,26 @@ import type { DraftState } from "../state/editorState";
 import { formatTimestamp } from "../state/format";
 
 const useStyles = makeStyles({
-  wrapper: { display: "flex", flexDirection: "column", gap: tokens.spacingVerticalL },
+  // Editing copy is reading copy: past roughly 110 characters a narration line
+  // becomes hard to scan back across, so the editor keeps a measured column
+  // even on a wide display.
+  wrapper: {
+    display: "flex",
+    flexDirection: "column",
+    gap: tokens.spacingVerticalL,
+    maxWidth: "1040px",
+  },
   toolbar: { display: "flex", gap: tokens.spacingHorizontalM, flexWrap: "wrap", alignItems: "end" },
   list: { listStyle: "none", margin: 0, padding: 0, display: "grid", gap: tokens.spacingVerticalM },
   segment: {
     display: "flex",
     flexDirection: "column",
     gap: tokens.spacingVerticalS,
-    padding: tokens.spacingVerticalM,
-    borderRadius: tokens.borderRadiusMedium,
+    padding: tokens.spacingHorizontalL,
+    borderRadius: tokens.borderRadiusLarge,
     backgroundColor: tokens.colorNeutralBackground1,
     border: `1px solid ${tokens.colorNeutralStroke2}`,
+    boxShadow: tokens.shadow2,
   },
   meta: { display: "flex", gap: tokens.spacingHorizontalM, flexWrap: "wrap", alignItems: "center" },
   actions: { display: "flex", gap: tokens.spacingHorizontalS, flexWrap: "wrap" },

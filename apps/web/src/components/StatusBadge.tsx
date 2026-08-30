@@ -49,13 +49,24 @@ const TONES: Record<string, Tone> = {
 /**
  * State is never signalled by colour alone: every badge carries an icon and a
  * word, and the tooltip repeats the raw status for assistive technology.
+ *
+ * The tint appearance is deliberate. A table or a stage grid shows a dozen of
+ * these at once, and a dozen saturated fills turn the page into a traffic
+ * light; a tinted chip keeps the same colour coding legible while letting the
+ * content stay the loudest thing on screen.
  */
 export function StatusBadge({ status }: { readonly status: string }): JSX.Element {
   const tone = TONES[status] ?? "informative";
   const label = humanize(status);
   return (
     <Tooltip content={`Status: ${label}`} relationship="label">
-      <Badge appearance="filled" color={tone} icon={iconFor(tone)} aria-label={`Status: ${label}`}>
+      <Badge
+        appearance="tint"
+        shape="rounded"
+        color={tone}
+        icon={iconFor(tone)}
+        aria-label={`Status: ${label}`}
+      >
         {label}
       </Badge>
     </Tooltip>

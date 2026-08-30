@@ -14,10 +14,10 @@ import {
   TableHeader,
   TableHeaderCell,
   TableRow,
-  Title3,
   makeStyles,
   tokens,
 } from "@fluentui/react-components";
+import { ClipboardTaskListLtrRegular } from "@fluentui/react-icons";
 import type {
   FinalCheckProjection,
   FinalCompletionGateProjection,
@@ -27,6 +27,7 @@ import type {
 import type { JSX } from "react";
 
 import { formatMicroseconds, formatTimecode, humanize } from "../state/format";
+import { SectionCard, StatTile, StatTiles } from "./Surface";
 import { TechnicalDetails } from "./TechnicalDetails";
 
 const useStyles = makeStyles({
@@ -34,6 +35,8 @@ const useStyles = makeStyles({
   meta: { display: "flex", gap: tokens.spacingHorizontalM, flexWrap: "wrap", alignItems: "center" },
   actions: { display: "flex", gap: tokens.spacingHorizontalS, flexWrap: "wrap" },
   scroll: { overflowX: "auto" },
+  issue: { display: "flex", flexDirection: "column", minWidth: "180px" },
+  issueSummary: { color: tokens.colorNeutralForeground3 },
   timeline: {
     position: "relative",
     height: "28px",
@@ -42,12 +45,6 @@ const useStyles = makeStyles({
     overflow: "hidden",
   },
   marker: { position: "absolute", top: 0, bottom: 0, minWidth: "3px" },
-  facts: {
-    display: "grid",
-    gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
-    gap: tokens.spacingHorizontalM,
-  },
-  fact: { display: "flex", flexDirection: "column" },
 });
 
 const SEVERITY_COLOR: Record<string, string> = {
@@ -90,10 +87,7 @@ export function FinalQAPanel({
   const styles = useStyles();
   if (run === null) {
     return (
-      <section aria-labelledby="final-qa-heading" className={styles.wrapper}>
-        <Title3 as="h2" id="final-qa-heading">
-          Final editorial QA
-        </Title3>
+      <SectionCard title="Final editorial QA" icon={<ClipboardTaskListLtrRegular />}>
         <MessageBar intent="info">
           <MessageBarBody>
             <MessageBarTitle>Final QA has not run for this render</MessageBarTitle>
@@ -106,7 +100,7 @@ export function FinalQAPanel({
             Run final QA
           </Button>
         </div>
-      </section>
+      </SectionCard>
     );
   }
 
@@ -126,26 +120,25 @@ export function FinalQAPanel({
   const reviewEligible = run.deterministic_failure_count === 0 && run.error_code === null;
 
   return (
-    <section aria-labelledby="final-qa-heading" className={styles.wrapper}>
-      <Title3 as="h2" id="final-qa-heading">
-        Final editorial QA
-      </Title3>
-
-      <div className={styles.meta}>
+    <SectionCard
+      title="Final editorial QA"
+      icon={<ClipboardTaskListLtrRegular />}
+      description={`${run.provider}/${run.model}${run.adjudicated ? " · adjudicated" : ""}`}
+      actions={
         <Badge
-          appearance="filled"
+          appearance="tint"
+          shape="rounded"
           color={
             run.decision === "PASS" ? "success" : run.decision === "REVIEW" ? "warning" : "danger"
           }
         >
           {run.decision ?? humanize(run.status)}
         </Badge>
+      }
+    >
+      <div className={styles.meta}>
         <Caption1>Phase: {humanize(run.phase)}</Caption1>
         <Caption1>Status: {humanize(run.status)}</Caption1>
-        <Caption1>
-          {run.provider}/{run.model}
-          {run.adjudicated ? " · adjudicated" : ""}
-        </Caption1>
         <Caption1>Cost: {(run.cost_microusd / 1_000_000).toFixed(4)} USD</Caption1>
       </div>
 
@@ -178,23 +171,32 @@ export function FinalQAPanel({
         markerClassName={styles.marker}
       />
 
-      <div className={styles.facts}>
-        <Fact label="Blocking" value={String(blocking.length)} />
-        <Fact label="Review required" value={String(reviews.length)} />
-        <Fact label="Warnings" value={String(warnings.length)} />
-        <Fact
-          label="Deterministic failures"
-          value={String(run.deterministic_failure_count)}
+      <StatTiles>
+        <StatTile
+          label="Blocking"
+          value={blocking.length}
+          tone={blocking.length > 0 ? "danger" : "success"}
         />
-        <Fact label="Report version" value={run.report_version || "—"} />
-        <Fact label="Input identity" value={run.final_qa_identity.slice(0, 16)} />
+        <StatTile
+          label="Review required"
+          value={reviews.length}
+          tone={reviews.length > 0 ? "warning" : "neutral"}
+        />
+        <StatTile label="Warnings" value={warnings.length} />
+        <StatTile
+          label="Deterministic failures"
+          value={run.deterministic_failure_count}
+          tone={run.deterministic_failure_count > 0 ? "danger" : "neutral"}
+        />
+        <StatTile label="Report version" value={run.report_version || "—"} />
+        <StatTile label="Input identity" value={run.final_qa_identity.slice(0, 16)} />
         {run.measurements !== null && (
           <>
-            <Fact
+            <StatTile
               label="Measured duration"
               value={formatMicroseconds(run.measurements.container_duration_us)}
             />
-            <Fact
+            <StatTile
               label="Resolution"
               value={
                 run.measurements.width === null
@@ -202,7 +204,7 @@ export function FinalQAPanel({
                   : `${run.measurements.width}x${run.measurements.height}`
               }
             />
-            <Fact
+            <StatTile
               label="Integrated loudness"
               value={
                 run.measurements.integrated_lufs === null
@@ -210,7 +212,7 @@ export function FinalQAPanel({
                   : `${run.measurements.integrated_lufs.toFixed(1)} LUFS`
               }
             />
-            <Fact
+            <StatTile
               label="True peak"
               value={
                 run.measurements.true_peak_dbtp === null
@@ -220,7 +222,7 @@ export function FinalQAPanel({
             />
           </>
         )}
-      </div>
+      </StatTiles>
 
       <div className={styles.actions}>
         <Button appearance="primary" disabled={busy} onClick={onRunFinalQa}>
@@ -301,8 +303,14 @@ export function FinalQAPanel({
                     </Badge>
                   </TableCell>
                   <TableCell>
-                    {humanize(finding.issue_code)}
-                    <Caption1 as="p">{finding.summary}</Caption1>
+                    {/* Fluent's Text is inline by default, so without `block`
+                        the summary ran straight on from the issue code. */}
+                    <div className={styles.issue}>
+                      <Body1 block>{humanize(finding.issue_code)}</Body1>
+                      <Caption1 block className={styles.issueSummary}>
+                        {finding.summary}
+                      </Caption1>
+                    </div>
                   </TableCell>
                   <TableCell>
                     {formatTimecode(finding.start_us)}–{formatTimecode(finding.end_us)}
@@ -396,7 +404,7 @@ export function FinalQAPanel({
           ["Row version", run.row_version],
         ]}
       />
-    </section>
+    </SectionCard>
   );
 }
 
@@ -484,15 +492,5 @@ function CheckTable({
         </TableBody>
       </Table>
     </section>
-  );
-}
-
-function Fact({ label, value }: { readonly label: string; readonly value: string }): JSX.Element {
-  const styles = useStyles();
-  return (
-    <div className={styles.fact}>
-      <Caption1>{label}</Caption1>
-      <Subtitle2>{value}</Subtitle2>
-    </div>
   );
 }

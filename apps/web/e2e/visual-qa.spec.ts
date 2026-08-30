@@ -32,7 +32,7 @@ test.describe("T20 visual-QA review", () => {
     await page.goto(`/projects/${PROJECT_ID}`);
     await expect(page.getByRole("heading", { name: "Visual QA" })).toBeVisible();
     await expect(page.getByText(/blocked · .* awaiting review/)).toBeVisible();
-    await expect(page.getByText(/carry a hard failure and cannot be rendered/)).toBeVisible();
+    await expect(page.getByText(/(carries|carry) a hard failure and cannot be rendered/)).toBeVisible();
 
     // 2. The storyboard grid badges every shot with its QA outcome.
     await page.goto(`/projects/${PROJECT_ID}/storyboard?shot=${shotId(5)}`);
