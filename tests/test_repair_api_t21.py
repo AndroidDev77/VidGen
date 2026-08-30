@@ -21,6 +21,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
 from services.qa.commands import VisualQACommandOptions, run_visual_qa
+from tests.client_fixtures import review_client_context
+from tests.project_template import materialize_project
 from tests.repair_fixtures import failing_profile, identity_resolver
 from tests.visual_qa_fixtures import VisualQAFixture, build_visual_qa_project
 from vidgen.contracts.visual_qa import VisualQATargetType
@@ -34,35 +36,53 @@ INTRUDER = {"X-VidGen-User": "owner-b"}
 WIDTH, HEIGHT = 320, 180
 
 
+def build_repair_client_project(
+    session: Session, blob_root: Path, workspace: Path
+) -> tuple[VisualQAFixture, UUID]:
+    """One shot whose clip fails QA, plus the repair run awaiting review."""
+    store = FilesystemBlobStore(blob_root, b"test-secret")
+    fixture = build_visual_qa_project(
+        session, blob_root, workspace, owner_subject="owner-a", shot_count=1
+    )
+    asyncio.run(
+        run_visual_qa(
+            session,
+            store,
+            project_id=fixture.project_id,
+            options=VisualQACommandOptions(
+                provider="fake",
+                fake_defects={fixture.shot_ids[0]: failing_profile()},
+                shot_id=fixture.shot_ids[0],
+                targets=(VisualQATargetType.VIDEO,),
+                expected_width=WIDTH,
+                expected_height=HEIGHT,
+            ),
+            identity_resolver=identity_resolver,
+        )
+    )
+    run = _seed_repair(session, fixture)
+    session.commit()
+    return fixture, run.id
+
+
 @pytest.fixture
 def repair_client(
-    review_client: tuple[TestClient, sessionmaker[Session], object], tmp_path: Path
+    tmp_path: Path,
 ) -> Iterator[tuple[TestClient, sessionmaker[Session], VisualQAFixture, RepairRun]]:
-    client, factory, _ = review_client
-    blob_root = tmp_path / "blobs"
-    store = FilesystemBlobStore(blob_root, b"test-secret")
-    with factory() as session:
-        fixture = build_visual_qa_project(
-            session, blob_root, tmp_path / "media", owner_subject="owner-a", shot_count=1
-        )
-        asyncio.run(
-            run_visual_qa(
-                session,
-                store,
-                project_id=fixture.project_id,
-                options=VisualQACommandOptions(
-                    provider="fake",
-                    fake_defects={fixture.shot_ids[0]: failing_profile()},
-                    shot_id=fixture.shot_ids[0],
-                    targets=(VisualQATargetType.VIDEO,),
-                    expected_width=WIDTH,
-                    expected_height=HEIGHT,
-                ),
-                identity_resolver=identity_resolver,
-            )
-        )
-        run = _seed_repair(session, fixture)
-        yield client, factory, fixture, run
+    # The project is copied into the control plane's database before the app
+    # opens an engine on it, so the client sees a project that already exists.
+    fixture, run_id = materialize_project(
+        "t21-api",
+        build_repair_client_project,
+        database_path=tmp_path / "review.db",
+        blob_root=tmp_path / "blobs",
+        workspace=tmp_path / "media",
+    )
+    with review_client_context(tmp_path) as (client, factory, _):
+        with factory() as session:
+            run = session.get(RepairRun, run_id)
+            assert run is not None
+            yield client, factory, fixture, run
 
 
 def _seed_repair(session: Session, fixture: VisualQAFixture) -> RepairRun:

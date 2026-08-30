@@ -27,6 +27,7 @@ from services.qa.commands import (
     run_visual_repair,
 )
 from services.qa.repair import RepairNotRequired, VisualRepairPipeline
+from tests.project_template import materialize_project
 from tests.repair_fixtures import (
     failing_profile,
     identity_resolver,
@@ -57,19 +58,34 @@ SIBLING_INDEXES = (1, 2)
 WIDTH, HEIGHT = 320, 180
 
 
+def build_repair_project(session: Session, blob_root: Path, workspace: Path) -> VisualQAFixture:
+    """Three shots with QA already run: every keyframe passes, shot 0 fails."""
+    store = FilesystemBlobStore(blob_root, b"test-secret")
+    fixture = build_visual_qa_project(session, blob_root, workspace, shot_count=3)
+    _seed_qa(session, store, fixture)
+    session.commit()
+    return fixture
+
+
 @pytest.fixture
 def repair_project(
     tmp_path: Path,
 ) -> Iterator[tuple[Session, FilesystemBlobStore, VisualQAFixture]]:
+    # Copy the prebuilt project in before opening an engine on the file.
+    fixture = materialize_project(
+        "t21-acceptance",
+        build_repair_project,
+        database_path=tmp_path / "repair-acceptance.db",
+        blob_root=tmp_path / "blobs",
+        workspace=tmp_path,
+    )
     engine = create_engine(f"sqlite+pysqlite:///{tmp_path / 'repair-acceptance.db'}")
     Base.metadata.create_all(engine)
     factory = sessionmaker(bind=engine, expire_on_commit=False)
-    blob_root = tmp_path / "blobs"
-    store = FilesystemBlobStore(blob_root, b"test-secret")
+    store = FilesystemBlobStore(tmp_path / "blobs", b"test-secret")
     with factory() as session:
-        fixture = build_visual_qa_project(session, blob_root, tmp_path, shot_count=3)
-        _seed_qa(session, store, fixture)
         yield session, store, fixture
+    engine.dispose()
 
 
 def _seed_qa(session: Session, store: FilesystemBlobStore, fixture: VisualQAFixture) -> None:

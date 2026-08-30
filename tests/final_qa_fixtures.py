@@ -16,19 +16,16 @@ Nothing here makes a paid provider call.
 from __future__ import annotations
 
 import asyncio
-import atexit
 import json
 import shutil
 import subprocess
-import tempfile
-from copy import deepcopy
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 from uuid import UUID, uuid4
 
-from sqlalchemy import create_engine, select
-from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy import select
+from sqlalchemy.orm import Session
 
 from services.qa.commands import VisualQACommandOptions, run_visual_qa
 from services.qa.final_rubric import DEFAULT_CONFIGURATION
@@ -39,6 +36,7 @@ from services.renderer.captions import (
     serialize_webvtt,
 )
 from services.renderer.manifest import bound_manifest_identity, render_identity
+from tests.project_template import materialize_project
 from tests.visual_qa_fixtures import build_visual_qa_project
 from vidgen.contracts.final_editorial import FinalQAConfiguration
 from vidgen.contracts.render import (
@@ -50,7 +48,6 @@ from vidgen.contracts.render import (
     RenderShotEntry,
 )
 from vidgen.contracts.visual_qa import VisualQATargetType
-from vidgen.db import Base
 from vidgen.db.animation_models import AnimationGeneratedVideo
 from vidgen.db.models import Asset, RenderJob
 from vidgen.db.narration_models import NarrationRun, NarrationSegment
@@ -622,49 +619,6 @@ def require_ffmpeg() -> bool:
 
 
 # --- the session-wide template -----------------------------------------------
-#: Building one project costs ten encoded shots, a full T20 video-QA pass over
-#: them and a real delivery assembly - tens of seconds of FFmpeg. Every test
-#: wants the same project, so it is built once per test session and copied.
-#: The copy is what each test mutates; the template is never opened again.
-@dataclass(frozen=True, slots=True)
-class _Template:
-    root: Path
-    fixture: FinalQAFixture
-
-
-_TEMPLATES: dict[tuple[int, str], _Template] = {}
-
-
-def _template(shot_count: int, owner_subject: str) -> _Template:
-    key = (shot_count, owner_subject)
-    cached = _TEMPLATES.get(key)
-    if cached is not None:
-        return cached
-    root = Path(tempfile.mkdtemp(prefix="vidgen-t22-template-"))
-    atexit.register(shutil.rmtree, root, True)
-    engine = create_engine(f"sqlite+pysqlite:///{root / 'template.db'}")
-    Base.metadata.create_all(engine)
-    try:
-        with sessionmaker(bind=engine, expire_on_commit=False)() as session:
-            fixture = build_final_qa_project(
-                session,
-                root / "blobs",
-                root / "work",
-                shot_count=shot_count,
-                owner_subject=owner_subject,
-            )
-    finally:
-        # The database file is copied byte for byte, so nothing may still hold
-        # a connection to it.
-        engine.dispose()
-    # The T20 sub-workspace holds the PNG frames the shot encodes were built
-    # from. Nothing reads them again, and they dwarf everything else on disk.
-    shutil.rmtree(root / "work" / "t20", ignore_errors=True)
-    template = _Template(root=root, fixture=fixture)
-    _TEMPLATES[key] = template
-    return template
-
-
 def materialize_final_qa_project(
     *,
     database_path: Path,
@@ -675,19 +629,27 @@ def materialize_final_qa_project(
 ) -> FinalQAFixture:
     """Copy the prebuilt project into one test's own database and directories.
 
+    Building it costs ten encoded shots, a full T20 video-QA pass over them and
+    a real delivery assembly, so it is built once per test session and copied.
     The returned fixture is a private copy: a test may swap the delivered
-    render, add assets or advance the project without touching another test.
-    Call this before opening an engine on ``database_path`` - the file is
-    replaced wholesale.
+    render, add assets or advance the project without touching another.
     """
-    template = _template(shot_count, owner_subject)
-    database_path.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copyfile(template.root / "template.db", database_path)
-    shutil.copytree(template.root / "blobs", blob_root, dirs_exist_ok=True)
-    workspace.mkdir(parents=True, exist_ok=True)
-    for entry in sorted((template.root / "work").iterdir()):
-        if entry.is_file():
-            shutil.copyfile(entry, workspace / entry.name)
-    fixture = deepcopy(template.fixture)
+
+    def build(session: Session, template_blobs: Path, template_workspace: Path) -> FinalQAFixture:
+        return build_final_qa_project(
+            session,
+            template_blobs,
+            template_workspace,
+            shot_count=shot_count,
+            owner_subject=owner_subject,
+        )
+
+    fixture = materialize_project(
+        f"t22-{shot_count}-{owner_subject}",
+        build,
+        database_path=database_path,
+        blob_root=blob_root,
+        workspace=workspace,
+    )
     fixture.workspace = workspace
     return fixture
