@@ -36,7 +36,7 @@ from tests.final_qa_fixtures import (
     FIXTURE_CONFIGURATION,
     FinalQAFixture,
     assemble_render,
-    build_final_qa_project,
+    materialize_final_qa_project,
     narration_wav,
     replace_final_render,
     require_ffmpeg,
@@ -64,7 +64,19 @@ pytestmark = pytest.mark.skipif(not require_ffmpeg(), reason="FFmpeg and ffprobe
 
 
 @pytest.fixture
-def factory(tmp_path: Path) -> Iterator[sessionmaker[Session]]:
+def fixture(tmp_path: Path) -> FinalQAFixture:
+    """This test's own copy of the project. Every other fixture follows it."""
+    return materialize_final_qa_project(
+        database_path=tmp_path / "t22.db",
+        blob_root=tmp_path / "blobs",
+        workspace=tmp_path / "work",
+    )
+
+
+@pytest.fixture
+def factory(tmp_path: Path, fixture: FinalQAFixture) -> Iterator[sessionmaker[Session]]:
+    # ``fixture`` first: the database file is copied into place before an
+    # engine is opened on it.
     engine = create_engine(f"sqlite+pysqlite:///{tmp_path / 't22.db'}")
     Base.metadata.create_all(engine)
     yield sessionmaker(bind=engine, expire_on_commit=False)
@@ -72,23 +84,13 @@ def factory(tmp_path: Path) -> Iterator[sessionmaker[Session]]:
 
 
 @pytest.fixture
-def blob_root(tmp_path: Path) -> Path:
-    root = tmp_path / "blobs"
-    root.mkdir()
-    return root
+def blob_root(tmp_path: Path, fixture: FinalQAFixture) -> Path:
+    return tmp_path / "blobs"
 
 
 @pytest.fixture
 def store(blob_root: Path) -> FilesystemBlobStore:
     return FilesystemBlobStore(blob_root, b"test-secret")
-
-
-@pytest.fixture
-def fixture(
-    factory: sessionmaker[Session], blob_root: Path, tmp_path: Path
-) -> Iterator[FinalQAFixture]:
-    with factory() as session:
-        yield build_final_qa_project(session, blob_root, tmp_path / "work")
 
 
 def options(**overrides: object) -> FinalQACommandOptions:

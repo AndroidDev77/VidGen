@@ -20,10 +20,11 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from services.qa.final_commands import FinalQACommandOptions, run_final_editorial_qa
 from services.qa.final_fake_provider import FakeEditorialDefect, FakeEditorialFinding
+from tests.client_fixtures import review_client_context
 from tests.final_qa_fixtures import (
     FIXTURE_CONFIGURATION,
     FinalQAFixture,
-    build_final_qa_project,
+    materialize_final_qa_project,
     replace_final_render,
     require_ffmpeg,
 )
@@ -68,14 +69,18 @@ def borderline_defect(render_identity: str) -> dict[str, FakeEditorialDefect]:
 
 @pytest.fixture
 def final_qa_client(
-    review_client: tuple[TestClient, sessionmaker[Session], object], tmp_path: Path
+    tmp_path: Path,
 ) -> Iterator[tuple[TestClient, sessionmaker[Session], FinalQAFixture, Path]]:
-    client, factory, _ = review_client
+    # The project is copied into the control plane's database before the app
+    # opens an engine on it, so the client sees a project that already exists.
     blob_root = tmp_path / "blobs"
-    with factory() as session:
-        fixture = build_final_qa_project(
-            session, blob_root, tmp_path / "media", owner_subject="owner-a"
-        )
+    fixture = materialize_final_qa_project(
+        database_path=tmp_path / "review.db",
+        blob_root=blob_root,
+        workspace=tmp_path / "media",
+        owner_subject="owner-a",
+    )
+    with review_client_context(tmp_path) as (client, factory, _):
         yield client, factory, fixture, blob_root
 
 

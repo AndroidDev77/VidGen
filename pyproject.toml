@@ -49,7 +49,7 @@ dev = [
 packages = ["src/vidgen", "apps", "services", "packages"]
 
 [tool.pytest.ini_options]
-addopts = "-q --strict-markers --strict-config"
+addopts = "-q --strict-markers --strict-config --durations=25"
 testpaths = ["tests", "infra/tests"]
 pythonpath = ["."]
 markers = [
