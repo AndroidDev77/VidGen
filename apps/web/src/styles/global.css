@@ -1,6 +1,26 @@
 :root {
   color-scheme: light dark;
   text-rendering: optimizeLegibility;
+
+  /* The ground painted before React mounts, so the first frame is not a flash
+     of white on the way into the dark theme. AppShell paints the real surface. */
+  --vidgen-boot-background: #f6f4fa;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --vidgen-boot-background: #100e16;
+  }
+}
+
+/* Once React has resolved the stored preference it stamps the choice here, so
+   the document ground follows the app rather than the OS. */
+:root[data-theme="light"] {
+  --vidgen-boot-background: #f6f4fa;
+}
+
+:root[data-theme="dark"] {
+  --vidgen-boot-background: #100e16;
 }
 
 * {
@@ -15,15 +35,40 @@ body,
 }
 
 body {
+  background-color: var(--vidgen-boot-background);
   font-family:
-    "Segoe UI Variable", "Segoe UI", system-ui, -apple-system, BlinkMacSystemFont,
-    "Helvetica Neue", Arial, sans-serif;
+    "Inter", "Inter Variable", "Segoe UI Variable Text", "Segoe UI", system-ui,
+    -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif;
+  font-synthesis-weight: none;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
-/* A visible focus indicator on every keyboard-reachable control. */
+/* Opt into Inter's contextual alternates and disambiguated forms where the
+   family is actually installed; a no-op everywhere else. */
+@supports (font-variation-settings: normal) {
+  body {
+    font-feature-settings: "cv05" 1, "cv11" 1, "ss03" 1;
+  }
+}
+
+/*
+ * A visible focus indicator on every keyboard-reachable control.
+ *
+ * The ring is drawn in the brand colour with a neutral halo behind it, so it
+ * stays visible over a brand-filled button as well as over a plain surface.
+ */
 :focus-visible {
-  outline: 2px solid currentColor;
+  outline: 2px solid var(--colorBrandStroke1, currentColor);
   outline-offset: 2px;
+  border-radius: var(--borderRadiusSmall, 4px);
+}
+
+/* Numeric columns line up digit for digit: money and counts never jitter as
+   they update in place. */
+.vidgen-tabular {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
 }
 
 .vidgen-visually-hidden {
@@ -43,13 +88,54 @@ body {
   position: absolute;
   left: -9999px;
   top: 0;
-  z-index: 100;
+  z-index: 1000;
   padding: 8px 16px;
 }
 
 .vidgen-skip-link:focus {
   left: 8px;
   top: 8px;
+  background-color: var(--colorNeutralBackground1, #fff);
+  border-radius: var(--borderRadiusMedium, 8px);
+  box-shadow: var(--shadow8, 0 4px 8px rgba(0, 0, 0, 0.14));
+}
+
+/* Slim, theme-aware scrollbars: the stock chrome-grey bars fight the tinted
+   dark surfaces this app uses. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--colorNeutralStroke1, #c8c6c4) transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  background-color: var(--colorNeutralStroke1, #c8c6c4);
+  border: 3px solid transparent;
+  border-radius: 999px;
+  background-clip: content-box;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background-color: var(--colorNeutralStrokeAccessible, #8a8886);
+}
+
+::selection {
+  background-color: var(--colorBrandBackground2, #efe1fd);
+  color: var(--colorBrandForeground2, #4e2594);
+}
+
+/* Media surfaces should never be a bare browser default rectangle. */
+video,
+img {
+  max-width: 100%;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -59,5 +145,6 @@ body {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
 }

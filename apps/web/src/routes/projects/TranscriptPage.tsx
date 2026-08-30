@@ -12,6 +12,7 @@ import { ConfirmInvalidationDialog } from "../../components/ConfirmInvalidationD
 import { ProjectStatusHeader } from "../../components/ProjectStatusHeader";
 import { TechnicalDetails } from "../../components/TechnicalDetails";
 import { TranscriptEditor, type TranscriptDraft } from "../../components/TranscriptEditor";
+import { PageStack } from "../../components/Surface";
 import { EmptyState, ErrorState, LoadingState } from "../../components/states";
 import { useDraftState } from "../../state/editorState";
 import { useProjectContext } from "./useProjectContext";
@@ -83,7 +84,7 @@ export function TranscriptPage(): JSX.Element {
   );
 
   return (
-    <div>
+    <PageStack>
       <ProjectStatusHeader
         projectId={projectId}
         projectName={project.data?.name ?? "Project"}
@@ -146,6 +147,6 @@ export function TranscriptPage(): JSX.Element {
           }
         }}
       />
-    </div>
+    </PageStack>
   );
 }

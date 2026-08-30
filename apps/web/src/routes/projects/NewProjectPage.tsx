@@ -2,21 +2,31 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Body1,
   Button,
+  Caption1,
   Field,
+  MessageBar,
+  MessageBarBody,
+  MessageBarTitle,
   Input,
-  LargeTitle,
   Slider,
   Textarea,
   makeStyles,
   tokens,
 } from "@fluentui/react-components";
+import {
+  ArrowLeftRegular,
+  MicRegular,
+  MoviesAndTvRegular,
+  WalletCreditCardRegular,
+} from "@fluentui/react-icons";
 import { useCallback, useState, type FormEvent, type JSX } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 
 import { createProject, type ProjectDetail } from "../../api/projects";
 import { queryKeys } from "../../api/queryKeys";
 import { newIdempotencyKey } from "../../api/client";
 import { useApiClient } from "../../app/apiContext";
+import { SectionCard } from "../../components/Surface";
 import { UploadPanel } from "../../components/UploadPanel";
 import { VoiceProfilePicker } from "../../components/VoiceProfilePicker";
 import { ErrorState } from "../../components/states";
@@ -24,12 +34,35 @@ import { useResumableUpload } from "../../hooks/useResumableUpload";
 import { startWorkflow } from "../../api/workflows";
 
 const useStyles = makeStyles({
-  form: {
+  // A single-column form reads best on a measured column; letting it run the
+  // full 1440px would put the labels and their inputs a screen apart.
+  page: {
     display: "flex",
     flexDirection: "column",
     gap: tokens.spacingVerticalL,
-    maxWidth: "720px",
+    maxWidth: "760px",
+    margin: "0 auto",
   },
+  header: { display: "flex", flexDirection: "column", gap: tokens.spacingVerticalXS },
+  back: {
+    display: "inline-flex",
+    alignItems: "center",
+    gap: tokens.spacingHorizontalXS,
+    alignSelf: "flex-start",
+    color: tokens.colorNeutralForeground3,
+    textDecoration: "none",
+    fontSize: tokens.fontSizeBase200,
+    ":hover": { color: tokens.colorBrandForegroundLink, textDecoration: "underline" },
+  },
+  title: {
+    fontSize: tokens.fontSizeHero800,
+    lineHeight: tokens.lineHeightHero800,
+    fontWeight: tokens.fontWeightSemibold,
+    letterSpacing: "-0.02em",
+    margin: 0,
+  },
+  subtitle: { color: tokens.colorNeutralForeground3 },
+  form: { display: "flex", flexDirection: "column", gap: tokens.spacingVerticalL },
   actions: { display: "flex", gap: tokens.spacingHorizontalM, flexWrap: "wrap" },
 });
 
@@ -153,56 +186,75 @@ export function NewProjectPage(): JSX.Element {
   const canStart = uploadComplete && voiceProfileId !== null;
 
   return (
-    <div>
-      <LargeTitle as="h1">New project</LargeTitle>
+    <div className={styles.page}>
+      <div className={styles.header}>
+        <Link className={styles.back} to="/projects">
+          <ArrowLeftRegular aria-hidden="true" /> Back to projects
+        </Link>
+        <h1 className={styles.title}>New project</h1>
+        <Caption1 className={styles.subtitle}>
+          Name the recap, set how it should look and sound, and cap what it may spend. You can
+          upload the source video once the project exists.
+        </Caption1>
+      </div>
       <form className={styles.form} onSubmit={submit} noValidate>
-        <Field
-          label="Project name"
-          required
-          validationState={nameError === null ? "none" : "error"}
-          validationMessage={nameError ?? undefined}
+        <SectionCard title="Basics" icon={<MoviesAndTvRegular />}>
+          <Field
+            label="Project name"
+            required
+            validationState={nameError === null ? "none" : "error"}
+            validationMessage={nameError ?? undefined}
+          >
+            <Input
+              value={name}
+              disabled={project !== null}
+              onChange={(_, data) => setName(data.value)}
+            />
+          </Field>
+
+          <Field
+            label={`Target recap duration: ${Math.round(targetDuration / 60)} minutes`}
+            hint={`Between ${MIN_DURATION / 60} and ${MAX_DURATION / 60} minutes.`}
+          >
+            <Slider
+              min={MIN_DURATION}
+              max={MAX_DURATION}
+              step={30}
+              value={targetDuration}
+              disabled={project !== null}
+              onChange={(_, data) => setTargetDuration(data.value)}
+            />
+          </Field>
+
+          <Field
+            label="Visual style"
+            hint="Describes the look the storyboard and keyframes aim for."
+          >
+            <Textarea
+              value={visualStyle}
+              resize="vertical"
+              disabled={project !== null}
+              onChange={(_, data) => setVisualStyle(data.value)}
+            />
+          </Field>
+
+          <Field label={`Humor intensity: ${humorIntensity} of 10`}>
+            <Slider
+              min={0}
+              max={10}
+              step={1}
+              value={humorIntensity}
+              disabled={project !== null}
+              onChange={(_, data) => setHumorIntensity(data.value)}
+            />
+          </Field>
+        </SectionCard>
+
+        <SectionCard
+          title="Budget"
+          icon={<WalletCreditCardRegular />}
+          description="Every provider call reserves against these caps before it runs."
         >
-          <Input
-            value={name}
-            disabled={project !== null}
-            onChange={(_, data) => setName(data.value)}
-          />
-        </Field>
-
-        <Field
-          label={`Target recap duration: ${Math.round(targetDuration / 60)} minutes`}
-          hint={`Between ${MIN_DURATION / 60} and ${MAX_DURATION / 60} minutes.`}
-        >
-          <Slider
-            min={MIN_DURATION}
-            max={MAX_DURATION}
-            step={30}
-            value={targetDuration}
-            disabled={project !== null}
-            onChange={(_, data) => setTargetDuration(data.value)}
-          />
-        </Field>
-
-        <Field label="Visual style" hint="Describes the look the storyboard and keyframes aim for.">
-          <Textarea
-            value={visualStyle}
-            resize="vertical"
-            disabled={project !== null}
-            onChange={(_, data) => setVisualStyle(data.value)}
-          />
-        </Field>
-
-        <Field label={`Humor intensity: ${humorIntensity} of 10`}>
-          <Slider
-            min={0}
-            max={10}
-            step={1}
-            value={humorIntensity}
-            disabled={project !== null}
-            onChange={(_, data) => setHumorIntensity(data.value)}
-          />
-        </Field>
-
         <Field
           label="Warning cap (USD)"
           hint="Where the cost ledger starts warning you. Leave it at 0.00 to be warned from the first generation."
@@ -236,6 +288,8 @@ export function NewProjectPage(): JSX.Element {
           />
         </Field>
 
+        </SectionCard>
+
         {project === null && (
           <div className={styles.actions}>
             <Button appearance="primary" type="submit" disabled={create.isPending}>
@@ -251,22 +305,32 @@ export function NewProjectPage(): JSX.Element {
 
       {project !== null && (
         <>
-          <Body1 as="p">
-            “{project.name}” is created. Upload its source video to continue.
-          </Body1>
-          <VoiceProfilePicker
-            projectId={project.id}
-            onSelected={(selected) => setVoiceProfileId(selected)}
-          />
-          <UploadPanel
-            upload={upload}
-            onFileSelected={(file) => void upload.start(project.id, file)}
-          />
-          {voiceProfileId === null && (
-            <Body1 as="p" role="status">
-              Select a narration voice before starting the workflow.
-            </Body1>
-          )}
+          <MessageBar intent="success">
+            <MessageBarBody>
+              <MessageBarTitle>Project created</MessageBarTitle>
+              “{project.name}” is created. Upload its source video to continue.
+            </MessageBarBody>
+          </MessageBar>
+
+          <SectionCard title="Narration voice" icon={<MicRegular />}>
+            <VoiceProfilePicker
+              projectId={project.id}
+              onSelected={(selected) => setVoiceProfileId(selected)}
+            />
+            {voiceProfileId === null && (
+              <Body1 as="p" role="status">
+                Select a narration voice before starting the workflow.
+              </Body1>
+            )}
+          </SectionCard>
+
+          <SectionCard title="Source video" headingAs="h3">
+            <UploadPanel
+              upload={upload}
+              onFileSelected={(file) => void upload.start(project.id, file)}
+            />
+          </SectionCard>
+
           <div className={styles.actions}>
             <Button
               appearance="primary"

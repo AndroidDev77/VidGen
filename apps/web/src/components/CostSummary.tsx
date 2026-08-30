@@ -1,7 +1,6 @@
 import {
   Caption1,
   ProgressBar,
-  Subtitle2,
   Table,
   TableBody,
   TableCell,
@@ -11,21 +10,19 @@ import {
   makeStyles,
   tokens,
 } from "@fluentui/react-components";
+import { WalletCreditCardRegular } from "@fluentui/react-icons";
 import type { JSX } from "react";
 import type { ProjectCostSummaryResponse } from "@vidgen/contracts";
 
 import { formatMoney } from "../state/format";
+import { SectionCard, StatTile, StatTiles, type Tone } from "./Surface";
 
 const useStyles = makeStyles({
-  wrapper: { display: "flex", flexDirection: "column", gap: tokens.spacingVerticalM },
-  totals: {
-    display: "grid",
-    gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))",
-    gap: tokens.spacingHorizontalM,
-  },
-  total: { display: "flex", flexDirection: "column" },
+  meter: { display: "flex", flexDirection: "column", gap: tokens.spacingVerticalXS },
   scroll: { overflowX: "auto" },
-  amount: { fontVariantNumeric: "tabular-nums" },
+  amount: { fontVariantNumeric: "tabular-nums", textAlign: "right" },
+  muted: { color: tokens.colorNeutralForeground3 },
+  key: { overflowWrap: "anywhere" },
 });
 
 export interface CostSummaryProps {
@@ -36,57 +33,63 @@ export interface CostSummaryProps {
 export function CostSummary({ costs }: CostSummaryProps): JSX.Element {
   const styles = useStyles();
   const fraction = ratio(costs.committedAmount, costs.hardCap);
+  const rows = breakdownRows(costs);
+  // The tone tracks the same thresholds the ledger enforces, and the caption
+  // below states the position in words so the colour is never the only signal.
+  const tone: Tone =
+    fraction === null ? "neutral" : fraction >= 0.95 ? "danger" : fraction >= 0.75 ? "warning" : "brand";
+
   return (
-    <section className={styles.wrapper} aria-labelledby="cost-summary-heading">
-      <Subtitle2 as="h2" id="cost-summary-heading">
-        Cost
-      </Subtitle2>
-      <div className={styles.totals}>
-        <Total label="Committed" amount={costs.committedAmount} />
-        <Total label="Reserved" amount={costs.reservedAmount} />
-        <Total label="Remaining" amount={costs.remainingAmount} />
-        <Total label="Warning cap" amount={costs.warningCap} />
-        <Total label="Hard cap" amount={costs.hardCap} />
-      </div>
+    <SectionCard
+      title="Cost"
+      icon={<WalletCreditCardRegular />}
+      description="Exact decimal amounts, never rounded on the way to the screen."
+    >
+      <StatTiles>
+        <StatTile label="Committed" value={formatMoney(costs.committedAmount)} tone={tone} />
+        <StatTile label="Reserved" value={formatMoney(costs.reservedAmount)} />
+        <StatTile label="Remaining" value={formatMoney(costs.remainingAmount)} />
+        <StatTile label="Warning cap" value={formatMoney(costs.warningCap)} />
+        <StatTile label="Hard cap" value={formatMoney(costs.hardCap)} />
+      </StatTiles>
       {fraction !== null && (
-        <>
-          <ProgressBar value={fraction} max={1} aria-labelledby="cost-progress-label" />
-          <Caption1 id="cost-progress-label">
+        <div className={styles.meter}>
+          <ProgressBar
+            value={fraction}
+            max={1}
+            shape="rounded"
+            thickness="large"
+            color={fraction >= 0.95 ? "error" : fraction >= 0.75 ? "warning" : "brand"}
+            aria-labelledby="cost-progress-label"
+          />
+          <Caption1 id="cost-progress-label" className={styles.muted}>
             {formatMoney(costs.committedAmount)} committed of {formatMoney(costs.hardCap)} hard cap
           </Caption1>
-        </>
+        </div>
       )}
-      <div className={styles.scroll}>
-        <Table aria-label="Cost by provider, model and operation" size="small">
-          <TableHeader>
-            <TableRow>
-              <TableHeaderCell>Dimension</TableHeaderCell>
-              <TableHeaderCell>Key</TableHeaderCell>
-              <TableHeaderCell>Amount</TableHeaderCell>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {breakdownRows(costs).map((row) => (
-              <TableRow key={`${row.dimension}:${row.key}`}>
-                <TableCell>{row.dimension}</TableCell>
-                <TableCell>{row.key}</TableCell>
-                <TableCell className={styles.amount}>{formatMoney(row.amount)}</TableCell>
+      {rows.length > 0 && (
+        <div className={styles.scroll}>
+          <Table aria-label="Cost by provider, model and operation" size="small">
+            <TableHeader>
+              <TableRow>
+                <TableHeaderCell>Dimension</TableHeaderCell>
+                <TableHeaderCell>Key</TableHeaderCell>
+                <TableHeaderCell className={styles.amount}>Amount</TableHeaderCell>
               </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </div>
-    </section>
-  );
-}
-
-function Total({ label, amount }: { readonly label: string; readonly amount: string }): JSX.Element {
-  const styles = useStyles();
-  return (
-    <div className={styles.total}>
-      <Caption1>{label}</Caption1>
-      <Subtitle2 className={styles.amount}>{formatMoney(amount)}</Subtitle2>
-    </div>
+            </TableHeader>
+            <TableBody>
+              {rows.map((row) => (
+                <TableRow key={`${row.dimension}:${row.key}`}>
+                  <TableCell className={styles.muted}>{row.dimension}</TableCell>
+                  <TableCell className={styles.key}>{row.key}</TableCell>
+                  <TableCell className={styles.amount}>{formatMoney(row.amount)}</TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      )}
+    </SectionCard>
   );
 }
 

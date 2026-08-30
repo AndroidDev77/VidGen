@@ -1,13 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  Caption1,
   MessageBar,
   MessageBarBody,
   MessageBarTitle,
-  Subtitle2,
   makeStyles,
   tokens,
 } from "@fluentui/react-components";
+import { DocumentBulletListRegular, VideoClipRegular } from "@fluentui/react-icons";
 import type {
   PrivacyState,
   PublicationMetadataRequest,
@@ -53,18 +52,13 @@ import { CaptionControls } from "../../components/CaptionControls";
 import { ProjectStatusHeader } from "../../components/ProjectStatusHeader";
 import { TechnicalDetails } from "../../components/TechnicalDetails";
 import { VideoPreview } from "../../components/VideoPreview";
+import { PageStack, SectionCard, StatTile, StatTiles } from "../../components/Surface";
 import { ErrorState, LoadingState } from "../../components/states";
 import { formatMicroseconds, formatTimestamp, humanize } from "../../state/format";
 import { useProjectContext } from "./useProjectContext";
 
 const useStyles = makeStyles({
   layout: { display: "flex", flexDirection: "column", gap: tokens.spacingVerticalL },
-  facts: {
-    display: "grid",
-    gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
-    gap: tokens.spacingHorizontalM,
-  },
-  fact: { display: "flex", flexDirection: "column" },
 });
 
 export function FinalReviewPage(): JSX.Element {
@@ -452,7 +446,7 @@ export function FinalReviewPage(): JSX.Element {
   );
 
   return (
-    <div>
+    <PageStack>
       <ProjectStatusHeader
         projectId={projectId}
         projectName={project.data?.name ?? "Project"}
@@ -504,44 +498,44 @@ export function FinalReviewPage(): JSX.Element {
             </MessageBar>
           )}
 
-          <VideoPreview
-            videoUrl={videoUrl.data ?? null}
-            captionsUrl={captionUrl.data ?? null}
-            captionsEnabled={captionsEnabled}
-            captionLanguage={render.data.caption_language ?? "en"}
-            title={project.data?.name ?? "the project"}
-          />
+          <SectionCard title="Preview" icon={<VideoClipRegular />}>
+            <VideoPreview
+              videoUrl={videoUrl.data ?? null}
+              captionsUrl={captionUrl.data ?? null}
+              captionsEnabled={captionsEnabled}
+              captionLanguage={render.data.caption_language ?? "en"}
+              title={project.data?.name ?? "the project"}
+            />
 
-          <CaptionControls
-            enabled={captionsEnabled}
-            onToggle={toggleCaptions}
-            language={render.data.caption_language}
-            cueCount={render.data.caption_cue_count}
-            subtitleMode={render.data.subtitle_mode}
-            disabled={captionAssetId === null}
-          />
+            <CaptionControls
+              enabled={captionsEnabled}
+              onToggle={toggleCaptions}
+              language={render.data.caption_language}
+              cueCount={render.data.caption_cue_count}
+              subtitleMode={render.data.subtitle_mode}
+              disabled={captionAssetId === null}
+            />
+          </SectionCard>
 
-          <section aria-labelledby="render-facts-heading">
-            <Subtitle2 as="h2" id="render-facts-heading">
-              Render summary
-            </Subtitle2>
-            <div className={styles.facts}>
-              <Fact label="Status" value={humanize(render.data.status)} />
-              <Fact label="Render version" value={render.data.render_version} />
-              <Fact
+          <SectionCard title="Render summary" icon={<DocumentBulletListRegular />}>
+            <StatTiles>
+              <StatTile label="Status" value={humanize(render.data.status)} tone="brand" />
+              <StatTile label="Render version" value={render.data.render_version} />
+              <StatTile
                 label="Verification"
                 value={render.data.verified ? "Passed" : "No successful report"}
+                tone={render.data.verified ? "success" : "warning"}
               />
-              <Fact
+              <StatTile
                 label="Expected duration"
                 value={formatMicroseconds(render.data.expected_duration_us)}
               />
-              <Fact
+              <StatTile
                 label="Measured duration"
                 value={formatMicroseconds(render.data.measured_duration_us)}
               />
-              <Fact label="Selected shots" value={String(render.data.selected_shot_count)} />
-              <Fact
+              <StatTile label="Selected shots" value={render.data.selected_shot_count} />
+              <StatTile
                 label="Integrated loudness"
                 value={
                   render.data.integrated_loudness_lufs === null
@@ -549,7 +543,7 @@ export function FinalReviewPage(): JSX.Element {
                     : `${render.data.integrated_loudness_lufs.toFixed(1)} LUFS`
                 }
               />
-              <Fact
+              <StatTile
                 label="True peak"
                 value={
                   render.data.true_peak_dbtp === null
@@ -557,17 +551,18 @@ export function FinalReviewPage(): JSX.Element {
                     : `${render.data.true_peak_dbtp.toFixed(1)} dBTP`
                 }
               />
-              <Fact
+              <StatTile
                 label="Warnings"
                 value={
                   render.data.warning_codes.length === 0
                     ? "None"
                     : render.data.warning_codes.map(humanize).join(", ")
                 }
+                tone={render.data.warning_codes.length === 0 ? "neutral" : "warning"}
               />
-              <Fact label="Completed" value={formatTimestamp(render.data.completed_at)} />
-            </div>
-          </section>
+              <StatTile label="Completed" value={formatTimestamp(render.data.completed_at)} />
+            </StatTiles>
+          </SectionCard>
 
           {gate !== null && !gate.allowed && (
             <MessageBar intent="warning">
@@ -681,16 +676,6 @@ export function FinalReviewPage(): JSX.Element {
           />
         </div>
       )}
-    </div>
-  );
-}
-
-function Fact({ label, value }: { readonly label: string; readonly value: string }): JSX.Element {
-  const styles = useStyles();
-  return (
-    <div className={styles.fact}>
-      <Caption1>{label}</Caption1>
-      <Subtitle2>{value}</Subtitle2>
-    </div>
+    </PageStack>
   );
 }

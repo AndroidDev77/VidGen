@@ -1,11 +1,5 @@
-import {
-  Body1,
-  Caption1,
-  CardHeader,
-  Subtitle2,
-  makeStyles,
-  tokens,
-} from "@fluentui/react-components";
+import { Body1, Caption1, makeStyles, tokens } from "@fluentui/react-components";
+import { TaskListLtrRegular } from "@fluentui/react-icons";
 import { useQuery } from "@tanstack/react-query";
 import { isTerminalCommandStatus } from "@vidgen/contracts";
 import type { JSX } from "react";
@@ -14,15 +8,35 @@ import { describeCommand, listCommands } from "../api/commands";
 import { queryKeys } from "../api/queryKeys";
 import { useApiClient } from "../app/apiContext";
 import { StatusBadge } from "./StatusBadge";
+import { SectionCard } from "./Surface";
 import { ErrorState, LoadingState } from "./states";
 
 const useStyles = makeStyles({
-  list: { display: "flex", flexDirection: "column", gap: tokens.spacingVerticalS },
+  list: {
+    listStyle: "none",
+    margin: 0,
+    padding: 0,
+    display: "flex",
+    flexDirection: "column",
+    gap: tokens.spacingVerticalXXS,
+  },
+  // Each command is its own tinted row, so a long control-plane history scans
+  // as a list of discrete events instead of as a wall of wrapped text.
   row: {
     display: "flex",
-    alignItems: "baseline",
+    alignItems: "center",
     gap: tokens.spacingHorizontalS,
     flexWrap: "wrap",
+    padding: `${tokens.spacingVerticalXS} ${tokens.spacingHorizontalS}`,
+    borderRadius: tokens.borderRadiusMedium,
+    ":hover": { backgroundColor: tokens.colorNeutralBackground2 },
+  },
+  label: { flexShrink: 0 },
+  detail: { color: tokens.colorNeutralForeground3 },
+  workflow: {
+    color: tokens.colorNeutralForeground3,
+    fontFamily: tokens.fontFamilyMonospace,
+    overflowWrap: "anywhere",
   },
 });
 
@@ -70,11 +84,22 @@ export function CommandsPanel({ projectId }: CommandsPanelProps): JSX.Element {
     },
   });
 
+  const heading = "Commands";
+  const icon = <TaskListLtrRegular />;
+
   if (commands.isPending) {
-    return <LoadingState label="Loading commands" rows={2} />;
+    return (
+      <SectionCard title={heading} icon={icon}>
+        <LoadingState label="Loading commands" rows={2} />
+      </SectionCard>
+    );
   }
   if (commands.isError) {
-    return <ErrorState error={commands.error} onRetry={() => void commands.refetch()} />;
+    return (
+      <SectionCard title={heading} icon={icon}>
+        <ErrorState error={commands.error} onRetry={() => void commands.refetch()} />
+      </SectionCard>
+    );
   }
 
   // Read defensively. A dashboard must not be taken down by one unexpected
@@ -87,35 +112,37 @@ export function CommandsPanel({ projectId }: CommandsPanelProps): JSX.Element {
   const active = runs.find((run) => run.status === "active" || run.status === "awaiting_review");
 
   return (
-    <div>
-      <CardHeader
-        header={<Subtitle2 as="h2">Commands</Subtitle2>}
-        description={
-          <Caption1>
-            {active === undefined
-              ? "No generation run is active."
-              : `Generation run ${active.sequence}, from ${String(
-                  active.entry_stage ?? "",
-                ).replaceAll("_", " ")}.`}
-          </Caption1>
-        }
-      />
+    <SectionCard
+      title={heading}
+      icon={icon}
+      description={
+        active === undefined
+          ? "No generation run is active."
+          : `Generation run ${active.sequence}, from ${String(
+              active.entry_stage ?? "",
+            ).replaceAll("_", " ")}.`
+      }
+    >
       {items.length === 0 ? (
-        <Body1>No command has been issued for this project yet.</Body1>
+        <Body1 className={styles.detail}>
+          No command has been issued for this project yet.
+        </Body1>
       ) : (
         <ul className={styles.list} aria-label="Control commands">
           {items.map((command) => (
             <li key={command.command_id} className={styles.row}>
               <StatusBadge status={command.status} />
-              <Body1>{LABELS[command.command_type] ?? command.command_type}</Body1>
-              <Caption1>{describeCommand(command)}</Caption1>
+              <Body1 className={styles.label}>
+                {LABELS[command.command_type] ?? command.command_type}
+              </Body1>
+              <Caption1 className={styles.detail}>{describeCommand(command)}</Caption1>
               {command.workflow_id !== null && (
-                <Caption1>{`Workflow ${command.workflow_id}`}</Caption1>
+                <Caption1 className={styles.workflow}>{`Workflow ${command.workflow_id}`}</Caption1>
               )}
             </li>
           ))}
         </ul>
       )}
-    </div>
+    </SectionCard>
   );
 }

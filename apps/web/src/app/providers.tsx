@@ -1,6 +1,6 @@
 import { FluentProvider } from "@fluentui/react-components";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { useCallback, useMemo, useState, type JSX, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useState, type JSX, type ReactNode } from "react";
 
 import { apiClient, type VidGenClient } from "../api/client";
 import { VidGenApiError } from "../api/errors";
@@ -49,6 +49,16 @@ export interface AppProvidersProps {
 export function AppProviders({ children, queryClient, client }: AppProvidersProps): JSX.Element {
   const [resolvedClient] = useState(() => queryClient ?? createQueryClient());
   const [theme, setTheme] = useState<ThemePreference>(readStoredTheme);
+
+  // The chosen theme is stamped on <html> so the document ground matches the
+  // app surface. Without it the body keeps whatever the OS preference implied,
+  // and a light-mode OS shows a pale strip under a short dark page.
+  useEffect(() => {
+    document.documentElement.dataset["theme"] = theme;
+    return () => {
+      delete document.documentElement.dataset["theme"];
+    };
+  }, [theme]);
 
   const toggleTheme = useCallback(() => {
     setTheme((previous) => {

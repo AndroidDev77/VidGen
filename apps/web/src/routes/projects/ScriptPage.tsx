@@ -12,6 +12,7 @@ import { ConfirmInvalidationDialog } from "../../components/ConfirmInvalidationD
 import { ProjectStatusHeader } from "../../components/ProjectStatusHeader";
 import { ScriptEditor, type ScriptDraft } from "../../components/ScriptEditor";
 import { TechnicalDetails } from "../../components/TechnicalDetails";
+import { PageStack } from "../../components/Surface";
 import { ErrorState, LoadingState } from "../../components/states";
 import { useDraftState } from "../../state/editorState";
 import { useProjectContext } from "./useProjectContext";
@@ -99,7 +100,7 @@ export function ScriptPage(): JSX.Element {
   });
 
   return (
-    <div>
+    <PageStack>
       <ProjectStatusHeader
         projectId={projectId}
         projectName={project.data?.name ?? "Project"}
@@ -169,6 +170,6 @@ export function ScriptPage(): JSX.Element {
           }
         }}
       />
-    </div>
+    </PageStack>
   );
 }
