@@ -317,7 +317,20 @@ curl -sS -X POST http://localhost:8000/api/v1/projects \
   -d '{"name":"Real run","budget_warning_cap":"15.00","budget_hard_cap":"25.00"}'
 ```
 
-Spend against the cap is visible at `GET /api/v1/projects/{id}/costs` and through
+A project that already exists — one created before budgets were required, or one created with a
+zero cap for a fake run — is funded without recreating it:
+
+```bash
+curl -sS -X PUT http://localhost:8000/api/v1/projects/$PROJECT_ID/budget \
+  -H 'Content-Type: application/json' \
+  -H 'X-VidGen-User: local-user' \
+  -d '{"budget_warning_cap":"15.00","budget_hard_cap":"25.00"}'
+```
+
+`GET /api/v1/projects/{id}/budget` returns the caps with the reserved, committed and released
+amounts the ledger has recorded against them. Those recorded amounts are never rewritten by an
+update, and a hard cap cannot be lowered below what the project has already committed or reserved.
+Spend against the cap is also visible at `GET /api/v1/projects/{id}/costs` and through
 `scripts/cost_report.py`.
 
 ### Selecting a narration voice
@@ -908,8 +921,8 @@ curl -sS -H 'X-VidGen-User: local-user' \
   http://localhost:8000/api/v1/projects/$PROJECT_ID/costs
 ```
 
-Create the project again with `budget_hard_cap` set, or raise the cap on the existing
-`project_budgets` row. A project whose `committed_amount + reserved_amount` has reached the hard cap
+Fund it in place with `PUT /api/v1/projects/{id}/budget` — it creates the row if the project has
+none — rather than recreating the project. A project whose `committed_amount + reserved_amount` has reached the hard cap
 is refused for the same reason — that is the cap doing its job, not a bug.
 
 **Missing voice profile.** The narration activity fails with

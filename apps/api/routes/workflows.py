@@ -102,23 +102,29 @@ def start_workflow(
             ApiErrorCode.VOICE_PROFILE_REQUIRED,
             "Select a narration voice profile before starting this project.",
         )
-    # A paid deployment reserves against the T23 budget at every provider call.
-    # Without a positive hard cap with headroom left, the first paid activity
-    # would fail inside the workflow; refusing here costs nothing and says why.
-    # A fake-provider deployment spends nothing, so a zero-dollar budget starts.
-    if not startable(budget_for(session, project.id), BudgetDeployment.from_settings(settings)):
-        raise conflict(
-            ApiErrorCode.PROJECT_BUDGET_REQUIRED,
-            "Set a positive project budget before starting this project. "
-            "This deployment uses paid providers, and every generation reserves "
-            "against the project's hard cap.",
-        )
-
     workflow_id = project_workflow_id(project.id)
     existing = session.scalar(
         select(ProjectWorkflowRun).where(ProjectWorkflowRun.workflow_id == workflow_id)
     )
     if existing is None:
+        # A paid deployment reserves against the T23 budget at every provider
+        # call. Without a positive hard cap with headroom left, the first paid
+        # activity would fail inside the workflow; refusing here costs nothing
+        # and says why. A fake-provider deployment spends nothing, so a
+        # zero-dollar budget starts.
+        #
+        # This guards starting, not adopting: a project already running has
+        # already committed against its cap, and answering a repeated start
+        # with 409 rather than its existing run would break the idempotent
+        # adopt path for exactly the projects that are furthest along.
+        if not startable(budget_for(session, project.id), BudgetDeployment.from_settings(settings)):
+            raise conflict(
+                ApiErrorCode.PROJECT_BUDGET_REQUIRED,
+                "Set a positive project budget before starting this project. "
+                "This deployment uses paid providers, and every generation reserves "
+                "against the project's hard cap. Set one with "
+                "PUT /api/v1/projects/{id}/budget.",
+            )
         runs = GenerationRunService(session)
         generation_run, _ = runs.open(
             project_id=project.id,

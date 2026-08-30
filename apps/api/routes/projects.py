@@ -11,16 +11,21 @@ from apps.api.auth import Principal, get_current_user
 from apps.api.dependencies import get_blob_store, get_session
 from apps.api.schemas.projects import (
     CreateProjectRequest,
+    ProjectBudgetResponse,
     ProjectListItemResponse,
     ProjectResponse,
     ProjectStatusResponse,
+    SetProjectBudgetRequest,
 )
 from apps.api.schemas.uploads import InitializeUploadRequest, UploadResponse
 from apps.api.settings import APISettings, get_settings
 from services.costs.project_budget import (
     BudgetDeployment,
     BudgetError,
+    budget_for,
     create_budget,
+    set_caps,
+    stored_amount,
     validate_caps,
 )
 from services.narration.voice_profiles import (
@@ -30,6 +35,7 @@ from services.narration.voice_profiles import (
     select_profile,
 )
 from vidgen.contracts.review import ApiErrorField
+from vidgen.db.cost_models import ProjectBudget
 from vidgen.db.models import Project, SourceVideo
 from vidgen.db.repositories import ProjectRepository
 from vidgen.db.upload_models import UploadSession
@@ -183,6 +189,69 @@ def get_project(
     project_id: UUID, session: SessionDependency, principal: PrincipalDependency
 ) -> ProjectResponse:
     return _project_response(session, owned_project(session, project_id, principal))
+
+
+def _budget_response(budget: ProjectBudget) -> ProjectBudgetResponse:
+    """Render the budget at the scale the column stores.
+
+    A value just written is still in memory at whatever scale it was parsed
+    with, while one read back carries the column's six decimal places. Rendering
+    both at the stored scale means the same budget reads the same way whether or
+    not this request is the one that wrote it.
+    """
+    return ProjectBudgetResponse(
+        project_id=budget.project_id,
+        warning_cap=stored_amount(budget.warning_cap),
+        hard_cap=stored_amount(budget.hard_cap),
+        currency=budget.currency,
+        policy_version=budget.policy_version,
+        reserved_amount=stored_amount(budget.reserved_amount),
+        committed_amount=stored_amount(budget.committed_amount),
+        released_amount=stored_amount(budget.released_amount),
+        row_version=budget.row_version,
+    )
+
+
+@router.get("/{project_id}/budget", response_model=ProjectBudgetResponse)
+def get_budget(
+    project_id: UUID, session: SessionDependency, principal: PrincipalDependency
+) -> ProjectBudgetResponse:
+    project = owned_project(session, project_id, principal)
+    budget = budget_for(session, project.id)
+    if budget is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="budget not found")
+    return _budget_response(budget)
+
+
+@router.put("/{project_id}/budget", response_model=ProjectBudgetResponse)
+def set_budget(
+    project_id: UUID,
+    request: SetProjectBudgetRequest,
+    session: SessionDependency,
+    principal: PrincipalDependency,
+    settings: SettingsDependency,
+) -> ProjectBudgetResponse:
+    """Fund a project that has no budget yet, or move its caps.
+
+    Without this a project created before budgets were required - or created
+    with a zero cap for a fake-provider run - could never start on a paid
+    deployment, because the only way to get a budget row would be to recreate
+    the project. The ledger's recorded amounts are never rewritten here.
+    """
+    project = owned_project(session, project_id, principal)
+    try:
+        budget = set_caps(
+            session,
+            project,
+            warning_cap=request.budget_warning_cap,
+            hard_cap=request.budget_hard_cap,
+            deployment=BudgetDeployment.from_settings(settings),
+        )
+    except BudgetError as error:
+        session.rollback()
+        raise _budget_error(error) from error
+    session.commit()
+    return _budget_response(budget)
 
 
 @router.get("/{project_id}/status", response_model=ProjectStatusResponse)

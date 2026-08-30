@@ -45,6 +45,27 @@ function amountError(value: string, label: string): string | null {
     : `Enter ${label} as an amount in dollars, for example 25.00.`;
 }
 
+/**
+ * Compare two validated amounts without going through a binary float.
+ *
+ * `AMOUNT_PATTERN` allows up to eighteen digits, more than `Number` can hold
+ * exactly, so `Number(a) < Number(b)` would let some inverted pairs through.
+ * Padding both sides to a common width makes a plain string compare exact.
+ */
+function isLess(left: string, right: string): boolean {
+  const split = (value: string): [string, string] => {
+    const [whole, fraction = ""] = value.trim().split(".");
+    return [whole ?? "0", fraction];
+  };
+  const [leftWhole, leftFraction] = split(left);
+  const [rightWhole, rightFraction] = split(right);
+  const wholeWidth = Math.max(leftWhole.length, rightWhole.length);
+  const fractionWidth = Math.max(leftFraction.length, rightFraction.length);
+  const pad = (whole: string, fraction: string): string =>
+    whole.padStart(wholeWidth, "0") + fraction.padEnd(fractionWidth, "0");
+  return pad(leftWhole, leftFraction) < pad(rightWhole, rightFraction);
+}
+
 export function NewProjectPage(): JSX.Element {
   const styles = useStyles();
   const client = useApiClient();
@@ -60,7 +81,9 @@ export function NewProjectPage(): JSX.Element {
   const [warningCap, setWarningCap] = useState("0.00");
   const [hardCap, setHardCap] = useState("0.00");
   const [nameError, setNameError] = useState<string | null>(null);
-  const [budgetError, setBudgetError] = useState<string | null>(null);
+  // Tracked per field so an invalid warning cap is flagged on the warning cap.
+  const [warningCapError, setWarningCapError] = useState<string | null>(null);
+  const [hardCapError, setHardCapError] = useState<string | null>(null);
   const [project, setProject] = useState<ProjectDetail | null>(null);
   // T12 narration resolves the project's voice, and the workflow refuses to
   // start without one. Tracking it here means the start button is disabled with
@@ -106,17 +129,21 @@ export function NewProjectPage(): JSX.Element {
         return;
       }
       setNameError(null);
-      const capError =
-        amountError(warningCap, "the warning cap") ?? amountError(hardCap, "the hard cap");
-      if (capError !== null) {
-        setBudgetError(capError);
+      const warningInvalid = amountError(warningCap, "the warning cap");
+      const hardInvalid = amountError(hardCap, "the hard cap");
+      setWarningCapError(warningInvalid);
+      setHardCapError(
+        hardInvalid ??
+          (warningInvalid === null && isLess(hardCap, warningCap)
+            ? "The hard cap must be at least the warning cap."
+            : null),
+      );
+      if (warningInvalid !== null || hardInvalid !== null) {
         return;
       }
-      if (Number(hardCap) < Number(warningCap)) {
-        setBudgetError("The hard cap must be at least the warning cap.");
+      if (isLess(hardCap, warningCap)) {
         return;
       }
-      setBudgetError(null);
       create.mutate();
     },
     [create, hardCap, name, warningCap],
@@ -179,6 +206,8 @@ export function NewProjectPage(): JSX.Element {
         <Field
           label="Warning cap (USD)"
           hint="Where the cost ledger starts warning you. Leave it at 0.00 to be warned from the first generation."
+          validationState={warningCapError === null ? "none" : "error"}
+          validationMessage={warningCapError ?? undefined}
         >
           <Input
             value={warningCap}
@@ -196,8 +225,8 @@ export function NewProjectPage(): JSX.Element {
             "it is refused rather than charged. A project on a deployment with paid " +
             "provider credentials needs a hard cap above 0.00 before its workflow can start."
           }
-          validationState={budgetError === null ? "none" : "error"}
-          validationMessage={budgetError ?? undefined}
+          validationState={hardCapError === null ? "none" : "error"}
+          validationMessage={hardCapError ?? undefined}
         >
           <Input
             value={hardCap}

@@ -45,9 +45,14 @@ BUDGET_CURRENCY = "USD"
 BUDGET_POLICY_VERSION = "t23/1"
 
 #: ``ProjectBudget`` money columns are ``NUMERIC(18, 6)``: at most six decimal
-#: places, and at most eighteen significant digits in total.
+#: places, and at most eighteen digits in total once scaled to those places.
 MONEY_DECIMAL_PLACES = 6
 MONEY_TOTAL_DIGITS = 18
+#: The exclusive upper bound, expressed the way the column stores the value: an
+#: integer count of millionths that has to fit in eighteen digits. Comparing
+#: against this catches an exponent-form amount such as ``1E+20``, which has one
+#: significant digit and would otherwise reach PostgreSQL and overflow there.
+MONEY_LIMIT = Decimal(10) ** (MONEY_TOTAL_DIGITS - MONEY_DECIMAL_PLACES)
 
 
 class BudgetError(RuntimeError):
@@ -130,11 +135,21 @@ def parse_amount(value: object, *, field: str) -> Decimal:
             f"A budget cap supports at most {MONEY_DECIMAL_PLACES} decimal places.",
             field=field,
         )
-    if len(amount.as_tuple().digits) - min(exponent, 0) > MONEY_TOTAL_DIGITS:
+    if amount >= MONEY_LIMIT:
         raise BudgetError(
             "budget_amount_too_large", "That budget cap is too large to store.", field=field
         )
     return amount
+
+
+def stored_amount(amount: Decimal) -> str:
+    """Render an amount at the ledger column's scale, exactly.
+
+    ``NUMERIC(18, 6)`` returns six decimal places, so an amount that has been
+    through the database and one that has not must be rendered the same way or
+    the same budget reads differently depending on who is asking.
+    """
+    return str(amount.quantize(Decimal(1).scaleb(-MONEY_DECIMAL_PLACES)))
 
 
 @dataclass(frozen=True, slots=True)
@@ -201,6 +216,50 @@ def create_budget(
         row_version=1,
     )
     session.add(budget)
+    session.flush()
+    return budget
+
+
+def set_caps(
+    session: Session,
+    project: Project,
+    *,
+    warning_cap: object,
+    hard_cap: object,
+    deployment: BudgetDeployment,
+) -> ProjectBudget:
+    """Create or update the project's caps, keeping every recorded amount.
+
+    A project created before budgets were required has no row at all, and one
+    created with a zero cap on a fake deployment needs a real one before it can
+    run for real. Both are the same operation: the caps move, and the reserved,
+    committed and released totals the ledger owns are never touched by it.
+
+    Lowering the cap below what is already reserved or committed is refused
+    rather than silently applied: the ledger would have no consistent state to
+    reconcile into, and money already spent cannot be un-spent by a form.
+    """
+    caps = validate_caps(warning_cap, hard_cap, deployment)
+    budget = budget_for(session, project.id)
+    if budget is None:
+        return create_budget(
+            session,
+            project,
+            warning_cap=caps.warning_cap,
+            hard_cap=caps.hard_cap,
+            deployment=deployment,
+        )
+    spent = budget.committed_amount + budget.reserved_amount
+    if caps.hard_cap < spent:
+        raise BudgetError(
+            "budget_hard_cap_below_spend",
+            f"This project has already committed or reserved {spent}, so its hard cap "
+            "cannot be lowered below that.",
+            field="budget_hard_cap",
+        )
+    budget.warning_cap = caps.warning_cap
+    budget.hard_cap = caps.hard_cap
+    budget.row_version += 1
     session.flush()
     return budget
 

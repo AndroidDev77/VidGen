@@ -37,6 +37,7 @@ from services.costs.project_budget import (
     BudgetError,
     create_budget,
     parse_amount,
+    set_caps,
     startable,
     validate_caps,
 )
@@ -246,6 +247,14 @@ def test_amount_parsing_rules(session: Session) -> None:
             parse_amount(bad, field="x")
 
 
+def test_an_exponent_form_amount_cannot_overflow_the_column() -> None:
+    """``1E+20`` has one significant digit and would still overflow NUMERIC(18, 6)."""
+    for bad in ("1E+20", "1E+1000", "1000000000000"):
+        with pytest.raises(BudgetError, match="too large"):
+            parse_amount(bad, field="x")
+    assert parse_amount("999999999999.999999", field="x") == Decimal("999999999999.999999")
+
+
 def test_validate_caps_orders_its_complaints(session: Session) -> None:
     with pytest.raises(BudgetError) as negative:
         validate_caps("-1", "5", FAKE_DEPLOYMENT)
@@ -261,6 +270,102 @@ def test_a_second_budget_is_refused(session: Session) -> None:
     create_budget(session, project, warning_cap="1", hard_cap="2", deployment=FAKE_DEPLOYMENT)
     with pytest.raises(BudgetError, match="already has a budget"):
         create_budget(session, project, warning_cap="1", hard_cap="2", deployment=FAKE_DEPLOYMENT)
+
+
+# --- funding a project that already exists ------------------------------------
+
+
+def test_an_existing_project_can_be_funded(paid_client: BudgetClient) -> None:
+    """The workflow:start refusal has to be satisfiable without recreating the project."""
+    client, factory = paid_client
+    created = create(client, budget_hard_cap="5.00")
+    assert created.status_code == 201
+    project_id = created.json()["id"]
+
+    updated = client.put(
+        f"/api/v1/projects/{project_id}/budget",
+        json={"budget_warning_cap": "10.00", "budget_hard_cap": "40.00"},
+        headers=OWNER,
+    )
+    assert updated.status_code == 200, updated.json()
+    body = updated.json()
+    assert body["hard_cap"] == "40.000000"
+    assert body["warning_cap"] == "10.000000"
+    assert body["currency"] == "USD"
+    assert body["row_version"] == 2
+    with factory() as session:
+        budget = session.scalar(
+            select(ProjectBudget).where(ProjectBudget.project_id == UUID(project_id))
+        )
+        assert budget is not None and budget.hard_cap == Decimal("40.00")
+
+
+def test_a_project_created_before_budgets_can_be_funded(session: Session) -> None:
+    """A project with no budget row at all is the case the endpoint exists for."""
+    project = make_project(session)
+    budget = set_caps(
+        session, project, warning_cap="1.00", hard_cap="9.00", deployment=PAID_DEPLOYMENT
+    )
+    assert budget.hard_cap == Decimal("9.00")
+    assert budget.policy_version == BUDGET_POLICY_VERSION
+    assert budget.row_version == 1
+
+
+def test_a_cap_cannot_be_lowered_below_what_is_already_spent(session: Session) -> None:
+    project = make_project(session)
+    budget = create_budget(
+        session, project, warning_cap="1.00", hard_cap="20.00", deployment=PAID_DEPLOYMENT
+    )
+    budget.committed_amount = Decimal("6.00")
+    budget.reserved_amount = Decimal("2.00")
+    session.flush()
+    with pytest.raises(BudgetError, match="cannot be lowered"):
+        set_caps(session, project, warning_cap="1.00", hard_cap="7.00", deployment=PAID_DEPLOYMENT)
+    assert set_caps(
+        session, project, warning_cap="1.00", hard_cap="8.00", deployment=PAID_DEPLOYMENT
+    ).hard_cap == Decimal("8.00")
+
+
+def test_setting_a_budget_never_rewrites_the_ledger_totals(session: Session) -> None:
+    project = make_project(session)
+    budget = create_budget(
+        session, project, warning_cap="1.00", hard_cap="20.00", deployment=PAID_DEPLOYMENT
+    )
+    budget.committed_amount = Decimal("3.00")
+    budget.reserved_amount = Decimal("1.00")
+    budget.released_amount = Decimal("0.50")
+    session.flush()
+    set_caps(session, project, warning_cap="5.00", hard_cap="50.00", deployment=PAID_DEPLOYMENT)
+    assert budget.committed_amount == Decimal("3.00")
+    assert budget.reserved_amount == Decimal("1.00")
+    assert budget.released_amount == Decimal("0.50")
+
+
+def test_budget_updates_are_owner_scoped_and_validated(paid_client: BudgetClient) -> None:
+    client, _ = paid_client
+    project_id = create(client, budget_hard_cap="5.00").json()["id"]
+    intruder = client.put(
+        f"/api/v1/projects/{project_id}/budget",
+        json={"budget_hard_cap": "40.00"},
+        headers={"X-VidGen-User": "owner-b"},
+    )
+    assert intruder.status_code == 404
+    invalid = client.put(
+        f"/api/v1/projects/{project_id}/budget",
+        json={"budget_warning_cap": "50.00", "budget_hard_cap": "10.00"},
+        headers=OWNER,
+    )
+    assert invalid.status_code == 422
+    assert invalid.json()["fields"][0]["code"] == "budget_hard_cap_below_warning"
+
+
+def test_the_budget_is_readable(paid_client: BudgetClient) -> None:
+    client, _ = paid_client
+    project_id = create(client, budget_warning_cap="2.00", budget_hard_cap="5.00").json()["id"]
+    body = client.get(f"/api/v1/projects/{project_id}/budget", headers=OWNER).json()
+    assert body["hard_cap"] == "5.000000"
+    assert body["reserved_amount"] == "0.000000"
+    assert body["policy_version"] == BUDGET_POLICY_VERSION
 
 
 # --- workflow:start -----------------------------------------------------------
@@ -321,6 +426,80 @@ def test_a_real_workflow_is_refused_without_a_positive_budget(
     assert refused.status_code == 409
     assert refused.json()["code"] == "project_budget_required"
     assert "hard cap" in refused.json()["summary"]
+
+
+def test_an_unfunded_project_can_be_funded_and_then_started(
+    paid_client: BudgetClient, golden_video: Path
+) -> None:
+    """The refusal names a remedy, and the remedy works."""
+    client, factory = paid_client
+    project_id = _uploaded_project(client, golden_video, hard_cap="25.00")
+    with factory() as session:
+        budget = session.scalar(
+            select(ProjectBudget).where(ProjectBudget.project_id == UUID(project_id))
+        )
+        assert budget is not None
+        budget.hard_cap = Decimal("0")
+        budget.warning_cap = Decimal("0")
+        session.commit()
+
+    refused = client.post(
+        f"/api/v1/projects/{project_id}/workflow:start",
+        json={},
+        headers={**OWNER, "Idempotency-Key": "start-before-funding"},
+    )
+    assert refused.status_code == 409
+    assert "PUT /api/v1/projects/{id}/budget" in refused.json()["summary"]
+
+    assert (
+        client.put(
+            f"/api/v1/projects/{project_id}/budget",
+            json={"budget_warning_cap": "10.00", "budget_hard_cap": "30.00"},
+            headers=OWNER,
+        ).status_code
+        == 200
+    )
+    started = client.post(
+        f"/api/v1/projects/{project_id}/workflow:start",
+        json={},
+        headers={**OWNER, "Idempotency-Key": "start-after-funding"},
+    )
+    assert started.status_code == 200, started.json()
+
+
+def test_a_running_project_is_adopted_even_with_its_cap_spent(
+    paid_client: BudgetClient, golden_video: Path
+) -> None:
+    """The gate guards starting, not adopting.
+
+    A project already running has committed against its cap. Answering a
+    repeated start with 409 rather than its existing run would break the
+    idempotent adopt path for exactly the projects furthest along.
+    """
+    client, factory = paid_client
+    project_id = _uploaded_project(client, golden_video, hard_cap="25.00")
+    first = client.post(
+        f"/api/v1/projects/{project_id}/workflow:start",
+        json={},
+        headers={**OWNER, "Idempotency-Key": "start-1"},
+    )
+    assert first.status_code == 200
+    with factory() as session:
+        budget = session.scalar(
+            select(ProjectBudget).where(ProjectBudget.project_id == UUID(project_id))
+        )
+        assert budget is not None
+        budget.committed_amount = budget.hard_cap
+        session.commit()
+
+    # A fresh idempotency key, so the replay short-circuit is not what saves it.
+    again = client.post(
+        f"/api/v1/projects/{project_id}/workflow:start",
+        json={},
+        headers={**OWNER, "Idempotency-Key": "start-2"},
+    )
+    assert again.status_code == 200, again.json()
+    assert again.json()["workflow_id"] == first.json()["workflow_id"]
 
 
 def test_a_funded_real_workflow_starts(paid_client: BudgetClient, golden_video: Path) -> None:

@@ -181,6 +181,41 @@ describe("NewProjectPage", () => {
     expect(await screen.findByText(/Enter the hard cap as an amount in dollars/)).toBeVisible();
   });
 
+  it("flags an invalid warning cap on the warning cap, not the hard cap", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<NewProjectPage />, { route: "/projects/new" });
+    await user.type(screen.getByLabelText(/Project name/), "My recap");
+    await user.clear(screen.getByLabelText(/Warning cap/));
+    await user.type(screen.getByLabelText(/Warning cap/), "-5");
+    await user.click(screen.getByRole("button", { name: "Create project" }));
+    const message = await screen.findByText(/Enter the warning cap as an amount in dollars/);
+    expect(message).toBeVisible();
+    expect(screen.queryByText(/Enter the hard cap as an amount/)).not.toBeInTheDocument();
+  });
+
+  it("compares caps exactly, beyond what a float can hold", async () => {
+    const user = userEvent.setup();
+    let called = false;
+    server.use(
+      http.post(`${BASE}/api/v1/projects`, () => {
+        called = true;
+        return HttpResponse.json(fixtures.projectDetail, { status: 201 });
+      }),
+    );
+    renderWithProviders(<NewProjectPage />, { route: "/projects/new" });
+    await user.type(screen.getByLabelText(/Project name/), "My recap");
+    // These two differ only in their last digit, which Number() cannot see.
+    await user.clear(screen.getByLabelText(/Warning cap/));
+    await user.type(screen.getByLabelText(/Warning cap/), "100000000000.000002");
+    await user.clear(screen.getByLabelText(/Hard cap/));
+    await user.type(screen.getByLabelText(/Hard cap/), "100000000000.000001");
+    await user.click(screen.getByRole("button", { name: "Create project" }));
+    expect(
+      await screen.findByText("The hard cap must be at least the warning cap."),
+    ).toBeVisible();
+    expect(called).toBe(false);
+  });
+
   it("offers the upload panel once the project exists", async () => {
     const user = userEvent.setup();
     renderWithProviders(<NewProjectPage />, { route: "/projects/new" });
