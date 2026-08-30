@@ -13,11 +13,19 @@ the platform, so there is nothing to leak and nothing to rotate.
 Two phases:
 
 * **Connectivity** proves each dependency is reachable and correctly private.
-* **End to end** creates a clearly tagged throwaway project, uploads a small
-  synthetic fixture, runs the workflow with the deterministic fake providers,
-  and asserts the T22 completion gate, the stored assets and a zero provider
-  spend. No paid provider is enabled for this job, in the job template itself,
-  so it cannot spend money even if a parameter file is wrong.
+* **End to end** creates a clearly tagged throwaway project, selects a
+  deterministic fake narration voice through the supported product API, uploads
+  a small synthetic fixture, runs the workflow with the deterministic fake
+  providers, issues one real control command, and asserts the T22 completion
+  gate, a downloadable final render, that no command was left waiting for a
+  worker, and a zero provider spend. No paid provider is enabled for this job,
+  in the job template itself, so it cannot spend money even if a parameter file
+  is wrong.
+
+  The voice selection and the control command are deliberately part of the
+  end-to-end path rather than set up out of band: both were places where the
+  product looked complete and was not, and a smoke test that skips them proves
+  nothing about what a browser user can actually do.
 
 Exit code 0 means every check passed. Any other code fails the deployment and
 the workflow rolls application traffic back to the previous revision.
@@ -384,6 +392,30 @@ def run_end_to_end(report: SmokeReport, workflow_timeout_seconds: int) -> None:
         project_id = response.json()["id"]
         report.record("e2e-create-project", True, project_id)
 
+        # T12 narration resolves the project's voice profile, and the workflow
+        # refuses to start without one. Selecting it through the supported API -
+        # never by writing a row directly - is what proves the product path a
+        # browser user follows actually works in this deployment.
+        response = client.get(f"/api/v1/projects/{project_id}/voice-profiles")
+        catalog = response.json().get("items", []) if response.status_code == 200 else []
+        fake_voices = [item for item in catalog if item.get("provider") == "fake"]
+        if not fake_voices:
+            report.record(
+                "e2e-voice-profile",
+                False,
+                f"no deterministic fake voice offered (HTTP {response.status_code})",
+            )
+            return
+        response = client.put(
+            f"/api/v1/projects/{project_id}/voice-profile",
+            json={"voice_profile_id": fake_voices[0]["voice_profile_id"]},
+        )
+        selected = response.json().get("profile", {}) if response.status_code == 200 else {}
+        if not selected.get("selected"):
+            report.record("e2e-voice-profile", False, f"HTTP {response.status_code}")
+            return
+        report.record("e2e-voice-profile", True, str(selected.get("provider_voice_id", "")))
+
         fixture = _synthetic_fixture(Path(scratch))
         payload = fixture.read_bytes()
         digest = hashlib.sha256(payload).hexdigest()
@@ -432,6 +464,12 @@ def run_end_to_end(report: SmokeReport, workflow_timeout_seconds: int) -> None:
             return
         report.record("e2e-workflow-start", True, response.json().get("workflow_id", ""))
 
+        # A real control command, dispatched by the real dispatcher, against a
+        # project that spends nothing. This is the check that would have caught
+        # the whole class of bug T18b fixes: an accepted command that no worker
+        # ever consumes.
+        _check_control_command(report, client, project_id, workflow_timeout_seconds)
+
         status_payload = _await_workflow(client, project_id, workflow_timeout_seconds)
         if status_payload is None:
             report.record(
@@ -457,6 +495,24 @@ def run_end_to_end(report: SmokeReport, workflow_timeout_seconds: int) -> None:
             str(gate.get("reason", f"HTTP {response.status_code}")),
         )
 
+        # The render T22 inspected must be downloadable, not merely recorded.
+        response = client.get(f"/api/v1/projects/{project_id}/render")
+        render = response.json() if response.status_code == 200 else {}
+        asset_id = render.get("final_video_asset_id")
+        if asset_id:
+            download = client.get(f"/api/v1/assets/{asset_id}/download-url")
+            report.record(
+                "e2e-final-render-downloadable",
+                download.status_code == 200 and bool(download.json().get("url")),
+                f"HTTP {download.status_code}",
+            )
+        else:
+            report.record(
+                "e2e-final-render-downloadable", False, "the project has no final render asset"
+            )
+
+        _check_no_stranded_commands(report, client, project_id)
+
         response = client.get(f"/api/v1/projects/{project_id}/costs")
         costs = response.json() if response.status_code == 200 else {}
         committed = str(costs.get("committedCost", costs.get("committed", "0")))
@@ -469,6 +525,75 @@ def run_end_to_end(report: SmokeReport, workflow_timeout_seconds: int) -> None:
             "smoke project retained for inspection",
             extra={"projectId": project_id},
         )
+
+
+#: Command statuses that will not change again.
+_TERMINAL_COMMANDS = {"completed", "failed", "cancelled", "superseded"}
+#: Statuses that mean a worker has genuinely taken the command on.
+_DISPATCHED_COMMANDS = {"running", "awaiting_review", *_TERMINAL_COMMANDS}
+
+
+def _check_control_command(
+    report: SmokeReport, client: httpx.Client, project_id: str, timeout_seconds: int
+) -> None:
+    """Issue one real, free control command and prove a worker consumed it.
+
+    A project continuation is the right probe: it costs nothing, it exercises
+    the whole path - durable row, claim, dispatch, real workflow identity - and
+    its outcome is visible through the ordinary command API.
+    """
+    response = client.post(
+        f"/api/v1/projects/{project_id}/workflow:continue",
+        json={"entry_stage": "final_editorial_qa", "reason": "operator_request"},
+        headers={"Idempotency-Key": f"smoke-continue-{project_id}"},
+    )
+    if response.status_code != 202:
+        report.record("e2e-control-command-accepted", False, f"HTTP {response.status_code}")
+        return
+    command = response.json()["command"]
+    report.record("e2e-control-command-accepted", True, command["command_id"])
+    # An accepted command must never name a workflow it has not started.
+    report.record(
+        "e2e-control-command-truthful-acceptance",
+        command["workflow_id"] is None and command["status"] == "pending",
+        f"status={command['status']} workflow={command['workflow_id']}",
+    )
+    deadline = time.monotonic() + min(timeout_seconds, 300)
+    latest = command
+    while time.monotonic() < deadline:
+        probe = client.get(
+            f"/api/v1/projects/{project_id}/commands/{command['command_id']}"
+        )
+        if probe.status_code == 200:
+            latest = probe.json()["command"]
+            if latest["status"] in _DISPATCHED_COMMANDS:
+                break
+        time.sleep(5)
+    dispatched = latest["status"] in _DISPATCHED_COMMANDS
+    report.record(
+        "e2e-control-command-dispatched",
+        dispatched and bool(latest["workflow_id"]),
+        f"status={latest['status']} workflow={latest['workflow_id']}",
+    )
+
+
+def _check_no_stranded_commands(
+    report: SmokeReport, client: httpx.Client, project_id: str
+) -> None:
+    """No command may still be waiting for a worker that never came."""
+    response = client.get(f"/api/v1/projects/{project_id}/commands")
+    if response.status_code != 200:
+        report.record("e2e-no-stranded-commands", False, f"HTTP {response.status_code}")
+        return
+    items = response.json().get("items", [])
+    stranded = [
+        item["command_id"] for item in items if item["status"] in {"pending", "claimed"}
+    ]
+    report.record(
+        "e2e-no-stranded-commands",
+        not stranded,
+        f"{len(stranded)} command(s) never reached a worker" if stranded else f"{len(items)} total",
+    )
 
 
 def _is_zero(value: str) -> bool:

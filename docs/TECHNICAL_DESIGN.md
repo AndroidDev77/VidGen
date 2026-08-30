@@ -3103,6 +3103,43 @@ Upload one 10-minute MP4
 11. Normalize and trim each clip, create SRT from narration alignment, mix narration over a fixed quiet music bed, and render final 1080p H.264/AAC MP4.
 12. Show the result, script, storyboard, prompts, and per-shot regenerate button in the React UI.
 
+## The T18b control plane
+
+Every asynchronous product command is a durable row before the API reports it accepted. The design
+rule is one sentence: **an accepted command is either persisted and claimable, or already started,
+or an idempotent reuse of a completed one** - never an in-memory flag, and never a workflow ID
+computed from the request.
+
+```text
+API request ──► control_commands row (same transaction as the request)
+                       │
+                dispatcher claims under a lease
+                       │
+        revalidate ownership and upstream lineage
+                       │
+      start or signal the real Temporal workflow ──► persist its actual identity
+                       │
+                 status becomes "running"
+                       │
+        settle from the workflow's own durable state
+```
+
+The database enforces the identity half: `control_command_dispatched_identity` refuses to store a
+`running`, `awaiting_review` or `completed` command whose `workflow_id` is null.
+
+`project_generation_runs` makes a project restartable. The parent workflow completes at every human
+pause, and continuing the project opens a new immutable run with its own entry stage rather than
+re-entering a closed execution. Previous runs are preserved as history; nothing above the entry
+stage is rerun.
+
+T19 runs inside that lifecycle: the parent starts `ContinuityReferenceWorkflow` after the
+authoritative storyboard and before any T14 keyframe spend, and a project with nothing to reference
+completes it deterministically instead of waiting for an approval that could not arrive.
+
+Full behaviour, including the per-action command table and the local commands, is documented in
+`README.md` and `docs/IMPLEMENTATION_STATUS.md`. Gaps deliberately left outside T18b are recorded in
+[`docs/ROADMAP_GAPS.md`](ROADMAP_GAPS.md).
+
 ## Parent workflow pseudocode
 
 ```python
