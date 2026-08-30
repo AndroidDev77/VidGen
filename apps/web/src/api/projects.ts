@@ -29,6 +29,12 @@ export interface ProjectDetail {
   humor_intensity: number;
   created_at: string;
   updated_at: string;
+  /**
+   * The project's narration voice. `null` means the workflow cannot start yet,
+   * which the setup screen and the dashboard both say out loud rather than
+   * letting the start button fail.
+   */
+  voice_profile_id: string | null;
 }
 
 export interface ProjectStatus {
@@ -45,6 +51,8 @@ export interface CreateProjectInput {
   target_duration_seconds: number;
   visual_style: string;
   humor_intensity: number;
+  /** A voice from this deployment's catalog, chosen during setup. */
+  voice_profile_id?: string;
 }
 
 export function listProjects(

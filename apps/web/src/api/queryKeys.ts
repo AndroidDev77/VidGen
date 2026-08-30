@@ -43,6 +43,11 @@ export const queryKeys = {
   publications: (projectId: string) => ["projects", projectId, "publications"] as const,
   publication: (projectId: string, publicationId: string) =>
     ["projects", projectId, "publications", publicationId] as const,
+  commands: (projectId: string) => ["projects", projectId, "commands"] as const,
+  command: (projectId: string, commandId: string) =>
+    ["projects", projectId, "commands", commandId] as const,
+  voiceProfiles: (projectId: string) => ["projects", projectId, "voice-profiles"] as const,
+  voiceProfile: (projectId: string) => ["projects", projectId, "voice-profile"] as const,
   costs: (projectId: string) => ["projects", projectId, "costs"] as const,
   providerAttempts: (projectId: string) =>
     ["projects", projectId, "provider-attempts"] as const,

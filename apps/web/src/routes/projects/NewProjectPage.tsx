@@ -18,6 +18,7 @@ import { queryKeys } from "../../api/queryKeys";
 import { newIdempotencyKey } from "../../api/client";
 import { useApiClient } from "../../app/apiContext";
 import { UploadPanel } from "../../components/UploadPanel";
+import { VoiceProfilePicker } from "../../components/VoiceProfilePicker";
 import { ErrorState } from "../../components/states";
 import { useResumableUpload } from "../../hooks/useResumableUpload";
 import { startWorkflow } from "../../api/workflows";
@@ -47,6 +48,10 @@ export function NewProjectPage(): JSX.Element {
   const [humorIntensity, setHumorIntensity] = useState(5);
   const [nameError, setNameError] = useState<string | null>(null);
   const [project, setProject] = useState<ProjectDetail | null>(null);
+  // T12 narration resolves the project's voice, and the workflow refuses to
+  // start without one. Tracking it here means the start button is disabled with
+  // an explanation rather than failing after the click.
+  const [voiceProfileId, setVoiceProfileId] = useState<string | null>(null);
 
   const upload = useResumableUpload({ client });
 
@@ -63,6 +68,7 @@ export function NewProjectPage(): JSX.Element {
       ).then((response) => response.data),
     onSuccess: (created) => {
       setProject(created);
+      setVoiceProfileId(created.voice_profile_id);
       void queryClient.invalidateQueries({ queryKey: queryKeys.projects() });
     },
   });
@@ -90,6 +96,7 @@ export function NewProjectPage(): JSX.Element {
   );
 
   const uploadComplete = upload.state.phase === "complete";
+  const canStart = uploadComplete && voiceProfileId !== null;
 
   return (
     <div>
@@ -160,14 +167,23 @@ export function NewProjectPage(): JSX.Element {
           <Body1 as="p">
             “{project.name}” is created. Upload its source video to continue.
           </Body1>
+          <VoiceProfilePicker
+            projectId={project.id}
+            onSelected={(selected) => setVoiceProfileId(selected)}
+          />
           <UploadPanel
             upload={upload}
             onFileSelected={(file) => void upload.start(project.id, file)}
           />
+          {voiceProfileId === null && (
+            <Body1 as="p" role="status">
+              Select a narration voice before starting the workflow.
+            </Body1>
+          )}
           <div className={styles.actions}>
             <Button
               appearance="primary"
-              disabled={!uploadComplete || start.isPending}
+              disabled={!canStart || start.isPending}
               onClick={() => start.mutate(project.id)}
               data-testid="start-workflow"
             >

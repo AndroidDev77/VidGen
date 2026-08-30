@@ -124,6 +124,14 @@ export const handlers: HttpHandler[] = [
       row_version: 4,
     }),
   ),
+  http.get(`${project}/commands`, () => HttpResponse.json(fixtures.commands)),
+  http.get(`${project}/voice-profiles`, () => HttpResponse.json(fixtures.voiceProfiles)),
+  http.put(`${project}/voice-profile`, () =>
+    HttpResponse.json({
+      project_id: fixtures.PROJECT_ID,
+      profile: { ...fixtures.voiceProfiles.items[1]!, selected: true },
+    }),
+  ),
   http.get(`${project}/render`, () => HttpResponse.json(fixtures.render)),
   http.get(`${project}/costs`, () => HttpResponse.json(fixtures.costs)),
   http.get(`${project}/provider-attempts`, () => HttpResponse.json(fixtures.providerAttempts)),
