@@ -18,9 +18,12 @@ from uuid import UUID, uuid4
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import select
+from sqlalchemy import MetaData, create_mock_engine, select
+from sqlalchemy.dialects.sqlite import dialect as SQLiteDialect
 from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.schema import CreateTable
 
+import vidgen.db  # noqa: F401  (registers every table on Base.metadata)
 from apps.api.settings import APISettings
 from services.control_plane.commands import ControlPlaneService, request_digest
 from services.control_plane.dispatcher import ControlCommandDispatcher
@@ -38,13 +41,16 @@ from vidgen.contracts.control_commands import (
     ProjectGenerationRunStatus,
 )
 from vidgen.contracts.workflow import FinalQAActivityResult, RenderActivityResult
+from vidgen.db.base import Base
 from vidgen.db.control_command_models import ControlCommandRecord
 from vidgen.db.control_command_repository import (
     ControlCommandError,
     ControlCommandRepository,
 )
 from vidgen.db.models import Project
+from vidgen.db.repair_models import RepairRun
 from vidgen.db.storyboard_models import StoryboardShotRecord
+from vidgen.db.visual_qa_models import VisualQARun
 from vidgen.review.workflow_control import FakeWorkflowController
 
 OWNER = {"X-VidGen-User": "owner-a"}
@@ -1109,6 +1115,40 @@ def test_a_dispatcher_killed_mid_dispatch_leaves_a_recoverable_command(
     assert len(workflow_controller.final_qa) == 1
 
 
+def _isolated_metadata() -> MetaData:
+    """Return a private copy of the ORM metadata that is safe to create.
+
+    ``MetaData.create_all`` against a backend that supports ``ALTER TABLE``
+    builds an ``AddConstraint`` for every ``use_alter`` foreign key, and that
+    construct permanently marks the constraint as excluded from ``CREATE
+    TABLE``. Run against the shared ``Base.metadata`` it would silently strip
+    ``fk_repair_runs_selected_attempt`` and ``fk_visual_qa_runs_selected_result``
+    from every later table creation in the same process, which is how a
+    PostgreSQL test in one worker made an unrelated SQLite migration drift
+    check fail. Copying the tables first keeps the mutation on the copy.
+    """
+    isolated = MetaData()
+    for table in Base.metadata.sorted_tables:
+        table.to_metadata(isolated)
+    return isolated
+
+
+def test_creating_the_schema_leaves_use_alter_foreign_keys_inline() -> None:
+    """Building a database must not disarm a shared ``use_alter`` constraint.
+
+    Without the copy this leaves ``Base.metadata`` permanently unable to render
+    those two foreign keys inline, so the next SQLite migration in the same
+    worker builds a schema that has drifted from the models.
+    """
+    recorder = create_mock_engine("postgresql+psycopg://", lambda *_a, **_k: None)
+    _isolated_metadata().create_all(recorder, checkfirst=False)
+    for table, name in (
+        (RepairRun.__table__, "fk_repair_runs_selected_attempt"),
+        (VisualQARun.__table__, "fk_visual_qa_runs_selected_result"),
+    ):
+        assert name in str(CreateTable(table).compile(dialect=SQLiteDialect()))
+
+
 @pytest.mark.postgres
 def test_concurrent_postgres_dispatchers_claim_a_command_exactly_once(
     tmp_path: Path,
@@ -1132,14 +1172,13 @@ def test_concurrent_postgres_dispatchers_claim_a_command_exactly_once(
             connection.execute(text("SELECT 1"))
     except Exception:
         pytest.skip("PostgreSQL is not reachable")
-    from vidgen.db.base import Base
 
     schema = f"t18b_{uuid4().hex[:12]}"
     with engine.begin() as connection:
         connection.execute(text(f'CREATE SCHEMA "{schema}"'))
     scoped = create_engine(url, connect_args={"options": f"-csearch_path={schema}"})
     try:
-        Base.metadata.create_all(scoped)
+        _isolated_metadata().create_all(scoped)
         factory = sessionmaker(bind=scoped, expire_on_commit=False)
         with factory() as session:
             project = Project(name="concurrency", visual_style="flat", owner_subject="owner-a")
