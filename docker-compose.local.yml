@@ -1,0 +1,105 @@
+x-vidgen-app: &vidgen-app
+  build:
+    context: .
+    dockerfile: Dockerfile
+  env_file:
+    - .env
+  environment:
+    VIDGEN_DATABASE_URL: postgresql+psycopg://vidgen:vidgen@postgres:5432/vidgen
+    VIDGEN_REDIS_URL: redis://redis:6379/0
+    VIDGEN_BLOB_BACKEND: filesystem
+    VIDGEN_BLOB_ROOT: /data/blobs
+    VIDGEN_UPLOAD_ROOT: /data/uploads
+
+    VIDGEN_TEMPORAL_TARGET_HOST: temporal:7233
+    TEMPORAL_ADDRESS: temporal:7233
+    TEMPORAL_NAMESPACE: default
+    TEMPORAL_TASK_QUEUE: vidgen-projects
+
+    VIDGEN_TEMPORAL_USE_FAKE_WORKFLOW_CONTROLLER: "false"
+    VIDGEN_TEMPORAL_ALLOW_FAKE_PROVIDERS: "false"
+    VIDGEN_IMAGE_PROVIDER_NAME: openai
+    VIDGEN_VIDEO_PROVIDER_NAME: runway
+    VIDGEN_VISUAL_CAPABILITY_PROFILE: runway-gen4-turbo
+    VIDGEN_REPAIR_ALTERNATE_PROVIDER: none
+  volumes:
+    - vidgen-local-data:/data
+  restart: unless-stopped
+
+services:
+  storage-init:
+    image: alpine:3.22
+    user: root
+    command:
+      - sh
+      - -c
+      - mkdir -p /data/blobs /data/uploads && chown -R 10001:10001 /data
+    volumes:
+      - vidgen-local-data:/data
+    restart: "no"
+
+  migrate:
+    <<: *vidgen-app
+    command: ["alembic", "upgrade", "head"]
+    restart: "no"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      storage-init:
+        condition: service_completed_successfully
+
+  api:
+    <<: *vidgen-app
+    command:
+      - uvicorn
+      - apps.api.main:app
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8000"
+    ports:
+      - "8000:8000"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      temporal:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - >
+          import urllib.request;
+          urllib.request.urlopen("http://localhost:8000/healthz", timeout=5)
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  worker:
+    <<: *vidgen-app
+    command: ["python", "-m", "workers.temporal_worker.main"]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      temporal:
+        condition: service_healthy
+
+  control-dispatcher:
+    <<: *vidgen-app
+    command: ["python", "-m", "workers.control_dispatcher.main"]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      temporal:
+        condition: service_healthy
+
+  web:
+    environment:
+      VIDGEN_API_UPSTREAM: http://api:8000
+    depends_on:
+      api:
+        condition: service_healthy
+
+volumes:
+  vidgen-local-data:

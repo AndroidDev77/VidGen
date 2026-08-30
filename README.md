@@ -189,7 +189,12 @@ make verify-stack
 | `make verify-web` | Lint, typecheck, test and build the web application |
 | `make verify-stack` | PostgreSQL reachability plus an Alembic up/down/up check |
 | `make infra-down` | Stop the containers, keeping the volumes |
-| `make local-reset` | **Destructive.** Delete the local database, blob store and uploads |
+| `make local-data-reset` | **Destructive.** Delete the local database, blob store and uploads |
+| `make local-up` | Run the full containerized stack (API, worker, dispatcher, web) against real providers |
+| `make local-start` | Same, detached; follow it with `make local-logs` |
+| `make local-status` | Show the containerized stack's service status |
+| `make local-down` | Stop the containerized stack, keeping the volumes |
+| `make local-reset` | **Destructive.** Stop the containerized stack and delete its volumes |
 
 ## UI-only development mode
 
@@ -767,7 +772,7 @@ make infra-down
 
 ### Destructive reset
 
-`make local-reset` **permanently deletes local data**. It is never run by another target, and it
+`make local-data-reset` **permanently deletes local data**. It is never run by another target, and it
 prompts for confirmation before doing anything. It removes exactly:
 
 - the `postgres-data` Docker volume — the entire local PostgreSQL database,
@@ -778,7 +783,7 @@ prompts for confirmation before doing anything. It removes exactly:
 Nothing outside those four locations is touched. Use it only for disposable local data.
 
 ```bash
-make local-reset
+make local-data-reset
 # then rebuild an empty environment:
 make infra-up
 make migrate
@@ -799,7 +804,7 @@ until docker compose exec -T postgres pg_isready -U vidgen -d vidgen; do sleep 2
 ```
 
 **Alembic migration failure.** Read the actual error first: `uv run alembic upgrade head`. A
-`relation already exists` on a half-migrated local database is fastest to fix with `make local-reset`
+`relation already exists` on a half-migrated local database is fastest to fix with `make local-data-reset`
 followed by `make infra-up && make migrate`. Confirm which revision you are on with
 `uv run alembic current`.
 
