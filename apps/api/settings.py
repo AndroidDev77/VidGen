@@ -3,9 +3,10 @@ from __future__ import annotations
 from decimal import Decimal
 from functools import lru_cache
 from pathlib import Path
+from typing import Annotated
 
 from pydantic import field_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 from vidgen.storage.factory import SUPPORTED_BACKENDS
 
@@ -25,7 +26,13 @@ class APISettings(BaseSettings):
     upload_root: Path = Path(".local-data/uploads")
     signing_secret: str = "local-development-only-change-me"
     max_upload_bytes: int = 10 * 1024 * 1024 * 1024
-    allowed_video_types: tuple[str, ...] = ("video/mp4", "video/quicktime")
+    # Every comma-separated list setting is annotated ``NoDecode``. Without it
+    # pydantic-settings treats a sequence field as complex and JSON-decodes the
+    # environment value before any validator runs, so a documented value such as
+    # ``VIDGEN_ALLOWED_VIDEO_TYPES=video/mp4,video/quicktime`` aborts start-up
+    # with a JSONDecodeError. ``NoDecode`` hands the raw string to the
+    # ``mode="before"`` validators below, which split it on commas.
+    allowed_video_types: Annotated[tuple[str, ...], NoDecode] = ("video/mp4", "video/quicktime")
     openai_api_key: str | None = None
     transcription_model: str = "whisper-1"
     diarization_model: str = "gpt-4o-transcribe-diarize"
@@ -78,7 +85,7 @@ class APISettings(BaseSettings):
     opensubtitles_api_key: str | None = None
     opensubtitles_username: str | None = None
     opensubtitles_password: str | None = None
-    subtitle_languages: tuple[str, ...] = ("en",)
+    subtitle_languages: Annotated[tuple[str, ...], NoDecode] = ("en",)
     subtitle_sync_enabled: bool = False
     temporal_allow_fake_providers: bool = False
     temporal_target_host: str = "localhost:7233"
@@ -103,7 +110,7 @@ class APISettings(BaseSettings):
     youtube_oauth_redirect_uri: str = "http://localhost:8000/api/v1/youtube/oauth:callback"
     #: Post-authorization targets the callback may send a browser to. Same-site
     #: paths only by default; anything else is refused.
-    youtube_oauth_redirect_targets: tuple[str, ...] = ("/",)
+    youtube_oauth_redirect_targets: Annotated[tuple[str, ...], NoDecode] = ("/",)
     #: Base64 AES-256 key for the credential envelope, and the version that
     #: names it. Rotation keeps retired keys decryptable until every ciphertext
     #: has been re-sealed.
@@ -120,7 +127,7 @@ class APISettings(BaseSettings):
     youtube_upload_chunk_bytes: int = 8 * 1024 * 1024
     youtube_processing_timeout_seconds: int = 6 * 60 * 60
     # CORS stays disabled unless an explicit development allowlist is configured.
-    cors_allowed_origins: tuple[str, ...] = ()
+    cors_allowed_origins: Annotated[tuple[str, ...], NoDecode] = ()
 
     @field_validator("blob_backend")
     @classmethod
