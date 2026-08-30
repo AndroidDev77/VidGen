@@ -1,9 +1,25 @@
 from __future__ import annotations
 
 from datetime import datetime
+from decimal import Decimal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+
+def exact_decimal_text(value: object) -> object:
+    """Accept only a budget amount that is still exact by the time it arrives.
+
+    A JSON float has already lost the amount the owner typed, so it is refused
+    here rather than stored as an approximation of a spend limit. Integers and
+    ``Decimal`` are exact and are rendered as text; the amount itself is
+    validated by ``services.costs.project_budget``.
+    """
+    if isinstance(value, bool) or isinstance(value, float):
+        raise ValueError('provide the amount as an exact decimal string, for example "25.00"')
+    if isinstance(value, int | Decimal):
+        return str(value)
+    return value
 
 
 class CreateProjectRequest(BaseModel):
@@ -24,6 +40,48 @@ class CreateProjectRequest(BaseModel):
     #: An externally provisioned voice, named by its configured provider.
     voice_provider: str | None = Field(default=None, min_length=1, max_length=64)
     voice_provider_voice_id: str | None = Field(default=None, min_length=1, max_length=255)
+    #: The project's T23 spend caps, in USD, as exact decimal strings. The
+    #: warning cap is where the ledger starts flagging spend; the hard cap is
+    #: the ceiling every paid activity reserves against. Both default to zero,
+    #: which is a complete budget for a fake-provider run and is refused on a
+    #: deployment that has a paid provider credential configured.
+    budget_warning_cap: str = "0"
+    budget_hard_cap: str = "0"
+
+    _exact_caps = field_validator("budget_warning_cap", "budget_hard_cap", mode="before")(
+        exact_decimal_text
+    )
+
+
+class SetProjectBudgetRequest(BaseModel):
+    """New caps for an existing project.
+
+    The same two exact decimal strings project creation takes, so a project that
+    predates budgets - or one created with a zero cap for a fake run - can be
+    funded without being recreated.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+    budget_warning_cap: str = "0"
+    budget_hard_cap: str = "0"
+
+    _exact_caps = field_validator("budget_warning_cap", "budget_hard_cap", mode="before")(
+        exact_decimal_text
+    )
+
+
+class ProjectBudgetResponse(BaseModel):
+    """The project's caps and the ledger totals recorded against them."""
+
+    project_id: UUID
+    warning_cap: str
+    hard_cap: str
+    currency: str
+    policy_version: str
+    reserved_amount: str
+    committed_amount: str
+    released_amount: str
+    row_version: int = Field(ge=1)
 
 
 class ProjectResponse(BaseModel):

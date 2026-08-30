@@ -15,6 +15,7 @@
         "render_stale",
         "shot_not_retryable",
         "voice_profile_required",
+        "project_budget_required",
         "command_upstream_stale",
         "remediation_unsupported",
         "attempt_not_eligible",

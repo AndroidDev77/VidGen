@@ -115,6 +115,105 @@ describe("NewProjectPage", () => {
     expect(screen.getByLabelText(/Target recap duration/)).toBeInTheDocument();
     expect(screen.getByLabelText(/Visual style/)).toBeInTheDocument();
     expect(screen.getByLabelText(/Humor intensity/)).toBeInTheDocument();
+    expect(screen.getByLabelText(/Warning cap/)).toBeInTheDocument();
+    expect(screen.getByLabelText(/Hard cap/)).toBeInTheDocument();
+  });
+
+  it("says what the hard cap actually limits", () => {
+    renderWithProviders(<NewProjectPage />, { route: "/projects/new" });
+    expect(
+      screen.getByText(/maximum provider spending allowed for this project/i),
+    ).toBeInTheDocument();
+  });
+
+  it("sends both caps as the exact decimal text that was typed", async () => {
+    const user = userEvent.setup();
+    let body: Record<string, unknown> | null = null;
+    server.use(
+      http.post(`${BASE}/api/v1/projects`, async ({ request }) => {
+        body = (await request.json()) as Record<string, unknown>;
+        return HttpResponse.json(fixtures.projectDetail, { status: 201 });
+      }),
+    );
+    renderWithProviders(<NewProjectPage />, { route: "/projects/new" });
+    await user.type(screen.getByLabelText(/Project name/), "My recap");
+    await user.clear(screen.getByLabelText(/Hard cap/));
+    await user.type(screen.getByLabelText(/Hard cap/), "25.10");
+    await user.clear(screen.getByLabelText(/Warning cap/));
+    await user.type(screen.getByLabelText(/Warning cap/), "12.05");
+    await user.click(screen.getByRole("button", { name: "Create project" }));
+    await waitFor(() => expect(body).not.toBeNull());
+    expect(body).toMatchObject({
+      budget_warning_cap: "12.05",
+      budget_hard_cap: "25.10",
+    });
+  });
+
+  it("refuses a hard cap below the warning cap before calling the API", async () => {
+    const user = userEvent.setup();
+    let called = false;
+    server.use(
+      http.post(`${BASE}/api/v1/projects`, () => {
+        called = true;
+        return HttpResponse.json(fixtures.projectDetail, { status: 201 });
+      }),
+    );
+    renderWithProviders(<NewProjectPage />, { route: "/projects/new" });
+    await user.type(screen.getByLabelText(/Project name/), "My recap");
+    await user.clear(screen.getByLabelText(/Warning cap/));
+    await user.type(screen.getByLabelText(/Warning cap/), "30.00");
+    await user.clear(screen.getByLabelText(/Hard cap/));
+    await user.type(screen.getByLabelText(/Hard cap/), "10.00");
+    await user.click(screen.getByRole("button", { name: "Create project" }));
+    expect(
+      await screen.findByText("The hard cap must be at least the warning cap."),
+    ).toBeVisible();
+    expect(called).toBe(false);
+  });
+
+  it("refuses an amount that is not an exact decimal", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<NewProjectPage />, { route: "/projects/new" });
+    await user.type(screen.getByLabelText(/Project name/), "My recap");
+    await user.clear(screen.getByLabelText(/Hard cap/));
+    await user.type(screen.getByLabelText(/Hard cap/), "twenty");
+    await user.click(screen.getByRole("button", { name: "Create project" }));
+    expect(await screen.findByText(/Enter the hard cap as an amount in dollars/)).toBeVisible();
+  });
+
+  it("flags an invalid warning cap on the warning cap, not the hard cap", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<NewProjectPage />, { route: "/projects/new" });
+    await user.type(screen.getByLabelText(/Project name/), "My recap");
+    await user.clear(screen.getByLabelText(/Warning cap/));
+    await user.type(screen.getByLabelText(/Warning cap/), "-5");
+    await user.click(screen.getByRole("button", { name: "Create project" }));
+    const message = await screen.findByText(/Enter the warning cap as an amount in dollars/);
+    expect(message).toBeVisible();
+    expect(screen.queryByText(/Enter the hard cap as an amount/)).not.toBeInTheDocument();
+  });
+
+  it("compares caps exactly, beyond what a float can hold", async () => {
+    const user = userEvent.setup();
+    let called = false;
+    server.use(
+      http.post(`${BASE}/api/v1/projects`, () => {
+        called = true;
+        return HttpResponse.json(fixtures.projectDetail, { status: 201 });
+      }),
+    );
+    renderWithProviders(<NewProjectPage />, { route: "/projects/new" });
+    await user.type(screen.getByLabelText(/Project name/), "My recap");
+    // These two differ only in their last digit, which Number() cannot see.
+    await user.clear(screen.getByLabelText(/Warning cap/));
+    await user.type(screen.getByLabelText(/Warning cap/), "100000000000.000002");
+    await user.clear(screen.getByLabelText(/Hard cap/));
+    await user.type(screen.getByLabelText(/Hard cap/), "100000000000.000001");
+    await user.click(screen.getByRole("button", { name: "Create project" }));
+    expect(
+      await screen.findByText("The hard cap must be at least the warning cap."),
+    ).toBeVisible();
+    expect(called).toBe(false);
   });
 
   it("offers the upload panel once the project exists", async () => {

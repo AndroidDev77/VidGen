@@ -289,6 +289,50 @@ Fake-provider mode:
 - Requires no OpenAI, Runway, Google, ElevenLabs or OpenSubtitles credential.
 - Produces deterministic synthetic outputs, so a repeated run reuses work instead of redoing it.
 
+### Setting the project budget
+
+Every paid stage reserves against the project's T23 budget before it calls a provider, so a
+real-provider project needs one. Project creation writes the `ProjectBudget` row in the same
+transaction as the project, from two fields:
+
+| Field | Meaning |
+| --- | --- |
+| `budget_warning_cap` | Where the cost ledger starts returning `ALLOW_WITH_WARNING`. |
+| `budget_hard_cap` | **The maximum provider spending allowed for this project.** Every image, video, narration and QA request reserves against it, and a request that would exceed it is refused rather than charged. |
+
+Both are USD, sent as exact decimal strings — a JSON number is refused rather than rounded — and
+both default to `"0"`. A fake-provider project spends nothing, so a zero-dollar budget is a complete
+budget for it. On a deployment with an OpenAI or Runway credential configured, creation refuses a
+zero hard cap, and `POST /projects/{id}/workflow:start` refuses with `project_budget_required` until
+the project has a positive hard cap with headroom left under it — before Temporal is involved and
+before any provider is called.
+
+The setup screen has both fields, with the hard cap's meaning spelled out beside it. Through the
+API, they are two more keys on project creation:
+
+```bash
+curl -sS -X POST http://localhost:8000/api/v1/projects \
+  -H 'Content-Type: application/json' \
+  -H 'X-VidGen-User: local-user' \
+  -d '{"name":"Real run","budget_warning_cap":"15.00","budget_hard_cap":"25.00"}'
+```
+
+A project that already exists — one created before budgets were required, or one created with a
+zero cap for a fake run — is funded without recreating it:
+
+```bash
+curl -sS -X PUT http://localhost:8000/api/v1/projects/$PROJECT_ID/budget \
+  -H 'Content-Type: application/json' \
+  -H 'X-VidGen-User: local-user' \
+  -d '{"budget_warning_cap":"15.00","budget_hard_cap":"25.00"}'
+```
+
+`GET /api/v1/projects/{id}/budget` returns the caps with the reserved, committed and released
+amounts the ledger has recorded against them. Those recorded amounts are never rewritten by an
+update, and a hard cap cannot be lowered below what the project has already committed or reserved.
+Spend against the cap is also visible at `GET /api/v1/projects/{id}/costs` and through
+`scripts/cost_report.py`.
+
 ### Selecting a narration voice
 
 The narration stage resolves its voice from the project. Since T18b this is part of the product:
@@ -393,7 +437,9 @@ ElevenLabs, and only through `scripts/generate_narration.py`.
 > absent: `true` falls back to the deterministic fake, `false` fails the stage loudly.
 
 Every project carries a T23 hard budget cap, and repairs can additionally be capped per shot with
-`VIDGEN_REPAIR_PER_SHOT_COST_LIMIT`. Set a project budget before a production run.
+`VIDGEN_REPAIR_PER_SHOT_COST_LIMIT`. With a credential configured, project creation requires a
+positive hard cap and `workflow:start` refuses a project that has none — see
+[Setting the project budget](#setting-the-project-budget).
 
 ## Required environment variables
 
@@ -469,10 +515,16 @@ The steps below do the same thing one call at a time.
 curl -sS -X POST http://localhost:8000/api/v1/projects \
   -H 'Content-Type: application/json' \
   -H 'X-VidGen-User: local-user' \
-  -d '{"name":"Local run","target_duration_seconds":120,"visual_style":"flat editorial cartoon","humor_intensity":5}'
+  -d '{"name":"Local run","target_duration_seconds":120,"visual_style":"flat editorial cartoon","humor_intensity":5,"budget_warning_cap":"0","budget_hard_cap":"0"}'
 ```
 
 Keep the returned `id` as `PROJECT_ID`.
+
+The two budget fields are the project's spend caps in USD, as exact decimal strings. A
+fake-provider run costs nothing, so `"0"` is correct here and is also the default. With a paid
+provider credential configured, creation requires a positive `budget_hard_cap` — the maximum
+provider spending allowed for the project — and the workflow refuses to start without one. See
+[Setting the project budget](#setting-the-project-budget).
 
 **2. Create the local fake voice profile.**
 
@@ -858,6 +910,20 @@ VIDGEN_TEMPORAL_ALLOW_FAKE_PROVIDERS=true
 Restart the worker after changing it. The reverse symptom — an unexpected provider bill or a
 `401` from OpenAI or Runway — means a credential is set and outranks the fake provider; empty
 `VIDGEN_OPENAI_API_KEY` and `VIDGEN_RUNWAY_API_SECRET`.
+
+**Missing or exhausted project budget.** `workflow:start` returns `409 project_budget_required`,
+or a paid stage fails with `project budget not configured`. On a deployment with a provider
+credential, a project needs a `ProjectBudget` row with a positive hard cap and headroom left under
+it. Projects created before this was enforced have no row at all. Check what the project has:
+
+```bash
+curl -sS -H 'X-VidGen-User: local-user' \
+  http://localhost:8000/api/v1/projects/$PROJECT_ID/costs
+```
+
+Fund it in place with `PUT /api/v1/projects/{id}/budget` — it creates the row if the project has
+none — rather than recreating the project. A project whose `committed_amount + reserved_amount` has reached the hard cap
+is refused for the same reason — that is the cap doing its job, not a bug.
 
 **Missing voice profile.** The narration activity fails with
 `project settings require a valid voice_profile_id`. Run the bootstrap and restart the stage:

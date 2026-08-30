@@ -11,21 +11,35 @@ from apps.api.auth import Principal, get_current_user
 from apps.api.dependencies import get_blob_store, get_session
 from apps.api.schemas.projects import (
     CreateProjectRequest,
+    ProjectBudgetResponse,
     ProjectListItemResponse,
     ProjectResponse,
     ProjectStatusResponse,
+    SetProjectBudgetRequest,
 )
 from apps.api.schemas.uploads import InitializeUploadRequest, UploadResponse
 from apps.api.settings import APISettings, get_settings
+from services.costs.project_budget import (
+    BudgetDeployment,
+    BudgetError,
+    budget_for,
+    create_budget,
+    set_caps,
+    stored_amount,
+    validate_caps,
+)
 from services.narration.voice_profiles import (
     NarrationDeployment,
     VoiceProfileError,
     current_selection,
     select_profile,
 )
+from vidgen.contracts.review import ApiErrorField
+from vidgen.db.cost_models import ProjectBudget
 from vidgen.db.models import Project, SourceVideo
 from vidgen.db.repositories import ProjectRepository
 from vidgen.db.upload_models import UploadSession
+from vidgen.review.errors import ReviewError, validation_failed
 from vidgen.review.projections import project_summary
 from vidgen.review.versions import RowVersionService
 from vidgen.storage.blob import BlobStore
@@ -44,6 +58,20 @@ def owned_project(session: Session, project_id: UUID, principal: Principal) -> P
     if project is None or project.owner_subject != principal.subject:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="project not found")
     return project
+
+
+def _budget_error(error: BudgetError) -> ReviewError:
+    """Render a budget failure as the structured validation error the UI reads.
+
+    The owner gets the field that is wrong, a stable machine code and a sentence
+    they can act on - the same shape every other T18 validation failure uses.
+    """
+    fields = (
+        [ApiErrorField(field=error.field, code=error.code, message=error.summary)]
+        if error.field
+        else []
+    )
+    return validation_failed(error.summary, fields)
 
 
 def _project_response(session: Session, project: Project) -> ProjectResponse:
@@ -68,12 +96,23 @@ def create_project(
     principal: PrincipalDependency,
     settings: SettingsDependency,
 ) -> ProjectResponse:
-    """Create a project, selecting its narration voice when one was named.
+    """Create a project with its narration voice and its T23 budget.
 
     Selecting the voice here rather than repairing it later is the whole point:
     a project that reaches T12 without a resolvable voice profile fails inside a
-    paid workflow, and that failure used to require a database fix.
+    paid workflow, and that failure used to require a database fix. The budget
+    is the same story one stage earlier - every paid activity reserves against
+    ``ProjectBudget``, and a project without that row could not reserve at all.
+
+    The caps are validated before anything is inserted, and the budget is
+    written in the same transaction as the project: a project never exists
+    without the budget its workflow will reserve against.
     """
+    deployment = BudgetDeployment.from_settings(settings)
+    try:
+        validate_caps(request.budget_warning_cap, request.budget_hard_cap, deployment)
+    except BudgetError as error:
+        raise _budget_error(error) from error
     project = Project(
         name=request.name,
         owner_subject=principal.subject,
@@ -85,6 +124,17 @@ def create_project(
     )
     ProjectRepository(session).add(project)
     session.flush()
+    try:
+        create_budget(
+            session,
+            project,
+            warning_cap=request.budget_warning_cap,
+            hard_cap=request.budget_hard_cap,
+            deployment=deployment,
+        )
+    except BudgetError as error:
+        session.rollback()
+        raise _budget_error(error) from error
     if request.voice_profile_id is not None or request.voice_provider is not None:
         try:
             select_profile(
@@ -139,6 +189,69 @@ def get_project(
     project_id: UUID, session: SessionDependency, principal: PrincipalDependency
 ) -> ProjectResponse:
     return _project_response(session, owned_project(session, project_id, principal))
+
+
+def _budget_response(budget: ProjectBudget) -> ProjectBudgetResponse:
+    """Render the budget at the scale the column stores.
+
+    A value just written is still in memory at whatever scale it was parsed
+    with, while one read back carries the column's six decimal places. Rendering
+    both at the stored scale means the same budget reads the same way whether or
+    not this request is the one that wrote it.
+    """
+    return ProjectBudgetResponse(
+        project_id=budget.project_id,
+        warning_cap=stored_amount(budget.warning_cap),
+        hard_cap=stored_amount(budget.hard_cap),
+        currency=budget.currency,
+        policy_version=budget.policy_version,
+        reserved_amount=stored_amount(budget.reserved_amount),
+        committed_amount=stored_amount(budget.committed_amount),
+        released_amount=stored_amount(budget.released_amount),
+        row_version=budget.row_version,
+    )
+
+
+@router.get("/{project_id}/budget", response_model=ProjectBudgetResponse)
+def get_budget(
+    project_id: UUID, session: SessionDependency, principal: PrincipalDependency
+) -> ProjectBudgetResponse:
+    project = owned_project(session, project_id, principal)
+    budget = budget_for(session, project.id)
+    if budget is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="budget not found")
+    return _budget_response(budget)
+
+
+@router.put("/{project_id}/budget", response_model=ProjectBudgetResponse)
+def set_budget(
+    project_id: UUID,
+    request: SetProjectBudgetRequest,
+    session: SessionDependency,
+    principal: PrincipalDependency,
+    settings: SettingsDependency,
+) -> ProjectBudgetResponse:
+    """Fund a project that has no budget yet, or move its caps.
+
+    Without this a project created before budgets were required - or created
+    with a zero cap for a fake-provider run - could never start on a paid
+    deployment, because the only way to get a budget row would be to recreate
+    the project. The ledger's recorded amounts are never rewritten here.
+    """
+    project = owned_project(session, project_id, principal)
+    try:
+        budget = set_caps(
+            session,
+            project,
+            warning_cap=request.budget_warning_cap,
+            hard_cap=request.budget_hard_cap,
+            deployment=BudgetDeployment.from_settings(settings),
+        )
+    except BudgetError as error:
+        session.rollback()
+        raise _budget_error(error) from error
+    session.commit()
+    return _budget_response(budget)
 
 
 @router.get("/{project_id}/status", response_model=ProjectStatusResponse)
