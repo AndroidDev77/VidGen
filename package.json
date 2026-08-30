@@ -1,6 +1,8 @@
 {
   "name": "vidgen",
+  "version": "0.1.0",
   "private": true,
+  "license": "UNLICENSED",
   "packageManager": "pnpm@11.19.0",
   "scripts": {
     "lint": "pnpm -r --if-present lint",

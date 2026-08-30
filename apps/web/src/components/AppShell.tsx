@@ -245,6 +245,10 @@ export function AppShell({ children, devUser, theme, onToggleTheme }: AppShellPr
       <footer className={styles.footer}>
         <Caption1>VidGen Studio — restartable media workflow console.</Caption1>
         <Caption1>All times shown in UTC.</Caption1>
+        <Caption1>
+          © {new Date().getUTCFullYear()} Chris Urquhart. All rights reserved. Proprietary and
+          confidential.
+        </Caption1>
       </footer>
     </div>
   );

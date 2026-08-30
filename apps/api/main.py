@@ -41,7 +41,19 @@ def create_app() -> FastAPI:
     # emitted in the shape Log Analytics parses. No exporter is installed
     # unless one is configured, which keeps tests and local runs unchanged.
     initialize_telemetry(service_name="vidgen-api")
-    application = FastAPI(title="VidGen API", version="0.3.0")
+    application = FastAPI(
+        title="VidGen API",
+        version="0.3.0",
+        # The generated documentation is the most widely read surface of this
+        # API, so it carries the proprietary notice rather than leaving readers
+        # to assume the schema is free to reuse.
+        description=(
+            "Copyright (c) 2026 Chris Urquhart. All rights reserved. "
+            "Proprietary and confidential: not licensed for copying, use, modification "
+            "or distribution without a written license from the copyright holder."
+        ),
+        license_info={"name": "Proprietary - all rights reserved"},
+    )
     settings = get_settings()
     # CORS stays off unless a narrow development origin allowlist is configured;
     # local development prefers Vite's dev proxy over cross-origin requests.
