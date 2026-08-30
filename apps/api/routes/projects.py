@@ -411,7 +411,7 @@ async def upload_subtitle(
     session: SessionDependency,
     principal: PrincipalDependency,
     blob_store: BlobDependency,
-) -> dict:
+) -> dict[str, str]:
     """Store a pre-existing SRT subtitle file as an asset.
 
     The returned ``asset_id`` can be passed to ``workflow:start`` as
