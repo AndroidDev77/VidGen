@@ -12,14 +12,18 @@ from vidgen.contracts.workflow import (
     AnimationActivityInput,
     FinalQAActivityInput,
     FinalQAActivityResult,
+    RenderActivityInput,
+    RenderActivityResult,
     StageActivityInput,
     StageActivityResult,
 )
 
 StageHandler = Callable[[Any], StageActivityResult]
 FinalQAHandler = Callable[[FinalQAActivityInput], FinalQAActivityResult]
+RenderHandler = Callable[[RenderActivityInput], RenderActivityResult]
 _handlers: dict[str, StageHandler] = {}
 _final_qa_handler: dict[str, FinalQAHandler] = {}
+_render_handler: dict[str, RenderHandler] = {}
 HEARTBEAT_INTERVAL_SECONDS = 30.0
 
 
@@ -34,6 +38,13 @@ def configure_final_qa_handler(handler: FinalQAHandler | None) -> None:
     _final_qa_handler.clear()
     if handler is not None:
         _final_qa_handler["final_editorial_qa"] = handler
+
+
+def configure_render_handler(handler: RenderHandler | None) -> None:
+    """Install the T17b adapter, which returns a bounded ID-only result."""
+    _render_handler.clear()
+    if handler is not None:
+        _render_handler["render"] = handler
 
 
 def _execute(request: StageActivityInput | AnimationActivityInput) -> StageActivityResult:
@@ -140,4 +151,20 @@ def run_final_editorial_qa_activity(request: FinalQAActivityInput) -> FinalQAAct
     if handler is None:
         raise RuntimeError("no activity handler configured for final_editorial_qa")
     with _activity_heartbeats("final_editorial_qa"):
+        return handler(request)
+
+
+@activity.defn(name="run_render_activity")
+def run_render_activity(request: RenderActivityInput) -> RenderActivityResult:
+    """Execute the project's render job through the canonical T17b executor.
+
+    The activity is safe to retry: the executor claims the job under a lease,
+    resumes from its durable checkpoint, and returns the existing result for a
+    job that is already complete. A retry therefore never produces a second
+    render job, a second render, or a duplicate asset row.
+    """
+    handler = _render_handler.get("render")
+    if handler is None:
+        raise RuntimeError("no render activity handler configured")
+    with _activity_heartbeats("render"):
         return handler(request)

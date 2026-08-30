@@ -46,23 +46,23 @@ T25_TABLES = {
     "youtube_upload_sessions",
     "publication_assets",
 }
-PREVIOUS_HEAD = "0018_final_editorial_qa"
+PREVIOUS_HEAD = "0019_render_execution"
 
 
 def config() -> Config:
     return Config(str(ROOT / "alembic.ini"))
 
 
-def test_t25_follows_t22_in_a_single_headed_chain() -> None:
+def test_t25_follows_t17b_in_a_single_headed_chain() -> None:
     script = ScriptDirectory.from_config(config())
     # Exactly one head is the invariant T25 has to hold, and it must keep
     # holding for T26: the tip is asserted as an ancestor relation rather than
     # by name, so the next task does not have to edit this test.
     heads = script.get_heads()
     assert len(heads) == 1
-    assert script.get_revision("0019_youtube_publication").down_revision == PREVIOUS_HEAD
+    assert script.get_revision("0020_youtube_publication").down_revision == PREVIOUS_HEAD
     lineage = {revision.revision for revision in script.walk_revisions(base="base", head=heads[0])}
-    assert "0019_youtube_publication" in lineage
+    assert "0020_youtube_publication" in lineage
 
 
 def test_upgrade_downgrade_upgrade_is_clean_with_no_drift(
@@ -89,7 +89,7 @@ def test_the_migration_is_additive(tmp_path: Path, monkeypatch: pytest.MonkeyPat
     before = set(inspect(engine).get_table_names())
     # Upgrade to T25 exactly, not to head, for the same reason T20-T22 do: this
     # assertion is about what T25 itself contributes.
-    command.upgrade(config(), "0019_youtube_publication")
+    command.upgrade(config(), "0020_youtube_publication")
     after = set(inspect(engine).get_table_names())
     assert before <= after, "T25 removes nothing that T01-T24 created"
     assert after - before == T25_TABLES

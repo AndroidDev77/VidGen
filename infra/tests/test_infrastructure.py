@@ -469,10 +469,12 @@ def test_the_worker_shuts_down_gracefully() -> None:
     ):
         assert name in definition
     source = (REPO_ROOT / "workers" / "temporal_worker" / "main.py").read_text()
-    assert "graceful_shutdown_timeout" in source
-    # `async with worker:` is what performs the bounded graceful shutdown;
-    # Worker.run() takes no shutdown argument.
-    assert "async with worker:" in source
+    # Both workers - the project queue and the T17b render queue - are bounded.
+    assert source.count("graceful_shutdown_timeout") == 2
+    # An `async with` over the workers is what performs the bounded graceful
+    # shutdown; Worker.run() takes no shutdown argument. A render left out of
+    # that block would be killed mid-encode instead of drained.
+    assert "async with worker, render_worker:" in source
     assert "shutdown_event" not in source
     assert "signal.SIGTERM" in source
 
@@ -528,6 +530,47 @@ def test_migration_job_uses_its_own_database_role() -> None:
         other = by_name(jobs, fragment)
         other_secrets = property_text(other, "properties", "configuration", "secrets")
         assert "migrationSecretNames" not in other_secrets
+
+
+def test_render_job_executes_a_render_rather_than_queueing_one() -> None:
+    """The Container Apps Job must perform the render, not insert a queue row.
+
+    T24 originally pointed this job at a command that created a render-job row
+    and exited, which made a green job execution mean nothing about whether a
+    render happened. The job now runs the T17b worker against an existing render
+    job id supplied per execution, so its exit status is the render result.
+    """
+    jobs = resources_of_type(module("container_jobs"), "Microsoft.App/jobs")
+    render = by_name(jobs, "job-render")
+    container = render["properties"]["template"]["containers"][0]
+    assert container["command"] == ["python"]
+    assert container["args"] == ["-m", "workers.render_job.main", "--from-env"]
+
+    # `--from-env` reads exactly one variable, and it is supplied per execution
+    # rather than baked into the deployed definition.
+    worker = (REPO_ROOT / "workers" / "render_job" / "main.py").read_text()
+    assert "VIDGEN_RENDER_JOB_ID" in worker
+    environment = property_text(render["properties"]["template"]["containers"][0], "env")
+    assert "VIDGEN_RENDER_JOB_ID" not in environment
+    # Rendering needs writable scratch, and it must be the TMPDIR the image
+    # creates for the non-root runtime user.
+    assert "VIDGEN_RENDER_WORK_ROOT" in environment
+    assert "/tmp/vidgen/render" in environment
+
+
+def test_render_job_is_resourced_for_ffmpeg(
+    staging_parameters: dict[str, Any], production_parameters: dict[str, Any]
+) -> None:
+    """FFmpeg is CPU and memory bound; a starved replica is a failed render."""
+    for parameters in (staging_parameters, production_parameters):
+        limits = parameters["parameters"]["renderLimits"]["value"]
+        assert float(limits["resources"]["cpu"]) >= 2.0
+        assert int(limits["resources"]["memory"].removesuffix("Gi")) >= 4
+        # A long encode must not be killed mid-render by the replica timeout.
+        assert limits["timeoutSeconds"] >= 3600
+        # Platform retry is bounded: the executor is idempotent, but an
+        # unbounded retry of a deterministic failure is just wasted compute.
+        assert 0 <= limits["retryLimit"] <= 2
 
 
 def test_render_concurrency_is_bounded(

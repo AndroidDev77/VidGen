@@ -39,9 +39,13 @@ def config() -> Config:
     return Config(str(ROOT / "alembic.ini"))
 
 
-def test_t22_follows_t21_in_a_single_headed_chain() -> None:
+def test_t22_follows_t21_on_a_single_head_chain() -> None:
+    """One head, and T22 still sits directly on T21.
+
+    The head moves with each roadmap task, so the invariant to assert is that
+    there is exactly one of them - not that it is still T22's revision.
+    """
     script = ScriptDirectory.from_config(config())
-    # The chain stays single-headed; later tasks own the head assertion.
     assert len(script.get_heads()) == 1
     assert script.get_revision("0018_final_editorial_qa").down_revision == "0017_repair_fallback"
 

@@ -19,6 +19,17 @@ const TONES: Record<string, Tone> = {
   approved: "success",
   succeeded: "success",
   running: "informative",
+  // T17b render-job states. A render in flight reads as informative, not as a
+  // silent "pending", so the dashboard shows what is actually happening.
+  render_queued: "subtle",
+  render_claiming: "informative",
+  render_preparing: "informative",
+  render_manifest_ready: "informative",
+  render_rendering: "informative",
+  render_verifying: "informative",
+  render_persisting: "informative",
+  render_failed: "danger",
+  render_cancelled: "danger",
   ingesting: "informative",
   pending: "subtle",
   queued: "subtle",

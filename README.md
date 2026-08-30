@@ -63,13 +63,8 @@ implemented against a deterministic fake provider and a mocked production adapte
   resumable upload that resumes from YouTube's own confirmed byte offset, captions, thumbnails, and
   an explicit visibility transition (see [Publishing to YouTube](#publishing-to-youtube)).
 
-Two gaps affect what you can run locally today, and both are called out again where they bite:
+One gap still affects what you can observe locally, and it is called out again where it bites:
 
-- **No supported command executes a render.** `POST /render:start` and
-  `scripts/render_project.py` create or queue the render job row; the T17 pipeline that would
-  execute it (`services/renderer/pipeline.py`) is driven only from tests, and the project workflow
-  has no render stage. A local run therefore stops before the final MP4, and final editorial QA has
-  no current render to inspect.
 - **No metrics reach a local Grafana.** The API and the worker do initialize the T23 telemetry
   stack, but the bootstrap exports logs (stdout JSON) and traces only. Nothing exports metrics over
   OTLP, so the provisioned dashboard stays empty locally.
@@ -303,11 +298,14 @@ The workflow runs upload, media processing, transcript acquisition, evidence, ep
 script generation, narration, storyboard, and the per-shot fan-out (keyframe, keyframe QA,
 animation, video QA, repair) against real infrastructure with synthetic provider output.
 
-It does **not** reach a finished delivery. No supported command executes the T17 render:
-`POST /projects/{id}/render:start` and `scripts/render_project.py` only create the render job row,
-and nothing consumes it. Because final editorial QA inspects an assembled render, T22 has nothing
-current to inspect and the project cannot reach `completed` locally. Do not expect a downloadable
-MP4 from a local run today.
+It then renders. The workflow's render stage (T17b) resolves the project's authoritative inputs,
+builds the canonical caption track and the immutable render manifest, runs FFmpeg, verifies the
+output with ffprobe, and stores the final MP4, captions, manifest and reproducibility report
+through `AssetService`. Final editorial QA inspects exactly that render, and a project that passes
+its gate reaches `completed` with a downloadable MP4.
+
+Rendering is real FFmpeg work: a ten-shot recap takes tens of seconds locally, and a full-length one
+takes minutes. Nothing about it is a paid provider call.
 
 ## Full local pipeline with production providers
 
@@ -484,9 +482,37 @@ workflows, and any activity failure with its stack.
 
 **7. Review, render and download.** The review application drives transcript and script edits,
 storyboard and shot review, `render:start`, approval and asset downloads
-(`GET /api/v1/projects/{id}/render`, `GET /api/v1/assets/{id}/download-url`). As noted above, `render:start`
-only queues the render job locally — nothing executes it — so the download step is not reachable in
-a local run today.
+(`GET /api/v1/projects/{id}/render`, `GET /api/v1/projects/{id}/render/download`,
+`GET /api/v1/assets/{id}/download-url`).
+
+`render:start` **queues** a render job; it does not render. The workflow's render stage picks it up,
+and so does the out-of-band worker. The two commands are deliberately separate:
+
+```bash
+# Queue a render job for a project, and print only its id.
+RENDER_JOB_ID="$(uv run python -m scripts.render_project "$PROJECT_ID" --output-id-only)"
+
+# Execute that render job. This is the process that runs FFmpeg.
+uv run python -m workers.render_job.main --render-job-id "$RENDER_JOB_ID"
+
+# Or do both in one process, which is usually what you want locally.
+uv run python -m scripts.render_project "$PROJECT_ID" --execute
+
+# Inspect what the render currently binds, without touching a provider.
+uv run python scripts/inspect_render.py "$PROJECT_ID"
+
+# Run final editorial QA against the completed render.
+uv run python scripts/run_final_editorial_qa.py "$PROJECT_ID" --provider fake
+
+# Resolve the approved render to a signed download.
+curl -H "X-VidGen-User: local-user" \
+  "http://localhost:8000/api/v1/projects/$PROJECT_ID/render/download"
+```
+
+The worker is the same code path the deployed Azure Container Apps Job runs; it also accepts
+`--from-env` (reading `VIDGEN_RENDER_JOB_ID`) and `--poll` for a bounded claim loop. It exits `0`
+for a completed render or an idempotent reuse, `1` for a failure and `3` for a cancellation, and it
+never creates a render job. Nothing in this path requires Azure or a paid provider credential.
 
 ## Publishing to YouTube
 
@@ -572,7 +598,7 @@ uv run python scripts/generate_shot_videos.py PROJECT_ID
 uv run python scripts/run_shot_workflow.py PROJECT_ID
 uv run python scripts/run_visual_qa.py PROJECT_ID
 uv run python scripts/run_visual_repair.py PROJECT_ID
-uv run python scripts/render_project.py PROJECT_ID
+uv run python -m scripts.render_project PROJECT_ID --execute
 uv run python scripts/run_final_editorial_qa.py PROJECT_ID
 uv run python scripts/publish_youtube.py PROJECT_ID --provider fake
 ```
@@ -837,7 +863,20 @@ final QA:
 ```bash
 uv run python scripts/inspect_render.py "$PROJECT_ID"     # what the render currently binds
 uv run python scripts/inspect_shot_workflow.py "$PROJECT_ID" --storyboard-run-id "$STORYBOARD_RUN_ID"
+uv run python -m scripts.render_project "$PROJECT_ID" --execute   # a new render for the new inputs
 ```
+
+A render job carries the identity of the inputs it was queued for. If those inputs move before it
+runs, the executor refuses it with `input_identity_changed` rather than quietly rendering something
+else; queue a new render job. Changed inputs always produce a new identity, so the new job is a
+genuinely different render rather than a reuse of the old one.
+
+**A render job that will not start.** The worker exits nonzero with a structured code instead of
+rendering. `render_job_leased` means another worker holds the lease — wait for it to expire or
+finish. `render_attempts_exhausted` means the job used its bounded attempt budget; queue a new one
+once the underlying failure is fixed. A `lineage` classification (`script_not_approved`,
+`visual_qa_missing`, `active_repair_run`, `stale_clip_duration`, and so on) is deterministic: it
+will fail identically until the named upstream problem is resolved, and retrying is pointless.
 
 **Browser cannot reach the API.** The web application shows network errors or an empty project
 list. Check, in order: the API is up (<http://localhost:8000/healthz>); the Vite dev server is

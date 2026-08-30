@@ -8,6 +8,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from vidgen.contracts.render import CaptionWord
 from vidgen.contracts.visual_qa import VisualQATargetType
 from vidgen.db.animation_models import AnimationGeneratedVideo, AnimationItem, AnimationRun
 from vidgen.db.models import Asset, Project
@@ -290,3 +291,57 @@ def visual_qa_provenance(selection: AuthoritativeRenderSelection) -> dict[str, o
             ],
         }
     }
+
+
+def project_narration_words(
+    session: Session, *, storyboard_run_id: UUID, narration_run_id: UUID
+) -> tuple[tuple[tuple[UUID, int, int], ...], tuple[CaptionWord, ...]]:
+    """Project approved T12 word timings onto the global storyboard timeline.
+
+    This is the single definition of "the approved words, in order, at their
+    measured global times". T17b builds the deliverable caption track from it
+    and T22 independently reconstructs captions from the same projection, so a
+    disagreement between the two is a real finding rather than two different
+    interpretations of the same rows.
+    """
+    shots = list(
+        session.scalars(
+            select(StoryboardShotRecord)
+            .where(StoryboardShotRecord.storyboard_run_id == storyboard_run_id)
+            .order_by(StoryboardShotRecord.global_sequence)
+        )
+    )
+    spans: dict[UUID, list[int]] = {}
+    for shot in shots:
+        span = spans.setdefault(
+            shot.narration_segment_id, [shot.global_start_us, shot.global_end_us]
+        )
+        span[0] = min(span[0], shot.global_start_us)
+        span[1] = max(span[1], shot.global_end_us)
+    segments = {
+        segment.id: segment
+        for segment in session.scalars(
+            select(NarrationSegment)
+            .where(NarrationSegment.narration_run_id == narration_run_id)
+            .order_by(NarrationSegment.sequence)
+        )
+    }
+    intervals = tuple(
+        (segment_id, span[0], span[1])
+        for segment_id, span in sorted(spans.items(), key=lambda item: item[1][0])
+    )
+    words: list[CaptionWord] = []
+    for segment_id, start, _end in intervals:
+        segment = segments.get(segment_id)
+        for timing in list(segment.word_timings or []) if segment is not None else []:
+            text = f"{timing.get('word', '')}{timing.get('punctuation', '')}".strip()
+            word_start = start + round(float(timing.get("start_seconds", 0.0)) * 1_000_000)
+            word_end = start + round(float(timing.get("end_seconds", 0.0)) * 1_000_000)
+            if not text or word_end <= word_start:
+                continue
+            words.append(
+                CaptionWord(
+                    sequence=len(words), text=text[:128], start_us=word_start, end_us=word_end
+                )
+            )
+    return intervals, tuple(words)

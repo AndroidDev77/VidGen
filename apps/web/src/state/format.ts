@@ -82,6 +82,16 @@ const STAGE_LABELS: Record<string, string> = {
   shot_orchestration: "Shot orchestration",
   captions: "Captions",
   rendering: "Rendering",
+  render_queued: "Render queued",
+  render_claiming: "Render starting",
+  render_preparing: "Preparing render",
+  render_manifest_ready: "Render manifest ready",
+  render_rendering: "Rendering",
+  render_verifying: "Verifying render",
+  render_persisting: "Storing render",
+  render_complete: "Render complete",
+  render_failed: "Render failed",
+  render_cancelled: "Render cancelled",
   review: "Review",
 };
 

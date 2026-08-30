@@ -1,0 +1,281 @@
+{
+  "$defs": {
+    "RenderInputReference": {
+      "additionalProperties": false,
+      "properties": {
+        "asset_id": {
+          "format": "uuid",
+          "title": "Asset Id",
+          "type": "string"
+        },
+        "media_type": {
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "Media Type",
+          "type": "string"
+        },
+        "role": {
+          "maxLength": 64,
+          "minLength": 1,
+          "title": "Role",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "sha256": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Sha256",
+          "type": "string"
+        }
+      },
+      "required": [
+        "asset_id",
+        "sha256",
+        "media_type",
+        "role"
+      ],
+      "title": "RenderInputReference",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "The authoritative inputs resolved for one render, and their identity.\n\nThis is persisted before any FFmpeg work begins. Re-resolving the same\nproject state must produce the same ``input_hash``; a different hash is a\nmaterially different render and requires a new render job.",
+  "properties": {
+    "approved_script_hash": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Approved Script Hash",
+      "type": "string"
+    },
+    "approved_script_id": {
+      "format": "uuid",
+      "title": "Approved Script Id",
+      "type": "string"
+    },
+    "approved_script_version": {
+      "exclusiveMinimum": 0,
+      "title": "Approved Script Version",
+      "type": "integer"
+    },
+    "aspect_ratio": {
+      "pattern": "^[0-9]{1,2}:[0-9]{1,2}$",
+      "title": "Aspect Ratio",
+      "type": "string"
+    },
+    "audio_asset_ids": {
+      "items": {
+        "format": "uuid",
+        "type": "string"
+      },
+      "maxItems": 128,
+      "title": "Audio Asset Ids",
+      "type": "array"
+    },
+    "caption_configuration_hash": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Caption Configuration Hash",
+      "type": "string"
+    },
+    "character_reference_ids": {
+      "items": {
+        "format": "uuid",
+        "type": "string"
+      },
+      "maxItems": 500,
+      "title": "Character Reference Ids",
+      "type": "array"
+    },
+    "frame_rate": {
+      "exclusiveMinimum": 0,
+      "maximum": 120,
+      "title": "Frame Rate",
+      "type": "integer"
+    },
+    "input_hash": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Input Hash",
+      "type": "string"
+    },
+    "location_reference_ids": {
+      "items": {
+        "format": "uuid",
+        "type": "string"
+      },
+      "maxItems": 500,
+      "title": "Location Reference Ids",
+      "type": "array"
+    },
+    "narration_asset_id": {
+      "format": "uuid",
+      "title": "Narration Asset Id",
+      "type": "string"
+    },
+    "narration_duration_us": {
+      "exclusiveMinimum": 0,
+      "title": "Narration Duration Us",
+      "type": "integer"
+    },
+    "narration_run_id": {
+      "format": "uuid",
+      "title": "Narration Run Id",
+      "type": "string"
+    },
+    "narration_word_timing_hash": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Narration Word Timing Hash",
+      "type": "string"
+    },
+    "output_height": {
+      "exclusiveMinimum": 0,
+      "maximum": 16384,
+      "title": "Output Height",
+      "type": "integer"
+    },
+    "output_width": {
+      "exclusiveMinimum": 0,
+      "maximum": 16384,
+      "title": "Output Width",
+      "type": "integer"
+    },
+    "pipeline_version": {
+      "maxLength": 32,
+      "minLength": 1,
+      "title": "Pipeline Version",
+      "type": "string"
+    },
+    "project_id": {
+      "format": "uuid",
+      "title": "Project Id",
+      "type": "string"
+    },
+    "references": {
+      "items": {
+        "$ref": "#/$defs/RenderInputReference"
+      },
+      "maxItems": 2000,
+      "minItems": 1,
+      "title": "References",
+      "type": "array"
+    },
+    "render_job_id": {
+      "format": "uuid",
+      "title": "Render Job Id",
+      "type": "string"
+    },
+    "render_profile": {
+      "maxLength": 32,
+      "minLength": 1,
+      "title": "Render Profile",
+      "type": "string"
+    },
+    "repair_result_ids": {
+      "items": {
+        "format": "uuid",
+        "type": "string"
+      },
+      "maxItems": 500,
+      "title": "Repair Result Ids",
+      "type": "array"
+    },
+    "resolved_at": {
+      "format": "date-time",
+      "title": "Resolved At",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "shot_count": {
+      "exclusiveMinimum": 0,
+      "maximum": 500,
+      "title": "Shot Count",
+      "type": "integer"
+    },
+    "storyboard_hash": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Storyboard Hash",
+      "type": "string"
+    },
+    "storyboard_run_id": {
+      "format": "uuid",
+      "title": "Storyboard Run Id",
+      "type": "string"
+    },
+    "subtitle_mode": {
+      "default": "selectable",
+      "enum": [
+        "selectable",
+        "burn_in",
+        "both"
+      ],
+      "title": "Subtitle Mode",
+      "type": "string"
+    },
+    "target_duration_us": {
+      "exclusiveMinimum": 0,
+      "title": "Target Duration Us",
+      "type": "integer"
+    },
+    "timing_manifest_hash": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Timing Manifest Hash",
+      "type": "string"
+    },
+    "timing_manifest_id": {
+      "format": "uuid",
+      "title": "Timing Manifest Id",
+      "type": "string"
+    },
+    "visual_qa_policy_version": {
+      "maxLength": 64,
+      "minLength": 1,
+      "title": "Visual Qa Policy Version",
+      "type": "string"
+    },
+    "visual_qa_result_ids": {
+      "items": {
+        "format": "uuid",
+        "type": "string"
+      },
+      "maxItems": 500,
+      "title": "Visual Qa Result Ids",
+      "type": "array"
+    }
+  },
+  "required": [
+    "project_id",
+    "render_job_id",
+    "approved_script_id",
+    "approved_script_version",
+    "approved_script_hash",
+    "narration_run_id",
+    "narration_asset_id",
+    "narration_duration_us",
+    "narration_word_timing_hash",
+    "storyboard_run_id",
+    "storyboard_hash",
+    "timing_manifest_id",
+    "timing_manifest_hash",
+    "shot_count",
+    "references",
+    "render_profile",
+    "target_duration_us",
+    "aspect_ratio",
+    "output_width",
+    "output_height",
+    "frame_rate",
+    "caption_configuration_hash",
+    "visual_qa_policy_version",
+    "pipeline_version",
+    "input_hash",
+    "resolved_at"
+  ],
+  "title": "RenderInputSelection",
+  "type": "object"
+}

@@ -59,6 +59,38 @@ class AnimationActivityInput(StrictContract):
     trace_context: dict[str, str] = Field(default_factory=dict)
 
 
+class RenderActivityInput(StrictContract):
+    """Compact T17b message. Manifests, captions, media bytes, FFmpeg output and
+    diagnostics never enter workflow history: the activity resolves everything
+    from durable storage using these IDs alone."""
+
+    schema_version: Literal["1.0"] = "1.0"
+    project_id: UUID
+    render_job_id: UUID | None = None
+    idempotency_key: str = Field(min_length=1, max_length=255)
+    trace_context: dict[str, str] = Field(default_factory=dict)
+
+
+class RenderActivityResult(StrictContract):
+    """The bounded T17b outcome the workflow may branch on. IDs and counts only."""
+
+    schema_version: Literal["1.0"] = "1.0"
+    project_id: UUID
+    render_job_id: UUID
+    status: str = Field(min_length=1, max_length=48)
+    reused: bool = False
+    progress_percent: int = Field(default=0, ge=0, le=100)
+    render_identity: str | None = Field(default=None, pattern=r"^[a-f0-9]{64}$")
+    input_hash: str | None = Field(default=None, pattern=r"^[a-f0-9]{64}$")
+    output_sha256: str | None = Field(default=None, pattern=r"^[a-f0-9]{64}$")
+    final_render_asset_id: UUID | None = None
+    render_manifest_asset_id: UUID | None = None
+    measured_duration_us: int | None = Field(default=None, gt=0)
+    attempt: int = Field(default=0, ge=0)
+    error_code: str | None = Field(default=None, max_length=128)
+    failure_classification: str | None = Field(default=None, max_length=32)
+
+
 class FinalQAActivityInput(StrictContract):
     """Compact T22 message. Scripts, captions, media bytes, reports, sampled
     frames, provider payloads and findings never enter workflow history: the

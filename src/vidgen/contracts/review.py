@@ -376,6 +376,21 @@ class RenderProjection(StrictContract):
     narration_run_id: UUID | None = None
     ffmpeg_version: str | None = Field(default=None, max_length=255)
     lineage_hash: str | None = Field(default=None, pattern=r"^[a-f0-9]{64}$")
+    # T17b execution state. The dashboard shows real render progress and the
+    # real reason a render failed, rather than a row that says "pending" for as
+    # long as the encode takes.
+    progress_percent: int = Field(default=0, ge=0, le=100)
+    checkpoint: str | None = Field(default=None, max_length=64)
+    attempt_count: int = Field(default=0, ge=0)
+    cancel_requested: bool = False
+    failure_code: str | None = Field(default=None, max_length=128)
+    failure_classification: str | None = Field(default=None, max_length=32)
+    output_sha256: str | None = Field(default=None, pattern=r"^[a-f0-9]{64}$")
+    input_hash: str | None = Field(default=None, pattern=r"^[a-f0-9]{64}$")
+    renderer_version: str | None = Field(default=None, max_length=32)
+    #: True only for a complete, verified, non-stale render with a stored final
+    #: asset. A queued, running, failed or stale render is never downloadable.
+    downloadable: bool = False
     approval: RenderApprovalProjection | None = None
     row_version: int = Field(ge=1)
     completed_at: datetime | None = None

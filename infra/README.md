@@ -455,12 +455,49 @@ affinity while `apiScale.maxReplicas` is above one.
 | `job-smoke` | manual | 1 | 1 | 1800 s | 1 |
 | `job-admin` | manual | 1 | 1 | 3600 s | 0 |
 
-The in-workflow T17 render stays a Temporal activity inside the worker: it is
-part of a durable workflow with retries, heartbeats and a completion gate, and
-moving it into a finite job would break that boundary. `job-render` exists for
-the genuinely finite, out-of-band case — deliberately re-rendering one project —
-and takes its project id per execution from `VIDGEN_PROJECT_ID`. No continuously
-polling Temporal workload is expressed as a finite job.
+The in-workflow T17b render stays a Temporal activity inside the worker, on the
+dedicated `render` task queue: it is part of a durable workflow with retries,
+heartbeats and a completion gate, and moving it into a finite job would break
+that boundary. `job-render` exists for the genuinely finite, out-of-band case —
+deliberately executing one already-queued render job. No continuously polling
+Temporal workload is expressed as a finite job.
+
+`job-render` runs `python -m workers.render_job.main --from-env` and takes the
+render job to execute per execution from `VIDGEN_RENDER_JOB_ID`:
+
+```bash
+az containerapp job start \
+  --name "<prefix>-<env>-job-render" \
+  --resource-group "<rg>" \
+  --env-vars VIDGEN_RENDER_JOB_ID="$RENDER_JOB_ID"
+```
+
+The job definition itself stays neutral — one render job per execution, never a
+project or a queue baked into the deployed definition. It executes an existing
+render job rather than creating one, so its exit status is the actual render
+result: `0` for a completed render or an idempotent reuse, nonzero otherwise.
+
+The executor claims the job under a lease and resumes from its durable
+checkpoint, so a platform retry (`replicaRetryLimit: 1`) re-enters the same
+render rather than producing a duplicate output, and two replicas started for
+the same job cannot both render it. A `SIGTERM` from the platform requests
+cancellation, terminates FFmpeg and records durable cancellation state.
+
+Rendering needs writable scratch. `VIDGEN_RENDER_WORK_ROOT` is
+`/tmp/vidgen/render`, under the `TMPDIR` the application image creates and owns
+as its non-root runtime user. Inputs are streamed into a per-job directory and
+every canonical output is streamed to Blob Storage through `AssetService` before
+that directory is removed; the executor refuses to start when free space is
+below its configured floor, with a structured error rather than a failed encode.
+Size the ephemeral storage for the largest recap you intend to render: roughly
+the sum of the source clips plus the narration, plus about twice the final MP4
+for the picture master and the audio masters.
+
+There is no automatic dispatcher for this job. Production rendering goes through
+the Temporal activity; `job-render` is started deliberately by an operator. The
+application boundary is provider-neutral — both paths call the same
+`execute_render_job` — so local execution uses the normal worker path with no
+Azure involvement.
 
 ## Autoscaling
 

@@ -23,8 +23,8 @@ the only local record of which YouTube video a render became; dropping them
 would leave a published video with no lineage and would let a retry upload the
 same render a second time.
 
-Revision ID: 0019_youtube_publication
-Revises: 0018_final_editorial_qa
+Revision ID: 0020_youtube_publication
+Revises: 0019_render_execution
 """
 
 from collections.abc import Sequence
@@ -41,8 +41,8 @@ from vidgen.db.publication_models import (
     YouTubeUploadSession,
 )
 
-revision: str = "0019_youtube_publication"
-down_revision: str | None = "0018_final_editorial_qa"
+revision: str = "0020_youtube_publication"
+down_revision: str | None = "0019_render_execution"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
