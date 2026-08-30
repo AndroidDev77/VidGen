@@ -182,6 +182,8 @@ def list_projects(
                 committed_cost_amount=summary.committed_cost_amount,
                 hard_cap_amount=summary.hard_cap_amount,
                 has_failures=summary.has_failures,
+                latest_failure_stage=summary.latest_failure_stage,
+                latest_failure_code=summary.latest_failure_code,
                 row_version=summary.row_version,
             )
         )
