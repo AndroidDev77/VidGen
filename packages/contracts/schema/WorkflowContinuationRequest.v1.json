@@ -1,0 +1,48 @@
+{
+  "additionalProperties": false,
+  "description": "Ask a paused or partially complete project to continue.",
+  "properties": {
+    "entry_stage": {
+      "maxLength": 64,
+      "minLength": 1,
+      "title": "Entry Stage",
+      "type": "string"
+    },
+    "idempotency_key": {
+      "maxLength": 255,
+      "minLength": 1,
+      "title": "Idempotency Key",
+      "type": "string"
+    },
+    "project_id": {
+      "format": "uuid",
+      "title": "Project Id",
+      "type": "string"
+    },
+    "reason": {
+      "enum": [
+        "review_resolved",
+        "partial_fanout",
+        "revision",
+        "remediation",
+        "operator_request"
+      ],
+      "title": "Reason",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    }
+  },
+  "required": [
+    "project_id",
+    "entry_stage",
+    "reason",
+    "idempotency_key"
+  ],
+  "title": "WorkflowContinuationRequest",
+  "type": "object"
+}

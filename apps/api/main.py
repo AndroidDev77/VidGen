@@ -11,6 +11,7 @@ from apps.api.dependencies import get_engine
 from apps.api.errors import register_error_handlers
 from apps.api.routes import (
     assets,
+    control_commands,
     costs,
     events,
     final_editorial,
@@ -26,6 +27,7 @@ from apps.api.routes import (
     transcripts,
     uploads,
     visual_qa,
+    voice_profiles,
     workflows,
     youtube_connections,
 )
@@ -54,6 +56,8 @@ def create_app() -> FastAPI:
         )
     for module in (
         projects,
+        voice_profiles,
+        control_commands,
         references,
         uploads,
         assets,

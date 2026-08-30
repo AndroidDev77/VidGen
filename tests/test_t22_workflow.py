@@ -27,6 +27,7 @@ from packages.workflows.activities import (
     configure_final_qa_handler,
     run_final_editorial_qa_activity,
 )
+from packages.workflows.continuity import ContinuityReferenceWorkflow
 from packages.workflows.project import RENDER_TASK_QUEUE, ProjectWorkflow
 from packages.workflows.shot import ProjectShotFanoutWorkflow, ShotWorkflow
 from packages.workflows.shot_policy import TASK_QUEUE
@@ -36,6 +37,13 @@ from tests.final_qa_fixtures import (
     FinalQAFixture,
     materialize_final_qa_project,
     require_ffmpeg,
+)
+from vidgen.contracts.continuity_workflow import (
+    ReferenceApprovalSignal,
+    ReferenceDraftResult,
+    ReferenceWorkflowInput,
+    ReferenceWorkflowResult,
+    ReferenceWorkflowStatus,
 )
 from vidgen.contracts.shot_workflow import ProjectShotFanoutResult, ResolveShotFanoutResult
 from vidgen.contracts.workflow import (
@@ -69,6 +77,8 @@ MANIFEST_ASSET = UUID(int=5002)
 RUN_ID = UUID(int=5003)
 STORYBOARD_RUN = UUID(int=5004)
 RENDER_JOB = UUID(int=5005)
+ANALYSIS = UUID(int=5006)
+REFERENCE_RUN = UUID(int=5007)
 
 
 # --- ID-only message contracts ----------------------------------------------
@@ -271,11 +281,40 @@ async def run_project(
     async def fanout_checkpoint(value: ProjectShotFanoutResult) -> ProjectShotFanoutResult:
         return value
 
+    async def resolve_continuity(request: StageActivityInput) -> ReferenceWorkflowInput:
+        return ReferenceWorkflowInput(
+            project_id=request.project_id,
+            episode_analysis_id=ANALYSIS,
+            storyboard_run_id=STORYBOARD_RUN,
+            reference_run_id=REFERENCE_RUN,
+            idempotency_key="references-1",
+        )
+
+    async def build_references(request: ReferenceWorkflowInput) -> ReferenceDraftResult:
+        # This project needs no reference sheets, so T19 completes
+        # deterministically rather than waiting for an approval nobody owes.
+        return ReferenceDraftResult(
+            project_id=request.project_id,
+            reference_run_id=request.reference_run_id,
+            requires_approval=False,
+            status="references_complete",
+        )
+
+    async def apply_references(signal: ReferenceApprovalSignal) -> ReferenceWorkflowResult:
+        return ReferenceWorkflowResult(
+            project_id=signal.project_id,
+            reference_run_id=signal.reference_run_id,
+            status=ReferenceWorkflowStatus.COMPLETE,
+        )
+
     activities: list[Callable[..., Awaitable[object]]] = [
         *stage_activities(),
         activity.defn(name="resolve_shot_fanout")(resolve_fanout),
         activity.defn(name="persist_shot_fanout_checkpoint")(fanout_checkpoint),
         activity.defn(name="run_final_editorial_qa_activity")(final_qa),
+        activity.defn(name="resolve_continuity_inputs")(resolve_continuity),
+        activity.defn(name="build_continuity_references")(build_references),
+        activity.defn(name="apply_continuity_references")(apply_references),
     ]
     render_handler = render or await render_activity()
     render_activities: list[Callable[..., Awaitable[object]]] = [
@@ -288,7 +327,12 @@ async def run_project(
             Worker(
                 environment.client,
                 task_queue=TASK_QUEUE,
-                workflows=[ProjectWorkflow, ProjectShotFanoutWorkflow, ShotWorkflow],
+                workflows=[
+                    ProjectWorkflow,
+                    ProjectShotFanoutWorkflow,
+                    ShotWorkflow,
+                    ContinuityReferenceWorkflow,
+                ],
                 activities=activities,
             ),
             Worker(

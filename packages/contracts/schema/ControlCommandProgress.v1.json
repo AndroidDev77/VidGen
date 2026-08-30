@@ -1,0 +1,33 @@
+{
+  "additionalProperties": false,
+  "description": "Bounded progress. A phase label and a percentage, never a payload.",
+  "properties": {
+    "percent": {
+      "default": 0,
+      "maximum": 100,
+      "minimum": 0,
+      "title": "Percent",
+      "type": "integer"
+    },
+    "phase": {
+      "default": "",
+      "maxLength": 64,
+      "title": "Phase",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "waiting_reason": {
+      "default": "",
+      "maxLength": 128,
+      "title": "Waiting Reason",
+      "type": "string"
+    }
+  },
+  "title": "ControlCommandProgress",
+  "type": "object"
+}

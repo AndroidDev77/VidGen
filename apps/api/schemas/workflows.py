@@ -2,11 +2,18 @@
 
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import BaseModel, ConfigDict, Field
 
 from vidgen.contracts.review import WorkflowStatusProjection
 
-__all__ = ["StartWorkflowRequest", "StartWorkflowResponse", "WorkflowStatusResponse"]
+__all__ = [
+    "ContinueWorkflowRequest",
+    "StartWorkflowRequest",
+    "StartWorkflowResponse",
+    "WorkflowStatusResponse",
+]
 
 
 class StartWorkflowRequest(BaseModel):
@@ -25,3 +32,17 @@ class StartWorkflowResponse(BaseModel):
 
 
 WorkflowStatusResponse = WorkflowStatusProjection
+
+
+class ContinueWorkflowRequest(BaseModel):
+    """Resume a paused or partially complete project from a named stage."""
+
+    model_config = ConfigDict(extra="forbid")
+    entry_stage: str = Field(min_length=1, max_length=64)
+    reason: Literal[
+        "review_resolved",
+        "partial_fanout",
+        "revision",
+        "remediation",
+        "operator_request",
+    ] = "operator_request"

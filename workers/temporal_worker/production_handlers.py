@@ -133,12 +133,19 @@ def _canonical_hash(value: object) -> str:
 
 
 def _shot_input(
-    request: ProjectShotFanoutInput, selected: object, shot: object
+    request: ProjectShotFanoutInput,
+    selected: object,
+    shot: object,
+    regeneration_sequence: int = 0,
 ) -> ShotWorkflowInput:
     # Kept local to the activity so mutable database/configuration reads never
     # occur in workflow code.
     storyboard = selected.storyboard
+    regeneration: dict[str, str | int] = (
+        {"regeneration_sequence": regeneration_sequence} if regeneration_sequence else {}
+    )
     material: dict[str, str | int] = {
+        **regeneration,
         "project_id": str(request.project_id),
         "storyboard_run_id": str(storyboard.id),
         "storyboard_input_hash": storyboard.input_hash,
@@ -154,7 +161,11 @@ def _shot_input(
         "attempt_policy_version": request.attempt_policy_version,
     }
     digest = identity_hash(material)
-    identity = ShotWorkflowIdentity(**material, identity_hash=digest)
+    identity = ShotWorkflowIdentity(
+        **{key: value for key, value in material.items() if key != "regeneration_sequence"},
+        regeneration_sequence=regeneration_sequence,
+        identity_hash=digest,
+    )
     return ShotWorkflowInput(
         project_id=request.project_id,
         storyboard_run_id=storyboard.id,
@@ -213,7 +224,10 @@ def _authoritative_shot(session: Session, request: ShotWorkflowInput) -> tuple[o
         t15_capability_profile_identity=(request.workflow_identity.t15_capability_profile_identity),
         attempt_policy_version=request.attempt_policy_version,
     )
-    expected = _shot_input(fanout, selected, shot)
+    # A replacement child carries the regeneration sequence its command minted;
+    # revalidating with the same sequence proves the identity is reproducible
+    # from persisted material rather than invented by the caller.
+    expected = _shot_input(fanout, selected, shot, request.workflow_identity.regeneration_sequence)
     if expected.workflow_identity != request.workflow_identity:
         raise ValueError("InvalidLineage: shot workflow identity is stale or incompatible")
     return selected, shot

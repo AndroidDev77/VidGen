@@ -28,6 +28,24 @@ class WorkflowFailure(StrictContract):
     details: dict[str, object] = Field(default_factory=dict)
 
 
+#: The project's stages in execution order. A generation run names the earliest
+#: stage it must execute; everything before that is reused rather than rerun.
+PROJECT_STAGE_ORDER: tuple[str, ...] = (
+    "upload",
+    "media_processing",
+    "transcript_acquisition",
+    "evidence",
+    "episode_analysis",
+    "script_generation",
+    "narration",
+    "storyboard",
+    "continuity_references",
+    "shot_generation",
+    "render",
+    "final_editorial_qa",
+)
+
+
 class ProjectWorkflowInput(StrictContract):
     schema_version: Literal["1.0"] = "1.0"
     project_id: UUID
@@ -36,6 +54,20 @@ class ProjectWorkflowInput(StrictContract):
     idempotency_key: str = Field(min_length=1, max_length=220)
     provider_configuration_version: str = "runway/2024-11-06"
     trace_context: dict[str, str] = Field(default_factory=dict)
+    #: The immutable generation run this execution belongs to. A revision or a
+    #: continuation starts a *new* run rather than re-entering a closed
+    #: execution, so previous runs stay readable as history.
+    generation_run_id: UUID | None = None
+    #: The earliest stage this run must execute. Stages before it already have
+    #: authoritative, compatible outputs and are deliberately not rerun.
+    entry_stage: str = Field(default="upload", min_length=1, max_length=64)
+
+    @field_validator("entry_stage")
+    @classmethod
+    def known_entry_stage(cls, value: str) -> str:
+        if value not in PROJECT_STAGE_ORDER:
+            raise ValueError(f"unknown project entry stage: {value}")
+        return value
 
 
 class StageActivityInput(StrictContract):
@@ -143,6 +175,15 @@ class ProjectWorkflowState(StrictContract):
     cancelled: bool = False
     failure: WorkflowFailure | None = None
     updated_at: datetime | None = None
+    #: The generation run this execution is, and where it started. Both are
+    #: query-visible so the UI can name the active lineage instead of guessing.
+    generation_run_id: UUID | None = None
+    entry_stage: str = Field(default="upload", max_length=64)
+    #: Set while the project is durably waiting on a human decision, with the
+    #: reason. Empty whenever the project is executing.
+    waiting_reason: str = Field(default="", max_length=128)
+    #: What an owner may do next, so the UI never invents an affordance.
+    next_actions: list[str] = Field(default_factory=list, max_length=8)
 
     @field_validator("updated_at")
     @classmethod

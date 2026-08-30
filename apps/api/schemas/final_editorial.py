@@ -42,6 +42,8 @@ class FinalEditorialRemediationRequest(StrictContract):
 
     target: str = Field(min_length=1, max_length=64)
     finding_ids: list[UUID] = Field(min_length=1, max_length=64)
+    #: Required for a shot-scoped remediation: the shot whose repair this is.
+    shot_id: UUID | None = None
 
 
 class FinalMeasurementProjection(StrictContract):
@@ -201,12 +203,21 @@ class FinalEditorialCollectionResponse(StrictContract):
 
 
 class FinalEditorialRunResponse(StrictContract):
+    """A manual T22 run, and the durable command that will execute it.
+
+    ``resource_id`` is the command ID, so ``queued`` names a row a dispatcher
+    can claim rather than a value derived from the request.
+    """
+
     status: Literal["queued", "cancelled"]
     project_id: UUID
     final_render_asset_id: UUID | None = None
     provider: str = "fake"
     resource_id: UUID
     row_version: int = Field(ge=0)
+    command_id: UUID | None = None
+    command_status: str | None = Field(default=None, max_length=32)
+    workflow_id: str | None = Field(default=None, max_length=255)
 
 
 class FinalEditorialReviewResponse(StrictContract):
@@ -219,12 +230,16 @@ class FinalEditorialReviewResponse(StrictContract):
 
 
 class FinalEditorialRemediationResponse(StrictContract):
+    """Where confirmed findings were routed, and what is executing that route."""
+
     final_editorial_run_id: UUID
     target: str
     routed_finding_ids: list[UUID] = Field(default_factory=list)
     requires_new_render: bool = True
     resource_id: UUID
     row_version: int = Field(ge=0)
+    command_id: UUID | None = None
+    command_status: str | None = Field(default=None, max_length=32)
 
 
 class FinalCompletionGateProjection(StrictContract):

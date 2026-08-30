@@ -351,15 +351,18 @@ class FinalEditorialPipeline:
                         replace(frame, contact_sheet_position=sheet.positions.get(frame.sample_id))
                         for frame in frames
                     ]
-                    run.contact_sheet_asset_id = run.contact_sheet_asset_id or self.assets.store(
-                        content=sheet.content,
-                        kind="final_qa_contact_sheet",
-                        media_type=sheet.media_type,
-                        project_id=inputs.project_id,
-                        parent_asset_ids=self._parents(selected),
-                        idempotency_key=f"{run.final_qa_identity}:contact-sheet",
-                        metadata=self._provenance(run, selected),
-                    ).id
+                    run.contact_sheet_asset_id = (
+                        run.contact_sheet_asset_id
+                        or self.assets.store(
+                            content=sheet.content,
+                            kind="final_qa_contact_sheet",
+                            media_type=sheet.media_type,
+                            project_id=inputs.project_id,
+                            parent_asset_ids=self._parents(selected),
+                            idempotency_key=f"{run.final_qa_identity}:contact-sheet",
+                            metadata=self._provenance(run, selected),
+                        ).id
+                    )
                 self.session.commit()
                 request = self._request(
                     run,
@@ -466,19 +469,22 @@ class FinalEditorialPipeline:
             # A report is written once for one identity and never overwritten.
             # A resumed run keeps the report its first pass produced, which is
             # what makes the artefact immutable rather than merely idempotent.
-            run.report_asset_id = run.report_asset_id or self.assets.store(
-                content=json.dumps(
-                    report.model_dump(mode="json"), sort_keys=True, separators=(",", ":")
-                ).encode(),
-                kind="final_qa_report",
-                media_type="application/json",
-                project_id=inputs.project_id,
-                parent_asset_ids=self._parents(selected),
-                # The identity is in the key, so a report is written once and a
-                # previous report for another identity is never overwritten.
-                idempotency_key=f"{run.final_qa_identity}:report",
-                metadata=self._provenance(run, selected),
-            ).id
+            run.report_asset_id = (
+                run.report_asset_id
+                or self.assets.store(
+                    content=json.dumps(
+                        report.model_dump(mode="json"), sort_keys=True, separators=(",", ":")
+                    ).encode(),
+                    kind="final_qa_report",
+                    media_type="application/json",
+                    project_id=inputs.project_id,
+                    parent_asset_ids=self._parents(selected),
+                    # The identity is in the key, so a report is written once and a
+                    # previous report for another identity is never overwritten.
+                    idempotency_key=f"{run.final_qa_identity}:report",
+                    metadata=self._provenance(run, selected),
+                ).id
+            )
             run.final_decision = gate.decision.value
             run.blocking_finding_count = gate.blocking_finding_count
             run.review_finding_count = gate.review_finding_count

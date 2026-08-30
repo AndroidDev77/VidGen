@@ -15,6 +15,7 @@ from uuid import UUID, uuid4
 
 from sqlalchemy.orm import Session
 
+from services.narration.local_voice_profile import VOICE_PROFILE_SETTING
 from vidgen.db.animation_models import AnimationGeneratedVideo, AnimationItem, AnimationRun
 from vidgen.db.cost_models import (
     CostLedgerEntry,
@@ -362,6 +363,11 @@ def build_project_graph(
         configuration_hash=digest("voice"),
     )
     session.add(voice)
+    session.flush()
+    # Selecting the voice is part of the product path since T18b: a project
+    # without a resolvable voice profile is refused at workflow start rather
+    # than failing inside T12 narration.
+    project.settings = {**project.settings, VOICE_PROFILE_SETTING: str(voice.id)}
     session.flush()
     narration = NarrationRun(
         project_id=project.id,

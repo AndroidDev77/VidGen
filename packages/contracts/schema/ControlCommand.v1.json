@@ -1,0 +1,353 @@
+{
+  "$defs": {
+    "ControlCommandFailure": {
+      "additionalProperties": false,
+      "description": "A structured, renderable command failure. Never a traceback or SQL text.",
+      "properties": {
+        "attempt": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Attempt",
+          "type": "integer"
+        },
+        "code": {
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "Code",
+          "type": "string"
+        },
+        "retryable": {
+          "default": false,
+          "title": "Retryable",
+          "type": "boolean"
+        },
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "summary": {
+          "maxLength": 500,
+          "minLength": 1,
+          "title": "Summary",
+          "type": "string"
+        }
+      },
+      "required": [
+        "code",
+        "summary"
+      ],
+      "title": "ControlCommandFailure",
+      "type": "object"
+    },
+    "ControlCommandProgress": {
+      "additionalProperties": false,
+      "description": "Bounded progress. A phase label and a percentage, never a payload.",
+      "properties": {
+        "percent": {
+          "default": 0,
+          "maximum": 100,
+          "minimum": 0,
+          "title": "Percent",
+          "type": "integer"
+        },
+        "phase": {
+          "default": "",
+          "maxLength": 64,
+          "title": "Phase",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "waiting_reason": {
+          "default": "",
+          "maxLength": 128,
+          "title": "Waiting Reason",
+          "type": "string"
+        }
+      },
+      "title": "ControlCommandProgress",
+      "type": "object"
+    },
+    "ControlCommandResult": {
+      "additionalProperties": false,
+      "description": "The compact outcome a completed command persists.",
+      "properties": {
+        "result_id": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Result Id"
+        },
+        "result_type": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ControlCommandTargetType"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "summary": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "maxProperties": 24,
+          "title": "Summary",
+          "type": "object"
+        }
+      },
+      "title": "ControlCommandResult",
+      "type": "object"
+    },
+    "ControlCommandStatus": {
+      "description": "The command lifecycle. Only ``pending`` precedes durable executable work.",
+      "enum": [
+        "pending",
+        "claimed",
+        "dispatching",
+        "running",
+        "awaiting_review",
+        "completed",
+        "failed",
+        "cancelled",
+        "superseded"
+      ],
+      "title": "ControlCommandStatus",
+      "type": "string"
+    },
+    "ControlCommandTargetType": {
+      "description": "What a command acts on. Every value maps to an existing owned resource.",
+      "enum": [
+        "project",
+        "shot",
+        "character",
+        "location",
+        "reference_set",
+        "render_job",
+        "final_qa_run",
+        "transcript",
+        "script",
+        "repair_run",
+        "generation_run"
+      ],
+      "title": "ControlCommandTargetType",
+      "type": "string"
+    },
+    "ControlCommandType": {
+      "description": "Every product command T18b can durably dispatch.\n\nAdding a member without a handler is a registration failure the dispatcher\ntests catch: an unroutable command must never be accepted by an endpoint.",
+      "enum": [
+        "reference_build",
+        "reference_generate",
+        "reference_apply",
+        "shot_regenerate",
+        "shot_retry",
+        "shot_review_continue",
+        "transcript_revision",
+        "script_revision",
+        "final_qa_run",
+        "final_qa_remediation",
+        "render_rerender",
+        "project_continue"
+      ],
+      "title": "ControlCommandType",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "description": "The owner-facing projection of one durable command.",
+  "properties": {
+    "attempt": {
+      "default": 0,
+      "minimum": 0,
+      "title": "Attempt",
+      "type": "integer"
+    },
+    "command_id": {
+      "format": "uuid",
+      "title": "Command Id",
+      "type": "string"
+    },
+    "command_type": {
+      "$ref": "#/$defs/ControlCommandType"
+    },
+    "completed_at": {
+      "anyOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Completed At"
+    },
+    "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+    },
+    "dispatched_at": {
+      "anyOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Dispatched At"
+    },
+    "failure": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ControlCommandFailure"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "max_attempts": {
+      "default": 5,
+      "minimum": 1,
+      "title": "Max Attempts",
+      "type": "integer"
+    },
+    "permitted_actions": {
+      "items": {
+        "enum": [
+          "cancel",
+          "retry"
+        ],
+        "type": "string"
+      },
+      "maxItems": 4,
+      "title": "Permitted Actions",
+      "type": "array"
+    },
+    "progress": {
+      "$ref": "#/$defs/ControlCommandProgress"
+    },
+    "project_id": {
+      "format": "uuid",
+      "title": "Project Id",
+      "type": "string"
+    },
+    "result": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ControlCommandResult"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "row_version": {
+      "default": 1,
+      "minimum": 1,
+      "title": "Row Version",
+      "type": "integer"
+    },
+    "run_id": {
+      "anyOf": [
+        {
+          "maxLength": 255,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Run Id"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "started_at": {
+      "anyOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Started At"
+    },
+    "status": {
+      "$ref": "#/$defs/ControlCommandStatus"
+    },
+    "target_id": {
+      "format": "uuid",
+      "title": "Target Id",
+      "type": "string"
+    },
+    "target_type": {
+      "$ref": "#/$defs/ControlCommandTargetType"
+    },
+    "updated_at": {
+      "format": "date-time",
+      "title": "Updated At",
+      "type": "string"
+    },
+    "workflow_id": {
+      "anyOf": [
+        {
+          "maxLength": 255,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Workflow Id"
+    }
+  },
+  "required": [
+    "command_id",
+    "project_id",
+    "command_type",
+    "status",
+    "target_type",
+    "target_id",
+    "created_at",
+    "updated_at"
+  ],
+  "title": "ControlCommand",
+  "type": "object"
+}

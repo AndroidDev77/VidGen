@@ -94,11 +94,23 @@ class ShotWorkflowIdentity(StrictContract):
     t15_pipeline_version: str
     t16_workflow_version: Literal["t16/1"] = "t16/1"
     attempt_policy_version: Literal["shot-attempt/1"] = "shot-attempt/1"
+    #: How many times an owner has deliberately regenerated this shot. Zero for
+    #: the shot the fan-out created, and it is then omitted from the hashed
+    #: material so every pre-T18b identity keeps the value it already has. A
+    #: replacement child gets the next sequence, which is reproducible from the
+    #: durable regeneration commands rather than invented at dispatch time.
+    regeneration_sequence: int = Field(default=0, ge=0)
     identity_hash: str = Field(pattern=r"^[a-f0-9]{64}$")
 
     def material(self) -> dict[str, str | int]:
         """Return exactly the immutable fields bound by the Temporal identity."""
+        extra: dict[str, str | int] = (
+            {"regeneration_sequence": self.regeneration_sequence}
+            if self.regeneration_sequence
+            else {}
+        )
         return {
+            **extra,
             "project_id": str(self.project_id),
             "storyboard_run_id": str(self.storyboard_run_id),
             "storyboard_input_hash": self.storyboard_input_hash,

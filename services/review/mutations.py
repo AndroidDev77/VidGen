@@ -8,7 +8,6 @@ row versions, and appends one bounded project event.
 
 from __future__ import annotations
 
-import hashlib
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from uuid import UUID, uuid4
@@ -16,6 +15,7 @@ from uuid import UUID, uuid4
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from services.control_plane.commands import ControlPlaneService
 from services.render_execution.inputs import resolve_render_inputs
 from services.renderer.selection import RenderLineageError
 from services.review.invalidation import (
@@ -26,10 +26,14 @@ from services.review.invalidation import (
 )
 from services.review.shot_identity import (
     current_workflow_id,
-    regenerated_workflow_id,
     shot_workflow_identity,
 )
 from services.script.canonicalize import compute_segment_content_hash
+from vidgen.contracts.control_commands import (
+    ControlCommand,
+    ControlCommandTargetType,
+    ControlCommandType,
+)
 from vidgen.contracts.render_execution import RenderExecutionStatus
 from vidgen.contracts.review import (
     ApiErrorCode,
@@ -39,6 +43,7 @@ from vidgen.contracts.review import (
 )
 from vidgen.contracts.shot_workflow import ShotWorkflowCommand, ShotWorkflowCommandResult
 from vidgen.db.animation_models import AnimationGeneratedVideo
+from vidgen.db.control_command_models import ControlCommandRecord
 from vidgen.db.models import Project, RenderJob
 from vidgen.db.review_models import RenderApproval
 from vidgen.db.script_models import Script, ScriptSegment
@@ -314,6 +319,24 @@ class ReviewMutationService:
     # Shots
     # ------------------------------------------------------------------
 
+    def _regeneration_sequence(self, project: Project, shot: StoryboardShotRecord) -> int:
+        """The next deliberate regeneration of this shot.
+
+        Counted from the durable regeneration commands rather than a nonce, so
+        the replacement child's identity is reproducible: the API, the
+        dispatcher and the worker's own lineage check all derive the same hash
+        from the same persisted rows.
+        """
+        existing = self._session.scalars(
+            select(ControlCommandRecord.id).where(
+                ControlCommandRecord.project_id == project.id,
+                ControlCommandRecord.command_type == ControlCommandType.SHOT_REGENERATE.value,
+                ControlCommandRecord.target_id == shot.id,
+                ControlCommandRecord.status.notin_(["cancelled", "superseded"]),
+            )
+        ).all()
+        return len(existing) + 1
+
     def regenerate_shot(
         self,
         project: Project,
@@ -323,7 +346,15 @@ class ReviewMutationService:
         row_version: int,
         confirm_invalidation: bool,
     ) -> ShotRegenerationOutcome:
-        """Start one new shot child workflow without touching sibling shots."""
+        """Record the durable command that starts one replacement child workflow.
+
+        The locked child that currently owns this shot is deliberately *not*
+        signalled: it has already completed, and a completed workflow cannot
+        accept a regeneration. The command created here is what starts a
+        genuinely new child, under a reproducible identity, once the dispatcher
+        claims it. Sibling shots are untouched, and every previous attempt of
+        this shot is preserved as history.
+        """
         invalidation = shot_invalidation_set(self._session, project.id, shot)
         if invalidation.requires_confirmation and not confirm_invalidation:
             raise conflict(
@@ -342,27 +373,30 @@ class ReviewMutationService:
             t15_capability_profile_identity=self._t15_identity,
         )
         previous_identity = identity.identity_hash
-        # A new material regeneration identity: the same shot deliberately gets a
-        # different T16 child rather than overwriting the locked one.
-        new_identity = hashlib.sha256(
-            f"t18-regenerate:{previous_identity}:{idempotency_key}:{row_version}".encode()
-        ).hexdigest()
-        command = ShotWorkflowCommand(
-            command_id=f"t18-regenerate-{idempotency_key}"[:128],
-            project_id=project.id,
-            storyboard_shot_id=shot.stable_shot_id,
-            command="regenerate",
-            new_shot_input_hash=new_identity,
+        sequence = self._regeneration_sequence(project, shot)
+        replacement = shot_workflow_identity(
+            self._session,
+            run,
+            shot,
+            t14_configuration_identity=self._t14_identity,
+            t15_capability_profile_identity=self._t15_identity,
+            regeneration_sequence=sequence,
         )
-        # The command goes to the child that currently owns the shot; the ID
-        # returned is the one the replacement child will take.
-        result = self._controller.send_shot_command(current_workflow_id(identity), command)
-        child_workflow_id = regenerated_workflow_id(shot.stable_shot_id, new_identity)
-        if not result.accepted:
-            raise conflict(
-                ApiErrorCode.SHOT_NOT_RETRYABLE,
-                f"The shot workflow rejected the regeneration command ({result.code}).",
-            )
+        outcome = ControlPlaneService(self._session, self._owner).submit(
+            project,
+            command_type=ControlCommandType.SHOT_REGENERATE,
+            target_type=ControlCommandTargetType.SHOT,
+            target_id=shot.id,
+            idempotency_key=idempotency_key,
+            payload={"shot_id": str(shot.id), "row_version": row_version},
+            expected_row_version=row_version,
+            metadata={
+                "regeneration_sequence": str(sequence),
+                "shot_identity_hash": previous_identity,
+                "replacement_identity_hash": replacement.identity_hash,
+            },
+            shot_identity_hash=previous_identity,
+        )
         preserved = [
             row.id
             for row in self._session.scalars(
@@ -375,43 +409,67 @@ class ReviewMutationService:
         self._events.append(
             project.id,
             event_type="shot_regeneration_started",
-            status="running",
+            status=outcome.command.status.value,
             stage=PipelineStage.SHOT_ORCHESTRATION,
         )
         return ShotRegenerationOutcome(
             result=ShotRegenerationResult(
                 shot_id=shot.id,
-                child_workflow_id=child_workflow_id,
-                new_identity_hash=new_identity,
+                # Empty until the dispatcher has actually started the child.
+                child_workflow_id=outcome.command.workflow_id,
+                new_identity_hash=replacement.identity_hash,
                 previous_identity_hash=previous_identity,
                 preserved_attempt_ids=preserved,
                 invalidation=invalidation,
                 row_version=new_row_version,
+                command_id=outcome.command.command_id,
+                command_status=outcome.command.status.value,
+                regeneration_sequence=sequence,
             )
         )
 
     def retry_shot(
         self, project: Project, shot: StoryboardShotRecord, *, idempotency_key: str
-    ) -> ShotWorkflowCommandResult:
-        command = ShotWorkflowCommand(
-            command_id=f"t18-retry-{idempotency_key}"[:128],
-            project_id=project.id,
-            storyboard_shot_id=shot.stable_shot_id,
-            command="retry",
+    ) -> ControlCommand:
+        """Record the durable command that resumes or replaces this shot.
+
+        The dispatcher decides which: a live, non-terminal child is resumed with
+        its durable checkpoint intact, and a child that has already closed is
+        replaced by a new immutable run. Neither path signals a terminal
+        workflow, which is what made the previous "retry" a row update with no
+        consumer once the child had returned.
+        """
+        run = self._session.get(StoryboardRun, shot.storyboard_run_id)
+        if run is None:
+            raise not_found("shot workflow")
+        identity = shot_workflow_identity(
+            self._session,
+            run,
+            shot,
+            t14_configuration_identity=self._t14_identity,
+            t15_capability_profile_identity=self._t15_identity,
         )
-        result = self._controller.send_shot_command(self._shot_workflow_id(shot), command)
-        if not result.accepted:
-            raise conflict(
-                ApiErrorCode.SHOT_NOT_RETRYABLE,
-                "This shot is not in a retryable failed state.",
-            )
+        sequence = self._regeneration_sequence(project, shot)
+        outcome = ControlPlaneService(self._session, self._owner).submit(
+            project,
+            command_type=ControlCommandType.SHOT_RETRY,
+            target_type=ControlCommandTargetType.SHOT,
+            target_id=shot.id,
+            idempotency_key=idempotency_key,
+            payload={"shot_id": str(shot.id), "command": "retry"},
+            metadata={
+                "regeneration_sequence": str(sequence),
+                "shot_identity_hash": identity.identity_hash,
+            },
+            shot_identity_hash=identity.identity_hash,
+        )
         self._events.append(
             project.id,
             event_type="shot_retry_requested",
-            status="running",
+            status=outcome.command.status.value,
             stage=PipelineStage.SHOT_ORCHESTRATION,
         )
-        return result
+        return outcome.command
 
     def cancel_shot(
         self, project: Project, shot: StoryboardShotRecord, *, idempotency_key: str

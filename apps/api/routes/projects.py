@@ -17,6 +17,12 @@ from apps.api.schemas.projects import (
 )
 from apps.api.schemas.uploads import InitializeUploadRequest, UploadResponse
 from apps.api.settings import APISettings, get_settings
+from services.narration.voice_profiles import (
+    NarrationDeployment,
+    VoiceProfileError,
+    current_selection,
+    select_profile,
+)
 from vidgen.db.models import Project, SourceVideo
 from vidgen.db.repositories import ProjectRepository
 from vidgen.db.upload_models import UploadSession
@@ -40,12 +46,34 @@ def owned_project(session: Session, project_id: UUID, principal: Principal) -> P
     return project
 
 
+def _project_response(session: Session, project: Project) -> ProjectResponse:
+    selected = current_selection(session, project)
+    return ProjectResponse(
+        id=project.id,
+        name=project.name,
+        status=project.status,
+        target_duration_seconds=project.target_duration_seconds,
+        visual_style=project.visual_style,
+        humor_intensity=project.humor_intensity,
+        created_at=project.created_at,
+        updated_at=project.updated_at,
+        voice_profile_id=selected.voice_profile_id if selected else None,
+    )
+
+
 @router.post("", response_model=ProjectResponse, status_code=status.HTTP_201_CREATED)
 def create_project(
     request: CreateProjectRequest,
     session: SessionDependency,
     principal: PrincipalDependency,
-) -> Project:
+    settings: SettingsDependency,
+) -> ProjectResponse:
+    """Create a project, selecting its narration voice when one was named.
+
+    Selecting the voice here rather than repairing it later is the whole point:
+    a project that reaches T12 without a resolvable voice profile fails inside a
+    paid workflow, and that failure used to require a database fix.
+    """
     project = Project(
         name=request.name,
         owner_subject=principal.subject,
@@ -56,8 +84,24 @@ def create_project(
         settings={},
     )
     ProjectRepository(session).add(project)
+    session.flush()
+    if request.voice_profile_id is not None or request.voice_provider is not None:
+        try:
+            select_profile(
+                session,
+                project,
+                NarrationDeployment.from_settings(settings),
+                voice_profile_id=request.voice_profile_id,
+                provider=request.voice_provider,
+                provider_voice_id=request.voice_provider_voice_id,
+            )
+        except VoiceProfileError as error:
+            session.rollback()
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=error.code
+            ) from error
     session.commit()
-    return project
+    return _project_response(session, project)
 
 
 @router.get("", response_model=list[ProjectListItemResponse])
@@ -93,8 +137,8 @@ def list_projects(
 @router.get("/{project_id}", response_model=ProjectResponse)
 def get_project(
     project_id: UUID, session: SessionDependency, principal: PrincipalDependency
-) -> Project:
-    return owned_project(session, project_id, principal)
+) -> ProjectResponse:
+    return _project_response(session, owned_project(session, project_id, principal))
 
 
 @router.get("/{project_id}/status", response_model=ProjectStatusResponse)

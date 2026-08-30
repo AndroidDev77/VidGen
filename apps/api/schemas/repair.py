@@ -177,9 +177,20 @@ class RepairActionRequest(StrictContract):
 
 
 class RepairActionResponse(StrictContract):
+    """A recorded T21 decision, and the command that acts on it.
+
+    ``acknowledge`` and ``resolve`` deliberately create no command and never
+    claim the shot passed: they record that a human has seen the review and
+    close the prompt, leaving the shot exactly as T20 and T21 left it. Only
+    ``retry`` and ``restart_after_reference_correction`` produce executable
+    work, because only those ask for the shot to be repaired again.
+    """
+
     repair_run_id: UUID
     action: str
     accepted: bool
     state: str
     code: str
     row_version: int = Field(gt=0)
+    continuation_command_id: UUID | None = None
+    continuation_command_status: str | None = Field(default=None, max_length=32)

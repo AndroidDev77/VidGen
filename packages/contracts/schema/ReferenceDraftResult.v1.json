@@ -1,5 +1,6 @@
 {
   "additionalProperties": false,
+  "description": "What drafting produced, and whether a human decision is actually owed.\n\n``requires_approval`` is the deterministic-completion switch. A project with\nno character or location that has reference evidence produces no drafts, and\nthe workflow must finish rather than wait forever for an approval nobody can\ngive.",
   "properties": {
     "draft_version_ids": {
       "items": {
@@ -8,6 +9,12 @@
       },
       "title": "Draft Version Ids",
       "type": "array"
+    },
+    "entity_count": {
+      "default": 0,
+      "minimum": 0,
+      "title": "Entity Count",
+      "type": "integer"
     },
     "project_id": {
       "format": "uuid",
@@ -19,6 +26,19 @@
       "title": "Reference Run Id",
       "type": "string"
     },
+    "requires_approval": {
+      "default": true,
+      "title": "Requires Approval",
+      "type": "boolean"
+    },
+    "reused_version_ids": {
+      "items": {
+        "format": "uuid",
+        "type": "string"
+      },
+      "title": "Reused Version Ids",
+      "type": "array"
+    },
     "schema_version": {
       "const": "1.0",
       "default": "1.0",
@@ -26,8 +46,11 @@
       "type": "string"
     },
     "status": {
-      "const": "references_awaiting_approval",
       "default": "references_awaiting_approval",
+      "enum": [
+        "references_awaiting_approval",
+        "references_complete"
+      ],
       "title": "Status",
       "type": "string"
     }

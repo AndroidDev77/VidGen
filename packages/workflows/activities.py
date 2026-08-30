@@ -52,13 +52,18 @@ def _execute(request: StageActivityInput | AnimationActivityInput) -> StageActiv
     handler = _handlers.get(stage)
     if handler is None:
         raise RuntimeError(f"no activity handler configured for {stage}")
-    with _activity_heartbeats(stage):
+    with activity_heartbeats(stage):
         return handler(request)
 
 
 @contextmanager
-def _activity_heartbeats(stage: str) -> Iterator[None]:
-    """Heartbeat blocking activity handlers until completion or cancellation."""
+def activity_heartbeats(stage: str) -> Iterator[None]:
+    """Heartbeat blocking activity handlers until completion or cancellation.
+
+    Shared with the T19 continuity activities, which are blocking database and
+    provider work in exactly the same way and need the same cancellation and
+    liveness behaviour.
+    """
     stopped = Event()
 
     def heartbeat() -> None:
@@ -150,7 +155,7 @@ def run_final_editorial_qa_activity(request: FinalQAActivityInput) -> FinalQAAct
     handler = _final_qa_handler.get("final_editorial_qa")
     if handler is None:
         raise RuntimeError("no activity handler configured for final_editorial_qa")
-    with _activity_heartbeats("final_editorial_qa"):
+    with activity_heartbeats("final_editorial_qa"):
         return handler(request)
 
 
@@ -166,5 +171,5 @@ def run_render_activity(request: RenderActivityInput) -> RenderActivityResult:
     handler = _render_handler.get("render")
     if handler is None:
         raise RuntimeError("no render activity handler configured")
-    with _activity_heartbeats("render"):
+    with activity_heartbeats("render"):
         return handler(request)

@@ -1,0 +1,130 @@
+{
+  "$defs": {
+    "ControlCommandTargetType": {
+      "description": "What a command acts on. Every value maps to an existing owned resource.",
+      "enum": [
+        "project",
+        "shot",
+        "character",
+        "location",
+        "reference_set",
+        "render_job",
+        "final_qa_run",
+        "transcript",
+        "script",
+        "repair_run",
+        "generation_run"
+      ],
+      "title": "ControlCommandTargetType",
+      "type": "string"
+    },
+    "ControlCommandType": {
+      "description": "Every product command T18b can durably dispatch.\n\nAdding a member without a handler is a registration failure the dispatcher\ntests catch: an unroutable command must never be accepted by an endpoint.",
+      "enum": [
+        "reference_build",
+        "reference_generate",
+        "reference_apply",
+        "shot_regenerate",
+        "shot_retry",
+        "shot_review_continue",
+        "transcript_revision",
+        "script_revision",
+        "final_qa_run",
+        "final_qa_remediation",
+        "render_rerender",
+        "project_continue"
+      ],
+      "title": "ControlCommandType",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "description": "What a route hands the control plane to create exactly one command.",
+  "properties": {
+    "command_type": {
+      "$ref": "#/$defs/ControlCommandType"
+    },
+    "expected_row_version": {
+      "anyOf": [
+        {
+          "minimum": 1,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Expected Row Version"
+    },
+    "idempotency_key": {
+      "maxLength": 255,
+      "minLength": 1,
+      "title": "Idempotency Key",
+      "type": "string"
+    },
+    "metadata": {
+      "additionalProperties": {
+        "type": "string"
+      },
+      "maxProperties": 24,
+      "title": "Metadata",
+      "type": "object"
+    },
+    "owner_subject": {
+      "maxLength": 255,
+      "minLength": 1,
+      "title": "Owner Subject",
+      "type": "string"
+    },
+    "project_id": {
+      "format": "uuid",
+      "title": "Project Id",
+      "type": "string"
+    },
+    "request_hash": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Request Hash",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "target_id": {
+      "format": "uuid",
+      "title": "Target Id",
+      "type": "string"
+    },
+    "target_type": {
+      "$ref": "#/$defs/ControlCommandTargetType"
+    },
+    "trace_context": {
+      "additionalProperties": {
+        "type": "string"
+      },
+      "maxProperties": 8,
+      "title": "Trace Context",
+      "type": "object"
+    },
+    "upstream_input_identity": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Upstream Input Identity",
+      "type": "string"
+    }
+  },
+  "required": [
+    "project_id",
+    "owner_subject",
+    "command_type",
+    "target_type",
+    "target_id",
+    "idempotency_key",
+    "request_hash",
+    "upstream_input_identity"
+  ],
+  "title": "ControlCommandRequest",
+  "type": "object"
+}

@@ -192,4 +192,7 @@ def test_complete_t19_acceptance_fixture() -> None:
         "reference_run_id",
         "idempotency_key",
         "trace_context",
+        # T18b: the owning project workflow, so the child can report its human
+        # pause back. Still an identifier, still bounded.
+        "parent_workflow_id",
     }

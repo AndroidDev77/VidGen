@@ -1,0 +1,66 @@
+{
+  "$defs": {
+    "ControlCommandTargetType": {
+      "description": "What a command acts on. Every value maps to an existing owned resource.",
+      "enum": [
+        "project",
+        "shot",
+        "character",
+        "location",
+        "reference_set",
+        "render_job",
+        "final_qa_run",
+        "transcript",
+        "script",
+        "repair_run",
+        "generation_run"
+      ],
+      "title": "ControlCommandTargetType",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "description": "The compact outcome a completed command persists.",
+  "properties": {
+    "result_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Result Id"
+    },
+    "result_type": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ControlCommandTargetType"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "summary": {
+      "additionalProperties": {
+        "type": "string"
+      },
+      "maxProperties": 24,
+      "title": "Summary",
+      "type": "object"
+    }
+  },
+  "title": "ControlCommandResult",
+  "type": "object"
+}

@@ -1,10 +1,20 @@
 {
   "additionalProperties": false,
+  "description": "A durable approval decision, delivered to the waiting T19 workflow.\n\nCarries identifiers only: the approved rows, their lineage and the exact\nstoryboard the binding must apply to are all resolved from the database by\nthe activity, so no reference payload enters workflow history.",
   "properties": {
     "approval_id": {
       "format": "uuid",
       "title": "Approval Id",
       "type": "string"
+    },
+    "approved_reference_set_ids": {
+      "items": {
+        "format": "uuid",
+        "type": "string"
+      },
+      "maxItems": 256,
+      "title": "Approved Reference Set Ids",
+      "type": "array"
     },
     "idempotency_key": {
       "maxLength": 255,
@@ -27,6 +37,19 @@
       "default": "1.0",
       "title": "Schema Version",
       "type": "string"
+    },
+    "storyboard_run_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Storyboard Run Id"
     }
   },
   "required": [

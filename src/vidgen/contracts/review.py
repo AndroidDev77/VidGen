@@ -34,6 +34,12 @@ class ApiErrorCode(StrEnum):
     RENDER_NOT_VERIFIED = "render_not_verified"
     RENDER_STALE = "render_stale"
     SHOT_NOT_RETRYABLE = "shot_not_retryable"
+    #: T18b preconditions. A workflow that cannot narrate must be refused
+    #: before Temporal is involved, and a routing-only remediation target must
+    #: say so rather than answer 202 to work nothing will execute.
+    VOICE_PROFILE_REQUIRED = "voice_profile_required"
+    COMMAND_UPSTREAM_STALE = "command_upstream_stale"
+    REMEDIATION_UNSUPPORTED = "remediation_unsupported"
     ATTEMPT_NOT_ELIGIBLE = "attempt_not_eligible"
     BUDGET_DENIED = "budget_denied"
     PROVIDER_UNAVAILABLE = "provider_unavailable"
@@ -334,14 +340,30 @@ class ShotStatusProjection(StrictContract):
 
 
 class ShotRegenerationResult(StrictContract):
+    """What regenerating one shot actually created.
+
+    ``child_workflow_id`` is deliberately optional and deliberately empty until
+    the dispatcher has started the replacement child: before T18b this field
+    carried a workflow ID that had been *calculated* and never started, which is
+    exactly the class of untruth T18b removes. ``command_id`` is what the caller
+    polls in the meantime, and it always exists.
+    """
+
     schema_version: Literal["1.0"] = "1.0"
     shot_id: UUID
-    child_workflow_id: str = Field(max_length=255)
+    #: The replacement child's real Temporal ID, once one has been started.
+    child_workflow_id: str | None = Field(default=None, max_length=255)
     new_identity_hash: str = Field(pattern=r"^[a-f0-9]{64}$")
     previous_identity_hash: str | None = Field(default=None, pattern=r"^[a-f0-9]{64}$")
     preserved_attempt_ids: list[UUID] = Field(default_factory=list, max_length=64)
     invalidation: InvalidationSet
     row_version: int = Field(ge=1)
+    #: The durable command driving this regeneration. Always present.
+    command_id: UUID | None = None
+    command_status: str | None = Field(default=None, max_length=32)
+    #: How many times this shot has been deliberately regenerated. Part of the
+    #: replacement child's reproducible identity.
+    regeneration_sequence: int = Field(default=0, ge=0)
 
 
 class RenderProjection(StrictContract):
