@@ -148,6 +148,20 @@ def plan_chunks(total_bytes: int, chunk_bytes: int, *, start: int = 0) -> list[t
     return plan
 
 
+#: Failures that must stop the drive rather than be smoothed over as progress.
+#: Each one needs something outside the uploader to change - the quota clock,
+#: a reconnection, a wider consent - before another byte is worth sending.
+_PARKING_FAILURE_CODES = frozenset(
+    {
+        PublicationFailureCode.QUOTA_EXCEEDED,
+        PublicationFailureCode.UPLOAD_LIMIT_EXCEEDED,
+        PublicationFailureCode.INVALID_GRANT,
+        PublicationFailureCode.INSUFFICIENT_SCOPE,
+        PublicationFailureCode.AUTHENTICATION_REQUIRED,
+    }
+)
+
+
 @dataclass(frozen=True, slots=True)
 class UploadOutcome:
     """What one drive of the uploader achieved."""
@@ -322,10 +336,19 @@ class ResumableUploader:
                     last_response_code=last_code,
                 )
             if status.expired:
+                # The adapter reports a gone session as a status rather than an
+                # error, so this is the path a real 410 takes. A session that
+                # vanished while the *final* chunk was in flight is ambiguous
+                # for exactly the same reason as the raised form: YouTube may
+                # have assembled the video before collecting the session, and
+                # there is nothing left to ask. Without this the caller would
+                # see "expired with nothing confirmed" and start a second
+                # upload, which is how a duplicate video gets created.
                 return UploadOutcome(
                     confirmed_offset=offset,
                     completed=False,
                     expired=True,
+                    ambiguous=chunk_start + length >= total_bytes,
                     quota_units=quota,
                     retry_count=retries,
                     last_response_code=last_code,
@@ -374,10 +397,17 @@ class ResumableUploader:
     ) -> UploadOutcome:
         """Establish the truth after a chunk failed mid-flight.
 
-        Three answers are possible and all three are handled: the server has
-        more bytes than we thought (resume from there), the upload actually
-        completed (take the video ID), or the session is gone and we cannot tell
-        (ambiguous - the caller must escalate, never re-upload).
+        The offset is settled first, always: whatever else is wrong, bytes the
+        server has confirmed must not be sent again. Then the outcome:
+
+        * the upload actually completed - take the video ID;
+        * the session is gone and we cannot tell - ambiguous, and the caller
+          escalates rather than re-uploading;
+        * the server simply has a different offset - resume from it, unless the
+          interrupting failure was one that has to park the publication (an
+          exhausted quota, a revoked grant, an insufficient scope). Reporting
+          one of those as "still uploading" would have the workflow re-drive
+          into the same refusal instead of waiting.
         """
         try:
             status = await self.confirm_offset(
@@ -414,7 +444,11 @@ class ResumableUploader:
                 last_response_code=status.call.http_status,
             )
         confirmed = min(max(offset, status.confirmed_offset), total_bytes)
+        # Committed before the failure is re-raised, so a parked publication
+        # still resumes from the server-confirmed offset rather than byte zero.
         self.on_confirmed(confirmed, status.call.http_status)
+        if error.code in _PARKING_FAILURE_CODES:
+            raise error
         return UploadOutcome(
             confirmed_offset=confirmed,
             completed=False,

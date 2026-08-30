@@ -518,17 +518,13 @@ class FakeYouTubeProvider:
         )
 
     async def update_visibility(
-        self,
-        *,
-        access_token: SecretValue,
-        video_id: str,
-        privacy_status: str,
-        publish_at: datetime | None,
-        notify_subscribers: bool,
+        self, *, access_token: SecretValue, video_id: str, metadata: VideoMetadata
     ) -> VideoSnapshot:
         units = capabilities.CURRENT_QUOTA_PROFILE.cost("videos.update")
         self.state.record("videos.visibility", units)
         video = self._video(video_id, "videos.update")
+        privacy_status = metadata.privacy_status
+        publish_at = metadata.publish_at
         if privacy_status not in {status.value for status in capabilities.PrivacyStatus}:
             raise provider_error(
                 http_status=400,
@@ -548,6 +544,10 @@ class FakeYouTubeProvider:
             )
         video.privacy_status = privacy_status
         video.publish_at = publish_at
+        # The whole status part is written, exactly as the real adapter does:
+        # a visibility change that silently dropped the synthetic-media
+        # disclosure would pass a fake that only tracked privacy.
+        video.metadata = metadata
         return VideoSnapshot(
             video_id=video.video_id,
             privacy_status=video.privacy_status,

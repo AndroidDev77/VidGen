@@ -548,3 +548,174 @@ def test_the_api_settings_offer_nowhere_to_leak_a_token(tmp_path: Path) -> None:
     # exist sealed in the database, never in configuration.
     youtube_fields = {name for name in fields if name.startswith("youtube_")}
     assert not any("refresh_token" in name or "access_token" in name for name in youtube_fields)
+
+
+# -- draft editing -------------------------------------------------------------
+def _create_publication(
+    client: TestClient, factory: sessionmaker[Session], key: str = "pub-1"
+) -> tuple[dict[str, object], UUID]:
+    """Build an eligible project, connect a channel and create its draft."""
+    store = _store(client)
+    with factory() as session:
+        fixture = build_publishable_project(session, store)
+        connection, _, _ = connect_fake_channel(session)
+        connection_id = str(connection.id)
+    version = _row_version(client, str(fixture.project_id))
+    created = client.post(
+        f"/api/v1/projects/{fixture.project_id}/publications",
+        json={
+            "connection_id": connection_id,
+            "thumbnail_asset_id": str(fixture.thumbnail_asset_id),
+        },
+        headers={**HEADERS, "Idempotency-Key": key, "If-Match": str(version)},
+    )
+    assert created.status_code == 201, created.text
+    return created.json(), fixture.project_id
+
+
+def test_editing_a_draft_versions_the_publication_that_already_exists(
+    publication_client: tuple[TestClient, sessionmaker[Session], FakeWorkflowController],
+) -> None:
+    client, factory, _ = publication_client
+    created, project_id = _create_publication(client, factory)
+    publication_id = created["publication_id"]
+    url = f"/api/v1/projects/{project_id}/publications/{publication_id}"
+    body = {**created["metadata"], "title": "A better title"}
+    body.pop("metadata_version", None)
+
+    version = _row_version(client, str(project_id))
+    edited = client.patch(
+        url,
+        json=body,
+        headers={**HEADERS, "Idempotency-Key": "draft-1", "If-Match": str(version)},
+    )
+    assert edited.status_code == 200, edited.text
+    payload = edited.json()
+    assert payload["publication_id"] == publication_id
+    assert payload["metadata"]["title"] == "A better title"
+    assert payload["metadata_version"] == int(created["metadata_version"]) + 1
+
+    # Editing must never mint a second publication for the same render.
+    with factory() as session:
+        assert session.query(PublicationRun).count() == 1
+
+
+def test_editing_a_draft_requires_if_match_and_an_idempotency_key(
+    publication_client: tuple[TestClient, sessionmaker[Session], FakeWorkflowController],
+) -> None:
+    client, factory, _ = publication_client
+    created, project_id = _create_publication(client, factory)
+    url = f"/api/v1/projects/{project_id}/publications/{created['publication_id']}"
+    body = {**created["metadata"], "title": "Retitled"}
+    body.pop("metadata_version", None)
+
+    assert client.patch(url, json=body, headers=HEADERS).status_code == 428
+    missing_match = client.patch(url, json=body, headers={**HEADERS, "Idempotency-Key": "d-1"})
+    assert missing_match.status_code == 409
+
+    version = _row_version(client, str(project_id))
+    stale = client.patch(
+        url,
+        json=body,
+        headers={**HEADERS, "Idempotency-Key": "d-2", "If-Match": str(version - 1)},
+    )
+    assert stale.status_code == 409
+
+
+def test_replaying_a_draft_edit_key_returns_the_first_answer(
+    publication_client: tuple[TestClient, sessionmaker[Session], FakeWorkflowController],
+) -> None:
+    client, factory, _ = publication_client
+    created, project_id = _create_publication(client, factory)
+    url = f"/api/v1/projects/{project_id}/publications/{created['publication_id']}"
+    body = {**created["metadata"], "title": "Once only"}
+    body.pop("metadata_version", None)
+
+    version = _row_version(client, str(project_id))
+    headers = {**HEADERS, "Idempotency-Key": "draft-replay", "If-Match": str(version)}
+    first = client.patch(url, json=body, headers=headers)
+    assert first.status_code == 200
+    replayed = client.patch(url, json=body, headers=headers)
+    assert replayed.status_code == 200
+    assert replayed.json() == first.json()
+
+    # The same key with a different draft is a conflict, not a silent replay.
+    conflicting = client.patch(
+        url,
+        json={**body, "title": "Something else"},
+        headers=headers,
+    )
+    assert conflicting.status_code == 409
+
+
+def test_a_schedule_on_a_non_public_draft_is_a_readable_conflict(
+    publication_client: tuple[TestClient, sessionmaker[Session], FakeWorkflowController],
+) -> None:
+    """A cross-field contract rule reaches the caller as a message, not a 500."""
+    client, factory, _ = publication_client
+    created, project_id = _create_publication(client, factory)
+    url = f"/api/v1/projects/{project_id}/publications/{created['publication_id']}"
+    body = {**created["metadata"]}
+    body.pop("metadata_version", None)
+    body["requested_privacy"] = "private"
+    body["scheduled_publish_at"] = "2030-01-01T00:00:00Z"
+
+    version = _row_version(client, str(project_id))
+    refused = client.patch(
+        url,
+        json=body,
+        headers={**HEADERS, "Idempotency-Key": "draft-bad", "If-Match": str(version)},
+    )
+    assert refused.status_code == 409
+    detail = json.dumps(refused.json())
+    assert "Traceback" not in detail
+    assert "scheduled" in detail.lower() or "public" in detail.lower()
+
+
+def test_creating_a_publication_with_an_impossible_schedule_is_a_conflict(
+    publication_client: tuple[TestClient, sessionmaker[Session], FakeWorkflowController],
+) -> None:
+    client, factory, _ = publication_client
+    store = _store(client)
+    with factory() as session:
+        fixture = build_publishable_project(session, store)
+        connection, _, _ = connect_fake_channel(session)
+        connection_id = str(connection.id)
+    version = _row_version(client, str(fixture.project_id))
+    refused = client.post(
+        f"/api/v1/projects/{fixture.project_id}/publications",
+        json={
+            "connection_id": connection_id,
+            "metadata": {
+                "title": "Scheduled but private",
+                "requested_privacy": "private",
+                "scheduled_publish_at": "2030-01-01T00:00:00Z",
+            },
+        },
+        headers={**HEADERS, "Idempotency-Key": "pub-bad", "If-Match": str(version)},
+    )
+    assert refused.status_code == 409
+    assert "Traceback" not in json.dumps(refused.json())
+    with factory() as session:
+        assert session.query(PublicationRun).count() == 0
+
+
+def test_a_cross_owner_draft_edit_is_a_404(
+    publication_client: tuple[TestClient, sessionmaker[Session], FakeWorkflowController],
+) -> None:
+    client, factory, _ = publication_client
+    created, project_id = _create_publication(client, factory)
+    url = f"/api/v1/projects/{project_id}/publications/{created['publication_id']}"
+    body = {**created["metadata"], "title": "Not yours"}
+    body.pop("metadata_version", None)
+    version = _row_version(client, str(project_id))
+    foreign = client.patch(
+        url,
+        json=body,
+        headers={
+            "X-VidGen-User": "owner-b",
+            "Idempotency-Key": "draft-foreign",
+            "If-Match": str(version),
+        },
+    )
+    assert foreign.status_code == 404

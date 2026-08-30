@@ -604,23 +604,19 @@ class YouTubeDataApiProvider:
         return await self._update(access_token, body, "videos.update")
 
     async def update_visibility(
-        self,
-        *,
-        access_token: SecretValue,
-        video_id: str,
-        privacy_status: str,
-        publish_at: datetime | None,
-        notify_subscribers: bool,
+        self, *, access_token: SecretValue, video_id: str, metadata: VideoMetadata
     ) -> VideoSnapshot:
-        status: dict[str, Any] = {"privacyStatus": privacy_status}
-        if publish_at is not None:
-            status["publishAt"] = publish_at.astimezone(UTC).isoformat().replace("+00:00", "Z")
+        # The complete status part. `videos.update` replaces the part it is
+        # given, so sending `privacyStatus` on its own would delete the
+        # synthetic-media disclosure, the made-for-kids declaration and the
+        # embeddable setting at the moment the video becomes visible.
+        status = _snippet_and_status(metadata)["status"]
         units = capabilities.CURRENT_QUOTA_PROFILE.cost("videos.update")
         response = await self._client.put(
             capabilities.VIDEOS_URL,
             params={
                 "part": "status",
-                "notifySubscribers": str(notify_subscribers).lower(),
+                "notifySubscribers": str(metadata.notify_subscribers).lower(),
             },
             json={"id": video_id, "status": status},
             headers={**self._auth(access_token), "Content-Type": "application/json; charset=UTF-8"},

@@ -43,6 +43,7 @@ import {
   resumePublication,
   startPublication,
   startYouTubeOAuth,
+  updatePublicationDraft,
 } from "../../api/publications";
 import { FinalQAPanel } from "../../components/FinalQAPanel";
 import { PublicationPanel } from "../../components/PublicationPanel";
@@ -282,15 +283,13 @@ export function FinalReviewPage(): JSX.Element {
       if (currentPublicationId === null) {
         throw new Error("There is no publication draft to save.");
       }
-      // The draft is edited through the create endpoint's own idempotent
-      // identity, so a repeated save is a replay rather than a second row.
-      return createPublication(
+      // Edits the existing publication in place. Saving through the create
+      // endpoint would carry the metadata into the publication identity and
+      // mint a new publication row for every save.
+      return updatePublicationDraft(
         projectId,
-        {
-          connection_id: publication.data?.connection_id ?? "",
-          thumbnail_asset_id: null,
-          metadata,
-        },
+        currentPublicationId,
+        metadata,
         publicationRowVersion,
         newIdempotencyKey(`publication-draft-${currentPublicationId}`),
         client,

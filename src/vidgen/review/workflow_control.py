@@ -262,6 +262,7 @@ class TemporalWorkflowController:
 
     def start_publication(self, request: PublicationActivityInput) -> tuple[str, str]:
         from temporalio.common import WorkflowIDReusePolicy
+        from temporalio.exceptions import WorkflowAlreadyStartedError
 
         from packages.workflows.publication import YouTubePublicationWorkflow
 
@@ -269,13 +270,26 @@ class TemporalWorkflowController:
 
         async def run() -> tuple[str, str]:
             client = await self._client()
-            handle = await client.start_workflow(  # type: ignore[attr-defined]
-                YouTubePublicationWorkflow.run,
-                request,
-                id=workflow_id,
-                task_queue=PUBLISHER_TASK_QUEUE,
-                id_reuse_policy=WorkflowIDReusePolicy.ALLOW_DUPLICATE_FAILED_ONLY,
-            )
+            try:
+                handle = await client.start_workflow(  # type: ignore[attr-defined]
+                    YouTubePublicationWorkflow.run,
+                    request,
+                    id=workflow_id,
+                    task_queue=PUBLISHER_TASK_QUEUE,
+                    # Not ALLOW_DUPLICATE_FAILED_ONLY: this workflow *completes*
+                    # at every waiting state - quota blocked, reauthorization
+                    # required, held for review - so a later resume of the same
+                    # publication run is a new execution of a workflow that
+                    # closed successfully, not a retry of a failed one.
+                    id_reuse_policy=WorkflowIDReusePolicy.ALLOW_DUPLICATE,
+                )
+            except WorkflowAlreadyStartedError:
+                # One is already running for this publication. Adopting it is
+                # the right answer: the upload is durable and idempotent, and a
+                # second execution would only race the first for the same
+                # resumable session.
+                existing = client.get_workflow_handle(workflow_id)  # type: ignore[attr-defined]
+                return workflow_id, existing.first_execution_run_id or ""
             return workflow_id, handle.result_run_id or handle.first_execution_run_id or ""
 
         result = self._run(run())

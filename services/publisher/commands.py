@@ -45,6 +45,10 @@ class PublisherCommandOptions:
     require_captions: bool = False
     require_thumbnail: bool = False
     max_processing_polls: int | None = None
+    #: Chunks one upload activity sends before returning. Bounds the activity's
+    #: duration without slowing the upload: every confirmed offset is durable,
+    #: so the workflow simply re-enters and continues from there.
+    max_chunks_per_drive: int | None = None
     trace_context: dict[str, str] = field(default_factory=dict)
     #: Shared state for the deterministic fake, so a test or a local run can
     #: inspect exactly which calls were made.
@@ -127,6 +131,7 @@ def build_pipeline(
         options=PublicationOptions(
             chunk_bytes=options.chunk_bytes,
             max_processing_polls=options.max_processing_polls,
+            max_chunks_per_drive=options.max_chunks_per_drive,
             require_captions=options.require_captions,
             require_thumbnail=options.require_thumbnail,
             trace_context=dict(options.trace_context),

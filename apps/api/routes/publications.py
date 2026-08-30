@@ -16,6 +16,7 @@ from __future__ import annotations
 from uuid import UUID
 
 from fastapi import APIRouter, Response, status
+from pydantic import ValidationError
 
 from apps.api.routes._common import (
     BlobDep,
@@ -72,6 +73,7 @@ START_OPERATION = "publication:start"
 RESUME_OPERATION = "publication:resume"
 CANCEL_OPERATION = "publication:cancel"
 VISIBILITY_OPERATION = "publication:visibility"
+DRAFT_OPERATION = "publication:draft"
 
 #: Statuses from which a cancel is meaningful: nothing exists on YouTube yet.
 CANCELLABLE_STATUSES = frozenset(
@@ -222,6 +224,15 @@ def _asset_projection(row: PublicationAsset) -> PublicationAssetProjection:
     )
 
 
+def _first_validation_message(error: ValidationError) -> str:
+    """The first contract failure, rendered without a traceback or input echo."""
+    for item in error.errors():
+        message = str(item.get("msg", "")).removeprefix("Value error, ")
+        if message:
+            return message[:500]
+    return "The publication metadata is not valid."
+
+
 def _require_run(
     pipeline: PublicationPipeline, publication_id: UUID, project_id: UUID, owner: str
 ) -> PublicationRun:
@@ -327,12 +338,14 @@ def create_publication(
         return PublicationProjection.model_validate(replay)
     expected = _precondition(session, project.id, if_match)
     pipeline = _pipeline(session, blob, settings)
-    metadata = (
-        PublicationMetadata.model_validate({**request.metadata.model_dump(), "metadata_version": 1})
-        if request.metadata is not None
-        else None
-    )
     try:
+        metadata = (
+            PublicationMetadata.model_validate(
+                {**request.metadata.model_dump(), "metadata_version": 1}
+            )
+            if request.metadata is not None
+            else None
+        )
         run = pipeline.create_draft(
             project_id=project.id,
             owner_subject=principal.subject,
@@ -343,6 +356,10 @@ def create_publication(
         )
     except PublicationEligibilityError as error:
         raise conflict(ApiErrorCode.VALIDATION_FAILED, error.gate.failures[0].summary) from error
+    except ValidationError as error:
+        # A contract rule the request schema cannot express on its own, such as
+        # a scheduled time on a video that is not going out public.
+        raise conflict(ApiErrorCode.VALIDATION_FAILED, _first_validation_message(error)) from error
     except (PublicationMetadataError, PublicationError) as error:
         raise conflict(ApiErrorCode.VALIDATION_FAILED, str(error)) from error
     body = _projection(run, pipeline.project(run), expected)
@@ -352,6 +369,64 @@ def create_publication(
         key,
         payload,
         status.HTTP_201_CREATED,
+        body.model_dump(mode="json"),
+    )
+    session.commit()
+    set_etag(response, expected)
+    return body
+
+
+@router.patch(
+    "/{project_id}/publications/{publication_id}",
+    response_model=PublicationProjection,
+)
+def update_publication_draft(
+    project_id: UUID,
+    publication_id: UUID,
+    request: PublicationMetadataRequest,
+    session: SessionDep,
+    principal: PrincipalDep,
+    blob: BlobDep,
+    settings: SettingsDep,
+    response: Response,
+    if_match: IfMatchDep = None,
+    idempotency_key: IdempotencyKeyDep = None,
+) -> PublicationProjection:
+    """Edit this publication's draft in place.
+
+    Deliberately a PATCH on the existing publication rather than another POST
+    to the collection: a create call carries the metadata into the publication
+    *identity*, so saving an edit that way would mint a new identity and a
+    second ``publication_runs`` row for every keystroke the user saved. Editing
+    versions the draft on the row that already exists, and after upload the
+    same version is what ``videos.update`` writes to the existing video.
+    """
+    project = owned_project(session, project_id, principal)
+    idempotency = idempotency_for(session, principal)
+    key = idempotency.require_key(DRAFT_OPERATION, idempotency_key)
+    payload = request.model_dump(mode="json")
+    replay = idempotency.replay(DRAFT_OPERATION, str(publication_id), key, payload)
+    if replay is not None:
+        return PublicationProjection.model_validate(replay)
+    expected = _precondition(session, project.id, if_match)
+    pipeline = _pipeline(session, blob, settings)
+    run = _require_run(pipeline, publication_id, project.id, principal.subject)
+    try:
+        edited = PublicationMetadata.model_validate(
+            {**payload, "metadata_version": run.metadata_version}
+        )
+        pipeline.update_draft(run, edited)
+    except ValidationError as error:
+        raise conflict(ApiErrorCode.VALIDATION_FAILED, _first_validation_message(error)) from error
+    except (PublicationMetadataError, PublicationStateError) as error:
+        raise conflict(ApiErrorCode.VALIDATION_FAILED, str(error)) from error
+    body = _projection(run, pipeline.project(run), expected)
+    idempotency.record(
+        DRAFT_OPERATION,
+        str(publication_id),
+        key,
+        payload,
+        status.HTTP_200_OK,
         body.model_dump(mode="json"),
     )
     session.commit()

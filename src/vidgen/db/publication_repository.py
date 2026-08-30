@@ -14,10 +14,10 @@ from __future__ import annotations
 import hashlib
 from collections.abc import Sequence
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, cast
 from uuid import UUID, uuid4
 
-from sqlalchemy import select
+from sqlalchemy import CursorResult, select, update
 from sqlalchemy.orm import Session
 
 from vidgen.contracts.publication import (
@@ -366,23 +366,44 @@ class PublicationRepository:
     def consume_oauth_state(self, state: str, *, now: datetime | None = None) -> YouTubeOAuthState:
         """Atomically claim one unconsumed, unexpired state, or fail.
 
-        The row is claimed by a conditional UPDATE, so two concurrent callbacks
-        carrying the same state cannot both proceed.
+        The claim is a single conditional UPDATE whose WHERE clause carries the
+        whole precondition, so two callbacks racing with the same state cannot
+        both proceed: exactly one UPDATE matches a row, and the other sees zero.
+        A read-then-write here would let both pass the check before either
+        wrote, which is precisely the replay the one-time state exists to stop.
         """
         moment = now or datetime.now(UTC)
-        row = self.session.scalar(
-            select(YouTubeOAuthState).where(YouTubeOAuthState.state_hash == state_hash(state))
+        digest = state_hash(state)
+        # ``CursorResult`` is what a DML statement really returns; only that
+        # type carries the matched-row count the claim turns on.
+        claimed = cast(
+            "CursorResult[Any]",
+            self.session.execute(
+                update(YouTubeOAuthState)
+                .where(
+                    YouTubeOAuthState.state_hash == digest,
+                    YouTubeOAuthState.consumed_at.is_(None),
+                    YouTubeOAuthState.expires_at > moment,
+                )
+                .values(consumed_at=moment)
+            ),
         )
-        if row is None:
+        if claimed.rowcount == 1:
+            row = self.session.scalar(
+                select(YouTubeOAuthState).where(YouTubeOAuthState.state_hash == digest)
+            )
+            if row is not None:
+                return row
+        # The UPDATE matched nothing. Read the row only to say *why*, and never
+        # to decide: the decision was made by the statement above.
+        existing = self.session.scalar(
+            select(YouTubeOAuthState).where(YouTubeOAuthState.state_hash == digest)
+        )
+        if existing is None:
             raise PublicationStateError("this authorization request is unknown")
-        if row.consumed_at is not None:
+        if existing.consumed_at is not None:
             raise PublicationStateError("this authorization request has already been used")
-        expires = row.expires_at if row.expires_at.tzinfo else row.expires_at.replace(tzinfo=UTC)
-        if expires <= moment:
-            raise PublicationStateError("this authorization request has expired")
-        row.consumed_at = moment
-        self.session.flush()
-        return row
+        raise PublicationStateError("this authorization request has expired")
 
     def code_verifier_for(self, row: YouTubeOAuthState) -> SecretValue:
         return self.keyring.open(

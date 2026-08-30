@@ -399,11 +399,7 @@ def test_a_visibility_update_sends_the_explicit_notify_flag() -> None:
 
     snapshot = asyncio.run(
         provider(handler).update_visibility(
-            access_token=TOKEN,
-            video_id="v",
-            privacy_status="unlisted",
-            publish_at=None,
-            notify_subscribers=False,
+            access_token=TOKEN, video_id="v", metadata=metadata(privacy_status="unlisted")
         )
     )
     params = seen["params"]
@@ -411,6 +407,33 @@ def test_a_visibility_update_sends_the_explicit_notify_flag() -> None:
     assert params["notifySubscribers"] == "false"
     assert params["part"] == "status"
     assert snapshot.privacy_status == "unlisted"
+
+
+def test_a_visibility_update_never_drops_the_synthetic_media_disclosure() -> None:
+    """`videos.update` replaces the part it is given, so it must be complete.
+
+    Sending `privacyStatus` alone would delete the synthetic-media disclosure,
+    the made-for-kids declaration and the embeddable setting at the exact
+    moment the video becomes visible.
+    """
+    seen: dict[str, object] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["body"] = json.loads(request.content)
+        return httpx.Response(200, json={"id": "v", "status": {"privacyStatus": "public"}})
+
+    asyncio.run(
+        provider(handler).update_visibility(
+            access_token=TOKEN, video_id="v", metadata=metadata(privacy_status="public")
+        )
+    )
+    body = seen["body"]
+    assert isinstance(body, dict)
+    status = body["status"]
+    assert status["privacyStatus"] == "public"
+    assert status["containsSyntheticMedia"] is True
+    assert status["selfDeclaredMadeForKids"] is False
+    assert status["embeddable"] is True
 
 
 def test_a_privacy_restricted_project_is_classified() -> None:
@@ -423,11 +446,7 @@ def test_a_privacy_restricted_project_is_classified() -> None:
     with pytest.raises(YouTubeProviderError) as error:
         asyncio.run(
             provider(handler).update_visibility(
-                access_token=TOKEN,
-                video_id="v",
-                privacy_status="public",
-                publish_at=None,
-                notify_subscribers=False,
+                access_token=TOKEN, video_id="v", metadata=metadata(privacy_status="public")
             )
         )
     assert error.value.code is PublicationFailureCode.PRIVACY_RESTRICTED

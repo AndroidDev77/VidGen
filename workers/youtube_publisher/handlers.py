@@ -38,6 +38,11 @@ from vidgen.storage.blob import BlobStore
 
 logger = logging.getLogger("vidgen.publisher")
 
+#: At the 8 MiB default chunk size this is 512 MiB per activity - comfortably
+#: inside the workflow's upload timeout on a slow link, and enough that a
+#: typical recap finishes in one or two rounds.
+DEFAULT_CHUNKS_PER_ACTIVITY = 64
+
 
 def _options() -> PublisherCommandOptions:
     provider = os.getenv("VIDGEN_YOUTUBE_PROVIDER", FAKE_PROVIDER).strip().lower()
@@ -47,7 +52,16 @@ def _options() -> PublisherCommandOptions:
         )
     raw_chunk = os.getenv("VIDGEN_YOUTUBE_UPLOAD_CHUNK_BYTES")
     chunk = normalize_chunk_bytes(int(raw_chunk)) if raw_chunk else DEFAULT_CHUNK_BYTES
-    return PublisherCommandOptions(provider=provider, chunk_bytes=chunk)
+    # One activity sends a bounded number of chunks and returns; the workflow
+    # re-enters it from the confirmed offset. That is what keeps a multi-hour
+    # upload inside an activity timeout without ever restarting the transfer.
+    raw_rounds = os.getenv("VIDGEN_YOUTUBE_UPLOAD_CHUNKS_PER_ACTIVITY")
+    rounds = int(raw_rounds) if raw_rounds and raw_rounds.strip() else DEFAULT_CHUNKS_PER_ACTIVITY
+    if rounds <= 0:
+        raise RuntimeError("VIDGEN_YOUTUBE_UPLOAD_CHUNKS_PER_ACTIVITY must be positive")
+    return PublisherCommandOptions(
+        provider=provider, chunk_bytes=chunk, max_chunks_per_drive=rounds
+    )
 
 
 def _projection(run: PublicationRun, session: Session) -> PublicationActivityResult:

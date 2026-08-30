@@ -358,19 +358,23 @@ class PublicationPipeline:
                 media_type=render.final_asset.media_type,
             )
             await self._upload(run, connection, render, draft, source)
-            if run.status in {
-                PublicationStatus.HUMAN_REVIEW_REQUIRED.value,
-                PublicationStatus.QUOTA_BLOCKED.value,
-                PublicationStatus.FAILED.value,
-            }:
+            if self._halted(run):
                 return self.project(run)
 
             await self._await_processing(run, connection)
-            if run.processing_state != ProcessingState.SUCCEEDED.value:
+            if self._halted(run) or run.processing_state != ProcessingState.SUCCEEDED.value:
                 return self.project(run)
 
+            # Each phase is checked before the next one runs. A hold one of
+            # them set - a caption failure under a required-captions policy, an
+            # exhausted quota, a revoked grant - must stop the drive, not be
+            # walked forward into PRIVATE_READY by the next transition.
             await self._upload_captions(run, connection, render, draft)
+            if self._halted(run):
+                return self.project(run)
             await self._upload_thumbnail(run, connection, render)
+            if self._halted(run):
+                return self.project(run)
             await self._verify_private(run, connection)
             return self.project(run)
         except PublicationEligibilityError:
@@ -390,6 +394,22 @@ class PublicationPipeline:
         finally:
             if source is not None:
                 release(source)
+
+    #: A drive stops here. Only a human decision, a quota reset or a
+    #: reconnection moves a publication out of one of these.
+    _HALTED_STATUSES = frozenset(
+        {
+            PublicationStatus.HUMAN_REVIEW_REQUIRED,
+            PublicationStatus.QUOTA_BLOCKED,
+            PublicationStatus.REAUTHORIZATION_REQUIRED,
+            PublicationStatus.PROCESSING_FAILED,
+            PublicationStatus.FAILED,
+            PublicationStatus.CANCELLED,
+        }
+    )
+
+    def _halted(self, run: PublicationRun) -> bool:
+        return PublicationStatus(run.status) in self._HALTED_STATUSES
 
     #: States from which a drive may (re)assert readiness. Once a video exists
     #: the publication has moved past readiness and must never be walked back.
@@ -772,12 +792,21 @@ class PublicationPipeline:
             return
         content = self.blob_store.read(caption.storage_key)
         if not _looks_like_srt(content):
+            summary = "The canonical caption asset is not a parseable SRT track."
             self._record_caption_failure(
                 run,
                 PublicationFailureCode.MISSING_CAPTION_ASSET,
-                "The canonical caption asset is not a parseable SRT track.",
+                summary,
                 draft,
             )
+            if self.options.require_captions:
+                self._fail(
+                    run,
+                    PublicationFailureCode.MISSING_CAPTION_ASSET,
+                    summary,
+                    status=PublicationStatus.HUMAN_REVIEW_REQUIRED,
+                )
+                return
             await self._advance_to_thumbnail(run)
             return
         token = await self.oauth.access_token_for(connection)
@@ -1028,6 +1057,25 @@ class PublicationPipeline:
         render = self._revalidate(run)
         draft = self.draft_of(run)
         if scheduled_publish_at is not None:
+            # A scheduled publication is a public one with a start time.
+            # Scheduling an unlisted or private video is not something YouTube
+            # expresses, and the database refuses to record it, so this is
+            # refused here with a readable error rather than as an
+            # IntegrityError on the next flush.
+            if privacy is not PrivacyState.PUBLIC:
+                raise PublicationError(
+                    PublicationFailure(
+                        code=PublicationFailureCode.INVALID_SCHEDULE,
+                        summary=(
+                            "A scheduled publication must request the public privacy state; "
+                            f"{privacy.value} cannot be scheduled."
+                        ),
+                        reference_id=run.id,
+                        remediation=(
+                            "Choose public with a scheduled time, or remove the schedule."
+                        ),
+                    )
+                )
             candidate = draft.model_copy(
                 update={
                     "scheduled_publish_at": scheduled_publish_at,
@@ -1053,15 +1101,24 @@ class PublicationPipeline:
                 lambda: self.provider.update_visibility(
                     access_token=token,
                     video_id=run.video_id or "",
+                    # The complete status part, built from the persisted draft:
+                    # the synthetic-media disclosure, the made-for-kids
+                    # declaration and the embeddable setting travel with the
+                    # privacy change rather than being replaced by it.
+                    #
                     # A scheduled publication is submitted as a private video
                     # carrying publishAt; YouTube flips it at the given instant.
-                    privacy_status=(
-                        PrivacyState.PRIVATE.value
-                        if scheduled_publish_at is not None
-                        else privacy.value
+                    metadata=to_provider_metadata(
+                        draft.model_copy(
+                            update={
+                                "scheduled_publish_at": scheduled_publish_at,
+                                "notify_subscribers": notify_subscribers,
+                            }
+                        ),
+                        privacy=(
+                            PrivacyState.PRIVATE if scheduled_publish_at is not None else privacy
+                        ),
                     ),
-                    publish_at=scheduled_publish_at,
-                    notify_subscribers=notify_subscribers,
                 ),
                 lambda result: result.call,
             )

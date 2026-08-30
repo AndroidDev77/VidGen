@@ -6,6 +6,7 @@ import type {
   PublicationCollectionResponse,
   PublicationCreateRequest,
   PublicationDetailProjection,
+  PublicationMetadataRequest,
   PublicationProjection,
   PublicationStartRequest,
   PublicationVisibilityRequest,
@@ -92,6 +93,27 @@ export function createPublication(
 ): Promise<ApiResponse<PublicationProjection>> {
   return client.post<PublicationProjection>(
     `/api/v1/projects/${projectId}/publications`,
+    { body, ifMatch: rowVersion, idempotencyKey },
+  );
+}
+
+/**
+ * Save an edited draft on the existing publication.
+ *
+ * A PATCH, not another create: the create endpoint binds metadata into the
+ * publication *identity*, so saving an edit that way would mint a new identity
+ * and a second publication row for every save.
+ */
+export function updatePublicationDraft(
+  projectId: string,
+  publicationId: string,
+  body: PublicationMetadataRequest,
+  rowVersion: number,
+  idempotencyKey: string,
+  client: VidGenClient = apiClient,
+): Promise<ApiResponse<PublicationProjection>> {
+  return client.patch<PublicationProjection>(
+    `/api/v1/projects/${projectId}/publications/${publicationId}`,
     { body, ifMatch: rowVersion, idempotencyKey },
   );
 }

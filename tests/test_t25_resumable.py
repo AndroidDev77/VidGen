@@ -19,6 +19,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 import vidgen.db  # noqa: F401 - completes Base.metadata
 from services.publisher import youtube as capabilities
+from services.publisher.contracts import ProviderCall, UploadStatus
 from services.publisher.credentials import Keyring, SecretValue
 from services.publisher.fake_youtube import FakeYouTubeProvider, FakeYouTubeState
 from services.publisher.oauth import YouTubeOAuthService
@@ -956,3 +957,205 @@ def _fake_video():
     from services.publisher.fake_youtube import FakeVideo
 
     return FakeVideo(video_id="v", metadata=_metadata(), privacy_status="private")
+
+
+# -- review regressions --------------------------------------------------------
+def test_a_caption_hold_is_not_walked_forward_into_private_ready(
+    factory: sessionmaker[Session], store: FilesystemBlobStore
+) -> None:
+    """A hold one phase sets must stop the drive, not be cleared by the next.
+
+    ``HUMAN_REVIEW_REQUIRED -> PRIVATE_READY`` is a legal transition, because a
+    human resolving a hold has to be able to make it. That is exactly why the
+    drive has to stop on the hold rather than run the next phase into it.
+    """
+    with factory() as session:
+        fixture, connection, state, keyring = prepared(session, store)
+        pipeline = build_pipeline(session, store, state, keyring)
+        pipeline.options = PublicationOptions(
+            chunk_bytes=CHUNK, max_processing_polls=5, require_captions=True
+        )
+        run = pipeline.create_draft(
+            project_id=fixture.project_id,
+            owner_subject=fixture.owner_subject,
+            connection_id=connection.id,
+            idempotency_key="publish:1",
+            thumbnail_asset_id=fixture.thumbnail_asset_id,
+        )
+        session.commit()
+        # An unparseable caption asset fails the caption phase.
+        from vidgen.db.models import Asset
+
+        asset = session.get(Asset, fixture.caption_asset_id)
+        assert asset is not None
+        store.put_if_absent(asset.storage_key + ".broken", b"not a caption file")
+        asset.storage_key = asset.storage_key + ".broken"
+        session.commit()
+        result = asyncio.run(pipeline.start(run))
+
+    assert result.status is PublicationStatus.HUMAN_REVIEW_REQUIRED
+    assert result.failure is not None
+    # The classification survives; it is not cleared by a later transition.
+    assert result.failure.code is PublicationFailureCode.MISSING_CAPTION_ASSET
+    # The thumbnail and verification phases never ran.
+    assert state.count("thumbnails.set") == 0
+    assert result.actual_privacy is None
+
+
+def test_a_scheduled_publication_must_request_the_public_state(
+    factory: sessionmaker[Session], store: FilesystemBlobStore
+) -> None:
+    """Scheduling an unlisted video is refused, not left to a CHECK constraint."""
+    with factory() as session:
+        fixture, connection, state, keyring = prepared(session, store)
+        pipeline = build_pipeline(session, store, state, keyring)
+        run = pipeline.create_draft(
+            project_id=fixture.project_id,
+            owner_subject=fixture.owner_subject,
+            connection_id=connection.id,
+            idempotency_key="publish:1",
+        )
+        session.commit()
+        asyncio.run(pipeline.start(run))
+        with pytest.raises(PublicationError) as error:
+            asyncio.run(
+                pipeline.apply_visibility(
+                    run,
+                    privacy=PrivacyState.UNLISTED,
+                    actor=fixture.owner_subject,
+                    scheduled_publish_at=datetime.now(UTC) + timedelta(days=1),
+                )
+            )
+        session.rollback()
+    assert error.value.failure.code is PublicationFailureCode.INVALID_SCHEDULE
+    assert state.count("videos.visibility") == 0
+
+
+def test_a_visibility_change_preserves_the_synthetic_media_disclosure(
+    factory: sessionmaker[Session], store: FilesystemBlobStore
+) -> None:
+    """`videos.update` replaces the status part, so it must be sent whole.
+
+    Sending `privacyStatus` alone would delete the disclosure at the exact
+    moment the video becomes visible.
+    """
+    with factory() as session:
+        fixture, connection, state, keyring = prepared(session, store)
+        pipeline = build_pipeline(session, store, state, keyring)
+        run = pipeline.create_draft(
+            project_id=fixture.project_id,
+            owner_subject=fixture.owner_subject,
+            connection_id=connection.id,
+            idempotency_key="publish:1",
+        )
+        session.commit()
+        asyncio.run(pipeline.start(run))
+        asyncio.run(
+            pipeline.apply_visibility(
+                run, privacy=PrivacyState.UNLISTED, actor=fixture.owner_subject
+            )
+        )
+        video = next(iter(state.videos.values()))
+    assert video.privacy_status == "unlisted"
+    assert video.metadata.contains_synthetic_media is True
+    assert video.metadata.made_for_kids is False
+    assert video.metadata.embeddable is True
+
+
+def test_an_expired_session_reported_as_a_status_is_still_ambiguous(
+    factory: sessionmaker[Session], store: FilesystemBlobStore
+) -> None:
+    """The real adapter returns a 410 as a status, not an exception.
+
+    A single-chunk upload whose final chunk is answered that way must not look
+    like "expired having confirmed nothing", or the pipeline would start a
+    second session and create a duplicate video.
+    """
+    state = FakeYouTubeState()
+    provider = FakeYouTubeProvider(state)
+    total = CHUNK
+    payload = bytes(total)
+
+    class _Source:
+        byte_size = total
+        media_type = "video/mp4"
+
+        def read_range(self, start: int, length: int) -> bytes:
+            return payload[start : start + length]
+
+    session_handle = asyncio.run(
+        provider.initialize_resumable_upload(
+            access_token=SecretValue("t"),
+            metadata=_metadata(),
+            total_bytes=total,
+            media_type="video/mp4",
+        )
+    )
+
+    class _GoneOnChunk(FakeYouTubeProvider):
+        async def upload_chunk(self, **kwargs: object) -> UploadStatus:
+            return UploadStatus(
+                confirmed_offset=0,
+                completed=False,
+                expired=True,
+                call=ProviderCall(
+                    operation="videos.insert.chunk", http_status=capabilities.GONE_STATUS
+                ),
+            )
+
+    uploader = ResumableUploader(_GoneOnChunk(state), chunk_bytes=CHUNK)
+    outcome = asyncio.run(
+        uploader.drive(
+            access_token=SecretValue("t"),
+            upload_uri=session_handle.upload_uri,
+            source=_Source(),
+            total_bytes=total,
+            start_offset=0,
+        )
+    )
+    assert outcome.expired is True
+    # The final chunk was in flight, so the outcome is unknowable rather than
+    # "nothing happened".
+    assert outcome.ambiguous is True
+
+
+def test_an_exhausted_quota_mid_chunk_parks_rather_than_reporting_progress(
+    factory: sessionmaker[Session], store: FilesystemBlobStore
+) -> None:
+    """The interrupting failure's classification must survive the offset probe."""
+    with factory() as session:
+        fixture, connection, state, keyring = prepared(session, store)
+        pipeline = build_pipeline(session, store, state, keyring)
+        run = pipeline.create_draft(
+            project_id=fixture.project_id,
+            owner_subject=fixture.owner_subject,
+            connection_id=connection.id,
+            idempotency_key="publish:1",
+        )
+        session.commit()
+        for step in ("validate_eligibility", "refresh_connection"):
+            asyncio.run(pipeline.run_step(step, run))
+
+        original = FakeYouTubeProvider.upload_chunk
+
+        async def quota_exhausted(self: FakeYouTubeProvider, **kwargs: object) -> UploadStatus:
+            from services.publisher.providers import provider_error
+
+            raise provider_error(
+                http_status=403,
+                reason=capabilities.REASON_QUOTA_EXCEEDED,
+                operation="videos.insert.chunk",
+                summary="the channel's daily quota is exhausted",
+            )
+
+        FakeYouTubeProvider.upload_chunk = quota_exhausted  # type: ignore[method-assign]
+        try:
+            asyncio.run(pipeline.run_step("initialize_upload", run))
+        finally:
+            FakeYouTubeProvider.upload_chunk = original  # type: ignore[method-assign]
+        session.refresh(run)
+
+    # Parked for the quota clock, not reported as still uploading.
+    assert run.status == PublicationStatus.QUOTA_BLOCKED.value
+    assert run.error_code == PublicationFailureCode.QUOTA_EXCEEDED.value
+    assert run.video_id is None

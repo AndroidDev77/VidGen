@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import type {
   PublicationDetailProjection,
   PublicationGateProjection,
+  PublicationMetadataRequest,
   YouTubeConnectionCollection,
 } from "@vidgen/contracts";
 import { describe, expect, it, vi } from "vitest";
@@ -285,5 +286,23 @@ describe("PublicationPanel", () => {
     );
     await userEvent.click(screen.getByRole("button", { name: "Connect YouTube channel" }));
     expect(onConnect).toHaveBeenCalled();
+  });
+  it("saves an edited draft against the existing publication", async () => {
+    const onSaveDraft = vi.fn();
+    renderWithProviders(panel({ onSaveDraft }));
+    const title = screen.getByRole("textbox", { name: "Title" });
+    await userEvent.clear(title);
+    await userEvent.type(title, "A better title");
+    await userEvent.click(screen.getByRole("button", { name: "Save draft" }));
+    expect(onSaveDraft).toHaveBeenCalledTimes(1);
+    const saved = onSaveDraft.mock.calls[0]?.[0] as PublicationMetadataRequest;
+    expect(saved.title).toBe("A better title");
+    // The disclosure travels with every save; it is never editable away.
+    expect(saved.contains_synthetic_media).toBe(true);
+  });
+
+  it("keeps the save action inert until the draft is actually edited", () => {
+    renderWithProviders(panel());
+    expect(screen.getByRole("button", { name: "Save draft" })).toBeDisabled();
   });
 });

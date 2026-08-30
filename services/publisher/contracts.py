@@ -304,14 +304,16 @@ class YouTubeProvider(Protocol):
     ) -> VideoSnapshot: ...
 
     async def update_visibility(
-        self,
-        *,
-        access_token: SecretValue,
-        video_id: str,
-        privacy_status: str,
-        publish_at: datetime | None,
-        notify_subscribers: bool,
-    ) -> VideoSnapshot: ...
+        self, *, access_token: SecretValue, video_id: str, metadata: VideoMetadata
+    ) -> VideoSnapshot:
+        """Write the complete ``status`` part with the requested privacy.
+
+        The whole resource, never a single field: ``videos.update`` replaces the
+        part it is given, so sending ``privacyStatus`` alone would delete
+        ``containsSyntheticMedia``, ``selfDeclaredMadeForKids`` and
+        ``embeddable`` at the exact moment the video becomes visible.
+        """
+        ...
 
     # -- captions and thumbnails --------------------------------------------
     async def insert_caption(
