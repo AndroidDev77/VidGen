@@ -469,10 +469,12 @@ def test_the_worker_shuts_down_gracefully() -> None:
     ):
         assert name in definition
     source = (REPO_ROOT / "workers" / "temporal_worker" / "main.py").read_text()
-    assert "graceful_shutdown_timeout" in source
-    # `async with worker:` is what performs the bounded graceful shutdown;
-    # Worker.run() takes no shutdown argument.
-    assert "async with worker:" in source
+    # Both workers - the project queue and the T17b render queue - are bounded.
+    assert source.count("graceful_shutdown_timeout") == 2
+    # An `async with` over the workers is what performs the bounded graceful
+    # shutdown; Worker.run() takes no shutdown argument. A render left out of
+    # that block would be killed mid-encode instead of drained.
+    assert "async with worker, render_worker:" in source
     assert "shutdown_event" not in source
     assert "signal.SIGTERM" in source
 
@@ -556,13 +558,12 @@ def test_render_job_executes_a_render_rather_than_queueing_one() -> None:
     assert "/tmp/vidgen/render" in environment
 
 
-def test_render_job_is_resourced_for_ffmpeg() -> None:
+def test_render_job_is_resourced_for_ffmpeg(
+    staging_parameters: dict[str, Any], production_parameters: dict[str, Any]
+) -> None:
     """FFmpeg is CPU and memory bound; a starved replica is a failed render."""
-    for name in ("staging", "production"):
-        parameters = json.loads(
-            (REPO_ROOT / "infra" / "bicep" / "environments" / f"{name}.parameters.json").read_text()
-        )["parameters"]
-        limits = parameters["renderLimits"]["value"]
+    for parameters in (staging_parameters, production_parameters):
+        limits = parameters["parameters"]["renderLimits"]["value"]
         assert float(limits["resources"]["cpu"]) >= 2.0
         assert int(limits["resources"]["memory"].removesuffix("Gi")) >= 4
         # A long encode must not be killed mid-render by the replica timeout.
