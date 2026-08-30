@@ -137,6 +137,25 @@ def _candidate_tables(kind: EntityKind) -> tuple[Table, Table, Table, str]:
     )
 
 
+def _entity_ids(values: Sequence[Any]) -> list[UUID]:
+    """The entity IDs among a shot's stored references.
+
+    A storyboard may name a reference by a label rather than an entity ID - the
+    T13 contract allows it and older runs did it. Such a value cannot resolve to
+    an approved sheet, so it is skipped rather than crashing the binding for
+    every shot in the project.
+    """
+    resolved: list[UUID] = []
+    for value in values:
+        if value in (None, ""):
+            continue
+        try:
+            resolved.append(UUID(str(value)))
+        except ValueError:
+            continue
+    return resolved
+
+
 def _observations(definition: dict[str, Any]) -> dict[str, list[str]]:
     """Coerce a persisted entity definition into bible observations.
 
@@ -546,13 +565,9 @@ class ContinuityReferenceOrchestrator:
             .order_by(StoryboardShotRecord.global_sequence)
         ):
             references: list[ReferenceBundleItem] = []
-            entity_ids = [
-                UUID(str(value))
-                for value in (shot.references or {}).get("character_reference_ids", [])
-            ]
-            location_id = (shot.references or {}).get("location_reference_id")
-            if location_id:
-                entity_ids.append(UUID(str(location_id)))
+            stored = shot.references or {}
+            entity_ids = _entity_ids(stored.get("character_reference_ids", []))
+            entity_ids.extend(_entity_ids([stored.get("location_reference_id")]))
             for priority, entity_id in enumerate(entity_ids):
                 resolved = approved.get(entity_id)
                 if resolved is None:
@@ -585,7 +600,14 @@ class ContinuityReferenceOrchestrator:
     def _persist_bindings(
         self, project_id: UUID, storyboard_run_id: UUID, bundles: Sequence[Any]
     ) -> list[Any]:
-        """Write each shot's bundle, returning only the ones that changed.
+        """Write each shot's bundle, returning only the ones that *changed*.
+
+        "Changed" means an existing binding whose bundle hash moved. A shot
+        receiving its first binding is deliberately not in that set: nothing
+        downstream of it exists yet, so there is nothing to invalidate. Treating
+        a first binding as a change would make the ordinary lifecycle - where
+        T19 binds every shot before the fan-out has run - queue a replacement
+        workflow for every shot and pay for the whole project twice.
 
         An unchanged bundle is left exactly as it was, which is what stops an
         approval of one entity from restarting every shot in the project.
@@ -613,6 +635,9 @@ class ContinuityReferenceOrchestrator:
             payload = bundle.model_dump(mode="json")
             moment = _now()
             if current is None:
+                # A first binding. The shot has not been generated against any
+                # reference yet, so this creates work rather than invalidating
+                # it: the fan-out will pick the bundle up on its first run.
                 self._session.execute(
                     insert(shot_reference_bindings).values(
                         id=uuid4(),
@@ -626,7 +651,6 @@ class ContinuityReferenceOrchestrator:
                         updated_at=moment,
                     )
                 )
-                changed.append(bundle)
                 continue
             if current["bundle_hash"] == bundle.bundle_hash:
                 continue

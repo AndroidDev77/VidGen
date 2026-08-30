@@ -27,6 +27,7 @@ from services.control_plane.dispatcher import ControlCommandDispatcher
 from services.control_plane.generation_runs import GenerationRunService
 from services.control_plane.references import reference_run_id, resolve_reference_inputs
 from services.control_plane.revisions import plan_revision
+from services.review.shot_identity import current_shot_identity_hash
 from tests.review_fixtures import ProjectGraph, build_project_graph
 from vidgen.contracts.control_commands import (
     ControlCommandFailure,
@@ -34,6 +35,7 @@ from vidgen.contracts.control_commands import (
     ControlCommandStatus,
     ControlCommandTargetType,
     ControlCommandType,
+    ProjectGenerationRunStatus,
 )
 from vidgen.contracts.workflow import FinalQAActivityResult, RenderActivityResult
 from vidgen.db.control_command_models import ControlCommandRecord
@@ -42,6 +44,7 @@ from vidgen.db.control_command_repository import (
     ControlCommandRepository,
 )
 from vidgen.db.models import Project
+from vidgen.db.storyboard_models import StoryboardShotRecord
 from vidgen.review.workflow_control import FakeWorkflowController
 
 OWNER = {"X-VidGen-User": "owner-a"}
@@ -303,17 +306,13 @@ def test_an_owner_can_cancel_and_retry_a_command_through_the_api(
     assert [item["command_id"] for item in listed["items"]] == [command_id]
     assert listed["items"][0]["permitted_actions"] == ["cancel"]
 
-    cancelled = client.post(
-        api(graph.project_id, f"/commands/{command_id}:cancel"), headers=OWNER
-    )
+    cancelled = client.post(api(graph.project_id, f"/commands/{command_id}:cancel"), headers=OWNER)
     assert cancelled.status_code == 200
     assert cancelled.json()["command"]["status"] == "cancelled"
     assert cancelled.json()["command"]["permitted_actions"] == []
 
 
-def test_a_command_is_not_visible_to_another_owner(
-    client: TestClient, graph: ProjectGraph
-) -> None:
+def test_a_command_is_not_visible_to_another_owner(client: TestClient, graph: ProjectGraph) -> None:
     created = client.post(
         api(graph.project_id, "/final-qa:run"),
         json={"provider": "fake", "adjudicate": False},
@@ -465,9 +464,9 @@ def test_a_project_can_be_created_with_a_voice_and_started(
         headers=OWNER,
     ).json()
     assert created["voice_profile_id"] is not None
-    selection = client.get(
-        f"/api/v1/projects/{created['id']}/voice-profile", headers=OWNER
-    ).json()["profile"]
+    selection = client.get(f"/api/v1/projects/{created['id']}/voice-profile", headers=OWNER).json()[
+        "profile"
+    ]
     assert selection["provider"] == "fake"
     assert selection["selected"] is True
     # Never a credential, and never a provider secret of any kind.
@@ -520,8 +519,9 @@ def test_changing_the_voice_changes_the_narration_identity(
         headers=OWNER,
     ).json()["profile"]
     assert updated["voice_profile_id"] != before["voice_profile_id"]
-    assert updated["configuration_hash"] != "" and updated["provider_voice_id"] != (
-        before["provider_voice_id"]
+    assert (
+        updated["configuration_hash"] != ""
+        and updated["provider_voice_id"] != (before["provider_voice_id"])
     )
 
 
@@ -534,9 +534,7 @@ def test_the_worker_registers_the_continuity_workflow_and_its_activities() -> No
     """The T19 workflow named two activities that nothing defined until T18b."""
     from workers.temporal_worker.registry import ACTIVITIES, WORKFLOWS
 
-    names = {
-        getattr(activity, "__temporal_activity_definition").name for activity in ACTIVITIES
-    }
+    names = {getattr(activity, "__temporal_activity_definition").name for activity in ACTIVITIES}
     assert {
         "resolve_continuity_inputs",
         "build_continuity_references",
@@ -628,9 +626,7 @@ def test_an_approval_signals_the_waiting_reference_workflow(
     assert signal.approved_reference_set_ids == [reference_set_id]
 
 
-def _seed_reference_set(
-    factory: sessionmaker[Session], graph: ProjectGraph
-) -> tuple[UUID, UUID]:
+def _seed_reference_set(factory: sessionmaker[Session], graph: ProjectGraph) -> tuple[UUID, UUID]:
     """Persist one drafted character reference set for the project."""
     from sqlalchemy import insert
 
@@ -831,9 +827,7 @@ def test_manual_final_qa_requires_a_completed_render(
     from vidgen.db.models import RenderJob
 
     with factory() as session:
-        render = session.scalar(
-            select(RenderJob).where(RenderJob.project_id == graph.project_id)
-        )
+        render = session.scalar(select(RenderJob).where(RenderJob.project_id == graph.project_id))
         assert render is not None
         render.status = "render_failed"
         session.commit()
@@ -913,9 +907,9 @@ def test_continuing_a_project_opens_a_new_generation_run(
     command_id = accepted.json()["command"]["command_id"]
 
     dispatcher.run_once()
-    command = client.get(
-        api(graph.project_id, f"/commands/{command_id}"), headers=OWNER
-    ).json()["command"]
+    command = client.get(api(graph.project_id, f"/commands/{command_id}"), headers=OWNER).json()[
+        "command"
+    ]
     assert command["status"] == "running"
     assert command["workflow_id"] == f"vidgen-project-{graph.project_id}"
     started = controller.started[command["workflow_id"]]
@@ -928,26 +922,43 @@ def test_continuing_a_project_opens_a_new_generation_run(
     assert runs[0].workflow_id == command["workflow_id"]
 
 
-def test_a_second_continuation_supersedes_the_previous_lineage(
+def test_continuing_a_paused_project_supersedes_the_previous_lineage(
     client: TestClient,
     graph: ProjectGraph,
     dispatcher: ControlCommandDispatcher,
     review_client: tuple[TestClient, sessionmaker[Session], FakeWorkflowController],
 ) -> None:
-    """Previous runs are preserved as history rather than overwritten."""
+    """Previous runs are preserved as history rather than overwritten.
+
+    The second continuation is only legitimate once the first run has stopped
+    executing - here, because it is waiting on a review. Continuing while a run
+    is still executing is refused, which the neighbouring test covers.
+    """
     _, factory, _ = review_client
-    for index, stage in enumerate(("shot_generation", "render")):
-        client.post(
-            api(graph.project_id, "/workflow:continue"),
-            json={"entry_stage": stage, "reason": "operator_request"},
-            headers=headers(key=f"continue-{index}"),
-        )
-        dispatcher.run_once()
+    client.post(
+        api(graph.project_id, "/workflow:continue"),
+        json={"entry_stage": "shot_generation", "reason": "review_resolved"},
+        headers=headers(key="continue-0"),
+    )
+    dispatcher.run_once()
     with factory() as session:
-        runs = GenerationRunService(session).history(graph.project_id)
+        runs = GenerationRunService(session)
+        first = runs.active(graph.project_id)
+        assert first is not None
+        runs.settle(first, ProjectGenerationRunStatus.AWAITING_REVIEW)
+        session.commit()
+
+    client.post(
+        api(graph.project_id, "/workflow:continue"),
+        json={"entry_stage": "render", "reason": "operator_request"},
+        headers=headers(key="continue-1"),
+    )
+    dispatcher.run_once()
+    with factory() as session:
+        history = GenerationRunService(session).history(graph.project_id)
         active = GenerationRunService(session).active(graph.project_id)
-    assert [run.entry_stage for run in runs] == ["shot_generation", "render"]
-    assert runs[0].status == "superseded" and runs[0].active is False
+    assert [run.entry_stage for run in history] == ["shot_generation", "render"]
+    assert history[0].status == "superseded" and history[0].active is False
     assert active is not None and active.entry_stage == "render"
 
 
@@ -1131,9 +1142,7 @@ def test_concurrent_postgres_dispatchers_claim_a_command_exactly_once(
         Base.metadata.create_all(scoped)
         factory = sessionmaker(bind=scoped, expire_on_commit=False)
         with factory() as session:
-            project = Project(
-                name="concurrency", visual_style="flat", owner_subject="owner-a"
-            )
+            project = Project(name="concurrency", visual_style="flat", owner_subject="owner-a")
             session.add(project)
             session.flush()
             record = ControlCommandRepository(session).create(_request(project.id)).record
@@ -1143,18 +1152,14 @@ def test_concurrent_postgres_dispatchers_claim_a_command_exactly_once(
         claims: list[bool] = []
         sessions = [factory() for _ in range(4)]
         try:
-            candidates = [
-                (ControlCommandRepository(session), session) for session in sessions
-            ]
+            candidates = [(ControlCommandRepository(session), session) for session in sessions]
             fetched = [
                 (repository, session, repository.get(project_id, command_id))
                 for repository, session in candidates
             ]
             for index, (repository, session, candidate) in enumerate(fetched):
                 assert candidate is not None
-                claims.append(
-                    repository.claim(candidate, claim_owner=f"dispatcher-{index}")
-                )
+                claims.append(repository.claim(candidate, claim_owner=f"dispatcher-{index}"))
                 session.commit()
         finally:
             for session in sessions:
@@ -1165,3 +1170,264 @@ def test_concurrent_postgres_dispatchers_claim_a_command_exactly_once(
         with engine.begin() as connection:
             connection.execute(text(f'DROP SCHEMA "{schema}" CASCADE'))
         engine.dispose()
+
+
+# ---------------------------------------------------------------------------
+# Regressions found by the branch self-review
+# ---------------------------------------------------------------------------
+
+
+def test_a_first_reference_binding_regenerates_nothing(
+    review_client: tuple[TestClient, sessionmaker[Session], FakeWorkflowController],
+    graph: ProjectGraph,
+) -> None:
+    """Binding a shot for the first time creates work; it does not invalidate it.
+
+    In the ordinary lifecycle T19 binds every shot *before* the fan-out has run.
+    Counting those first bindings as changes queued a replacement workflow for
+    every shot and paid for the whole project twice.
+    """
+    from services.continuity.orchestrator import ContinuityReferenceOrchestrator
+
+    _, factory, _ = review_client
+    regenerated: list[UUID] = []
+    with factory() as session:
+        outcome = ContinuityReferenceOrchestrator(
+            session,
+            generator=lambda *_: pytest.fail("no sheet is generated during binding"),
+            provider="fake",
+            model="fake",
+        ).apply(
+            project_id=graph.project_id,
+            storyboard_run_id=graph.storyboard_run_id,
+            idempotency_key="first-bind",
+            regenerate_shot=lambda shot_id, *_: regenerated.append(shot_id),
+        )
+        session.commit()
+    assert len(outcome.bound_shot_ids) == len(graph.shot_ids)
+    assert regenerated == [], "a first binding must not queue a replacement workflow"
+    assert outcome.regenerated_shot_ids == ()
+
+
+def test_a_shot_command_without_a_stamped_sequence_still_dispatches(
+    client: TestClient,
+    graph: ProjectGraph,
+    dispatcher: ControlCommandDispatcher,
+    controller: FakeWorkflowController,
+    review_client: tuple[TestClient, sessionmaker[Session], FakeWorkflowController],
+) -> None:
+    """A caller that could not know a replacement was needed must not deadlock.
+
+    T20, T21 and T22 shot commands are created before anyone knows whether the
+    shot's child is still live. The dispatcher mints and persists the sequence
+    on first dispatch, so a later attempt reads the same value.
+    """
+    _, factory, _ = review_client
+    target = graph.shot_ids[2]
+    with factory() as session:
+        project = session.get(Project, graph.project_id)
+        assert project is not None
+        identity = current_shot_identity_hash(
+            session, session.get(StoryboardShotRecord, target), APISettings()
+        )
+        outcome = ControlPlaneService(session, "owner-a").submit(
+            project,
+            command_type=ControlCommandType.SHOT_REVIEW_CONTINUE,
+            target_type=ControlCommandTargetType.SHOT,
+            target_id=target,
+            idempotency_key="review-continue-1",
+            payload={},
+            metadata={"shot_identity_hash": identity},
+            shot_identity_hash=identity,
+        )
+        session.commit()
+        command_id = outcome.command.command_id
+    assert dispatcher.run_once().dispatched == 1
+    with factory() as session:
+        record = session.get(ControlCommandRecord, command_id)
+        assert record is not None
+        assert record.status == ControlCommandStatus.RUNNING.value, record.error_summary
+        assert record.command_metadata["regeneration_sequence"] == "1"
+    assert controller.shot_start_calls == 1
+    del client
+
+
+def test_a_retry_and_a_regeneration_never_share_a_replacement_identity(
+    client: TestClient,
+    graph: ProjectGraph,
+    review_client: tuple[TestClient, sessionmaker[Session], FakeWorkflowController],
+) -> None:
+    """Both mint an identity, so both must consume a sequence."""
+    _, factory, _ = review_client
+    target = graph.shot_ids[6]
+    shot = client.get(api(graph.project_id, f"/shots/{target}"), headers=OWNER).json()
+    retry = client.post(
+        api(graph.project_id, f"/shots/{target}:retry"),
+        headers=headers(if_match=shot["shot"]["row_version"], key="retry-1"),
+    )
+    assert retry.status_code == 202
+    shot = client.get(api(graph.project_id, f"/shots/{target}"), headers=OWNER).json()
+    regenerate = client.post(
+        api(graph.project_id, f"/shots/{target}:regenerate"),
+        json={"confirm_invalidation": True},
+        headers=headers(if_match=shot["shot"]["row_version"], key="regen-1"),
+    ).json()
+    assert regenerate["regeneration_sequence"] == 2, "the retry already consumed sequence 1"
+    with factory() as session:
+        sequences = sorted(
+            record.command_metadata["regeneration_sequence"]
+            for record in session.scalars(
+                select(ControlCommandRecord).where(ControlCommandRecord.target_id == target)
+            )
+        )
+    assert sequences == ["1", "2"]
+
+
+def test_shared_voice_profiles_are_listed(
+    client: TestClient,
+    graph: ProjectGraph,
+    review_client: tuple[TestClient, sessionmaker[Session], FakeWorkflowController],
+) -> None:
+    """A shared profile has a NULL project, which SQL's ``IN`` never matches."""
+    from vidgen.db.narration_models import VoiceProfileRecord
+
+    _, factory, _ = review_client
+    with factory() as session:
+        session.add(
+            VoiceProfileRecord(
+                id=uuid4(),
+                project_id=None,
+                provider="fake",
+                provider_voice_id="shared-house-narrator",
+                model="fake-tts",
+                language="en",
+                version=1,
+                configuration={"output_format": "wav"},
+                configuration_hash="f" * 64,
+            )
+        )
+        session.commit()
+    listed = client.get(api(graph.project_id, "/voice-profiles"), headers=OWNER).json()
+    shared = [item for item in listed["items"] if item["scope"] == "shared"]
+    assert any(item["provider_voice_id"] == "shared-house-narrator" for item in shared)
+
+
+def test_a_losing_idempotency_race_preserves_the_callers_edit(
+    review_client: tuple[TestClient, sessionmaker[Session], FakeWorkflowController],
+    graph: ProjectGraph,
+) -> None:
+    """Losing the race must undo the insert, never the request that caused it."""
+    _, factory, _ = review_client
+    with factory() as session:
+        winner = ControlCommandRepository(session).create(_request(graph.project_id)).record
+        session.commit()
+        winner_id = winner.id
+    with factory() as session:
+        project = session.get(Project, graph.project_id)
+        assert project is not None
+        # The edit that prompted the command, uncommitted in the same session.
+        project.name = "edited before the command was created"
+        session.flush()
+        creation = ControlCommandRepository(session).create(_request(graph.project_id))
+        assert creation.created is False
+        assert creation.record.id == winner_id
+        # The edit survived: only the losing insert was undone.
+        assert project.name == "edited before the command was created"
+        session.commit()
+    with factory() as session:
+        reloaded = session.get(Project, graph.project_id)
+        assert reloaded is not None
+        assert reloaded.name == "edited before the command was created"
+
+
+def test_a_per_entity_regeneration_targets_only_that_entity(
+    client: TestClient,
+    graph: ProjectGraph,
+    dispatcher: ControlCommandDispatcher,
+    controller: FakeWorkflowController,
+    review_client: tuple[TestClient, sessionmaker[Session], FakeWorkflowController],
+) -> None:
+    """Its run is its own, so it cannot adopt the project-wide build."""
+    _, factory, _ = review_client
+    _, entity_id = _seed_reference_set(factory, graph)
+    queued = client.post(
+        api(graph.project_id, f"/characters/{entity_id}/references:generate"),
+        json={"provider": "fake", "model": "fake-v1"},
+        headers=headers(if_match=1, key="generate-1"),
+    )
+    assert queued.status_code == 202
+    dispatcher.run_once()
+    with factory() as session:
+        project_run = resolve_reference_inputs(
+            session, project_id=graph.project_id, idempotency_key="probe"
+        ).reference_run_id
+    started = next(iter(controller.references.values()))
+    assert started.entity_id == entity_id
+    assert started.reference_run_id != project_run
+
+
+def test_a_continuation_refuses_while_a_generation_run_is_still_executing(
+    client: TestClient,
+    graph: ProjectGraph,
+    dispatcher: ControlCommandDispatcher,
+    review_client: tuple[TestClient, sessionmaker[Session], FakeWorkflowController],
+) -> None:
+    """Adopting a live execution would discard the new run's entry stage."""
+    _, factory, _ = review_client
+    client.post(
+        api(graph.project_id, "/workflow:continue"),
+        json={"entry_stage": "shot_generation", "reason": "review_resolved"},
+        headers=headers(key="continue-1"),
+    )
+    dispatcher.run_once()
+    second = client.post(
+        api(graph.project_id, "/workflow:continue"),
+        json={"entry_stage": "render", "reason": "operator_request"},
+        headers=headers(key="continue-2"),
+    ).json()["command"]
+    dispatcher.run_once()
+    with factory() as session:
+        record = session.get(ControlCommandRecord, UUID(second["command_id"]))
+        assert record is not None
+        assert record.status == ControlCommandStatus.FAILED.value
+        assert record.error_code == "project_generation_run_active"
+
+
+def test_a_project_that_stops_without_waiting_settles_its_command(
+    graph: ProjectGraph,
+    dispatcher: ControlCommandDispatcher,
+    controller: FakeWorkflowController,
+    review_client: tuple[TestClient, sessionmaker[Session], FakeWorkflowController],
+) -> None:
+    """A failed run must not leave its command running and its lineage active."""
+    from vidgen.contracts.workflow import ProjectWorkflowState
+
+    _, factory, _ = review_client
+    with factory() as session:
+        project = session.get(Project, graph.project_id)
+        assert project is not None
+        outcome = ControlPlaneService(session, "owner-a").submit(
+            project,
+            command_type=ControlCommandType.PROJECT_CONTINUE,
+            target_type=ControlCommandTargetType.PROJECT,
+            target_id=project.id,
+            idempotency_key="continue-fail",
+            payload={},
+            metadata={"entry_stage": "render"},
+            entry_stage="render",
+        )
+        session.commit()
+        command_id = outcome.command.command_id
+    dispatcher.run_once()
+    workflow_id = f"vidgen-project-{graph.project_id}"
+    controller.states[workflow_id] = ProjectWorkflowState(
+        project_id=graph.project_id, status="render_failed"
+    )
+    dispatcher.settle_running()
+    with factory() as session:
+        record = session.get(ControlCommandRecord, command_id)
+        assert record is not None
+        assert record.status == ControlCommandStatus.FAILED.value
+        assert record.error_code == "render_failed"
+        active = GenerationRunService(session).active(graph.project_id)
+    assert active is None, "a failed run must not stay the project's active lineage"

@@ -16,6 +16,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from services.control_plane.commands import ControlPlaneService
+from services.control_plane.shot_commands import next_regeneration_sequence
 from services.render_execution.inputs import resolve_render_inputs
 from services.renderer.selection import RenderLineageError
 from services.review.invalidation import (
@@ -43,7 +44,6 @@ from vidgen.contracts.review import (
 )
 from vidgen.contracts.shot_workflow import ShotWorkflowCommand, ShotWorkflowCommandResult
 from vidgen.db.animation_models import AnimationGeneratedVideo
-from vidgen.db.control_command_models import ControlCommandRecord
 from vidgen.db.models import Project, RenderJob
 from vidgen.db.review_models import RenderApproval
 from vidgen.db.script_models import Script, ScriptSegment
@@ -319,24 +319,6 @@ class ReviewMutationService:
     # Shots
     # ------------------------------------------------------------------
 
-    def _regeneration_sequence(self, project: Project, shot: StoryboardShotRecord) -> int:
-        """The next deliberate regeneration of this shot.
-
-        Counted from the durable regeneration commands rather than a nonce, so
-        the replacement child's identity is reproducible: the API, the
-        dispatcher and the worker's own lineage check all derive the same hash
-        from the same persisted rows.
-        """
-        existing = self._session.scalars(
-            select(ControlCommandRecord.id).where(
-                ControlCommandRecord.project_id == project.id,
-                ControlCommandRecord.command_type == ControlCommandType.SHOT_REGENERATE.value,
-                ControlCommandRecord.target_id == shot.id,
-                ControlCommandRecord.status.notin_(["cancelled", "superseded"]),
-            )
-        ).all()
-        return len(existing) + 1
-
     def regenerate_shot(
         self,
         project: Project,
@@ -373,7 +355,7 @@ class ReviewMutationService:
             t15_capability_profile_identity=self._t15_identity,
         )
         previous_identity = identity.identity_hash
-        sequence = self._regeneration_sequence(project, shot)
+        sequence = next_regeneration_sequence(self._session, project.id, shot.id)
         replacement = shot_workflow_identity(
             self._session,
             run,
@@ -449,7 +431,7 @@ class ReviewMutationService:
             t14_configuration_identity=self._t14_identity,
             t15_capability_profile_identity=self._t15_identity,
         )
-        sequence = self._regeneration_sequence(project, shot)
+        sequence = next_regeneration_sequence(self._session, project.id, shot.id)
         outcome = ControlPlaneService(self._session, self._owner).submit(
             project,
             command_type=ControlCommandType.SHOT_RETRY,

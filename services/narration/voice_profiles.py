@@ -26,7 +26,7 @@ from dataclasses import dataclass
 from typing import Any
 from uuid import UUID, uuid5
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from services.narration.local_voice_profile import (
@@ -223,7 +223,14 @@ def available_profiles(
     seen: set[tuple[str, str]] = set()
     for record in session.scalars(
         select(VoiceProfileRecord)
-        .where(VoiceProfileRecord.project_id.in_([project.id, None]))
+        # A shared profile has a NULL project, and SQL's ``IN`` never matches
+        # NULL - listing it needs an explicit ``IS NULL``.
+        .where(
+            or_(
+                VoiceProfileRecord.project_id == project.id,
+                VoiceProfileRecord.project_id.is_(None),
+            )
+        )
         .order_by(VoiceProfileRecord.provider, VoiceProfileRecord.provider_voice_id)
     ):
         seen.add((record.provider, record.provider_voice_id))

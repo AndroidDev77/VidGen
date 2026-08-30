@@ -2,6 +2,19 @@
   "additionalProperties": false,
   "description": "The complete, deliberately ID-only Temporal history payload.",
   "properties": {
+    "entity_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Entity Id"
+    },
     "episode_analysis_id": {
       "format": "uuid",
       "title": "Episode Analysis Id",

@@ -58,6 +58,20 @@ from vidgen.review.workflow_control import WorkflowController
 
 _LOGGER = logging.getLogger("vidgen.control_dispatcher")
 
+#: Project statuses that mean the run stopped and nobody is expected to act.
+#: A status that pairs with a waiting reason is handled before this set is
+#: consulted, so a review-required stop is never mistaken for a failure.
+TERMINAL_PROJECT_FAILURES = frozenset(
+    {
+        "render_failed",
+        "render_cancelled",
+        "FINAL_QA_FAILED",
+        "shot_generation_failed",
+        ReferenceWorkflowStatus.FAILED.value,
+        ReferenceWorkflowStatus.CANCELLED.value,
+    }
+)
+
 
 def default_dispatcher_id() -> str:
     """Stable within a process, unique across them - the same rule T17b uses."""
@@ -438,6 +452,19 @@ class ControlCommandDispatcher:
                 record,
                 ControlCommandFailure(
                     code="project_cancelled", summary="The project workflow was cancelled."
+                ),
+            )
+        if state.status in TERMINAL_PROJECT_FAILURES:
+            # The run stopped and is not waiting on anybody. Leaving the command
+            # "running" here would strand it - and its generation run - forever,
+            # which is the exact failure mode this task exists to remove.
+            if run is not None and run.origin_command_id == record.id:
+                runs.settle(run, ProjectGenerationRunStatus.FAILED)
+            return repository.fail(
+                record,
+                ControlCommandFailure(
+                    code=state.status[:128],
+                    summary="The project workflow stopped without completing.",
                 ),
             )
         repository.mark_progress(

@@ -49,6 +49,7 @@ from apps.api.schemas.final_editorial import (
 )
 from services.control_plane.commands import ControlPlaneService
 from services.control_plane.handlers import UNSUPPORTED_REMEDIATION_TARGETS
+from services.control_plane.shot_commands import SEQUENCE_KEY, next_regeneration_sequence
 from services.qa.final_human_review import (
     FinalEditorialHumanReviewService,
     report_payload,
@@ -409,6 +410,11 @@ def route_final_editorial_remediation(
     metadata = {"target": target.value, "final_editorial_run_id": str(run.id)}
     if request.shot_id is not None:
         metadata["shot_id"] = str(request.shot_id)
+        # A shot remediation is dispatched as a replacement run, so it carries
+        # the same reproducible identity a direct regeneration would.
+        metadata[SEQUENCE_KEY] = str(
+            next_regeneration_sequence(session, project.id, request.shot_id)
+        )
     outcome = ControlPlaneService(session, principal.subject).submit(
         project,
         command_type=ControlCommandType.FINAL_QA_REMEDIATION,

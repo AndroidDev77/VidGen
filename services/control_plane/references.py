@@ -35,12 +35,25 @@ class ReferenceInputsUnavailable(RuntimeError):
         self.summary = summary
 
 
-def reference_run_id(*, episode_analysis_id: UUID, storyboard_run_id: UUID) -> UUID:
-    return uuid5(REFERENCE_RUN_NAMESPACE, f"{episode_analysis_id}:{storyboard_run_id}")
+def reference_run_id(
+    *, episode_analysis_id: UUID, storyboard_run_id: UUID, entity_id: UUID | None = None
+) -> UUID:
+    """The reference run for these inputs, optionally narrowed to one entity.
+
+    A per-entity regeneration gets its own run - and therefore its own workflow
+    - so it drafts and awaits approval for that entity alone instead of
+    adopting, or being adopted by, the project-wide build.
+    """
+    scope = f"{episode_analysis_id}:{storyboard_run_id}"
+    return uuid5(REFERENCE_RUN_NAMESPACE, scope if entity_id is None else f"{scope}:{entity_id}")
 
 
 def resolve_reference_inputs(
-    session: Session, *, project_id: UUID, idempotency_key: str
+    session: Session,
+    *,
+    project_id: UUID,
+    idempotency_key: str,
+    entity_id: UUID | None = None,
 ) -> ReferenceWorkflowInput:
     """Build the compact, ID-only message the T19 workflow is started with."""
     try:
@@ -55,7 +68,10 @@ def resolve_reference_inputs(
         episode_analysis_id=analysis.id,
         storyboard_run_id=storyboard.id,
         reference_run_id=reference_run_id(
-            episode_analysis_id=analysis.id, storyboard_run_id=storyboard.id
+            episode_analysis_id=analysis.id,
+            storyboard_run_id=storyboard.id,
+            entity_id=entity_id,
         ),
         idempotency_key=idempotency_key[:255],
+        entity_id=entity_id,
     )

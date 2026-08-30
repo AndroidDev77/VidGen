@@ -43,6 +43,7 @@ from apps.api.schemas.repair import (
     RepairRunProjection,
 )
 from services.control_plane.commands import ControlPlaneService
+from services.control_plane.shot_commands import SEQUENCE_KEY, next_regeneration_sequence
 from services.review.shot_identity import current_shot_identity_hash
 from vidgen.contracts.control_commands import (
     ControlCommandTargetType,
@@ -50,9 +51,7 @@ from vidgen.contracts.control_commands import (
 )
 from vidgen.contracts.repair import RepairRunState
 from vidgen.contracts.review import ApiErrorCode
-from vidgen.db.control_command_models import ControlCommandRecord
 from vidgen.db.cost_models import ProjectBudget
-from vidgen.db.models import Project
 from vidgen.db.repair_models import (
     RepairAttemptRecord,
     RepairDecisionRecord,
@@ -60,7 +59,6 @@ from vidgen.db.repair_models import (
     RepairRun,
 )
 from vidgen.db.repair_repository import RepairRepository
-from vidgen.db.storyboard_models import StoryboardShotRecord
 from vidgen.db.visual_qa_models import VisualQAResultRecord
 from vidgen.review.errors import conflict, not_found
 from vidgen.review.projections import resolve_shot
@@ -91,21 +89,6 @@ ALLOWED_ACTIONS: dict[str, frozenset[str]] = {
 #: The actions that ask for the shot to be worked on again. Everything else is
 #: a record of a human decision and creates no work by design.
 _CONTINUING_ACTIONS = frozenset({"retry", "restart_after_reference_correction"})
-
-
-def _next_regeneration_sequence(
-    session: SessionDep, project: Project, shot: StoryboardShotRecord
-) -> int:
-    """The replacement identity a recovery run would take, if it needs one."""
-    existing = session.scalars(
-        select(ControlCommandRecord.id).where(
-            ControlCommandRecord.project_id == project.id,
-            ControlCommandRecord.command_type == ControlCommandType.SHOT_REGENERATE.value,
-            ControlCommandRecord.target_id == shot.id,
-            ControlCommandRecord.status.notin_(["cancelled", "superseded"]),
-        )
-    ).all()
-    return len(existing) + 1
 
 
 def _require_run(session: SessionDep, project_id: UUID, shot_id: UUID, run_id: UUID) -> RepairRun:
@@ -388,9 +371,7 @@ def act_on_repair_run(
                     "repair_run_id": str(repair_run_id),
                     "action": request.action,
                     "shot_identity_hash": identity_hash,
-                    "regeneration_sequence": str(
-                        _next_regeneration_sequence(session, project, shot)
-                    ),
+                    SEQUENCE_KEY: str(next_regeneration_sequence(session, project.id, shot.id)),
                 },
                 shot_identity_hash=identity_hash,
             )

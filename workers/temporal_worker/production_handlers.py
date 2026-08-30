@@ -38,6 +38,7 @@ from services.control_plane.references import (
     ReferenceInputsUnavailable,
     resolve_reference_inputs,
 )
+from services.control_plane.shot_commands import SEQUENCE_KEY, next_regeneration_sequence
 from services.image_generation.openai_image import OpenAIImageProvider
 from services.image_generation.pipeline import (
     PIPELINE_VERSION as T14_PIPELINE_VERSION,
@@ -127,7 +128,6 @@ from vidgen.db.continuity_models import (
     location_identity_versions,
     location_reference_sets,
 )
-from vidgen.db.control_command_models import ControlCommandRecord
 from vidgen.db.image_generation_models import GeneratedKeyframeImage, ImageGenerationRun
 from vidgen.db.image_generation_repository import ImageGenerationRepository
 from vidgen.db.models import Asset, AudioAsset, Project, Scene, SourceVideo, asset_dependencies
@@ -1398,6 +1398,9 @@ def build_continuity_handlers(
                     episode_analysis_id=request.episode_analysis_id,
                     reference_run_id=request.reference_run_id,
                     idempotency_key=request.idempotency_key,
+                    # Narrowed when an owner asked for one entity's sheet;
+                    # every sibling keeps its approved sheet untouched.
+                    entity_id=request.entity_id,
                 )
             except ContinuityOrchestrationError as error:
                 session.rollback()
@@ -1504,20 +1507,7 @@ def _reference_regeneration(
             t14_configuration_identity=t14_identity,
             t15_capability_profile_identity=t15_identity,
         )
-        sequence = (
-            len(
-                session.scalars(
-                    select(ControlCommandRecord.id).where(
-                        ControlCommandRecord.project_id == project.id,
-                        ControlCommandRecord.command_type
-                        == ControlCommandType.SHOT_REGENERATE.value,
-                        ControlCommandRecord.target_id == shot.id,
-                        ControlCommandRecord.status.notin_(["cancelled", "superseded"]),
-                    )
-                ).all()
-            )
-            + 1
-        )
+        sequence = next_regeneration_sequence(session, project.id, shot.id)
         ControlPlaneService(session, project.owner_subject).submit(
             project,
             command_type=ControlCommandType.SHOT_REGENERATE,
@@ -1526,7 +1516,7 @@ def _reference_regeneration(
             idempotency_key=idempotency_key[:255],
             payload={"bundle_hash": bundle_hash, "shot_id": str(shot.id)},
             metadata={
-                "regeneration_sequence": str(sequence),
+                SEQUENCE_KEY: str(sequence),
                 "shot_identity_hash": current.identity_hash,
                 "reason": "continuity_reference_changed",
             },

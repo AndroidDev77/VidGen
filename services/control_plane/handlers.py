@@ -36,6 +36,7 @@ from services.control_plane.references import (
     ReferenceInputsUnavailable,
     resolve_reference_inputs,
 )
+from services.control_plane.shot_commands import SEQUENCE_KEY, next_regeneration_sequence
 from services.render_execution.commands import queue_render_job
 from services.renderer.selection import RenderLineageError
 from services.review.shot_identity import (
@@ -51,6 +52,7 @@ from vidgen.contracts.control_commands import (
     ControlCommandResult,
     ControlCommandTargetType,
     ControlCommandType,
+    ProjectGenerationRunStatus,
 )
 from vidgen.contracts.final_editorial import FinalRemediationTarget
 from vidgen.contracts.shot_workflow import ShotWorkflowInput, ShotWorkflowStatus
@@ -132,13 +134,18 @@ def _source_video_id(context: DispatchContext, project_id: UUID) -> UUID:
 
 # -- T19 ------------------------------------------------------------------
 def _reference_inputs(
-    context: DispatchContext, record: ControlCommandRecord, project_id: UUID
+    context: DispatchContext,
+    record: ControlCommandRecord,
+    project_id: UUID,
+    *,
+    entity_id: UUID | None = None,
 ) -> ReferenceWorkflowInput:
     try:
         return resolve_reference_inputs(
             context.session,
             project_id=project_id,
             idempotency_key=f"command:{record.id}",
+            entity_id=entity_id,
         )
     except ReferenceInputsUnavailable as error:
         raise DispatchFailure(error.code, error.summary) from error
@@ -149,14 +156,16 @@ def dispatch_reference_build(
 ) -> DispatchOutcome:
     """Start (or adopt) the T19 workflow that drafts and awaits approval."""
     project = _project(context, record)
-    request = _reference_inputs(context, record, project.id)
-    if record.command_type == ControlCommandType.REFERENCE_GENERATE.value:
-        # A per-entity regeneration is the same workflow with a narrower scope;
-        # the entity is carried in the reference run's own metadata so the
-        # message stays IDs only.
-        request = request.model_copy(
-            update={"idempotency_key": f"command:{record.id}:{record.target_id}"}
-        )
+    # A per-entity regeneration is the same workflow with a narrower scope. The
+    # entity is part of the reference run's own identity, so it gets its own
+    # workflow and drafts only that character or location - it can neither
+    # adopt nor be adopted by the project-wide build.
+    entity_id = (
+        record.target_id
+        if record.command_type == ControlCommandType.REFERENCE_GENERATE.value
+        else None
+    )
+    request = _reference_inputs(context, record, project.id, entity_id=entity_id)
     workflow_id, run_id = context.controller.start_references(request)
     return DispatchOutcome(
         workflow_id=workflow_id,
@@ -265,26 +274,39 @@ def _replacement_shot_input(
     )
 
 
-def _regeneration_sequence(record: ControlCommandRecord) -> int:
-    """The sequence the submitting route minted, stored on the command row.
+def _regeneration_sequence(context: DispatchContext, record: ControlCommandRecord) -> int:
+    """The sequence this command's replacement child takes.
 
-    Reading it back from the command rather than recounting means a retried
-    dispatch resolves to the same identity, and therefore adopts the same
-    replacement child instead of paying for another one.
+    Read back from the command row rather than recounted, so a retried dispatch
+    resolves to the same identity and adopts the same replacement child instead
+    of paying for another one.
+
+    A command created without one - by a caller that could not know at
+    submission time whether a replacement would be needed - has the sequence
+    minted and *persisted* here, on its first dispatch, so every later attempt
+    reads the same value.
     """
-    raw = dict(record.command_metadata or {}).get("regeneration_sequence")
-    try:
-        sequence = int(str(raw))
-    except (TypeError, ValueError) as error:
-        raise DispatchFailure(
-            "regeneration_sequence_missing",
-            "This regeneration command has no reproducible replacement identity.",
-        ) from error
-    if sequence < 1:
-        raise DispatchFailure(
-            "regeneration_sequence_missing",
-            "This regeneration command has no reproducible replacement identity.",
-        )
+    metadata = dict(record.command_metadata or {})
+    raw = metadata.get(SEQUENCE_KEY)
+    if raw is not None:
+        try:
+            sequence = int(str(raw))
+        except (TypeError, ValueError) as error:
+            raise DispatchFailure(
+                "regeneration_sequence_invalid",
+                "This command's replacement identity is not reproducible.",
+            ) from error
+        if sequence >= 1:
+            return sequence
+    sequence = next_regeneration_sequence(
+        context.session,
+        record.project_id,
+        record.target_id,
+        exclude_command_id=record.id,
+    )
+    metadata[SEQUENCE_KEY] = str(sequence)
+    record.command_metadata = metadata
+    context.session.flush()
     return sequence
 
 
@@ -298,7 +320,9 @@ def dispatch_shot_regenerate(
     replacement competes with it only when it passes every gate.
     """
     _project(context, record)
-    request = _replacement_shot_input(context, record, sequence=_regeneration_sequence(record))
+    request = _replacement_shot_input(
+        context, record, sequence=_regeneration_sequence(context, record)
+    )
     workflow_id, run_id = context.controller.start_shot(request)
     return DispatchOutcome(
         workflow_id=workflow_id,
@@ -530,6 +554,24 @@ def dispatch_generation_run(
     project = _project(context, record)
     entry_stage = str(dict(record.command_metadata or {}).get("entry_stage", "upload"))
     runs = GenerationRunService(context.session)
+    # Starting the project workflow adopts a live execution rather than
+    # replacing it, which is right for a retried start and wrong for a
+    # continuation: the adopted execution would keep its own entry stage and
+    # this command would later "complete" off work it never asked for. A
+    # project whose current run is still executing is therefore a conflict, not
+    # something to silently join.
+    current = runs.active(project.id)
+    if (
+        current is not None
+        and current.status == ProjectGenerationRunStatus.ACTIVE.value
+        and current.workflow_id is not None
+        and current.origin_command_id != record.id
+    ):
+        raise DispatchFailure(
+            "project_generation_run_active",
+            "This project is already executing a generation run. Wait for it to "
+            "finish or reach a review, or cancel it, then continue.",
+        )
     try:
         identity = generation_input_identity(
             project_id=project.id,

@@ -106,9 +106,7 @@ def _continuity_activities(
             draft_version_ids=[uuid4()] if requires_approval else [],
             entity_count=1 if requires_approval else 0,
             requires_approval=requires_approval,
-            status=(
-                "references_awaiting_approval" if requires_approval else "references_complete"
-            ),
+            status=("references_awaiting_approval" if requires_approval else "references_complete"),
         )
 
     async def apply(signal: ReferenceApprovalSignal) -> ReferenceWorkflowResult:
@@ -141,9 +139,7 @@ def _fanout_activities() -> Activities:
     ]
 
 
-def _final_qa_activity(
-    seen: list[FinalQAActivityInput], *, decision: str = "PASS"
-) -> Activities:
+def _final_qa_activity(seen: list[FinalQAActivityInput], *, decision: str = "PASS") -> Activities:
     async def handler(request: FinalQAActivityInput) -> FinalQAActivityResult:
         seen.append(request)
         return FinalQAActivityResult(
@@ -198,9 +194,9 @@ async def _environment(
     return environment, project_worker, render_worker
 
 
-def _input(*, entry_stage: str = "upload", generation_run_id: UUID | None = None) -> (
-    ProjectWorkflowInput
-):
+def _input(
+    *, entry_stage: str = "upload", generation_run_id: UUID | None = None
+) -> ProjectWorkflowInput:
     return ProjectWorkflowInput(
         project_id=PROJECT,
         source_video_id=SOURCE,
@@ -267,9 +263,7 @@ async def test_references_pause_the_project_and_an_approval_resumes_it() -> None
         reference_handle = environment.client.get_workflow_handle(
             f"vidgen-references-{REFERENCE_RUN}"
         )
-        await _await_reference_status(
-            reference_handle, ReferenceWorkflowStatus.AWAITING_APPROVAL
-        )
+        await _await_reference_status(reference_handle, ReferenceWorkflowStatus.AWAITING_APPROVAL)
         # The parent says it is waiting, and says why, rather than showing a
         # generic "running" while nothing progresses.
         parent = await _await_waiting(handle)
@@ -323,9 +317,7 @@ async def test_a_duplicate_approval_is_ignored_by_the_waiting_workflow() -> None
         reference_handle = environment.client.get_workflow_handle(
             f"vidgen-references-{REFERENCE_RUN}"
         )
-        await _await_reference_status(
-            reference_handle, ReferenceWorkflowStatus.AWAITING_APPROVAL
-        )
+        await _await_reference_status(reference_handle, ReferenceWorkflowStatus.AWAITING_APPROVAL)
         signal = ReferenceApprovalSignal(
             project_id=PROJECT,
             reference_run_id=REFERENCE_RUN,
@@ -479,9 +471,7 @@ async def test_cancelling_a_project_stops_the_reference_child_it_owns() -> None:
         reference_handle = environment.client.get_workflow_handle(
             f"vidgen-references-{REFERENCE_RUN}"
         )
-        await _await_reference_status(
-            reference_handle, ReferenceWorkflowStatus.AWAITING_APPROVAL
-        )
+        await _await_reference_status(reference_handle, ReferenceWorkflowStatus.AWAITING_APPROVAL)
         await handle.signal(ProjectWorkflow.cancel_project)
         state = await handle.result()
     assert state.cancelled is True

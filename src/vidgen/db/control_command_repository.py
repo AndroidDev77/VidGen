@@ -119,13 +119,18 @@ class ControlCommandRepository:
             trace_context=dict(request.trace_context),
             available_at=_now(),
         )
-        self._session.add(record)
+        # The insert runs inside a SAVEPOINT. A losing race must undo *this
+        # insert* and nothing else: the caller is mid-request, and the edit that
+        # prompted this command - a transcript segment, a script selection - is
+        # already in the same transaction. Rolling that back while still
+        # returning 200 would silently discard the owner's work.
         try:
-            self._session.flush()
+            with self._session.begin_nested():
+                self._session.add(record)
+                self._session.flush()
         except IntegrityError:
             # Two concurrent submissions of the same key. The winner's row is
             # the command; this request adopts it rather than creating a second.
-            self._session.rollback()
             adopted = self._session.scalar(
                 select(ControlCommandRecord).where(
                     ControlCommandRecord.project_id == request.project_id,

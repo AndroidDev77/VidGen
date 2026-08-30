@@ -57,6 +57,10 @@ class ReferenceWorkflowInput(StrictContract):
     #: the normal lifecycle. The child signals it on reaching a human pause so
     #: the project's own state stays truthful while it waits.
     parent_workflow_id: str | None = Field(default=None, max_length=255)
+    #: Narrows the run to one character or location. Set when an owner asks to
+    #: regenerate a single entity's reference sheet; the run then drafts only
+    #: that entity and every sibling keeps its approved sheet untouched.
+    entity_id: UUID | None = None
 
 
 class ReferenceDraftResult(StrictContract):

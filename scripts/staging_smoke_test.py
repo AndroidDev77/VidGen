@@ -561,9 +561,7 @@ def _check_control_command(
     deadline = time.monotonic() + min(timeout_seconds, 300)
     latest = command
     while time.monotonic() < deadline:
-        probe = client.get(
-            f"/api/v1/projects/{project_id}/commands/{command['command_id']}"
-        )
+        probe = client.get(f"/api/v1/projects/{project_id}/commands/{command['command_id']}")
         if probe.status_code == 200:
             latest = probe.json()["command"]
             if latest["status"] in _DISPATCHED_COMMANDS:
@@ -577,18 +575,14 @@ def _check_control_command(
     )
 
 
-def _check_no_stranded_commands(
-    report: SmokeReport, client: httpx.Client, project_id: str
-) -> None:
+def _check_no_stranded_commands(report: SmokeReport, client: httpx.Client, project_id: str) -> None:
     """No command may still be waiting for a worker that never came."""
     response = client.get(f"/api/v1/projects/{project_id}/commands")
     if response.status_code != 200:
         report.record("e2e-no-stranded-commands", False, f"HTTP {response.status_code}")
         return
     items = response.json().get("items", [])
-    stranded = [
-        item["command_id"] for item in items if item["status"] in {"pending", "claimed"}
-    ]
+    stranded = [item["command_id"] for item in items if item["status"] in {"pending", "claimed"}]
     report.record(
         "e2e-no-stranded-commands",
         not stranded,
