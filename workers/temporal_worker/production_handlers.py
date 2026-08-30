@@ -738,6 +738,7 @@ def _acquire_transcript(
                 source_video_id=source.id,
                 source_audio_asset_id=audio.asset_id,
                 idempotency_key=request.idempotency_key,
+                sidecar_asset_ids=request.sidecar_asset_ids,
             )
             return StageActivityResult(
                 stage=request.stage,

@@ -15,11 +15,11 @@ import {
   PlayRegular,
 } from "@fluentui/react-icons";
 import type { JSX } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 
 import { newIdempotencyKey } from "../../api/client";
 import { listFailures, listProviderAttempts } from "../../api/costs";
-import { getCosts, getProjectStatus } from "../../api/projects";
+import { deleteProject, getCosts, getProjectStatus } from "../../api/projects";
 import { queryKeys } from "../../api/queryKeys";
 import { getProjectVisualQa } from "../../api/visualQa";
 import { cancelWorkflow, startWorkflow } from "../../api/workflows";
@@ -108,6 +108,7 @@ const useStyles = makeStyles({
 export function ProjectDashboardPage(): JSX.Element {
   const styles = useStyles();
   const client = useApiClient();
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { projectId, project, workflow, connectionLabel } = useProjectContext();
 
@@ -144,6 +145,13 @@ export function ProjectDashboardPage(): JSX.Element {
   const cancel = useMutation({
     mutationFn: () => cancelWorkflow(projectId, newIdempotencyKey("workflow-cancel"), client),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.workflow(projectId) }),
+  });
+  const remove = useMutation({
+    mutationFn: () => deleteProject(projectId, client),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.projects() });
+      void navigate("/projects");
+    },
   });
 
   if (project.isPending) {
@@ -198,12 +206,24 @@ export function ProjectDashboardPage(): JSX.Element {
                 {cancel.isPending ? "Cancelling…" : "Cancel the workflow"}
               </Button>
             )}
+            <Button
+              appearance="subtle"
+              disabled={remove.isPending}
+              onClick={() => {
+                if (window.confirm(`Delete "${project.data?.name ?? "this project"}"? This cannot be undone.`)) {
+                  remove.mutate();
+                }
+              }}
+            >
+              {remove.isPending ? "Deleting…" : "Delete project"}
+            </Button>
           </div>
         }
       />
 
       {start.isError && <ErrorState error={start.error} />}
       {cancel.isError && <ErrorState error={cancel.error} />}
+      {remove.isError && <ErrorState error={remove.error} />}
 
       <StatTiles>
         <StatTile

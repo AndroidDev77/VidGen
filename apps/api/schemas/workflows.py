@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from typing import Literal
+from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -22,6 +23,7 @@ class StartWorkflowRequest(BaseModel):
     provider_configuration_version: str = Field(
         default="runway/2024-11-06", min_length=1, max_length=64
     )
+    subtitle_asset_ids: list[UUID] = Field(default_factory=list, max_length=4)
 
 
 class StartWorkflowResponse(BaseModel):

@@ -55,8 +55,17 @@ const TONES: Record<string, Tone> = {
  * light; a tinted chip keeps the same colour coding legible while letting the
  * content stay the loudest thing on screen.
  */
+function inferTone(status: string): Tone {
+  if (status in TONES) return TONES[status]!;
+  if (status.includes("failed") || status.includes("error")) return "danger";
+  if (status.includes("cancelled")) return "danger";
+  if (status.includes("complete") || status.includes("succeeded")) return "success";
+  if (status.includes("running") || status.includes("ing")) return "informative";
+  return "subtle";
+}
+
 export function StatusBadge({ status }: { readonly status: string }): JSX.Element {
-  const tone = TONES[status] ?? "informative";
+  const tone = inferTone(status);
   const label = humanize(status);
   return (
     <Tooltip content={`Status: ${label}`} relationship="label">

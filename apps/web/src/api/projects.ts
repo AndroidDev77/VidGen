@@ -95,6 +95,13 @@ export function createProject(
   return client.post<ProjectDetail>("/api/v1/projects", { body: input });
 }
 
+export function deleteProject(
+  projectId: string,
+  client: VidGenClient = apiClient,
+): Promise<ApiResponse<void>> {
+  return client.delete<void>(`/api/v1/projects/${projectId}`);
+}
+
 export function getCosts(
   projectId: string,
   client: VidGenClient = apiClient,

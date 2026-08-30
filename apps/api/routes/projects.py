@@ -3,12 +3,12 @@ from __future__ import annotations
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from apps.api.auth import Principal, get_current_user
-from apps.api.dependencies import get_blob_store, get_session
+from apps.api.dependencies import get_blob_store, get_session, get_workflow_controller
 from apps.api.schemas.projects import (
     CreateProjectRequest,
     ProjectBudgetResponse,
@@ -36,12 +36,15 @@ from services.narration.voice_profiles import (
 )
 from vidgen.contracts.review import ApiErrorField
 from vidgen.db.cost_models import ProjectBudget
-from vidgen.db.models import Project, SourceVideo
+from vidgen.db.models import Asset, Project, SourceVideo
+from vidgen.db.workflow_models import ProjectWorkflowRun
+from vidgen.review.workflow_control import WorkflowController
 from vidgen.db.repositories import ProjectRepository
 from vidgen.db.upload_models import UploadSession
 from vidgen.review.errors import ReviewError, validation_failed
 from vidgen.review.projections import project_summary
 from vidgen.review.versions import RowVersionService
+from vidgen.storage.asset_service import AssetService
 from vidgen.storage.blob import BlobStore
 from vidgen.uploads.service import UploadError, UploadService
 
@@ -336,3 +339,93 @@ def initialize_upload(
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=error.code
         ) from error
+
+
+ControllerDependency = Annotated[WorkflowController, Depends(get_workflow_controller)]
+
+
+@router.delete("/{project_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_project(
+    project_id: UUID,
+    session: SessionDependency,
+    principal: PrincipalDependency,
+    blob_store: BlobDependency,
+    controller: ControllerDependency,
+) -> Response:
+    """Delete a project and all of its assets.
+
+    Any running workflow is cancelled first (best-effort). Blob storage keys are
+    cleaned up before the database row is removed. All related DB rows cascade.
+    """
+    project = owned_project(session, project_id, principal)
+    # Cancel any live workflow so the worker stops before we remove its data.
+    run = session.scalar(
+        select(ProjectWorkflowRun).where(ProjectWorkflowRun.project_id == project.id)
+    )
+    if run is not None and run.status not in ("completed", "cancelled", "failed"):
+        try:
+            controller.cancel_workflow(run.workflow_id)
+        except Exception:
+            pass
+    # Delete blobs for all assets owned by this project.
+    assets = session.scalars(select(Asset).where(Asset.project_id == project.id)).all()
+    for asset in assets:
+        try:
+            blob_store.delete(asset.storage_key)
+        except Exception:
+            pass
+    session.delete(project)
+    session.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+_SUBTITLE_MEDIA_TYPES = frozenset({"text/plain", "application/x-subrip"})
+_SUBTITLE_MAX_BYTES = 2 * 1024 * 1024  # 2 MB; SRT files are typically < 100 KB
+
+
+@router.post(
+    "/{project_id}/subtitle-uploads",
+    status_code=status.HTTP_201_CREATED,
+)
+async def upload_subtitle(
+    project_id: UUID,
+    request: Request,
+    session: SessionDependency,
+    principal: PrincipalDependency,
+    blob_store: BlobDependency,
+) -> dict:
+    """Store a pre-existing SRT subtitle file as an asset.
+
+    The returned ``asset_id`` can be passed to ``workflow:start`` as
+    ``subtitle_asset_ids``, which causes transcript acquisition to prefer
+    the uploaded file over provider search and Whisper transcription.
+    """
+    project = owned_project(session, project_id, principal)
+    content_type = request.headers.get("content-type", "").split(";")[0].strip()
+    if content_type not in _SUBTITLE_MEDIA_TYPES:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="unsupported_media_type",
+        )
+    content = await request.body()
+    if len(content) > _SUBTITLE_MAX_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="upload_too_large",
+        )
+    if not content:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="empty_file",
+        )
+    filename = request.headers.get("x-filename", "subtitles.srt")
+    service = AssetService(session, blob_store)
+    stored = service.store(
+        content=content,
+        kind="subtitle",
+        media_type="application/x-subrip",
+        project_id=project.id,
+        metadata={"original_filename": filename},
+    )
+    session.commit()
+    return {"asset_id": str(stored.id)}

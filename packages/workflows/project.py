@@ -121,6 +121,11 @@ class ProjectWorkflow:
                 source_video_id=request.source_video_id,
                 stage=stage,
                 idempotency_key=f"{request.idempotency_key}:{stage}",
+                sidecar_asset_ids=(
+                    request.sidecar_asset_ids
+                    if stage == "transcript_acquisition"
+                    else ()
+                ),
             )
             result = await workflow.execute_activity(
                 activity_name,
