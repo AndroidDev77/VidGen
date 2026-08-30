@@ -190,6 +190,11 @@ make verify-stack
 | `make verify-stack` | PostgreSQL reachability plus an Alembic up/down/up check |
 | `make infra-down` | Stop the containers, keeping the volumes |
 | `make local-reset` | **Destructive.** Delete the local database, blob store and uploads |
+| `make local-up` | Run the full containerized stack (API, worker, dispatcher, web) against real providers |
+| `make local-start` | Same, detached; follow it with `make local-logs` |
+| `make local-status` | Show the containerized stack's service status |
+| `make local-down` | Stop the containerized stack, keeping the volumes |
+| `make local-stack-reset` | **Destructive.** Stop the containerized stack and delete its volumes |
 
 ## UI-only development mode
 

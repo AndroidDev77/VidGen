@@ -1,4 +1,4 @@
-.PHONY: install lint format typecheck test schemas verify infra-validate infra-up infra-down infra-logs observability-up observability-logs migrate migrate-down verify-stack run-worker run-control-dispatcher run-api run-web web-install web-lint web-typecheck web-test web-build web-e2e verify-web local-reset
+.PHONY: install lint format typecheck test schemas verify infra-validate infra-up infra-down infra-logs observability-up observability-logs migrate migrate-down verify-stack run-worker run-control-dispatcher run-api run-web web-install web-lint web-typecheck web-test web-build web-e2e verify-web local-reset local-up local-start local-logs local-status local-down local-stack-reset
 
 export UV_CACHE_DIR ?= .uv-cache
 
@@ -98,3 +98,23 @@ local-reset:
 	docker compose down --volumes
 	rm -rf .local-data/uploads .local-data/blobs
 	@echo "Local PostgreSQL, Azurite, upload and blob data removed."
+
+# Full containerized local stack (API, worker, control dispatcher, web and
+# infrastructure) running against real providers. See scripts/local-stack.sh.
+local-up:
+	./scripts/local-stack.sh up
+
+local-start:
+	./scripts/local-stack.sh start
+
+local-logs:
+	./scripts/local-stack.sh logs
+
+local-status:
+	./scripts/local-stack.sh status
+
+local-down:
+	./scripts/local-stack.sh down
+
+local-stack-reset:
+	./scripts/local-stack.sh reset
