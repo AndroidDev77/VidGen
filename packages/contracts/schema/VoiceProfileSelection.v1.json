@@ -1,0 +1,96 @@
+{
+  "additionalProperties": false,
+  "description": "A project's narration voice, validated before a workflow may start.\n\nDeliberately credential-free: a profile names a provider and an externally\nprovisioned voice, and the credential for that provider is resolved by the\nworker from configuration, never carried here.",
+  "properties": {
+    "configuration_hash": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Configuration Hash",
+      "type": "string"
+    },
+    "language": {
+      "maxLength": 32,
+      "minLength": 1,
+      "title": "Language",
+      "type": "string"
+    },
+    "model": {
+      "maxLength": 128,
+      "minLength": 1,
+      "title": "Model",
+      "type": "string"
+    },
+    "output_format": {
+      "maxLength": 16,
+      "minLength": 1,
+      "title": "Output Format",
+      "type": "string"
+    },
+    "profile_version": {
+      "minimum": 1,
+      "title": "Profile Version",
+      "type": "integer"
+    },
+    "project_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Project Id"
+    },
+    "provider": {
+      "maxLength": 64,
+      "minLength": 1,
+      "title": "Provider",
+      "type": "string"
+    },
+    "provider_voice_id": {
+      "maxLength": 255,
+      "minLength": 1,
+      "title": "Provider Voice Id",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "scope": {
+      "enum": [
+        "project",
+        "shared"
+      ],
+      "title": "Scope",
+      "type": "string"
+    },
+    "selected": {
+      "default": false,
+      "title": "Selected",
+      "type": "boolean"
+    },
+    "voice_profile_id": {
+      "format": "uuid",
+      "title": "Voice Profile Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "voice_profile_id",
+    "provider",
+    "provider_voice_id",
+    "model",
+    "language",
+    "profile_version",
+    "configuration_hash",
+    "output_format",
+    "scope"
+  ],
+  "title": "VoiceProfileSelection",
+  "type": "object"
+}

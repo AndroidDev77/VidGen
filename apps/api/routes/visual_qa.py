@@ -19,6 +19,7 @@ from apps.api.routes._common import (
     IfMatchDep,
     PrincipalDep,
     SessionDep,
+    SettingsDep,
     idempotency_for,
     owned_project,
     set_etag,
@@ -39,7 +40,13 @@ from apps.api.schemas.visual_qa import (
     VisualQARunResponse,
     VisualQASampleProjection,
 )
+from services.control_plane.commands import ControlPlaneService
 from services.qa.human_review import VisualQAHumanReviewService, require_run
+from services.review.shot_identity import current_shot_identity_hash
+from vidgen.contracts.control_commands import (
+    ControlCommandTargetType,
+    ControlCommandType,
+)
 from vidgen.contracts.review import ApiErrorCode
 from vidgen.db.visual_qa_models import (
     VisualQAAttempt,
@@ -410,6 +417,7 @@ def _decide(
     request: VisualQADecisionRequest,
     session: SessionDep,
     principal: PrincipalDep,
+    settings: SettingsDep,
     response: Response,
     if_match: str | None,
     idempotency_key: str | None,
@@ -433,12 +441,40 @@ def _decide(
         idempotency_key=key,
     )
     new_version = versions.bump(project.id, QA_RESOURCE, shot.id, expected=expected)
+    identity_hash = current_shot_identity_hash(session, shot, settings)
+    # The decision is recorded; the shot still has to act on it. This command is
+    # what reaches the workflow: the dispatcher resumes the live child if there
+    # is one, and starts an immutable replacement run if the child has closed.
+    # A deterministic hard failure is never turned into a pass here - the review
+    # service has already refused that, and this only continues what it allowed.
+    command = (
+        ControlPlaneService(session, principal.subject)
+        .submit(
+            project,
+            command_type=ControlCommandType.SHOT_REVIEW_CONTINUE,
+            target_type=ControlCommandTargetType.SHOT,
+            target_id=shot.id,
+            idempotency_key=f"visual-qa:{decision}:{qa_run_id}:{key}"[:255],
+            payload={"qa_run_id": str(qa_run_id), "decision": decision, **payload},
+            expected_row_version=expected,
+            metadata={
+                "decision": decision,
+                "qa_run_id": str(qa_run_id),
+                "resulting_gate": str(outcome.resulting_gate),
+                "shot_identity_hash": identity_hash,
+            },
+            shot_identity_hash=identity_hash,
+        )
+        .command
+    )
     body = VisualQADecisionResponse(
         qa_run_id=run.id,
         review_id=outcome.review_id,
         decision=decision,  # type: ignore[arg-type]
         resulting_gate=outcome.resulting_gate,
         row_version=new_version,
+        continuation_command_id=command.command_id,
+        continuation_command_status=command.status.value,
     )
     idempotency.record(
         operation, str(qa_run_id), key, payload, status.HTTP_200_OK, body.model_dump(mode="json")
@@ -459,6 +495,7 @@ def approve_visual_qa(
     request: VisualQADecisionRequest,
     session: SessionDep,
     principal: PrincipalDep,
+    settings: SettingsDep,
     response: Response,
     if_match: IfMatchDep = None,
     idempotency_key: IdempotencyKeyDep = None,
@@ -472,6 +509,7 @@ def approve_visual_qa(
         request=request,
         session=session,
         principal=principal,
+        settings=settings,
         response=response,
         if_match=if_match,
         idempotency_key=idempotency_key,
@@ -489,6 +527,7 @@ def reject_visual_qa(
     request: VisualQADecisionRequest,
     session: SessionDep,
     principal: PrincipalDep,
+    settings: SettingsDep,
     response: Response,
     if_match: IfMatchDep = None,
     idempotency_key: IdempotencyKeyDep = None,
@@ -502,6 +541,7 @@ def reject_visual_qa(
         request=request,
         session=session,
         principal=principal,
+        settings=settings,
         response=response,
         if_match=if_match,
         idempotency_key=idempotency_key,

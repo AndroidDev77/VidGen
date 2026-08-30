@@ -22,6 +22,12 @@
       "title": "Project Id",
       "type": "string"
     },
+    "regeneration_sequence": {
+      "default": 0,
+      "minimum": 0,
+      "title": "Regeneration Sequence",
+      "type": "integer"
+    },
     "schema_version": {
       "const": "1.0",
       "default": "1.0",

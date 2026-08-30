@@ -254,6 +254,18 @@ from vidgen.contracts.continuity_workflow import (
     ReferenceWorkflowInput,
     ReferenceWorkflowResult,
 )
+from vidgen.contracts.control_commands import (
+    ControlCommand,
+    ControlCommandFailure,
+    ControlCommandProgress,
+    ControlCommandRequest,
+    ControlCommandResult,
+    ProjectGenerationRun,
+    ProjectRevisionRequest,
+    VoiceProfileSelection,
+    WorkflowContinuationRequest,
+    WorkflowContinuationResult,
+)
 from vidgen.contracts.costs import (
     BudgetDecisionResult,
     BudgetPolicy,
@@ -363,6 +375,16 @@ from vidgen.contracts.visual_qa import (
 ROOT = Path(__file__).resolve().parents[1]
 OUTPUT = ROOT / "packages" / "contracts" / "schema"
 CONTRACTS = (
+    ControlCommand,
+    ControlCommandFailure,
+    ControlCommandProgress,
+    ControlCommandRequest,
+    ControlCommandResult,
+    ProjectGenerationRun,
+    ProjectRevisionRequest,
+    VoiceProfileSelection,
+    WorkflowContinuationRequest,
+    WorkflowContinuationResult,
     OAuthAuthorizationRequest,
     PublicationActivityInput,
     PublicationActivityResult,

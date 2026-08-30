@@ -1,4 +1,11 @@
-"""Owner-scoped transcript review and single-segment editing."""
+"""Owner-scoped transcript review and single-segment editing.
+
+An edit preserves the original text and provider provenance, computes the exact
+downstream invalidation, and - since T18b - creates the durable command that
+actually rebuilds it. Before that command existed, a confirmed edit recorded an
+invalidation nothing ever acted on, so a corrected transcript never reached the
+script, the narration or the render that depended on it.
+"""
 
 from __future__ import annotations
 
@@ -22,6 +29,12 @@ from apps.api.schemas.transcripts import (
     TranscriptResponse,
     UpdateTranscriptSegmentRequest,
     UpdateTranscriptSegmentResponse,
+)
+from services.control_plane.commands import ControlPlaneService
+from services.control_plane.revisions import plan_revision
+from vidgen.contracts.control_commands import (
+    ControlCommandTargetType,
+    ControlCommandType,
 )
 from vidgen.contracts.review import TranscriptSegmentProjection
 from vidgen.db.transcription_models import TranscriptSegmentRecord
@@ -87,7 +100,30 @@ def update_transcript_segment(
         speaker_label=request.speaker_label,
         confirm_invalidation=request.confirm_invalidation,
     )
+    # The edit is durable; the rebuild has to be too. Creating the command in
+    # this same transaction is what stops a confirmed invalidation from being a
+    # note in a table with no consumer.
+    plan = plan_revision(session, project_id=project.id, kind="transcript", source_id=transcript.id)
+    command = None
+    if invalidation.entries:
+        command = (
+            ControlPlaneService(session, principal.subject)
+            .submit(
+                project,
+                command_type=ControlCommandType.TRANSCRIPT_REVISION,
+                target_type=ControlCommandTargetType.TRANSCRIPT,
+                target_id=transcript.id,
+                idempotency_key=f"transcript-revision:{key}"[:255],
+                payload={"segment_id": str(segment_id), **payload},
+                metadata={"entry_stage": plan.entry_stage, "revision_kind": "transcript"},
+                entry_stage=plan.entry_stage,
+            )
+            .command
+        )
     body = UpdateTranscriptSegmentResponse(
+        rebuild_command_id=command.command_id if command else None,
+        rebuild_command_status=command.status.value if command else None,
+        rebuild_entry_stage=plan.entry_stage if command else None,
         segment=TranscriptSegmentProjection(
             segment_id=updated.id,
             sequence=updated.sequence,

@@ -33,6 +33,13 @@ const TONES: Record<string, Tone> = {
   ingesting: "informative",
   pending: "subtle",
   queued: "subtle",
+  // T18b control-command statuses. "awaiting_review" is a warning rather than
+  // an error: nothing is wrong, but nothing progresses until a person decides.
+  claimed: "informative",
+  dispatching: "informative",
+  awaiting_review: "warning",
+  completed: "success",
+  superseded: "subtle",
   stale: "warning",
   partial: "warning",
   failed: "danger",

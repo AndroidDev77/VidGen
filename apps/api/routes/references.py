@@ -1,13 +1,20 @@
 """Owner-scoped T19 continuity-reference control plane.
 
-Routes only persist decisions or queue work; provider calls remain in workers.
+Routes persist decisions and create durable control commands; provider calls
+stay in workers. Nothing here answers ``202 Accepted`` without first writing a
+command row a dispatcher can claim, so a queued reference build is executable
+work rather than a calculated identifier.
+
+An approval does two things in one transaction: it records the owner's decision
+on the reference set, and it creates the command that delivers that decision to
+the T19 workflow which is durably waiting for it.
 """
 
 from __future__ import annotations
 
 from datetime import UTC, datetime
 from typing import Any, Literal, cast
-from uuid import UUID, uuid4, uuid5
+from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Response, status
 from sqlalchemy import insert, select, update
@@ -29,6 +36,11 @@ from apps.api.schemas.references import (
     ReferenceMutationRequest,
     ReferenceMutationResponse,
 )
+from services.control_plane.commands import ControlPlaneService
+from vidgen.contracts.control_commands import (
+    ControlCommandTargetType,
+    ControlCommandType,
+)
 from vidgen.contracts.review import ApiErrorCode
 from vidgen.db.continuity_models import (
     character_identity_versions,
@@ -44,7 +56,6 @@ from vidgen.db.models import Character, Location
 from vidgen.review.errors import conflict, not_found
 
 router = APIRouter(prefix="/projects", tags=["references"])
-QUEUE_NAMESPACE = UUID("a1165030-d56c-4b6d-b728-4bf49622b8ef")
 
 
 def _rows(session: SessionDep, table: Any, project_id: UUID) -> list[dict[str, Any]]:
@@ -90,6 +101,9 @@ def _queue(
     *,
     project_id: UUID,
     operation: str,
+    command_type: ControlCommandType,
+    target_type: ControlCommandTargetType,
+    target_id: UUID | None,
     request: ReferenceMutationRequest,
     session: SessionDep,
     principal: PrincipalDep,
@@ -97,17 +111,36 @@ def _queue(
     if_match: str | None,
     idempotency_key: str | None,
 ) -> ReferenceMutationResponse:
-    owned_project(session, project_id, principal)
+    """Record one durable T19 command and return its real identity.
+
+    The command is created inside this request's transaction: by the time the
+    response is written, the work is claimable, queryable by command ID, and
+    guaranteed to reach a terminal state on its own.
+    """
+    project = owned_project(session, project_id, principal)
     key, expected = _require_mutation(idempotency_key, if_match)
     payload = request.model_dump(mode="json")
     replay = idempotency_for(session, principal).replay(operation, str(project_id), key, payload)
     if replay is not None:
         return ReferenceMutationResponse.model_validate(replay)
+    outcome = ControlPlaneService(session, principal.subject).submit(
+        project,
+        command_type=command_type,
+        target_type=target_type,
+        target_id=target_id or project.id,
+        idempotency_key=f"{operation}:{key}"[:255],
+        payload={"operation": operation, **payload},
+        expected_row_version=expected,
+        metadata={"operation": operation, "provider": request.provider},
+    )
     body = ReferenceMutationResponse(
         status="queued",
-        resource_id=uuid5(QUEUE_NAMESPACE, f"{project_id}:{operation}:{key}"),
+        resource_id=outcome.command.command_id,
         row_version=expected,
         invalidation=_invalidation(session, project_id),
+        command_id=outcome.command.command_id,
+        command_status=outcome.command.status.value,
+        workflow_id=outcome.command.workflow_id,
     )
     idempotency_for(session, principal).record(
         operation,
@@ -139,6 +172,9 @@ def build_references(
     return _queue(
         project_id=project_id,
         operation="references:build",
+        command_type=ControlCommandType.REFERENCE_BUILD,
+        target_type=ControlCommandTargetType.PROJECT,
+        target_id=None,
         request=request,
         session=session,
         principal=principal,
@@ -275,6 +311,9 @@ def generate_character_reference(
     return _queue(
         project_id=project_id,
         operation=f"character:{entity_id}:generate",
+        command_type=ControlCommandType.REFERENCE_GENERATE,
+        target_type=ControlCommandTargetType.CHARACTER,
+        target_id=entity_id,
         request=request,
         session=session,
         principal=principal,
@@ -322,6 +361,9 @@ def generate_location_reference(
     return _queue(
         project_id=project_id,
         operation=f"location:{entity_id}:generate",
+        command_type=ControlCommandType.REFERENCE_GENERATE,
+        target_type=ControlCommandTargetType.LOCATION,
+        target_id=entity_id,
         request=request,
         session=session,
         principal=principal,
@@ -431,6 +473,9 @@ def _decide(
             "Reference version changed",
             current_version=current_version,
         )
+    command_id: UUID | None = None
+    command_status: str | None = None
+    workflow_id: str | None = None
     if decision == "approved":
         session.execute(
             insert(reference_approvals).values(
@@ -446,11 +491,35 @@ def _decide(
                 created_at=now,
             )
         )
+        # The decision is only half the work. Without this command the approval
+        # would be a row update with nothing waiting on it - which is exactly
+        # the gap T18b closes: the command delivers the approval to the T19
+        # workflow that is durably paused, and resumes binding.
+        project = owned_project(session, project_id, principal)
+        outcome = ControlPlaneService(session, principal.subject).submit(
+            project,
+            command_type=ControlCommandType.REFERENCE_APPLY,
+            target_type=ControlCommandTargetType.REFERENCE_SET,
+            target_id=reference_set_id,
+            idempotency_key=f"reference:approve:{reference_set_id}:{key}"[:255],
+            payload={
+                "reference_set_id": str(reference_set_id),
+                "upstream_lineage_hash": request.upstream_lineage_hash,
+            },
+            expected_row_version=expected + 1,
+            metadata={"reference_kind": kind, "decision": decision},
+        )
+        command_id = outcome.command.command_id
+        command_status = outcome.command.status.value
+        workflow_id = outcome.command.workflow_id
     body = ReferenceMutationResponse(
         status=decision,
         resource_id=reference_set_id,
         row_version=expected + 1,
         invalidation=invalidation,
+        command_id=command_id,
+        command_status=command_status,
+        workflow_id=workflow_id,
     )
     idempotency_for(session, principal).record(
         f"reference:{decision}",
@@ -602,6 +671,9 @@ def apply_references(
     return _queue(
         project_id=project_id,
         operation="references:apply",
+        command_type=ControlCommandType.REFERENCE_APPLY,
+        target_type=ControlCommandTargetType.PROJECT,
+        target_id=None,
         request=request,
         session=session,
         principal=principal,

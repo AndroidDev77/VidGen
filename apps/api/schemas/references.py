@@ -30,10 +30,21 @@ class ReferenceInvalidationProjection(StrictContract):
 
 
 class ReferenceMutationResponse(StrictContract):
+    """The outcome of a T19 mutation, with the command that will execute it.
+
+    ``command_id`` and ``command_status`` are what make ``queued`` true: they
+    name a durable row a dispatcher can claim, not an intention. ``workflow_id``
+    is absent until the dispatcher has actually started the workflow, and is
+    never a calculated value.
+    """
+
     status: Literal["queued", "approved", "rejected", "applied"]
     resource_id: UUID
     row_version: int = Field(gt=0)
     invalidation: ReferenceInvalidationProjection
+    command_id: UUID | None = None
+    command_status: str | None = Field(default=None, max_length=32)
+    workflow_id: str | None = Field(default=None, max_length=255)
 
 
 class ReferenceCollectionResponse(StrictContract):

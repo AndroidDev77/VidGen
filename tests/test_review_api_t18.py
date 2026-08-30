@@ -21,6 +21,7 @@ from services.continuity.bindings import make_bundle
 from services.continuity.regeneration import ContinuityRegenerator
 from tests.review_fixtures import SHOT_COUNT, ProjectGraph, build_project_graph
 from vidgen.db.animation_models import AnimationGeneratedVideo, AnimationItem
+from vidgen.db.control_command_models import ControlCommandRecord
 from vidgen.db.models import Project, RenderJob
 from vidgen.db.review_models import ApiIdempotencyRecord, ProjectUIEvent, RenderApproval
 from vidgen.db.script_models import Script, ScriptSegment
@@ -297,6 +298,26 @@ def test_workflow_start_accepts_the_status_a_real_upload_records(
     with factory() as session:
         stored = session.scalar(select(UploadSession).where(UploadSession.id == UUID(upload["id"])))
         assert stored is not None and stored.status == "complete"
+
+    # T18b: a project with a complete upload but no narration voice is refused
+    # here, before Temporal, rather than failing inside a paid T12 run.
+    refused = client.post(
+        f"/api/v1/projects/{project_id}/workflow:start",
+        json={},
+        headers=headers(key="start-without-voice"),
+    )
+    assert refused.status_code == 409
+    assert refused.json()["code"] == "voice_profile_required"
+
+    catalog = client.get(f"/api/v1/projects/{project_id}/voice-profiles", headers=OWNER).json()
+    fake = next(item for item in catalog["items"] if item["provider"] == "fake")
+    selected = client.put(
+        f"/api/v1/projects/{project_id}/voice-profile",
+        json={"voice_profile_id": fake["voice_profile_id"]},
+        headers=OWNER,
+    )
+    assert selected.status_code == 200
+    assert selected.json()["profile"]["selected"] is True
 
     started = client.post(
         api(UUID(project_id), "/workflow:start"), json={}, headers=headers(key="start-1")
@@ -634,15 +655,28 @@ def test_regenerating_one_shot_does_not_rerun_siblings(
     assert response.status_code == 200
     payload = response.json()
     assert payload["shot_id"] == str(target)
-    assert payload["child_workflow_id"]
+    # No workflow has been started yet, so the response must not name one. The
+    # command is what the caller polls until the replacement child exists.
+    assert payload["child_workflow_id"] is None
+    assert payload["command_id"]
+    assert payload["command_status"] == "pending"
+    assert payload["regeneration_sequence"] == 1
     assert payload["new_identity_hash"] != payload["previous_identity_hash"]
     assert payload["preserved_attempt_ids"]
 
-    # Exactly one command was issued, and it named only the requested shot.
-    assert len(controller.shot_commands) == 1
+    # Exactly one durable command was created, and it targets only this shot.
     with review_client[1]() as session:
-        stable_shot_id = session.get(StoryboardShotRecord, target).stable_shot_id  # type: ignore[union-attr]
-    assert controller.shot_commands[0][1].storyboard_shot_id == stable_shot_id
+        commands = (
+            session.query(ControlCommandRecord)
+            .filter_by(project_id=graph.project_id, command_type="shot_regenerate")
+            .all()
+        )
+        assert len(commands) == 1
+        assert commands[0].target_id == target
+        assert commands[0].status == "pending"
+    # The locked child is never signalled: it has already completed, and a
+    # completed workflow cannot accept a regeneration.
+    assert controller.shot_commands == []
 
     after = _shot_identities(review_client[1])
     for shot_id, identity in before.items():
@@ -680,15 +714,35 @@ def test_regeneration_requires_confirmation(client: TestClient, graph: ProjectGr
     assert response.status_code == 409
 
 
-def test_shot_retry_rejects_a_locked_shot(client: TestClient, graph: ProjectGraph) -> None:
+def test_shot_retry_records_a_durable_command_rather_than_signalling(
+    client: TestClient,
+    graph: ProjectGraph,
+    controller: FakeWorkflowController,
+    review_client: tuple[TestClient, sessionmaker[Session], FakeWorkflowController],
+) -> None:
+    """Retry is durable work, and it never signals a child that already closed.
+
+    The API cannot know whether the shot's child is still live, so it records
+    the decision and lets the dispatcher choose: resume a live child, or start
+    an immutable recovery run. Answering 409 here - as this route used to for a
+    locked shot - meant a legitimate recovery had no path at all.
+    """
     target = graph.shot_ids[2]
     shot = client.get(api(graph.project_id, f"/shots/{target}"), headers=OWNER).json()
     response = client.post(
         api(graph.project_id, f"/shots/{target}:retry"),
         headers=headers(if_match=shot["shot"]["row_version"], key="retry-1"),
     )
-    assert response.status_code == 409
-    assert response.json()["code"] == "shot_not_retryable"
+    assert response.status_code == 202
+    command = response.json()["command"]
+    assert command["command_type"] == "shot_retry"
+    assert command["status"] == "pending"
+    assert command["workflow_id"] is None
+    assert command["target_id"] == str(target)
+    assert controller.shot_commands == []
+    with review_client[1]() as session:
+        stored = session.get(ControlCommandRecord, UUID(command["command_id"]))
+        assert stored is not None and stored.project_id == graph.project_id
 
 
 def test_shot_attempt_selection(
@@ -1054,19 +1108,23 @@ def test_shot_commands_address_the_real_t16_child_workflow(
     controller: FakeWorkflowController,
     review_client: tuple[TestClient, sessionmaker[Session], FakeWorkflowController],
 ) -> None:
-    """The command must go to the workflow ID T16 itself derives, not an invented one."""
+    """The command binds the identity T16 itself derives, not an invented one.
+
+    The replacement child's identity is the same material identity plus the
+    regeneration sequence, so it is reproducible from persisted rows alone -
+    which is what lets the worker's own lineage check accept it.
+    """
     from apps.api.settings import APISettings
-    from packages.workflows.shot_policy import temporal_shot_workflow_id
     from services.review.shot_identity import configuration_identities, shot_workflow_identity
     from vidgen.db.storyboard_models import StoryboardRun
 
     target = graph.shot_ids[5]
     shot = client.get(api(graph.project_id, f"/shots/{target}"), headers=OWNER).json()
-    client.post(
+    payload = client.post(
         api(graph.project_id, f"/shots/{target}:regenerate"),
         json={"confirm_invalidation": True},
         headers=headers(if_match=shot["shot"]["row_version"], key="regen-1"),
-    )
+    ).json()
     settings = APISettings()
     t14, t15 = configuration_identities(
         image_provider_name=settings.image_provider_name,
@@ -1079,16 +1137,27 @@ def test_shot_commands_address_the_real_t16_child_workflow(
         assert record is not None
         run = session.get(StoryboardRun, record.storyboard_run_id)
         assert run is not None
-        expected = temporal_shot_workflow_id(
-            shot_workflow_identity(
-                session,
-                run,
-                record,
-                t14_configuration_identity=t14,
-                t15_capability_profile_identity=t15,
-            )
+        current = shot_workflow_identity(
+            session,
+            run,
+            record,
+            t14_configuration_identity=t14,
+            t15_capability_profile_identity=t15,
         )
-    assert controller.shot_commands[0][0] == expected
+        replacement = shot_workflow_identity(
+            session,
+            run,
+            record,
+            t14_configuration_identity=t14,
+            t15_capability_profile_identity=t15,
+            regeneration_sequence=1,
+        )
+        command = session.query(ControlCommandRecord).filter_by(target_id=target).one()
+    assert command.command_metadata["shot_identity_hash"] == current.identity_hash
+    assert payload["previous_identity_hash"] == current.identity_hash
+    assert payload["new_identity_hash"] == replacement.identity_hash
+    assert replacement.identity_hash != current.identity_hash
+    del controller
 
 
 def test_regeneration_history_lists_distinct_regenerations(

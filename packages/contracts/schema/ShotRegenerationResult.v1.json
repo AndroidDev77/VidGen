@@ -68,11 +68,46 @@
     }
   },
   "additionalProperties": false,
+  "description": "What regenerating one shot actually created.\n\n``child_workflow_id`` is deliberately optional and deliberately empty until\nthe dispatcher has started the replacement child: before T18b this field\ncarried a workflow ID that had been *calculated* and never started, which is\nexactly the class of untruth T18b removes. ``command_id`` is what the caller\npolls in the meantime, and it always exists.",
   "properties": {
     "child_workflow_id": {
-      "maxLength": 255,
-      "title": "Child Workflow Id",
-      "type": "string"
+      "anyOf": [
+        {
+          "maxLength": 255,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Child Workflow Id"
+    },
+    "command_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Command Id"
+    },
+    "command_status": {
+      "anyOf": [
+        {
+          "maxLength": 32,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Command Status"
     },
     "invalidation": {
       "$ref": "#/$defs/InvalidationSet"
@@ -104,6 +139,12 @@
       "default": null,
       "title": "Previous Identity Hash"
     },
+    "regeneration_sequence": {
+      "default": 0,
+      "minimum": 0,
+      "title": "Regeneration Sequence",
+      "type": "integer"
+    },
     "row_version": {
       "minimum": 1,
       "title": "Row Version",
@@ -123,7 +164,6 @@
   },
   "required": [
     "shot_id",
-    "child_workflow_id",
     "new_identity_hash",
     "invalidation",
     "row_version"

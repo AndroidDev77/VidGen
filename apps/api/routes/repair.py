@@ -24,6 +24,7 @@ from apps.api.routes._common import (
     IfMatchDep,
     PrincipalDep,
     SessionDep,
+    SettingsDep,
     idempotency_for,
     owned_project,
     set_etag,
@@ -40,6 +41,13 @@ from apps.api.schemas.repair import (
     RepairPromptDeltaProjection,
     RepairRunDetailProjection,
     RepairRunProjection,
+)
+from services.control_plane.commands import ControlPlaneService
+from services.control_plane.shot_commands import SEQUENCE_KEY, next_regeneration_sequence
+from services.review.shot_identity import current_shot_identity_hash
+from vidgen.contracts.control_commands import (
+    ControlCommandTargetType,
+    ControlCommandType,
 )
 from vidgen.contracts.repair import RepairRunState
 from vidgen.contracts.review import ApiErrorCode
@@ -76,6 +84,11 @@ ALLOWED_ACTIONS: dict[str, frozenset[str]] = {
     RepairRunState.REPAIR_FAILED.value: frozenset({"restart_after_reference_correction"}),
     RepairRunState.LOCKED.value: frozenset(),
 }
+
+
+#: The actions that ask for the shot to be worked on again. Everything else is
+#: a record of a human decision and creates no work by design.
+_CONTINUING_ACTIONS = frozenset({"retry", "restart_after_reference_correction"})
 
 
 def _require_run(session: SessionDep, project_id: UUID, shot_id: UUID, run_id: UUID) -> RepairRun:
@@ -312,6 +325,7 @@ def act_on_repair_run(
     request: RepairActionRequest,
     session: SessionDep,
     principal: PrincipalDep,
+    settings: SettingsDep,
     response: Response,
     if_match: IfMatchDep = None,
     idempotency_key: IdempotencyKeyDep = None,
@@ -335,6 +349,34 @@ def act_on_repair_run(
         )
     code = _apply(run, request)
     new_version = versions.bump(project.id, REPAIR_RESOURCE, shot.id, expected=expected)
+    command = None
+    if request.action in _CONTINUING_ACTIONS:
+        # Before T18b these actions updated the repair row and stopped there:
+        # the shot workflow had already returned, so nothing consumed them. The
+        # command is the consumer - it resumes a live repair or starts an
+        # immutable recovery run, bounded by the same T21 attempt policy, and
+        # never creates a second paid attempt for a duplicated request.
+        identity_hash = current_shot_identity_hash(session, shot, settings)
+        command = (
+            ControlPlaneService(session, principal.subject)
+            .submit(
+                project,
+                command_type=ControlCommandType.SHOT_RETRY,
+                target_type=ControlCommandTargetType.SHOT,
+                target_id=shot.id,
+                idempotency_key=f"repair:{request.action}:{repair_run_id}:{key}"[:255],
+                payload={"repair_run_id": str(repair_run_id), **payload},
+                expected_row_version=expected,
+                metadata={
+                    "repair_run_id": str(repair_run_id),
+                    "action": request.action,
+                    "shot_identity_hash": identity_hash,
+                    SEQUENCE_KEY: str(next_regeneration_sequence(session, project.id, shot.id)),
+                },
+                shot_identity_hash=identity_hash,
+            )
+            .command
+        )
     body = RepairActionResponse(
         repair_run_id=run.id,
         action=request.action,
@@ -342,6 +384,8 @@ def act_on_repair_run(
         state=run.state,
         code=code,
         row_version=new_version,
+        continuation_command_id=command.command_id if command else None,
+        continuation_command_status=command.status.value if command else None,
     )
     idempotency.record(
         ACTION_OPERATION,

@@ -113,9 +113,7 @@ class FinalEditorialHumanReviewService:
             raise conflict(
                 ApiErrorCode.VALIDATION_FAILED, "the run has no persisted report to adjudicate"
             )
-        finding = next(
-            (item for item in report.findings if item.finding_id == finding_id), None
-        )
+        finding = next((item for item in report.findings if item.finding_id == finding_id), None)
         if finding is None:
             raise not_found("final editorial finding")
         if finding.severity is not FinalFindingSeverity.REVIEW_REQUIRED:

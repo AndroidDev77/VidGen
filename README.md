@@ -62,12 +62,25 @@ implemented against a deterministic fake provider and a mocked production adapte
 - Restartable YouTube publication: OAuth 2.0 with PKCE, envelope-encrypted refresh credentials, a
   resumable upload that resumes from YouTube's own confirmed byte offset, captions, thumbnails, and
   an explicit visibility transition (see [Publishing to YouTube](#publishing-to-youtube)).
+- A durable control plane (T18b): every asynchronous product command - reference builds and
+  approvals, shot regeneration and retry, human-review continuation, transcript and script rebuilds,
+  manual final QA, remediation, project continuation - is persisted before it is accepted and
+  started by a worker that records the workflow it actually ran
+  (see [The control plane](#the-control-plane-what-accepted-means)).
+- Product-level narration voice selection, so a project created in the browser is startable without
+  a manual database repair (see [Selecting a narration voice](#selecting-a-narration-voice)).
 
-One gap still affects what you can observe locally, and it is called out again where it bites:
+Two gaps still affect what you can observe locally, and both are called out again where they bite:
 
 - **No metrics reach a local Grafana.** The API and the worker do initialize the T23 telemetry
   stack, but the bootstrap exports logs (stdout JSON) and traces only. Nothing exports metrics over
   OTLP, so the provisioned dashboard stays empty locally.
+- **The control dispatcher is a separate process.** Without it running, commands are accepted and
+  stay `pending` - truthfully, and visibly, but nothing progresses.
+
+Confirmed gaps that are deliberately outside the implemented tasks - runtime telemetry wiring,
+production authentication, publication metadata generation, audio post-production - are recorded
+with evidence in [`docs/ROADMAP_GAPS.md`](docs/ROADMAP_GAPS.md).
 
 ## Architecture summary
 
@@ -239,20 +252,30 @@ credentials do. They are the provider names bound into each shot's child-workflo
 setting them to `fake` keeps the workflow IDs that the review UI addresses consistent with what the
 worker actually ran.
 
-Three processes:
+Four processes:
 
 ```bash
 # Terminal 1
 uv run python -m workers.temporal_worker.main
 
-# Terminal 2
-make run-api
+# Terminal 2 - the T18b control-command dispatcher
+uv run python -m workers.control_dispatcher.main
 
 # Terminal 3
+make run-api
+
+# Terminal 4
 make run-web
 ```
 
-`make run-worker` is the same command as Terminal 1.
+`make run-worker` is the same command as Terminal 1, and `make run-control-dispatcher` is
+Terminal 2.
+
+The dispatcher is not optional. Every asynchronous product command - building continuity
+references, approving them, regenerating a shot, retrying a repair, rebuilding after a transcript
+or script revision, running final QA by hand, routing a T22 remediation, continuing a paused
+project - is written to the `control_commands` table by the API and started by this process. The
+API stays truthful without it (a command sits `pending` and says so), but nothing progresses.
 
 Fake-provider mode:
 
@@ -261,11 +284,37 @@ Fake-provider mode:
 - Requires no OpenAI, Runway, Google, ElevenLabs or OpenSubtitles credential.
 - Produces deterministic synthetic outputs, so a repeated run reuses work instead of redoing it.
 
-### Local voice-profile bootstrap
+### Selecting a narration voice
 
-The narration stage resolves its voice from `project.settings["voice_profile_id"]`, and project
-creation stores empty settings. A freshly created project therefore fails narration with
-`project settings require a valid voice_profile_id` until a profile is selected.
+The narration stage resolves its voice from the project. Since T18b this is part of the product:
+the setup screen shows a **Narration voice** picker, project creation accepts a voice, and
+`POST /projects/{id}/workflow:start` refuses with `voice_profile_required` until one is selected -
+before Temporal is involved and before any provider is called.
+
+Through the API:
+
+```bash
+# The voices this deployment can actually narrate with. In fake-provider mode
+# that is one deterministic, credential-free local voice.
+curl -s -H "X-VidGen-User: local-user" \
+  http://localhost:8000/api/v1/projects/$PROJECT_ID/voice-profiles
+
+# Select one.
+curl -s -X PUT -H "X-VidGen-User: local-user" -H 'Content-Type: application/json' \
+  -d '{"voice_profile_id":"VOICE_UUID"}' \
+  http://localhost:8000/api/v1/projects/$PROJECT_ID/voice-profile
+```
+
+A profile names a provider and an externally provisioned voice ID. It never carries a credential:
+the deployment's provider credentials stay in configuration and are resolved by the worker.
+Changing a project's voice produces a new T12 generation identity, so narration and everything
+below it is rebuilt rather than reused; the transcript, the analysis and the script above it are
+untouched.
+
+#### The local bootstrap CLI
+
+The CLI remains as an idempotent diagnostic and repair tool, for a project whose stored selection
+no longer resolves:
 
 ```bash
 uv run python scripts/create_local_voice_profile.py PROJECT_UUID --provider fake
@@ -289,8 +338,7 @@ idempotent, needs no paid credential, and the profile ID is derived from the pro
 stable across runs and across a recreated database.
 
 The command refuses any `--provider` other than `fake`; a production voice profile must be selected
-deliberately. Keep the command for inspection and repair even if project creation later assigns a
-default fake profile automatically in local fake-provider mode.
+deliberately through the API above.
 
 ### What a local fake-provider run does and does not reach
 
@@ -951,12 +999,102 @@ uv run pytest infra/tests -q
 
 `make infra-validate` runs the second of those.
 
+## The control plane: what "accepted" means
+
+Every asynchronous product command is a durable row in `control_commands` before the API reports
+that it was accepted. Nothing returns `queued`, `accepted` or a workflow ID unless one of the
+following is already true:
+
+- the work was persisted transactionally and a dispatcher can claim it;
+- the target Temporal workflow or child workflow was successfully started;
+- an identical completed command is being idempotently reused.
+
+An in-memory flag, an idempotency response on its own, or a workflow ID computed from a request is
+none of those, and the database refuses to store a `running`, `awaiting_review` or `completed`
+command that does not name the workflow that was actually started.
+
+### Lifecycle
+
+```text
+pending → claimed → dispatching → running → completed
+                                     ↕            ↘ failed / cancelled
+                              awaiting_review
+```
+
+A command is `pending` until a dispatcher claims it under a lease. It becomes `running` only after
+the dispatcher has started or signalled the real workflow and written that workflow's identity
+back. `awaiting_review` means it is durably waiting on a person - a reference approval, a shot
+review - and will resume when that decision arrives. A failed command carries a structured code and
+says whether it can be retried.
+
+### Inspecting and steering commands
+
+```bash
+BASE=http://localhost:8000/api/v1/projects/$PROJECT_ID
+H='X-VidGen-User: local-user'
+
+curl -s -H "$H" $BASE/commands                       # every command, and the generation lineage
+curl -s -H "$H" $BASE/commands/$COMMAND_ID           # one command, with progress and failure
+curl -s -X POST -H "$H" $BASE/commands/$COMMAND_ID:cancel
+curl -s -X POST -H "$H" $BASE/commands/$COMMAND_ID:retry
+```
+
+The project dashboard shows the same list, stops polling once nothing can change, and exposes the
+retry that a failed command permits.
+
+Cancelling follows the same rule as dispatching: nothing may claim more than actually happened. A
+command that has not been dispatched has no workflow behind it and is cancelled immediately. A
+command that *has* been dispatched owns a live Temporal workflow, so `:cancel` records the request
+durably (`cancel_requested`) and the command keeps its current status; the dispatcher cancels the
+workflow and only then moves the row to `cancelled`. A cluster that cannot be reached leaves the
+request standing to be retried on the next pass rather than reporting a stop that never happened.
+
+A dispatcher can be killed at any point, including between taking the lease and recording the
+workflow it started. That leaves the command in `dispatching` holding an expired lease, which the
+next dispatcher reclaims within the command's attempt bound; re-running the handler adopts the
+deterministic workflow instead of starting a second one.
+
+### Continuing a paused project
+
+A project workflow now *completes* at every human pause: references awaiting approval, shots
+awaiting review, final QA requiring review. Continuing it is a new immutable generation run rather
+than a signal to a closed execution, so previous runs stay readable as history and nothing above
+the entry stage is rerun.
+
+```bash
+curl -s -X POST -H "$H" -H 'Content-Type: application/json' \
+  -H "Idempotency-Key: $(uuidgen)" \
+  -d '{"entry_stage":"shot_generation","reason":"review_resolved"}' \
+  $BASE/workflow:continue
+```
+
+### Which command each action creates
+
+| Action | Command | What actually happens |
+| --- | --- | --- |
+| `POST /references:build`, `…/references:generate` | `reference_build`, `reference_generate` | Starts (or adopts) `ContinuityReferenceWorkflow` for the project's reference run |
+| Approving a reference set | `reference_apply` | Signals the waiting T19 workflow, which binds the approved bundle and stales only the affected shots |
+| `POST /shots/{id}:regenerate` | `shot_regenerate` | Starts a genuinely new `ShotWorkflow` child under the next regeneration identity; the locked child and its assets stay as history |
+| `POST /shots/{id}:retry` | `shot_retry` | Resumes the live child, or starts an immutable recovery run when it has closed |
+| A T20 approve or reject | `shot_review_continue` | Resumes or replaces the reviewed shot; a deterministic hard failure is never approved into a pass |
+| A T21 `retry` or `restart_after_reference_correction` | `shot_retry` | Repairs the shot again, bounded by the existing T21 policy. `acknowledge` and `resolve` create no work and never claim the shot passed |
+| A confirmed transcript edit | `transcript_revision` | A new generation run from `episode_analysis`; the source media and the transcript itself are reused |
+| Selecting a revised script | `script_revision` | A new generation run from `narration` - the first stage that would spend money on the new script |
+| `POST /final-qa:run` | `final_qa_run` | Runs T22 against the current selected render in its own workflow |
+| `POST /final-qa/{id}:remediate` | `final_qa_remediation` | Executes the owning stage - a rerender, or a shot repair. A routing-only target is refused with `remediation_unsupported`, never accepted |
+| `POST /workflow:continue` | `project_continue` | Opens a new generation run and starts the project workflow at its entry stage |
+
+Every one of these produces a new render identity where the final bytes can change, requires a new
+T22 run for that render, and invalidates T25 publication eligibility for the superseded render.
+Nothing is ever republished automatically, and a prior YouTube upload is never deleted or mutated.
+
 ## Additional documentation
 
 | Document | What it covers |
 | --- | --- |
 | [`docs/TECHNICAL_DESIGN.md`](docs/TECHNICAL_DESIGN.md) | Authoritative architecture, data model, stage specifications, and the T01-T26 roadmap |
 | [`docs/IMPLEMENTATION_STATUS.md`](docs/IMPLEMENTATION_STATUS.md) | What each implemented roadmap task delivered, with its per-stage local commands |
+| [`docs/ROADMAP_GAPS.md`](docs/ROADMAP_GAPS.md) | Confirmed gaps deliberately left outside T18b, with evidence and proposed follow-up tasks |
 | [`infra/README.md`](infra/README.md) | The Azure deployment's operational reference |
 | [`AGENTS.md`](AGENTS.md) | Contributor and coding-agent rules |
 | `.env.example`, `apps/web/.env.example` | Every environment variable with its local default |

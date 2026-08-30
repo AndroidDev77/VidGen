@@ -1,14 +1,20 @@
 """Owner-scoped T22 final editorial-QA control plane.
 
-Handlers stay thin and never call a provider: a ``:run`` request records a
-replayable queued decision that a worker or the CLI picks up, and every read is
-a compact projection assembled from persisted rows and the immutable report.
-Cross-owner and cross-project IDs return the same ``404`` as a missing one.
+Handlers stay thin and never call a provider: a ``:run`` request creates one
+durable control command that a dispatcher claims and executes as a real T22
+workflow, and every read is a compact projection assembled from persisted rows
+and the immutable report. Cross-owner and cross-project IDs return the same
+``404`` as a missing one.
 
 Two actions are deliberately absent. There is no endpoint that marks a
 deterministic hard failure as passed, and no endpoint that starts a paid
-generation call: routing a confirmed finding hands it to the stage that already
-owns that repair.
+generation call from inside the request: routing a confirmed finding creates the
+command for the stage that already owns that repair, and that stage's own
+workflow does the work.
+
+A remediation target that is a routing classification rather than executable
+work - human editorial review, an upstream script correction - is refused with
+an explicit unsupported action instead of a ``202`` nothing will act on.
 """
 
 from __future__ import annotations
@@ -41,6 +47,9 @@ from apps.api.schemas.final_editorial import (
     FinalEditorialRunRequest,
     FinalEditorialRunResponse,
 )
+from services.control_plane.commands import ControlPlaneService
+from services.control_plane.handlers import UNSUPPORTED_REMEDIATION_TARGETS
+from services.control_plane.shot_commands import SEQUENCE_KEY, next_regeneration_sequence
 from services.qa.final_human_review import (
     FinalEditorialHumanReviewService,
     report_payload,
@@ -53,6 +62,10 @@ from services.qa.final_projections import (
     run_projection,
 )
 from services.qa.final_rubric import GATE_VERSION
+from vidgen.contracts.control_commands import (
+    ControlCommandTargetType,
+    ControlCommandType,
+)
 from vidgen.contracts.final_editorial import FinalQAStatus, FinalRemediationTarget
 from vidgen.contracts.review import ApiErrorCode
 from vidgen.db.final_editorial_repository import FinalEditorialRepository
@@ -66,6 +79,11 @@ RUN_OPERATION = "final-editorial:run"
 CANCEL_OPERATION = "final-editorial:cancel"
 REVIEW_OPERATION = "final-editorial:review"
 REMEDIATE_OPERATION = "final-editorial:remediate"
+#: Remediation targets that repair exactly one shot and therefore need to be
+#: told which one; the report names the finding, not the owning shot.
+_SHOT_SCOPED_TARGETS = frozenset(
+    {FinalRemediationTarget.REGENERATE_SHOT_T16, FinalRemediationTarget.REPAIR_SHOT_T21}
+)
 #: Phases before any paid provider request. Cancelling here spends nothing.
 CANCELLABLE_STATUSES = frozenset(
     {
@@ -181,13 +199,34 @@ def run_final_editorial_qa(
         .where(RenderJob.project_id == project.id, RenderJob.selected.is_(True))
         .order_by(RenderJob.created_at.desc())
     )
+    if job is None or job.status != "render_complete" or job.final_video_asset_id is None:
+        # T22 inspects an assembled recap. Refusing here is the difference
+        # between a clear precondition and a queued command that could only
+        # ever fail, and it is the same rule the workflow enforces.
+        raise conflict(
+            ApiErrorCode.RENDER_NOT_VERIFIED,
+            "Final QA needs a selected, completed render to inspect.",
+        )
+    outcome = ControlPlaneService(session, principal.subject).submit(
+        project,
+        command_type=ControlCommandType.FINAL_QA_RUN,
+        target_type=ControlCommandTargetType.RENDER_JOB,
+        target_id=job.id,
+        idempotency_key=key,
+        payload=payload,
+        expected_row_version=expected,
+        metadata={"provider": request.provider, "adjudicate": str(request.adjudicate).lower()},
+    )
     body = FinalEditorialRunResponse(
         status="queued",
         project_id=project.id,
-        final_render_asset_id=job.final_video_asset_id if job is not None else None,
+        final_render_asset_id=job.final_video_asset_id,
         provider=request.provider,
-        resource_id=uuid5(QUEUE_NAMESPACE, f"{project.id}:{RUN_OPERATION}:{key}"),
+        resource_id=outcome.command.command_id,
         row_version=expected,
+        command_id=outcome.command.command_id,
+        command_status=outcome.command.status.value,
+        workflow_id=outcome.command.workflow_id,
     )
     idempotency.record(
         RUN_OPERATION,
@@ -340,6 +379,17 @@ def route_final_editorial_remediation(
         target = FinalRemediationTarget(request.target)
     except ValueError as error:
         raise conflict(ApiErrorCode.VALIDATION_FAILED, "unknown remediation target") from error
+    if target in UNSUPPORTED_REMEDIATION_TARGETS:
+        # A routing classification, not executable work. Answering 202 here
+        # would be the exact untruth T18b exists to remove: nothing would ever
+        # pick this up, and the UI would show it as running forever.
+        raise conflict(
+            ApiErrorCode.REMEDIATION_UNSUPPORTED,
+            f"{target.value} is recorded as a routing decision and is not executed automatically.",
+        )
+    # Only now, for a target that can actually execute, is it worth checking
+    # that the findings belong to this report: an unsupported target is refused
+    # for what it is, not for which findings were attached to it.
     report = report_payload(blob, session, run)
     known = {
         UUID(str(item["finding_id"]))
@@ -352,15 +402,40 @@ def route_final_editorial_remediation(
             ApiErrorCode.VALIDATION_FAILED,
             "a remediation route may only reference findings from this report",
         )
+    if target in _SHOT_SCOPED_TARGETS and request.shot_id is None:
+        raise conflict(
+            ApiErrorCode.VALIDATION_FAILED,
+            "a shot remediation must name the shot it repairs",
+        )
+    metadata = {"target": target.value, "final_editorial_run_id": str(run.id)}
+    if request.shot_id is not None:
+        metadata["shot_id"] = str(request.shot_id)
+        # A shot remediation is dispatched as a replacement run, so it carries
+        # the same reproducible identity a direct regeneration would.
+        metadata[SEQUENCE_KEY] = str(
+            next_regeneration_sequence(session, project.id, request.shot_id)
+        )
+    outcome = ControlPlaneService(session, principal.subject).submit(
+        project,
+        command_type=ControlCommandType.FINAL_QA_REMEDIATION,
+        target_type=ControlCommandTargetType.FINAL_QA_RUN,
+        target_id=run.id,
+        idempotency_key=key,
+        payload=payload,
+        expected_row_version=expected,
+        metadata=metadata,
+    )
     body = FinalEditorialRemediationResponse(
         final_editorial_run_id=run.id,
         target=target.value,
         routed_finding_ids=list(request.finding_ids),
         # Any change to a selected input invalidates this render, so a new T17
         # render and a new T22 run are required before the project can complete.
-        requires_new_render=target is not FinalRemediationTarget.HUMAN_EDITORIAL_REVIEW,
-        resource_id=uuid5(QUEUE_NAMESPACE, f"{run.id}:{REMEDIATE_OPERATION}:{key}"),
+        requires_new_render=True,
+        resource_id=outcome.command.command_id,
         row_version=expected,
+        command_id=outcome.command.command_id,
+        command_status=outcome.command.status.value,
     )
     idempotency.record(
         REMEDIATE_OPERATION,

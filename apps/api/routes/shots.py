@@ -22,6 +22,7 @@ from apps.api.routes._common import (
     set_etag,
     versions_for,
 )
+from apps.api.schemas.control_commands import ControlCommandResponse
 from apps.api.schemas.shots import (
     RegenerateShotRequest,
     SelectShotAttemptRequest,
@@ -130,7 +131,11 @@ def regenerate_shot(
     return outcome.result
 
 
-@router.post("/{project_id}/shots/{shot_id}:retry", response_model=ShotStatusResponse)
+@router.post(
+    "/{project_id}/shots/{shot_id}:retry",
+    response_model=ControlCommandResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+)
 def retry_shot(
     project_id: UUID,
     shot_id: UUID,
@@ -139,18 +144,26 @@ def retry_shot(
     controller: ControllerDep,
     if_match: IfMatchDep = None,
     idempotency_key: IdempotencyKeyDep = None,
-) -> ShotStatusResponse:
+) -> ControlCommandResponse:
+    """Record the durable command that resumes or replaces this shot.
+
+    The response is the command, not a shot status, because that is the honest
+    answer: the shot has not changed yet, and the command is the thing the
+    caller can poll, cancel and retry until it has.
+    """
     project = owned_project(session, project_id, principal)
     shot = resolve_shot(session, project.id, shot_id)
     idempotency = idempotency_for(session, principal)
     key = idempotency.require_key(RETRY_OPERATION, idempotency_key)
     replayed = idempotency.replay(RETRY_OPERATION, str(shot_id), key, {})
     if replayed is not None:
-        return ShotStatusResponse.model_validate(replayed)
+        return ControlCommandResponse.model_validate(replayed)
     versions = versions_for(session)
     versions.require(project.id, "shot", shot.id, if_match, label="shot")
-    mutations_for(session, principal, controller).retry_shot(project, shot, idempotency_key=key)
-    body = shot_status(session, project.id, shot, versions)
+    command = mutations_for(session, principal, controller).retry_shot(
+        project, shot, idempotency_key=key
+    )
+    body = ControlCommandResponse(command=command)
     idempotency.record(
         RETRY_OPERATION,
         str(shot_id),

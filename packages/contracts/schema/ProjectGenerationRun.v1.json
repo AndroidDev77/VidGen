@@ -1,0 +1,130 @@
+{
+  "$defs": {
+    "ProjectGenerationRunStatus": {
+      "description": "The lifecycle of one immutable generation attempt over a project.",
+      "enum": [
+        "active",
+        "awaiting_review",
+        "completed",
+        "failed",
+        "cancelled",
+        "superseded"
+      ],
+      "title": "ProjectGenerationRunStatus",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "description": "One immutable generation attempt: a project's unit of restartability.\n\nA material revision starts a new run rather than overwriting the previous\none, so history stays readable and a resumed project never re-enters a\ncompleted workflow execution.",
+  "properties": {
+    "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+    },
+    "entry_stage": {
+      "maxLength": 64,
+      "minLength": 1,
+      "title": "Entry Stage",
+      "type": "string"
+    },
+    "generation_run_id": {
+      "format": "uuid",
+      "title": "Generation Run Id",
+      "type": "string"
+    },
+    "input_identity": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Input Identity",
+      "type": "string"
+    },
+    "origin_command_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Origin Command Id"
+    },
+    "parent_generation_run_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Parent Generation Run Id"
+    },
+    "project_id": {
+      "format": "uuid",
+      "title": "Project Id",
+      "type": "string"
+    },
+    "run_id": {
+      "anyOf": [
+        {
+          "maxLength": 255,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Run Id"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "sequence": {
+      "minimum": 1,
+      "title": "Sequence",
+      "type": "integer"
+    },
+    "status": {
+      "$ref": "#/$defs/ProjectGenerationRunStatus"
+    },
+    "updated_at": {
+      "format": "date-time",
+      "title": "Updated At",
+      "type": "string"
+    },
+    "workflow_id": {
+      "anyOf": [
+        {
+          "maxLength": 255,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Workflow Id"
+    }
+  },
+  "required": [
+    "generation_run_id",
+    "project_id",
+    "sequence",
+    "status",
+    "entry_stage",
+    "input_identity",
+    "created_at",
+    "updated_at"
+  ],
+  "title": "ProjectGenerationRun",
+  "type": "object"
+}

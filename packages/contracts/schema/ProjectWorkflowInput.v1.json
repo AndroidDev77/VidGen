@@ -1,6 +1,26 @@
 {
   "additionalProperties": false,
   "properties": {
+    "entry_stage": {
+      "default": "upload",
+      "maxLength": 64,
+      "minLength": 1,
+      "title": "Entry Stage",
+      "type": "string"
+    },
+    "generation_run_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Generation Run Id"
+    },
     "idempotency_key": {
       "maxLength": 220,
       "minLength": 1,

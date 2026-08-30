@@ -1,0 +1,81 @@
+{
+  "$defs": {
+    "ControlCommandStatus": {
+      "description": "The command lifecycle. Only ``pending`` precedes durable executable work.",
+      "enum": [
+        "pending",
+        "claimed",
+        "dispatching",
+        "running",
+        "awaiting_review",
+        "completed",
+        "failed",
+        "cancelled",
+        "superseded"
+      ],
+      "title": "ControlCommandStatus",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "description": "What continuing a project actually produced. Never a calculated ID.",
+  "properties": {
+    "command_id": {
+      "format": "uuid",
+      "title": "Command Id",
+      "type": "string"
+    },
+    "entry_stage": {
+      "maxLength": 64,
+      "minLength": 1,
+      "title": "Entry Stage",
+      "type": "string"
+    },
+    "generation_run_id": {
+      "format": "uuid",
+      "title": "Generation Run Id",
+      "type": "string"
+    },
+    "project_id": {
+      "format": "uuid",
+      "title": "Project Id",
+      "type": "string"
+    },
+    "reused": {
+      "default": false,
+      "title": "Reused",
+      "type": "boolean"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "status": {
+      "$ref": "#/$defs/ControlCommandStatus"
+    },
+    "workflow_id": {
+      "anyOf": [
+        {
+          "maxLength": 255,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Workflow Id"
+    }
+  },
+  "required": [
+    "project_id",
+    "command_id",
+    "generation_run_id",
+    "status",
+    "entry_stage"
+  ],
+  "title": "WorkflowContinuationResult",
+  "type": "object"
+}

@@ -161,8 +161,18 @@ class VisualQARunResponse(StrictContract):
 
 
 class VisualQADecisionResponse(StrictContract):
+    """A recorded T20 decision, and the command that carries it to the shot.
+
+    ``continuation_command_id`` is what makes a review decision more than a row
+    update: it is the durable command that resumes the waiting shot workflow, or
+    starts the replacement run a rejection implies. It is absent only when the
+    decision changed nothing the shot has to act on.
+    """
+
     qa_run_id: UUID
     review_id: UUID
     decision: Literal["approved", "rejected"]
     resulting_gate: str
     row_version: int = Field(gt=0)
+    continuation_command_id: UUID | None = None
+    continuation_command_status: str | None = Field(default=None, max_length=32)

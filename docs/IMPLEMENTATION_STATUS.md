@@ -1917,3 +1917,122 @@ resuming from the confirmed offset.
    user selects a project-owned JPEG or PNG.
 6. **Analytics, comments, playlists, monetization and multi-channel CMS are out of scope**, and no
    Partner or CMS scope is requested.
+
+## T18b control-plane execution and revision orchestration
+
+T18b is a corrective task. Its subject is not a new capability but a class of untruth: several APIs
+and UI actions returned `queued`, `accepted` or a workflow ID for work that no process would ever
+consume. T18b makes every supported asynchronous command durable, dispatched, queryable,
+restartable and eventually terminal.
+
+### The invariant
+
+No endpoint may return `queued`, `accepted`, `running` or a future workflow ID unless one of these
+is already true:
+
+- the work was transactionally persisted in `control_commands` and a worker can claim it;
+- the target Temporal workflow or child workflow was successfully started;
+- an identical completed command is being idempotently reused.
+
+An in-memory flag, an idempotency response by itself, or a workflow ID computed from a request does
+not count. The `control_command_dispatched_identity` CHECK constraint enforces the workflow half of
+this in the database: a `running`, `awaiting_review` or `completed` command that does not name a
+workflow cannot be stored.
+
+### What was disconnected, and what now connects it
+
+| Gap on `main` before T18b | Root cause | What T18b does |
+| --- | --- | --- |
+| Browser-created projects stored empty settings while T12 requires a voice profile | Voice selection existed only as a local repair CLI | Product-level voice APIs, voice selection in project creation and setup, and a `voice_profile_required` precondition on workflow start |
+| `ContinuityReferenceWorkflow` was never registered | The worker's registry did not list it, and its two activities were never defined anywhere | The workflow and `resolve_continuity_inputs`, `build_continuity_references`, `apply_continuity_references` are defined and registered, with production handlers over the existing T19 components |
+| T19 build and generate endpoints returned `queued` | Nothing durable was written | Both create a control command that starts the real T19 workflow |
+| Reference approvals updated rows only | No signal reached the waiting workflow | An approval creates a `reference_apply` command that signals the exact waiting workflow with the approved set |
+| T19 was not part of the normal project lifecycle | The parent workflow went storyboard → fan-out | The parent runs T19 as a child between the authoritative storyboard and any T14 spend, and completes deterministically when nothing needs a reference |
+| T18 regeneration returned a calculated child workflow ID | The command was signalled to the *locked* child, which had already completed | A `shot_regenerate` command starts a genuinely new `ShotWorkflow` under a reproducible regeneration identity |
+| T20 and T21 decisions had no consumer | The shot workflow had already returned | Both create a continuation command; the dispatcher resumes a live child or starts an immutable recovery run, never signals a terminal one |
+| Transcript and script edits recorded invalidation only | Nothing executed the rebuild | A confirmed transcript edit, and the selection of a revised script, each create a revision command that opens a new generation run at the correct entry stage |
+| `POST /final-qa:run` returned `queued` | No job or workflow was created | It creates a command that runs T22 against the current selected render in its own workflow |
+| T22 remediation classified without executing | Routing was recorded, not dispatched | Executable targets create the owning stage's command; routing-only targets are refused with `remediation_unsupported` rather than accepted |
+| A paused or partial project had no continuation path | The parent workflow could not be re-entered | `POST /workflow:continue` opens a new immutable generation run; previous runs are preserved |
+
+### Durable command architecture
+
+`control_commands` persists: command ID, project, owner subject, command type, target type and ID,
+idempotency key, request hash, upstream input identity, expected row version, status, attempt count,
+claim owner, lease expiry, workflow and run ID, result type and ID, structured error code, the
+created/dispatched/started/completed/updated timestamps, bounded redacted metadata and trace
+context. Statuses are `pending`, `claimed`, `dispatching`, `running`, `awaiting_review`,
+`completed`, `failed`, `cancelled` and `superseded`, with the legal transitions enforced in
+`vidgen.contracts.control_commands.ALLOWED_TRANSITIONS` and by the repository.
+
+Concurrency is one pattern throughout: every transition is a conditional `UPDATE` guarded by the row
+version that was read, so a claim, a completion and a lease recovery are each safe against another
+replica without a backend-specific statement. PostgreSQL additionally takes `FOR UPDATE SKIP LOCKED`
+on the candidate scan; SQLite runs the identical code path, which is what makes the deterministic
+tests meaningful.
+
+Nothing in a command row is a payload. Metadata is a bounded string map, every reference to content
+is an ID or a hash, and no credential, prompt, transcript, script, manifest or provider response can
+be stored there.
+
+### Project generation runs
+
+`project_generation_runs` records each immutable generation attempt: sequence, status, entry stage,
+input identity, workflow and run ID, the command that opened it, and its parent. A partial unique
+index allows exactly one non-terminal run per project, so two concurrent revisions cannot both claim
+the active lineage, while every historical run is preserved.
+
+The project workflow now *completes* at every human pause rather than blocking forever, and the
+Temporal controller uses `ALLOW_DUPLICATE` rather than `ALLOW_DUPLICATE_FAILED_ONLY`: continuing a
+project is a new execution carrying a new generation run, not a retry of a failed one. A run names
+the earliest stage it must execute; everything above it is reused.
+
+### The dispatcher
+
+`workers/control_dispatcher/main.py` is a bounded database-polling worker. One pass claims a batch
+transactionally, revalidates project ownership and upstream lineage, starts or signals the correct
+workflow, persists the identity that actually came back, marks the command running only then, and
+later settles it from the workflow's own durable state. A killed replica strands nothing: its lease
+expires and the next dispatcher recovers the command, bounded by the command's attempt limit.
+
+```bash
+uv run python -m workers.control_dispatcher.main          # poll until stopped
+uv run python -m workers.control_dispatcher.main --once   # one bounded pass
+make run-control-dispatcher
+```
+
+### Cost and telemetry
+
+T18b creates no second cost system. Paid work still happens inside the workflow the dispatcher
+started, under T23's existing provider-attempt, budget, reservation and reconciliation machinery. An
+idempotent command replay adopts the existing command and therefore produces no second provider
+attempt, reservation or ledger entry. The broader T23 metrics-export problem is recorded in
+[`docs/ROADMAP_GAPS.md`](ROADMAP_GAPS.md) as T23b and is deliberately not fixed here.
+
+### Local commands
+
+```bash
+make run-control-dispatcher                          # dispatch queued commands
+curl -s -H "$H" $BASE/commands                       # every command and the generation lineage
+curl -s -H "$H" $BASE/commands/$COMMAND_ID
+curl -s -X POST -H "$H" $BASE/commands/$COMMAND_ID:cancel
+curl -s -X POST -H "$H" $BASE/commands/$COMMAND_ID:retry
+curl -s -H "$H" $BASE/voice-profiles                 # the voices this deployment can narrate with
+```
+
+### Known limitations
+
+1. **The dispatcher has no deployment definition.** `infra/bicep` does not yet define a Container
+   App for it, so a deployed environment would accept commands that nothing dispatches. Recorded in
+   `docs/ROADMAP_GAPS.md` under T24b.
+2. **Two remediation targets are refused rather than executed.** `CORRECT_SCRIPT_UPSTREAM` and
+   `CORRECT_REFERENCE_T19` are routing classifications: acting on them means a human editing a
+   script or a reference. The API says so with `remediation_unsupported` instead of answering `202`
+   to work nothing would perform.
+3. **A shot remediation needs the caller to name the shot.** T22 findings record the finding, not
+   its owning shot, so a `REPAIR_SHOT_T21` or `REGENERATE_SHOT_T16` route requires `shot_id`.
+4. **T19 builds a reference sheet only where T09 persisted candidate frames.** Without evidence
+   frames there is nothing to build a sheet from, so the entity is treated as needing no reference
+   and the workflow completes deterministically rather than waiting for an approval nobody can give.
+5. **Production authentication is still absent**, so every owner scope here rests on the development
+   `X-VidGen-User` header. Recorded under T24b.

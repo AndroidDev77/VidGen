@@ -130,9 +130,7 @@ def narration_wav(path: Path, *, segments: int, seconds: float) -> Path:
                 f"sine=frequency={frequency}:sample_rate=48000:duration={seconds - 0.1:.3f}",
             ]
         )
-        inputs.extend(
-            ["-f", "lavfi", "-i", "anullsrc=r=48000:cl=mono:d=0.1"]
-        )
+        inputs.extend(["-f", "lavfi", "-i", "anullsrc=r=48000:cl=mono:d=0.1"])
         filters.extend([f"[{index * 2}:a]", f"[{index * 2 + 1}:a]"])
     graph = "".join(filters) + f"concat=n={segments * 2}:v=0:a=1[out]"
     ffmpeg(
@@ -249,9 +247,7 @@ def build_final_qa_project(
     timeline_us = shots[-1].global_end_us
 
     words = _caption_words(session, graph.storyboard_run_id, shots)
-    track, validation = build_caption_track(
-        track_id=uuid4(), words=words, duration_us=timeline_us
-    )
+    track, validation = build_caption_track(track_id=uuid4(), words=words, duration_us=timeline_us)
     assert validation.valid, validation.diagnostics
     srt = assets.store(
         content=serialize_srt(track).encode(),
@@ -582,9 +578,7 @@ def _update_render_job(
     timeline_us: int,
 ) -> RenderJob:
     job = session.scalars(
-        select(RenderJob).where(
-            RenderJob.project_id == project_id, RenderJob.selected.is_(True)
-        )
+        select(RenderJob).where(RenderJob.project_id == project_id, RenderJob.selected.is_(True))
     ).one()
     job.status = "render_complete"
     job.manifest_asset_id = manifest_asset_id

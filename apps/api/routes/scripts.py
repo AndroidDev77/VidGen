@@ -1,4 +1,12 @@
-"""Owner-scoped script review, single-segment editing, and version selection."""
+"""Owner-scoped script review, single-segment editing, and version selection.
+
+Editing an approved script creates a new immutable version and records what it
+invalidates; it deliberately does not start any regeneration. Selecting a
+version is the approval, and it is the point where T18b creates the durable
+command that rebuilds narration, the storyboard, the references, the affected
+shots, the render and final QA from the new script. The transcript and the
+episode analysis are upstream of the script and are reused untouched.
+"""
 
 from __future__ import annotations
 
@@ -25,6 +33,12 @@ from apps.api.schemas.scripts import (
     SelectScriptResponse,
     UpdateScriptSegmentRequest,
     UpdateScriptSegmentResponse,
+)
+from services.control_plane.commands import ControlPlaneService
+from services.control_plane.revisions import plan_revision
+from vidgen.contracts.control_commands import (
+    ControlCommandTargetType,
+    ControlCommandType,
 )
 from vidgen.contracts.review import ScriptSegmentProjection
 from vidgen.db.script_models import Script, ScriptSegment
@@ -106,7 +120,29 @@ def select_script(
     versions = versions_for(session)
     versions.require(project.id, "script", script.id, if_match, label="script")
     selected = mutations_for(session, principal, controller).select_script(project, script)
-    body = SelectScriptResponse(script=script_summary(project.id, selected, versions))
+    # Selecting a version is the approval narration spending waits for, so this
+    # is where the rebuild becomes durable work rather than a recorded intent.
+    plan = plan_revision(session, project_id=project.id, kind="script", source_id=selected.id)
+    command = (
+        ControlPlaneService(session, principal.subject)
+        .submit(
+            project,
+            command_type=ControlCommandType.SCRIPT_REVISION,
+            target_type=ControlCommandTargetType.SCRIPT,
+            target_id=selected.id,
+            idempotency_key=f"script-revision:{key}"[:255],
+            payload={"script_id": str(selected.id), "version": selected.version},
+            metadata={"entry_stage": plan.entry_stage, "revision_kind": "script"},
+            entry_stage=plan.entry_stage,
+        )
+        .command
+    )
+    body = SelectScriptResponse(
+        script=script_summary(project.id, selected, versions),
+        rebuild_command_id=command.command_id,
+        rebuild_command_status=command.status.value,
+        rebuild_entry_stage=plan.entry_stage,
+    )
     idempotency.record(
         SELECT_OPERATION,
         str(script_id),
@@ -157,7 +193,9 @@ def update_script_segment(
         confirm_invalidation=request.confirm_invalidation,
     )
     updated = outcome.segment
+    plan = plan_revision(session, project_id=project.id, kind="script", source_id=outcome.script.id)
     body = UpdateScriptSegmentResponse(
+        rebuild_entry_stage=plan.entry_stage if outcome.invalidation.entries else None,
         segment=ScriptSegmentProjection(
             segment_id=updated.id,
             stable_segment_id=updated.stable_segment_id,

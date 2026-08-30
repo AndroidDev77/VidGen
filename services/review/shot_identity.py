@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-from uuid import UUID
 
 from sqlalchemy.orm import Session
 
@@ -42,6 +41,33 @@ def configuration_identities(
     )
 
 
+def current_shot_identity_hash(
+    session: Session, shot: StoryboardShotRecord, settings: object
+) -> str:
+    """The T16 material identity a command for this shot is bound to.
+
+    Composed here rather than at a route so no API module has to name a
+    provider, and so every caller derives the identity the same way the T16
+    fan-out and the worker's lineage check do.
+    """
+    run = session.get(StoryboardRun, shot.storyboard_run_id)
+    if run is None:
+        raise not_found("shot workflow")
+    t14_identity, t15_identity = configuration_identities(
+        image_provider_name=str(getattr(settings, "image_provider_name", "fake")),
+        image_model=str(getattr(settings, "image_model", "")),
+        video_provider_name=str(getattr(settings, "video_provider_name", "fake")),
+        visual_capability_profile=str(getattr(settings, "visual_capability_profile", "")),
+    )
+    return shot_workflow_identity(
+        session,
+        run,
+        shot,
+        t14_configuration_identity=t14_identity,
+        t15_capability_profile_identity=t15_identity,
+    ).identity_hash
+
+
 def canonical_shot_hash(contract: object) -> str:
     """The same canonical contract hash the T16 fan-out activity computes."""
     return hashlib.sha256(
@@ -56,14 +82,27 @@ def shot_workflow_identity(
     *,
     t14_configuration_identity: str,
     t15_capability_profile_identity: str,
+    regeneration_sequence: int = 0,
 ) -> ShotWorkflowIdentity:
-    """Rebuild the current child identity for one shot of a selected storyboard."""
+    """Rebuild a child identity for one shot of a selected storyboard.
+
+    ``regeneration_sequence`` is zero for the child the T16 fan-out created and
+    is omitted from the hashed material at that value, so every identity minted
+    before T18b keeps the hash it already has. A deliberate regeneration passes
+    the next sequence, which yields a different - but fully reproducible -
+    identity, and therefore a genuinely new Temporal child rather than a second
+    attempt inside the locked one.
+    """
     if run.timing_manifest_asset_id is None:
         raise not_found("shot workflow")
     timing_asset = session.get(Asset, run.timing_manifest_asset_id)
     if timing_asset is None:
         raise not_found("shot workflow")
+    regeneration: dict[str, str | int] = (
+        {"regeneration_sequence": regeneration_sequence} if regeneration_sequence else {}
+    )
     material: dict[str, str | int] = {
+        **regeneration,
         "project_id": str(run.project_id),
         "storyboard_run_id": str(run.id),
         "storyboard_input_hash": run.input_hash,
@@ -81,15 +120,14 @@ def shot_workflow_identity(
     # ``material`` is the exact, ordered field set the T16 hash binds; validate
     # it back through the contract so a drift in either side fails loudly.
     return ShotWorkflowIdentity.model_validate(
-        {**material, "identity_hash": identity_hash(material)}
+        {
+            **material,
+            "regeneration_sequence": regeneration_sequence,
+            "identity_hash": identity_hash(material),
+        }
     )
 
 
 def current_workflow_id(identity: ShotWorkflowIdentity) -> str:
     """The Temporal ID of the child that currently owns this shot."""
     return temporal_shot_workflow_id(identity)
-
-
-def regenerated_workflow_id(stable_shot_id: UUID, new_identity_hash: str) -> str:
-    """The Temporal ID the replacement child will take, in T16's own format."""
-    return f"vidgen-shot-{stable_shot_id}-{new_identity_hash[:24]}"

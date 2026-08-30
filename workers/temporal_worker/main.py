@@ -28,10 +28,12 @@ from packages.workflows.activities import (
     configure_final_qa_handler,
     configure_render_handler,
 )
+from packages.workflows.continuity_activities import configure_continuity_activity_handlers
 from packages.workflows.project import RENDER_TASK_QUEUE
 from packages.workflows.shot_activities import configure_shot_activity_handlers
 from vidgen.telemetry.bootstrap import initialize_telemetry
 from workers.temporal_worker.production_handlers import (
+    build_continuity_handlers,
     build_final_qa_handler,
     build_production_handlers,
     build_render_handler,
@@ -80,6 +82,10 @@ async def run() -> None:
     configure_shot_activity_handlers(build_shot_production_handlers())
     configure_final_qa_handler(build_final_qa_handler())
     configure_render_handler(build_render_handler())
+    resolve_references, build_references, apply_references = build_continuity_handlers()
+    configure_continuity_activity_handlers(
+        build=build_references, apply=apply_references, resolve=resolve_references
+    )
 
     client = await _connect()
     task_queue = os.getenv("TEMPORAL_TASK_QUEUE", "vidgen-projects")

@@ -2582,3 +2582,197 @@ export interface PublicationCollectionResponse {
   items: PublicationProjection[];
   gate: PublicationGateProjection;
 }
+
+// --- T18b durable control plane ---------------------------------------------
+// Mirrors `vidgen.contracts.control_commands`. These shapes are what makes an
+// accepted asynchronous command inspectable in the browser: a command ID, a
+// status, the real workflow identity once one exists, bounded progress, and a
+// structured failure. No prompt, transcript, script, signed URL or provider
+// payload appears in any of them.
+
+export type ControlCommandType =
+  | "reference_build"
+  | "reference_generate"
+  | "reference_apply"
+  | "shot_regenerate"
+  | "shot_retry"
+  | "shot_review_continue"
+  | "transcript_revision"
+  | "script_revision"
+  | "final_qa_run"
+  | "final_qa_remediation"
+  | "render_rerender"
+  | "project_continue";
+
+export type ControlCommandStatus =
+  | "pending"
+  | "claimed"
+  | "dispatching"
+  | "running"
+  | "awaiting_review"
+  | "completed"
+  | "failed"
+  | "cancelled"
+  | "superseded";
+
+export type ControlCommandTargetType =
+  | "project"
+  | "shot"
+  | "character"
+  | "location"
+  | "reference_set"
+  | "render_job"
+  | "final_qa_run"
+  | "transcript"
+  | "script"
+  | "repair_run"
+  | "generation_run";
+
+/** Statuses that will not change again; polling must stop on these. */
+export const TERMINAL_COMMAND_STATUSES: readonly ControlCommandStatus[] = [
+  "completed",
+  "failed",
+  "cancelled",
+  "superseded",
+];
+
+export function isTerminalCommandStatus(status: ControlCommandStatus): boolean {
+  return TERMINAL_COMMAND_STATUSES.includes(status);
+}
+
+export interface ControlCommandProgress {
+  schema_version: "1.0";
+  phase: string;
+  percent: number;
+  /** Why the command is durably waiting on a person. Empty while executing. */
+  waiting_reason: string;
+}
+
+export interface ControlCommandFailure {
+  schema_version: "1.0";
+  code: string;
+  summary: string;
+  retryable: boolean;
+  attempt: number;
+}
+
+export interface ControlCommandResult {
+  schema_version: "1.0";
+  result_type: ControlCommandTargetType | null;
+  result_id: UUID | null;
+  summary: Record<string, string>;
+}
+
+export interface ControlCommand {
+  schema_version: "1.0";
+  command_id: UUID;
+  project_id: UUID;
+  command_type: ControlCommandType;
+  status: ControlCommandStatus;
+  target_type: ControlCommandTargetType;
+  target_id: UUID;
+  /** Absent until a workflow was actually started. Never a calculated value. */
+  workflow_id: string | null;
+  run_id: string | null;
+  attempt: number;
+  max_attempts: number;
+  progress: ControlCommandProgress;
+  result: ControlCommandResult | null;
+  failure: ControlCommandFailure | null;
+  row_version: number;
+  created_at: string;
+  updated_at: string;
+  dispatched_at: string | null;
+  started_at: string | null;
+  completed_at: string | null;
+  /**
+   * True once the owner asked to stop a command that had already been
+   * dispatched. The status stays as it is until the dispatcher has actually
+   * cancelled the workflow, so this never claims a stop that has not happened.
+   */
+  cancel_requested: boolean;
+  /** What the owner may do next. Rendered directly; never inferred. */
+  permitted_actions: Array<"cancel" | "retry">;
+}
+
+export type ProjectGenerationRunStatus =
+  | "active"
+  | "awaiting_review"
+  | "completed"
+  | "failed"
+  | "cancelled"
+  | "superseded";
+
+export interface ProjectGenerationRun {
+  schema_version: "1.0";
+  generation_run_id: UUID;
+  project_id: UUID;
+  sequence: number;
+  status: ProjectGenerationRunStatus;
+  entry_stage: string;
+  input_identity: string;
+  workflow_id: string | null;
+  run_id: string | null;
+  origin_command_id: UUID | null;
+  parent_generation_run_id: UUID | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ControlCommandResponse {
+  command: ControlCommand;
+}
+
+export interface ControlCommandCollectionResponse {
+  project_id: UUID;
+  items: ControlCommand[];
+  generation_runs: ProjectGenerationRun[];
+}
+
+export interface WorkflowContinuationRequest {
+  entry_stage: string;
+  reason:
+    | "review_resolved"
+    | "partial_fanout"
+    | "revision"
+    | "remediation"
+    | "operator_request";
+}
+
+// --- T18b voice profiles ------------------------------------------------------
+// A profile names a provider and an externally provisioned voice. It never
+// carries a credential, and the API never accepts one.
+
+export interface VoiceProfileSelection {
+  schema_version: "1.0";
+  voice_profile_id: UUID;
+  project_id: UUID | null;
+  provider: string;
+  provider_voice_id: string;
+  model: string;
+  language: string;
+  profile_version: number;
+  configuration_hash: string;
+  output_format: string;
+  scope: "project" | "shared";
+  selected: boolean;
+}
+
+export interface VoiceProfileListResponse {
+  project_id: UUID;
+  items: VoiceProfileSelection[];
+  selected_voice_profile_id: UUID | null;
+}
+
+export interface VoiceProfileResponse {
+  project_id: UUID;
+  profile: VoiceProfileSelection;
+}
+
+export interface SelectVoiceProfileRequest {
+  voice_profile_id?: UUID;
+  provider?: string;
+  provider_voice_id?: string;
+  model?: string;
+  language?: string;
+}

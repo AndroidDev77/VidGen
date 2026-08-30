@@ -1,0 +1,59 @@
+{
+  "additionalProperties": false,
+  "description": "A confirmed transcript or script revision, ready to be made durable.",
+  "properties": {
+    "confirmed_stages": {
+      "items": {
+        "type": "string"
+      },
+      "maxItems": 32,
+      "title": "Confirmed Stages",
+      "type": "array"
+    },
+    "entry_stage": {
+      "maxLength": 64,
+      "minLength": 1,
+      "title": "Entry Stage",
+      "type": "string"
+    },
+    "idempotency_key": {
+      "maxLength": 255,
+      "minLength": 1,
+      "title": "Idempotency Key",
+      "type": "string"
+    },
+    "project_id": {
+      "format": "uuid",
+      "title": "Project Id",
+      "type": "string"
+    },
+    "revision_kind": {
+      "enum": [
+        "transcript",
+        "script"
+      ],
+      "title": "Revision Kind",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "source_id": {
+      "format": "uuid",
+      "title": "Source Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "project_id",
+    "revision_kind",
+    "source_id",
+    "entry_stage",
+    "idempotency_key"
+  ],
+  "title": "ProjectRevisionRequest",
+  "type": "object"
+}

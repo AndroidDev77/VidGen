@@ -1,4 +1,4 @@
-.PHONY: install lint format typecheck test schemas verify infra-validate infra-up infra-down infra-logs observability-up observability-logs migrate migrate-down verify-stack run-worker run-api run-web web-install web-lint web-typecheck web-test web-build web-e2e verify-web local-reset
+.PHONY: install lint format typecheck test schemas verify infra-validate infra-up infra-down infra-logs observability-up observability-logs migrate migrate-down verify-stack run-worker run-control-dispatcher run-api run-web web-install web-lint web-typecheck web-test web-build web-e2e verify-web local-reset
 
 export UV_CACHE_DIR ?= .uv-cache
 
@@ -52,6 +52,13 @@ verify-stack:
 
 run-worker:
 	uv run python -m workers.temporal_worker.main
+
+# The T18b control-command dispatcher. Without it every asynchronous product
+# command - reference builds, shot regeneration, revisions, manual final QA,
+# remediation, project continuation - stays durably queued and never starts its
+# workflow. Run it alongside the Temporal worker.
+run-control-dispatcher:
+	uv run python -m workers.control_dispatcher.main
 
 run-api:
 	uv run uvicorn apps.api.main:app --reload --host 0.0.0.0 --port 8000

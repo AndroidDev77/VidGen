@@ -18,6 +18,7 @@ import { queryKeys } from "../../api/queryKeys";
 import { getProjectVisualQa } from "../../api/visualQa";
 import { cancelWorkflow, startWorkflow } from "../../api/workflows";
 import { useApiClient } from "../../app/apiContext";
+import { CommandsPanel } from "../../components/CommandsPanel";
 import { CostSummary } from "../../components/CostSummary";
 import { FailurePanel } from "../../components/FailurePanel";
 import { ProjectStatusHeader } from "../../components/ProjectStatusHeader";
@@ -181,6 +182,9 @@ export function ProjectDashboardPage(): JSX.Element {
               )}
             </div>
           )}
+        </Card>
+        <Card>
+          <CommandsPanel projectId={projectId} />
         </Card>
         <Card>
           {(failures.isPending || attempts.isPending) && (

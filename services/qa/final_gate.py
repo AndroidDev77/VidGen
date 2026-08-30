@@ -286,9 +286,7 @@ def apply_adjudication(
             # warning would be worse still: that silently clears the gate on a
             # finding the adjudicator just confirmed. It stays a review
             # question, which is the honest outcome for an unevidenced claim.
-            resolved.append(
-                finding.model_copy(update={"confidence": adjudication.confidence})
-            )
+            resolved.append(finding.model_copy(update={"confidence": adjudication.confidence}))
         elif finding.finding_id in confirmed and blocking_category:
             resolved.append(
                 finding.model_copy(

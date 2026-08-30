@@ -26,6 +26,7 @@ class ContinuityReferenceWorkflow:
         self._request: ReferenceWorkflowInput | None = None
         self._status = ReferenceWorkflowStatus.QUEUED
         self._approval: ReferenceApprovalSignal | None = None
+        self._drafts: ReferenceDraftResult | None = None
         self._seen_approval_keys: set[str] = set()
         self._cancelled = False
 
@@ -33,18 +34,37 @@ class ContinuityReferenceWorkflow:
     async def run(self, request: ReferenceWorkflowInput) -> ReferenceWorkflowResult:
         self._request = request
         self._status = ReferenceWorkflowStatus.SELECTING
-        await workflow.execute_activity(
-            "build_continuity_references",
-            request,
-            result_type=ReferenceDraftResult,
-            start_to_close_timeout=timedelta(hours=2),
-            heartbeat_timeout=timedelta(minutes=2),
-            retry_policy=default_activity_retry_policy(),
+        drafts = cast(
+            ReferenceDraftResult,
+            await workflow.execute_activity(
+                "build_continuity_references",
+                request,
+                result_type=ReferenceDraftResult,
+                start_to_close_timeout=timedelta(hours=2),
+                heartbeat_timeout=timedelta(minutes=2),
+                retry_policy=default_activity_retry_policy(),
+            ),
         )
+        self._drafts = drafts
         if self._cancelled:
             return self._cancelled_result(request)
-        self._status = ReferenceWorkflowStatus.AWAITING_APPROVAL
-        await workflow.wait_condition(lambda: self._approval is not None or self._cancelled)
+        if not drafts.requires_approval:
+            # Nothing in this project needs a reference sheet, so there is no
+            # decision to wait for. Completing here is what keeps a project
+            # without characters or locations from stalling forever - and the
+            # binding still runs, so a shot with no references gets an explicit
+            # empty bundle rather than the legacy no-reference path.
+            self._approval = ReferenceApprovalSignal(
+                project_id=request.project_id,
+                reference_run_id=request.reference_run_id,
+                approval_id=request.reference_run_id,
+                idempotency_key=f"{request.idempotency_key}:no-references",
+                storyboard_run_id=request.storyboard_run_id,
+            )
+        else:
+            self._status = ReferenceWorkflowStatus.AWAITING_APPROVAL
+            await self._report_waiting(request)
+            await workflow.wait_condition(lambda: self._approval is not None or self._cancelled)
         if self._cancelled:
             return self._cancelled_result(request)
         assert self._approval is not None
@@ -62,6 +82,18 @@ class ContinuityReferenceWorkflow:
         )
         self._status = result.status
         return result
+
+    async def _report_waiting(self, request: ReferenceWorkflowInput) -> None:
+        """Tell the owning project workflow that a human decision is now owed.
+
+        Signalled by name rather than by class so T19 never imports the parent
+        workflow, which imports T19. The parent renders the pause; nothing about
+        the references themselves crosses the signal.
+        """
+        if request.parent_workflow_id is None:
+            return
+        parent = workflow.get_external_workflow_handle(request.parent_workflow_id)
+        await parent.signal("reference_progress", self._status.value)
 
     def _cancelled_result(self, request: ReferenceWorkflowInput) -> ReferenceWorkflowResult:
         self._status = ReferenceWorkflowStatus.CANCELLED
@@ -92,3 +124,8 @@ class ContinuityReferenceWorkflow:
     @workflow.query
     def status(self) -> ReferenceWorkflowStatus:
         return self._status
+
+    @workflow.query
+    def drafts(self) -> ReferenceDraftResult | None:
+        """Query-visible drafting outcome: counts and IDs, never a reference."""
+        return self._drafts

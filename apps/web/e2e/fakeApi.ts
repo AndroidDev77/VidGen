@@ -704,6 +704,22 @@ export async function installFakeApi(page: Page, state: FakeApiState): Promise<v
         expires_in_seconds: 60,
       });
     }
+    // T18b control plane and voice selection. Declared before the project
+    // catch-all below, which would otherwise answer these paths with a project
+    // detail body - and a panel reading `items` off that would render nothing.
+    if (path.endsWith("/commands") && method === "GET") {
+      return json(route, commandCollection(state));
+    }
+    if (path.endsWith("/voice-profiles") && method === "GET") {
+      return json(route, {
+        project_id: PROJECT_ID,
+        items: [voiceProfile(true)],
+        selected_voice_profile_id: VOICE_PROFILE_ID,
+      });
+    }
+    if (path.endsWith("/voice-profile")) {
+      return json(route, { project_id: PROJECT_ID, profile: voiceProfile(true) });
+    }
     // T25 publication. Declared before the project catch-all below, which would
     // otherwise answer these paths with a project detail body.
     if (path === "/api/v1/youtube/connections" && method === "GET") {
@@ -760,6 +776,76 @@ function projectDetail() {
     humor_intensity: 6,
     created_at: "2026-08-01T09:00:00Z",
     updated_at: "2026-08-02T10:30:00Z",
+    // A project created through the setup screen already has its narration
+    // voice, because the screen selects one before the workflow can start.
+    voice_profile_id: VOICE_PROFILE_ID,
+  };
+}
+
+const VOICE_PROFILE_ID = "aaaaaaaa-9999-4999-8999-000000000001";
+
+function voiceProfile(selected: boolean) {
+  return {
+    schema_version: "1.0" as const,
+    voice_profile_id: VOICE_PROFILE_ID,
+    project_id: PROJECT_ID,
+    provider: "fake",
+    provider_voice_id: "vidgen-local-fake-voice",
+    model: "fake-tts",
+    language: "en",
+    profile_version: 1,
+    configuration_hash: "b".repeat(64),
+    output_format: "wav",
+    scope: "project" as const,
+    selected,
+  };
+}
+
+/** The T18b control-plane projection: one durable command and its lineage. */
+function commandCollection(state: FakeApiState) {
+  return {
+    project_id: PROJECT_ID,
+    items: state.finalQaRuns.map((key, index) => ({
+      schema_version: "1.0" as const,
+      command_id: `aaaaaaaa-8888-4888-8888-${String(index).padStart(12, "0")}`,
+      project_id: PROJECT_ID,
+      command_type: "final_qa_run",
+      status: "running",
+      target_type: "render_job",
+      target_id: PROJECT_ID,
+      workflow_id: `vidgen-final-qa-${PROJECT_ID}-${key}`,
+      run_id: null,
+      attempt: 1,
+      max_attempts: 5,
+      progress: { schema_version: "1.0" as const, phase: "running", percent: 10, waiting_reason: "" },
+      result: null,
+      failure: null,
+      row_version: 1,
+      created_at: "2026-08-02T10:00:00Z",
+      updated_at: "2026-08-02T10:01:00Z",
+      dispatched_at: "2026-08-02T10:00:30Z",
+      started_at: "2026-08-02T10:00:30Z",
+      completed_at: null,
+      cancel_requested: false,
+      permitted_actions: ["cancel"],
+    })),
+    generation_runs: [
+      {
+        schema_version: "1.0" as const,
+        generation_run_id: "aaaaaaaa-7777-4777-8777-000000000001",
+        project_id: PROJECT_ID,
+        sequence: 1,
+        status: "active",
+        entry_stage: "upload",
+        input_identity: "d".repeat(64),
+        workflow_id: `vidgen-project-${PROJECT_ID}`,
+        run_id: "run-1",
+        origin_command_id: null,
+        parent_generation_run_id: null,
+        created_at: "2026-08-01T09:00:00Z",
+        updated_at: "2026-08-02T10:00:00Z",
+      },
+    ],
   };
 }
 
