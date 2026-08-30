@@ -313,41 +313,41 @@ export function NewProjectPage(): JSX.Element {
 
       {project !== null && (
         <>
-          <MessageBar intent=”success”>
+          <MessageBar intent="success">
             <MessageBarBody>
               <MessageBarTitle>Project created</MessageBarTitle>
-              “{project.name}” is created. Upload its source video to continue.
+              "{project.name}" is created. Upload its source video to continue.
             </MessageBarBody>
           </MessageBar>
 
-          <SectionCard title=”Narration voice” icon={<MicRegular />}>
+          <SectionCard title="Narration voice" icon={<MicRegular />}>
             <VoiceProfilePicker
               projectId={project.id}
               onSelected={(selected) => setVoiceProfileId(selected)}
             />
             {voiceProfileId === null && (
-              <Body1 as=”p” role=”status”>
+              <Body1 as="p" role="status">
                 Select a narration voice before starting the workflow.
               </Body1>
             )}
           </SectionCard>
 
-          <SectionCard title=”Source video” headingAs=”h3”>
+          <SectionCard title="Source video" headingAs="h3">
             <UploadPanel
               upload={upload}
               onFileSelected={(file) => void upload.start(project.id, file)}
             />
           </SectionCard>
 
-          <SectionCard title=”Subtitle file (optional)” headingAs=”h3”>
+          <SectionCard title="Subtitle file (optional)" headingAs="h3">
             <Field
-              hint=”Upload an SRT file to use instead of auto-transcription.”
-              validationState={subtitleError === null ? “none” : “error”}
+              hint="Upload an SRT file to use instead of auto-transcription."
+              validationState={subtitleError === null ? "none" : "error"}
               validationMessage={subtitleError ?? undefined}
             >
               <input
-                type=”file”
-                accept=”.srt,text/plain,application/x-subrip”
+                type="file"
+                accept=".srt,text/plain,application/x-subrip"
                 onChange={(e) => {
                   const file = e.target.files?.[0];
                   if (!file) return;
@@ -356,14 +356,14 @@ export function NewProjectPage(): JSX.Element {
                   void uploadSubtitle(project.id, file, client).then((res) => {
                     setSubtitleAssetId(res.data.asset_id);
                   }).catch(() => {
-                    setSubtitleError(“Subtitle upload failed. You can still start without it.”);
+                    setSubtitleError("Subtitle upload failed. You can still start without it.");
                     setSubtitleAssetId(null);
                   });
                 }}
               />
             </Field>
             {subtitleFilename !== null && subtitleAssetId !== null && (
-              <Body1 as=”p” role=”status”>
+              <Body1 as="p" role="status">
                 Subtitle ready: {subtitleFilename}
               </Body1>
             )}
