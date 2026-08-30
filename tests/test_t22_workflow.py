@@ -34,7 +34,7 @@ from services.qa.final_commands import FinalQACommandOptions, run_final_editoria
 from tests.final_qa_fixtures import (
     FIXTURE_CONFIGURATION,
     FinalQAFixture,
-    build_final_qa_project,
+    materialize_final_qa_project,
     require_ffmpeg,
 )
 from vidgen.contracts.shot_workflow import ProjectShotFanoutResult, ResolveShotFanoutResult
@@ -404,7 +404,19 @@ pytestmark_ffmpeg = pytest.mark.skipif(
 
 
 @pytest.fixture
-def factory(tmp_path: Path) -> Iterator[sessionmaker[Session]]:
+def fixture(tmp_path: Path) -> FinalQAFixture:
+    """This test's own copy of the project. Every other fixture follows it."""
+    return materialize_final_qa_project(
+        database_path=tmp_path / "t22-cost.db",
+        blob_root=tmp_path / "blobs",
+        workspace=tmp_path / "work",
+    )
+
+
+@pytest.fixture
+def factory(tmp_path: Path, fixture: FinalQAFixture) -> Iterator[sessionmaker[Session]]:
+    # ``fixture`` first: the database file is copied into place before an
+    # engine is opened on it.
     engine = create_engine(f"sqlite+pysqlite:///{tmp_path / 't22-cost.db'}")
     Base.metadata.create_all(engine)
     yield sessionmaker(bind=engine, expire_on_commit=False)
@@ -412,18 +424,8 @@ def factory(tmp_path: Path) -> Iterator[sessionmaker[Session]]:
 
 
 @pytest.fixture
-def blob_root(tmp_path: Path) -> Path:
-    root = tmp_path / "blobs"
-    root.mkdir()
-    return root
-
-
-@pytest.fixture
-def fixture(
-    factory: sessionmaker[Session], blob_root: Path, tmp_path: Path
-) -> Iterator[FinalQAFixture]:
-    with factory() as session:
-        yield build_final_qa_project(session, blob_root, tmp_path / "work")
+def blob_root(tmp_path: Path, fixture: FinalQAFixture) -> Path:
+    return tmp_path / "blobs"
 
 
 def set_budget(session: Session, project_id: UUID, hard_cap: Decimal) -> None:
