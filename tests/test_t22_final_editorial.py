@@ -198,8 +198,7 @@ def test_the_final_qa_identity_changes_when_any_material_input_changes() -> None
         != baseline
     )
     assert (
-        canonical_hash(make_input(final_video_sha256=sha(997)).model_dump(mode="json"))
-        != baseline
+        canonical_hash(make_input(final_video_sha256=sha(997)).model_dump(mode="json")) != baseline
     )
     assert (
         canonical_hash(make_input(narration_asset_ids=[UUID(int=996)]).model_dump(mode="json"))
@@ -272,7 +271,9 @@ def test_a_valid_delivery_passes_every_deterministic_media_check(delivery: Path)
     assert (measurements.width, measurements.height) == (DELIVERY_WIDTH, DELIVERY_HEIGHT)
 
     checks = final_deterministic.evaluate(
-        measurements, make_input(subtitle_mode="burn_in"), config  # type: ignore[arg-type]
+        measurements,
+        make_input(subtitle_mode="burn_in"),
+        config,  # type: ignore[arg-type]
     )
     failures = [check for check in checks if check.status == "fail"]
     assert not failures, [(check.code.value, check.message) for check in failures]
@@ -313,7 +314,9 @@ def test_a_black_render_is_reported_with_its_exact_interval(tmp_path: Path) -> N
     measurements = final_deterministic.measure(black, config)  # type: ignore[arg-type]
     assert measurements.black_intervals
     checks = final_deterministic.evaluate(
-        measurements, make_input(subtitle_mode="burn_in"), config  # type: ignore[arg-type]
+        measurements,
+        make_input(subtitle_mode="burn_in"),
+        config,  # type: ignore[arg-type]
     )
     failed = {check.code for check in checks if check.status == "fail"}
     assert FinalIssueCode.UNEXPECTED_BLACK_INTERVAL in failed
@@ -369,7 +372,9 @@ def test_a_frozen_render_is_reported_as_an_excessive_freeze(tmp_path: Path) -> N
     config = configuration()
     measurements = final_deterministic.measure(frozen, config)  # type: ignore[arg-type]
     checks = final_deterministic.evaluate(
-        measurements, make_input(subtitle_mode="burn_in"), config  # type: ignore[arg-type]
+        measurements,
+        make_input(subtitle_mode="burn_in"),
+        config,  # type: ignore[arg-type]
     )
     failed = {check.code for check in checks if check.status == "fail"}
     assert FinalIssueCode.EXCESSIVE_FREEZE_INTERVAL in failed
@@ -556,9 +561,7 @@ def test_music_that_neither_ducks_nor_sits_below_narration_is_reported(
         loudness={"integrated_lufs": -14.0, "true_peak_dbtp": -1.5},
         statistics={"Number_of_samples": 1000.0, "Number_of_clipped_samples": 0.0},
     )
-    masked = next(
-        check for check in checks if check.code is FinalIssueCode.NARRATION_MASKED_BY_BED
-    )
+    masked = next(check for check in checks if check.code is FinalIssueCode.NARRATION_MASKED_BY_BED)
     assert masked.status == "fail"
 
 
@@ -597,9 +600,7 @@ def _serialize(delivered: DeliveredCaptions) -> bytes:
     track, _ = build_caption_track(
         track_id=UUID(int=16), words=caption_words(), duration_us=TIMELINE_US
     )
-    assert [cue.model_dump() for cue in track.cues] == [
-        cue.model_dump() for cue in delivered.cues
-    ]
+    assert [cue.model_dump() for cue in track.cues] == [cue.model_dump() for cue in delivered.cues]
     return serialize_srt(track).encode()
 
 
@@ -674,9 +675,7 @@ def test_caption_qa_rejects_a_delivered_file_that_will_not_parse() -> None:
         delivered_hashes={inputs.caption_asset_ids[0]: inputs.caption_asset_hashes[0]},
         declared_caption_identity=inputs.caption_identity,
     )
-    parse = next(
-        check for check in checks if check.code is FinalIssueCode.CAPTION_PARSE_FAILURE
-    )
+    parse = next(check for check in checks if check.code is FinalIssueCode.CAPTION_PARSE_FAILURE)
     assert parse.status == "fail"
     assert parse.caption_asset_id == inputs.caption_asset_ids[0]
 
@@ -694,9 +693,7 @@ def test_caption_reflow_is_verified_against_the_declared_identity() -> None:
         declared_caption_identity=sha(555),
     )
     reflow = next(
-        check
-        for check in checks
-        if check.code is FinalIssueCode.CAPTION_REFLOW_NONDETERMINISTIC
+        check for check in checks if check.code is FinalIssueCode.CAPTION_REFLOW_NONDETERMINISTIC
     )
     assert reflow.status == "fail"
 

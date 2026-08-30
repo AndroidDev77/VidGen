@@ -384,7 +384,7 @@ def dispatch_final_qa_run(
     request = FinalQAActivityInput(
         project_id=project.id,
         final_render_asset_id=render.final_video_asset_id,
-        render_manifest_asset_id=render.render_manifest_asset_id,
+        render_manifest_asset_id=render.manifest_asset_id,
         provider="openai" if provider == "openai" else "fake",
         idempotency_key=f"t18b-final-qa:{record.id}"[:255],
     )

@@ -141,8 +141,18 @@ def configured_catalog(deployment: NarrationDeployment) -> tuple[VoiceProfileOpt
     return tuple(options)
 
 
-def catalog_profile_id(project_id: UUID, option: VoiceProfileOption) -> UUID:
-    """The stable ID a catalog option takes once it is selected for a project."""
+def catalog_option_id(option: VoiceProfileOption) -> UUID:
+    """The stable, project-independent ID of one catalog voice.
+
+    Deliberately not project-scoped: the catalog is offered before a project
+    exists, so ``POST /projects`` can name a voice from it. Selecting it
+    materializes a project-scoped row with its own ID.
+    """
+    return uuid5(CATALOG_NAMESPACE, f"{option.provider}:{option.provider_voice_id}")
+
+
+def project_profile_id(project_id: UUID, option: VoiceProfileOption) -> UUID:
+    """The stable ID of the project-scoped row a catalog option materializes to."""
     return uuid5(CATALOG_NAMESPACE, f"{project_id}:{option.provider}:{option.provider_voice_id}")
 
 
@@ -163,11 +173,9 @@ def _selection(record: VoiceProfileRecord, *, selected: bool) -> VoiceProfileSel
     )
 
 
-def _option_selection(
-    project_id: UUID, option: VoiceProfileOption, *, selected: bool
-) -> VoiceProfileSelection:
+def _option_selection(option: VoiceProfileOption, *, selected: bool) -> VoiceProfileSelection:
     return VoiceProfileSelection(
-        voice_profile_id=catalog_profile_id(project_id, option),
+        voice_profile_id=catalog_option_id(option),
         project_id=None,
         provider=option.provider,
         provider_voice_id=option.provider_voice_id,
@@ -223,7 +231,7 @@ def available_profiles(
     for option in configured_catalog(deployment):
         if (option.provider, option.provider_voice_id) in seen:
             continue
-        profiles.append(_option_selection(project.id, option, selected=False))
+        profiles.append(_option_selection(option, selected=False))
     return profiles
 
 
@@ -256,15 +264,12 @@ def select_profile(
                 "That voice profile does not exist.",
             )
         if record is None:
-            # A catalog option that has never been persisted: its ID is derived
-            # from this project, so an ID minted for another project simply does
-            # not match anything here.
+            # A catalog voice that has not been materialized for this project
+            # yet. Catalog IDs are project-independent so a project can be
+            # created with one; an ID that is neither a catalog voice nor a
+            # profile of this project is simply not found.
             option = next(
-                (
-                    item
-                    for item in catalog
-                    if catalog_profile_id(project.id, item) == voice_profile_id
-                ),
+                (item for item in catalog if catalog_option_id(item) == voice_profile_id),
                 None,
             )
             if option is None:
@@ -304,7 +309,7 @@ def _materialize(
     session: Session, project: Project, option: VoiceProfileOption
 ) -> VoiceProfileRecord:
     """Persist a catalog option as this project's own profile, idempotently."""
-    profile_id = catalog_profile_id(project.id, option)
+    profile_id = project_profile_id(project.id, option)
     existing = session.get(VoiceProfileRecord, profile_id)
     if existing is not None:
         return existing

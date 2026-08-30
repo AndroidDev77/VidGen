@@ -62,9 +62,7 @@ def downgrade() -> None:
             "unsafe T22 downgrade: final editorial-QA provenance would be destroyed. The "
             "completion gate records why a project was or was not allowed to finish, and "
             "the immutable report it references is the evidence behind that decision. "
-            "Export or delete rows from "
-            + ", ".join(populated)
-            + " before downgrading."
+            "Export or delete rows from " + ", ".join(populated) + " before downgrading."
         )
     for table in reversed(_TABLES):
         table.drop(bind, checkfirst=True)

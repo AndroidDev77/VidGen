@@ -28,6 +28,16 @@ from services.animation.pipeline import PIPELINE_VERSION as T15_PIPELINE_VERSION
 from services.animation.pipeline import AnimationPipeline
 from services.animation.providers import VideoGenerationProvider
 from services.animation.runway import RunwayVideoProvider
+from services.continuity.orchestrator import (
+    ContinuityOrchestrationError,
+    ContinuityReferenceOrchestrator,
+)
+from services.continuity.reference_generator import ProviderReferenceGenerator
+from services.control_plane.commands import ControlPlaneService
+from services.control_plane.references import (
+    ReferenceInputsUnavailable,
+    resolve_reference_inputs,
+)
 from services.image_generation.openai_image import OpenAIImageProvider
 from services.image_generation.pipeline import (
     PIPELINE_VERSION as T14_PIPELINE_VERSION,
@@ -52,6 +62,10 @@ from services.qa.final_commands import FinalQACommandOptions, run_final_editoria
 from services.qa.final_inputs import FinalQALineageError
 from services.render_execution.commands import execute_render_job, queue_render_job
 from services.renderer.selection import RenderLineageError
+from services.review.shot_identity import (
+    configuration_identities,
+    shot_workflow_identity,
+)
 from services.script.fake_provider import FakeScriptGenerationProvider
 from services.script.openai_adapter import OpenAIScriptConfig, OpenAIScriptGenerationProvider
 from services.script.pipeline import ScriptGenerationPipeline
@@ -68,6 +82,21 @@ from services.subtitles.pipeline import SubtitlePipeline, SubtitlePipelineConfig
 from services.transcription.fake import FakeTranscriptionProvider
 from services.transcription.openai_adapter import OpenAITranscriptionAdapter
 from services.transcription.pipeline import TranscriptionPipeline
+from vidgen.contracts.continuity import (
+    ReferenceGenerationRequest,
+    ReferenceGenerationResult,
+)
+from vidgen.contracts.continuity_workflow import (
+    ReferenceApprovalSignal,
+    ReferenceDraftResult,
+    ReferenceWorkflowInput,
+    ReferenceWorkflowResult,
+    ReferenceWorkflowStatus,
+)
+from vidgen.contracts.control_commands import (
+    ControlCommandTargetType,
+    ControlCommandType,
+)
 from vidgen.contracts.media import ExtractedFrame, SceneBoundary
 from vidgen.contracts.render_execution import RenderExecutionResult, RenderExecutionStatus
 from vidgen.contracts.repair import RepairRunState
@@ -92,10 +121,18 @@ from vidgen.contracts.workflow import (
     StageActivityResult,
 )
 from vidgen.db.animation_models import AnimationGeneratedVideo
+from vidgen.db.continuity_models import (
+    character_identity_versions,
+    character_reference_sets,
+    location_identity_versions,
+    location_reference_sets,
+)
+from vidgen.db.control_command_models import ControlCommandRecord
 from vidgen.db.image_generation_models import GeneratedKeyframeImage, ImageGenerationRun
 from vidgen.db.image_generation_repository import ImageGenerationRepository
 from vidgen.db.models import Asset, AudioAsset, Project, Scene, SourceVideo, asset_dependencies
 from vidgen.db.session import build_engine
+from vidgen.db.storyboard_models import StoryboardRun, StoryboardShotRecord
 from vidgen.db.subtitle_models import SubtitleCandidateRecord
 from vidgen.db.transcription_models import (
     SpeakerTurnRecord,
@@ -1273,4 +1310,282 @@ def _render_result(
         attempt=result.attempt,
         error_code=result.failure.code if result.failure else None,
         failure_classification=result.failure.classification if result.failure else None,
+    )
+
+
+def build_continuity_handlers(
+    settings: APISettings | None = None,
+) -> tuple[
+    Callable[[StageActivityInput], ReferenceWorkflowInput],
+    Callable[[ReferenceWorkflowInput], ReferenceDraftResult],
+    Callable[[ReferenceApprovalSignal], ReferenceWorkflowResult],
+]:
+    """Build the three T19 adapters the production worker registers.
+
+    Until T18b, ``ContinuityReferenceWorkflow`` named two activities that no
+    process defined, so the workflow could not run at all outside a test. These
+    adapters own the session, the blob store and the image provider, and drive
+    the existing T19 orchestration: candidate selection, identity bibles,
+    provider generation through the T14 boundary with T23 accounting, technical
+    validation, persistence, and the bundle binding that stales only the shots
+    whose immutable bundle actually changed.
+
+    Every message across the activity boundary stays IDs, counts and hashes.
+    """
+    configured = settings or get_settings()
+    engine = build_engine(configured.database_url)
+    blob_store = build_blob_store(configured)
+    image_provider: ImageGenerationProvider
+    if configured.openai_api_key:
+        from openai import OpenAI
+
+        image_provider = OpenAIImageProvider(
+            OpenAI(api_key=configured.openai_api_key, max_retries=0)
+        )
+    elif configured.temporal_allow_fake_providers:
+        image_provider = DeterministicFakeImageProvider()
+    else:
+        raise ValueError("T19 continuity reference provider is not configured")
+
+    def resolve(request: StageActivityInput) -> ReferenceWorkflowInput:
+        with Session(engine, expire_on_commit=False) as session:
+            try:
+                return resolve_reference_inputs(
+                    session,
+                    project_id=request.project_id,
+                    idempotency_key=request.idempotency_key,
+                )
+            except ReferenceInputsUnavailable as error:
+                raise ApplicationError(
+                    f"{error.code}: {error.summary}", non_retryable=True
+                ) from error
+
+    def orchestrator(session: Session) -> ContinuityReferenceOrchestrator:
+        generator = ProviderReferenceGenerator(session, blob_store, image_provider)
+
+        def generate(
+            request: ReferenceGenerationRequest, source_hashes: list[str]
+        ) -> ReferenceGenerationResult:
+            # The generator resolves the ranked candidate frames it was given
+            # and pays for exactly one sheet through T14's provider boundary;
+            # the bytes never come back through the activity result.
+            sources = tuple(
+                _asset_bytes(session, blob_store, asset_id)
+                for asset_id in request.ordered_source_asset_ids
+            )
+            prompt = _reference_prompt(session, request)
+            return asyncio.run(
+                generator.generate(
+                    request,
+                    source_hashes=source_hashes,
+                    source_bytes=sources,
+                    prompt=prompt,
+                )
+            )
+
+        return ContinuityReferenceOrchestrator(
+            session,
+            generator=generate,
+            provider=image_provider.name,
+            model=configured.image_model,
+        )
+
+    def build(request: ReferenceWorkflowInput) -> ReferenceDraftResult:
+        with Session(engine, expire_on_commit=False) as session:
+            try:
+                outcome = orchestrator(session).build(
+                    project_id=request.project_id,
+                    episode_analysis_id=request.episode_analysis_id,
+                    reference_run_id=request.reference_run_id,
+                    idempotency_key=request.idempotency_key,
+                )
+            except ContinuityOrchestrationError as error:
+                session.rollback()
+                raise ApplicationError(
+                    f"{error.code}: {error.summary}", non_retryable=not error.retryable
+                ) from error
+            session.commit()
+        return ReferenceDraftResult(
+            project_id=request.project_id,
+            reference_run_id=request.reference_run_id,
+            draft_version_ids=list(outcome.draft_reference_set_ids),
+            reused_version_ids=list(outcome.reused_reference_set_ids),
+            entity_count=outcome.entity_count,
+            requires_approval=outcome.requires_approval,
+            status=(
+                "references_awaiting_approval"
+                if outcome.requires_approval
+                else "references_complete"
+            ),
+        )
+
+    def apply(signal: ReferenceApprovalSignal) -> ReferenceWorkflowResult:
+        with Session(engine, expire_on_commit=False) as session:
+            storyboard_run_id = signal.storyboard_run_id
+            if storyboard_run_id is None:
+                try:
+                    storyboard_run_id = resolve_reference_inputs(
+                        session,
+                        project_id=signal.project_id,
+                        idempotency_key=signal.idempotency_key,
+                    ).storyboard_run_id
+                except ReferenceInputsUnavailable as error:
+                    raise ApplicationError(
+                        f"{error.code}: {error.summary}", non_retryable=True
+                    ) from error
+            approved = _approved_reference_sets(session, signal.project_id)
+            if signal.approved_reference_set_ids and not set(
+                signal.approved_reference_set_ids
+            ) <= set(approved):
+                # A stale approval: the sets it names are no longer approved, so
+                # binding them would apply a decision to a lineage that moved.
+                raise ApplicationError("reference_approval_stale", non_retryable=True)
+            try:
+                outcome = orchestrator(session).apply(
+                    project_id=signal.project_id,
+                    storyboard_run_id=storyboard_run_id,
+                    idempotency_key=signal.idempotency_key,
+                    regenerate_shot=_reference_regeneration(session, storyboard_run_id, configured),
+                )
+            except ContinuityOrchestrationError as error:
+                session.rollback()
+                raise ApplicationError(
+                    f"{error.code}: {error.summary}", non_retryable=not error.retryable
+                ) from error
+            affected = list(outcome.regenerated_shot_ids)
+            session.commit()
+        return ReferenceWorkflowResult(
+            project_id=signal.project_id,
+            reference_run_id=signal.reference_run_id,
+            status=ReferenceWorkflowStatus.COMPLETE,
+            approved_version_ids=list(outcome.approved_reference_set_ids),
+            affected_shot_ids=affected,
+        )
+
+    return resolve, build, apply
+
+
+def _reference_regeneration(
+    session: Session, storyboard_run_id: UUID, settings: APISettings
+) -> Callable[[UUID, str, str], None]:
+    """Turn each changed bundle into a durable replacement-shot command.
+
+    Binding an approved reference is only half of the invalidation story. A shot
+    whose bundle changed has to be generated again, and it has to be generated
+    by a *new* child workflow, because the one that produced its current output
+    has already locked. Creating a control command here is what makes that
+    happen: the dispatcher starts the replacement, only for the affected shots,
+    and every sibling keeps its locked identity and its selected assets.
+    """
+
+    def regenerate(stable_shot_id: UUID, bundle_hash: str, idempotency_key: str) -> None:
+        shot = session.scalar(
+            select(StoryboardShotRecord).where(
+                StoryboardShotRecord.storyboard_run_id == storyboard_run_id,
+                StoryboardShotRecord.stable_shot_id == stable_shot_id,
+            )
+        )
+        run = session.get(StoryboardRun, storyboard_run_id) if shot is not None else None
+        if shot is None or run is None:
+            return
+        project = session.get(Project, run.project_id)
+        if project is None:  # pragma: no cover - the run cannot outlive its project
+            return
+        t14_identity, t15_identity = configuration_identities(
+            image_provider_name=settings.image_provider_name,
+            image_model=settings.image_model,
+            video_provider_name=settings.video_provider_name,
+            visual_capability_profile=settings.visual_capability_profile,
+        )
+        current = shot_workflow_identity(
+            session,
+            run,
+            shot,
+            t14_configuration_identity=t14_identity,
+            t15_capability_profile_identity=t15_identity,
+        )
+        sequence = (
+            len(
+                session.scalars(
+                    select(ControlCommandRecord.id).where(
+                        ControlCommandRecord.project_id == project.id,
+                        ControlCommandRecord.command_type
+                        == ControlCommandType.SHOT_REGENERATE.value,
+                        ControlCommandRecord.target_id == shot.id,
+                        ControlCommandRecord.status.notin_(["cancelled", "superseded"]),
+                    )
+                ).all()
+            )
+            + 1
+        )
+        ControlPlaneService(session, project.owner_subject).submit(
+            project,
+            command_type=ControlCommandType.SHOT_REGENERATE,
+            target_type=ControlCommandTargetType.SHOT,
+            target_id=shot.id,
+            idempotency_key=idempotency_key[:255],
+            payload={"bundle_hash": bundle_hash, "shot_id": str(shot.id)},
+            metadata={
+                "regeneration_sequence": str(sequence),
+                "shot_identity_hash": current.identity_hash,
+                "reason": "continuity_reference_changed",
+            },
+            shot_identity_hash=current.identity_hash,
+        )
+
+    return regenerate
+
+
+def _approved_reference_sets(session: Session, project_id: UUID) -> list[UUID]:
+    approved: list[UUID] = []
+    for table in (character_reference_sets, location_reference_sets):
+        approved.extend(
+            UUID(str(value))
+            for value in session.scalars(
+                select(table.c.id).where(
+                    table.c.project_id == project_id, table.c.status == "approved"
+                )
+            )
+        )
+    return approved
+
+
+def _asset_bytes(session: Session, blob_store: BlobStore, asset_id: UUID) -> bytes:
+    asset = session.get(Asset, asset_id)
+    if asset is None:
+        raise ValueError(f"reference source asset {asset_id} is missing")
+    return blob_store.read(asset.storage_key)
+
+
+def _reference_prompt(session: Session, request: ReferenceGenerationRequest) -> str:
+    """Compile the reference-sheet prompt from the persisted identity bible.
+
+    Built from stable traits only: a reference sheet is the entity's invariant
+    appearance, and per-shot state belongs to the T19 state snapshots, not here.
+    """
+    identities = (
+        character_identity_versions
+        if request.entity_kind == "character"
+        else location_identity_versions
+    )
+    row = (
+        session.execute(
+            select(identities.c.identity).where(identities.c.id == request.identity_version_id)
+        )
+        .mappings()
+        .one()
+    )
+    bible = dict(row["identity"] or {})
+    traits = bible.get("stable_traits") or {}
+    described = ", ".join(
+        f"{name}: {value}"
+        for name, value in sorted(traits.items())
+        if isinstance(value, str) and value
+    )
+    subject = str(bible.get("display_name") or request.entity_kind)
+    return (
+        f"Character and location continuity reference sheet for {subject}. "
+        f"Stable appearance: {described or 'as shown in the supplied frames'}. "
+        "Neutral lighting, plain background, consistent proportions, "
+        "front and three-quarter views."
     )

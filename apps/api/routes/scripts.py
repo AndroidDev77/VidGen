@@ -123,16 +123,20 @@ def select_script(
     # Selecting a version is the approval narration spending waits for, so this
     # is where the rebuild becomes durable work rather than a recorded intent.
     plan = plan_revision(session, project_id=project.id, kind="script", source_id=selected.id)
-    command = ControlPlaneService(session, principal.subject).submit(
-        project,
-        command_type=ControlCommandType.SCRIPT_REVISION,
-        target_type=ControlCommandTargetType.SCRIPT,
-        target_id=selected.id,
-        idempotency_key=f"script-revision:{key}"[:255],
-        payload={"script_id": str(selected.id), "version": selected.version},
-        metadata={"entry_stage": plan.entry_stage, "revision_kind": "script"},
-        entry_stage=plan.entry_stage,
-    ).command
+    command = (
+        ControlPlaneService(session, principal.subject)
+        .submit(
+            project,
+            command_type=ControlCommandType.SCRIPT_REVISION,
+            target_type=ControlCommandTargetType.SCRIPT,
+            target_id=selected.id,
+            idempotency_key=f"script-revision:{key}"[:255],
+            payload={"script_id": str(selected.id), "version": selected.version},
+            metadata={"entry_stage": plan.entry_stage, "revision_kind": "script"},
+            entry_stage=plan.entry_stage,
+        )
+        .command
+    )
     body = SelectScriptResponse(
         script=script_summary(project.id, selected, versions),
         rebuild_command_id=command.command_id,
@@ -189,9 +193,7 @@ def update_script_segment(
         confirm_invalidation=request.confirm_invalidation,
     )
     updated = outcome.segment
-    plan = plan_revision(
-        session, project_id=project.id, kind="script", source_id=outcome.script.id
-    )
+    plan = plan_revision(session, project_id=project.id, kind="script", source_id=outcome.script.id)
     body = UpdateScriptSegmentResponse(
         rebuild_entry_stage=plan.entry_stage if outcome.invalidation.entries else None,
         segment=ScriptSegmentProjection(

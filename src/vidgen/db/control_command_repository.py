@@ -17,9 +17,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from typing import Any, cast
 from uuid import UUID
 
-from sqlalchemy import select, update
+from sqlalchemy import Update, select, update
+from sqlalchemy.engine import CursorResult
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -72,6 +74,16 @@ def _aware(value: datetime | None) -> datetime | None:
 class ControlCommandRepository:
     def __init__(self, session: Session) -> None:
         self._session = session
+
+    def _update(self, statement: Update) -> int:
+        """Run one guarded UPDATE and return how many rows it actually changed.
+
+        Every transition in this repository is conditional on the row version it
+        read, so the row count *is* the concurrency answer: one means this caller
+        won, zero means someone else moved the command first.
+        """
+        result = cast("CursorResult[Any]", self._session.execute(statement))
+        return int(result.rowcount)
 
     # -- creation ---------------------------------------------------------
     def create(self, request: ControlCommandRequest) -> CommandCreation:
@@ -227,7 +239,7 @@ class ControlCommandRepository:
         """
         moment = now or _now()
         expected_version = record.row_version
-        result = self._session.execute(
+        changed = self._update(
             update(ControlCommandRecord)
             .where(
                 ControlCommandRecord.id == record.id,
@@ -246,7 +258,7 @@ class ControlCommandRepository:
                 updated_at=moment,
             )
         )
-        if result.rowcount != 1:
+        if changed != 1:
             return False
         self._session.expire(record)
         return True
@@ -261,7 +273,7 @@ class ControlCommandRepository:
     ) -> bool:
         """Extend the lease of a command this dispatcher still owns."""
         moment = now or _now()
-        result = self._session.execute(
+        changed = self._update(
             update(ControlCommandRecord)
             .where(
                 ControlCommandRecord.id == record.id,
@@ -271,7 +283,7 @@ class ControlCommandRepository:
             .values(lease_expires_at=moment + timedelta(seconds=lease_seconds), updated_at=moment)
         )
         self._session.expire(record)
-        return result.rowcount == 1
+        return changed == 1
 
     # -- transitions ------------------------------------------------------
     def _transition(
@@ -294,7 +306,7 @@ class ControlCommandRepository:
             )
         moment = now or _now()
         expected_version = record.row_version
-        result = self._session.execute(
+        changed = self._update(
             update(ControlCommandRecord)
             .where(
                 ControlCommandRecord.id == record.id,
@@ -309,7 +321,7 @@ class ControlCommandRepository:
             )
         )
         self._session.expire(record)
-        return result.rowcount == 1
+        return changed == 1
 
     def mark_dispatching(self, record: ControlCommandRecord) -> bool:
         return self._transition(

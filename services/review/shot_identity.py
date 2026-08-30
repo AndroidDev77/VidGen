@@ -131,4 +131,3 @@ def shot_workflow_identity(
 def current_workflow_id(identity: ShotWorkflowIdentity) -> str:
     """The Temporal ID of the child that currently owns this shot."""
     return temporal_shot_workflow_id(identity)
-

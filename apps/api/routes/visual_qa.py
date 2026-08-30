@@ -447,22 +447,26 @@ def _decide(
     # is one, and starts an immutable replacement run if the child has closed.
     # A deterministic hard failure is never turned into a pass here - the review
     # service has already refused that, and this only continues what it allowed.
-    command = ControlPlaneService(session, principal.subject).submit(
-        project,
-        command_type=ControlCommandType.SHOT_REVIEW_CONTINUE,
-        target_type=ControlCommandTargetType.SHOT,
-        target_id=shot.id,
-        idempotency_key=f"visual-qa:{decision}:{qa_run_id}:{key}"[:255],
-        payload={"qa_run_id": str(qa_run_id), "decision": decision, **payload},
-        expected_row_version=expected,
-        metadata={
-            "decision": decision,
-            "qa_run_id": str(qa_run_id),
-            "resulting_gate": str(outcome.resulting_gate),
-            "shot_identity_hash": identity_hash,
-        },
-        shot_identity_hash=identity_hash,
-    ).command
+    command = (
+        ControlPlaneService(session, principal.subject)
+        .submit(
+            project,
+            command_type=ControlCommandType.SHOT_REVIEW_CONTINUE,
+            target_type=ControlCommandTargetType.SHOT,
+            target_id=shot.id,
+            idempotency_key=f"visual-qa:{decision}:{qa_run_id}:{key}"[:255],
+            payload={"qa_run_id": str(qa_run_id), "decision": decision, **payload},
+            expected_row_version=expected,
+            metadata={
+                "decision": decision,
+                "qa_run_id": str(qa_run_id),
+                "resulting_gate": str(outcome.resulting_gate),
+                "shot_identity_hash": identity_hash,
+            },
+            shot_identity_hash=identity_hash,
+        )
+        .command
+    )
     body = VisualQADecisionResponse(
         qa_run_id=run.id,
         review_id=outcome.review_id,

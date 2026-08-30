@@ -59,9 +59,7 @@ def upgrade() -> None:
         sa.CheckConstraint(
             "expected_size > 0", name=op.f("ck_upload_sessions_positive_expected_size")
         ),
-        sa.CheckConstraint(
-            "part_size > 0", name=op.f("ck_upload_sessions_positive_part_size")
-        ),
+        sa.CheckConstraint("part_size > 0", name=op.f("ck_upload_sessions_positive_part_size")),
         sa.CheckConstraint(
             "length(expected_sha256) = 64",
             name=op.f("ck_upload_sessions_expected_sha256_length"),
@@ -102,9 +100,7 @@ def upgrade() -> None:
             "part_number >= 0", name=op.f("ck_upload_parts_nonnegative_part_number")
         ),
         sa.CheckConstraint("byte_size > 0", name=op.f("ck_upload_parts_positive_byte_size")),
-        sa.CheckConstraint(
-            "length(sha256) = 64", name=op.f("ck_upload_parts_part_sha256_length")
-        ),
+        sa.CheckConstraint("length(sha256) = 64", name=op.f("ck_upload_parts_part_sha256_length")),
         sa.ForeignKeyConstraint(
             ["upload_id"],
             ["upload_sessions.id"],
@@ -112,9 +108,7 @@ def upgrade() -> None:
             ondelete="CASCADE",
         ),
         sa.PrimaryKeyConstraint("id", name=op.f("pk_upload_parts")),
-        sa.UniqueConstraint(
-            "upload_id", "part_number", name=op.f("uq_upload_parts_upload_id")
-        ),
+        sa.UniqueConstraint("upload_id", "part_number", name=op.f("uq_upload_parts_upload_id")),
     )
     op.create_index("ix_upload_parts_upload_id", "upload_parts", ["upload_id"])
 

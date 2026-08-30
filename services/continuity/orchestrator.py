@@ -160,35 +160,47 @@ def resolve_requirements(session: Session, project_id: UUID) -> list[EntityRequi
 
     Ordered by kind then canonical name so a rebuild is byte-for-byte stable.
     """
+    entities: list[tuple[EntityKind, UUID, str, dict[str, Any]]] = []
+    for character in session.scalars(
+        select(Character)
+        .where(Character.project_id == project_id)
+        .order_by(Character.canonical_name, Character.id)
+    ):
+        entities.append(
+            ("character", character.id, character.canonical_name, dict(character.definition or {}))
+        )
+    for location in session.scalars(
+        select(Location)
+        .where(Location.project_id == project_id)
+        .order_by(Location.canonical_name, Location.id)
+    ):
+        entities.append(
+            ("location", location.id, location.canonical_name, dict(location.definition or {}))
+        )
     requirements: list[EntityRequirement] = []
-    for kind, model in (("character", Character), ("location", Location)):
-        for entity in session.scalars(
-            select(model)
-            .where(model.project_id == project_id)
-            .order_by(model.canonical_name, model.id)
-        ):
-            identities, candidates, _, entity_column = _candidate_tables(kind)  # type: ignore[arg-type]
-            rows = list(
-                session.execute(
-                    select(candidates)
-                    .join(identities, candidates.c.identity_version_id == identities.c.id)
-                    .where(
-                        identities.c.project_id == project_id,
-                        identities.c[entity_column] == entity.id,
-                    )
-                ).mappings()
-            )
-            selected = _rank_candidates(session, rows)
-            requirements.append(
-                EntityRequirement(
-                    kind=kind,  # type: ignore[arg-type]
-                    entity_id=entity.id,
-                    display_name=entity.canonical_name,
-                    definition=dict(entity.definition or {}),
-                    candidate_asset_ids=tuple(asset_id for asset_id, _ in selected),
-                    candidate_hashes=tuple(sha for _, sha in selected),
+    for kind, entity_id, display_name, definition in entities:
+        identities, candidates, _, entity_column = _candidate_tables(kind)
+        rows = list(
+            session.execute(
+                select(candidates)
+                .join(identities, candidates.c.identity_version_id == identities.c.id)
+                .where(
+                    identities.c.project_id == project_id,
+                    identities.c[entity_column] == entity_id,
                 )
+            ).mappings()
+        )
+        selected = _rank_candidates(session, rows)
+        requirements.append(
+            EntityRequirement(
+                kind=kind,
+                entity_id=entity_id,
+                display_name=display_name,
+                definition=definition,
+                candidate_asset_ids=tuple(asset_id for asset_id, _ in selected),
+                candidate_hashes=tuple(sha for _, sha in selected),
             )
+        )
     return requirements
 
 
@@ -494,8 +506,9 @@ class ContinuityReferenceOrchestrator:
     def _approved_references(self, project_id: UUID) -> dict[UUID, tuple[UUID, UUID, str, str]]:
         """Map entity ID -> (reference set ID, asset ID, sha256, kind)."""
         resolved: dict[UUID, tuple[UUID, UUID, str, str]] = {}
-        for kind in ("character", "location"):
-            identities, _, reference_sets, entity_column = _candidate_tables(kind)  # type: ignore[arg-type]
+        kinds: tuple[EntityKind, ...] = ("character", "location")
+        for kind in kinds:
+            identities, _, reference_sets, entity_column = _candidate_tables(kind)
             rows = self._session.execute(
                 select(
                     reference_sets.c.id,

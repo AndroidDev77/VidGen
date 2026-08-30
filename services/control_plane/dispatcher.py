@@ -266,7 +266,7 @@ class ControlCommandDispatcher:
             ControlCommandType.SHOT_REVIEW_CONTINUE,
         }:
             return self._settle_shot(repository, record, workflow_id)
-        return self._settle_generation_run(repository, record)
+        return self._settle_generation_run(session, repository, record)
 
     def _settle_references(
         self,

@@ -378,6 +378,17 @@ def route_final_editorial_remediation(
         target = FinalRemediationTarget(request.target)
     except ValueError as error:
         raise conflict(ApiErrorCode.VALIDATION_FAILED, "unknown remediation target") from error
+    if target in UNSUPPORTED_REMEDIATION_TARGETS:
+        # A routing classification, not executable work. Answering 202 here
+        # would be the exact untruth T18b exists to remove: nothing would ever
+        # pick this up, and the UI would show it as running forever.
+        raise conflict(
+            ApiErrorCode.REMEDIATION_UNSUPPORTED,
+            f"{target.value} is recorded as a routing decision and is not executed automatically.",
+        )
+    # Only now, for a target that can actually execute, is it worth checking
+    # that the findings belong to this report: an unsupported target is refused
+    # for what it is, not for which findings were attached to it.
     report = report_payload(blob, session, run)
     known = {
         UUID(str(item["finding_id"]))
@@ -389,14 +400,6 @@ def route_final_editorial_remediation(
         raise conflict(
             ApiErrorCode.VALIDATION_FAILED,
             "a remediation route may only reference findings from this report",
-        )
-    if target in UNSUPPORTED_REMEDIATION_TARGETS:
-        # A routing classification, not executable work. Answering 202 here
-        # would be the exact untruth T18b exists to remove: nothing would ever
-        # pick this up, and the UI would show it as running forever.
-        raise conflict(
-            ApiErrorCode.REMEDIATION_UNSUPPORTED,
-            f"{target.value} is recorded as a routing decision and is not executed automatically.",
         )
     if target in _SHOT_SCOPED_TARGETS and request.shot_id is None:
         raise conflict(

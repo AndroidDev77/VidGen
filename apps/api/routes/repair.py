@@ -374,22 +374,28 @@ def act_on_repair_run(
         # immutable recovery run, bounded by the same T21 attempt policy, and
         # never creates a second paid attempt for a duplicated request.
         identity_hash = current_shot_identity_hash(session, shot, settings)
-        command = ControlPlaneService(session, principal.subject).submit(
-            project,
-            command_type=ControlCommandType.SHOT_RETRY,
-            target_type=ControlCommandTargetType.SHOT,
-            target_id=shot.id,
-            idempotency_key=f"repair:{request.action}:{repair_run_id}:{key}"[:255],
-            payload={"repair_run_id": str(repair_run_id), **payload},
-            expected_row_version=expected,
-            metadata={
-                "repair_run_id": str(repair_run_id),
-                "action": request.action,
-                "shot_identity_hash": identity_hash,
-                "regeneration_sequence": str(_next_regeneration_sequence(session, project, shot)),
-            },
-            shot_identity_hash=identity_hash,
-        ).command
+        command = (
+            ControlPlaneService(session, principal.subject)
+            .submit(
+                project,
+                command_type=ControlCommandType.SHOT_RETRY,
+                target_type=ControlCommandTargetType.SHOT,
+                target_id=shot.id,
+                idempotency_key=f"repair:{request.action}:{repair_run_id}:{key}"[:255],
+                payload={"repair_run_id": str(repair_run_id), **payload},
+                expected_row_version=expected,
+                metadata={
+                    "repair_run_id": str(repair_run_id),
+                    "action": request.action,
+                    "shot_identity_hash": identity_hash,
+                    "regeneration_sequence": str(
+                        _next_regeneration_sequence(session, project, shot)
+                    ),
+                },
+                shot_identity_hash=identity_hash,
+            )
+            .command
+        )
     body = RepairActionResponse(
         repair_run_id=run.id,
         action=request.action,
