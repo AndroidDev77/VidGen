@@ -17,6 +17,7 @@ from apps.api.routes._common import (
     IdempotencyKeyDep,
     PrincipalDep,
     SessionDep,
+    SettingsDep,
     events_for,
     idempotency_for,
     owned_project,
@@ -35,6 +36,7 @@ from services.control_plane.generation_runs import (
     GenerationRunService,
     generation_input_identity,
 )
+from services.costs.project_budget import BudgetDeployment, budget_for, startable
 from services.narration.voice_profiles import current_selection
 from vidgen.contracts.control_commands import (
     ControlCommandTargetType,
@@ -63,6 +65,7 @@ def start_workflow(
     session: SessionDep,
     principal: PrincipalDep,
     controller: ControllerDep,
+    settings: SettingsDep,
     response: Response,
     idempotency_key: IdempotencyKeyDep = None,
 ) -> StartWorkflowResponse:
@@ -98,6 +101,17 @@ def start_workflow(
         raise conflict(
             ApiErrorCode.VOICE_PROFILE_REQUIRED,
             "Select a narration voice profile before starting this project.",
+        )
+    # A paid deployment reserves against the T23 budget at every provider call.
+    # Without a positive hard cap with headroom left, the first paid activity
+    # would fail inside the workflow; refusing here costs nothing and says why.
+    # A fake-provider deployment spends nothing, so a zero-dollar budget starts.
+    if not startable(budget_for(session, project.id), BudgetDeployment.from_settings(settings)):
+        raise conflict(
+            ApiErrorCode.PROJECT_BUDGET_REQUIRED,
+            "Set a positive project budget before starting this project. "
+            "This deployment uses paid providers, and every generation reserves "
+            "against the project's hard cap.",
         )
 
     workflow_id = project_workflow_id(project.id)

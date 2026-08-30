@@ -38,6 +38,10 @@ class ApiErrorCode(StrEnum):
     #: before Temporal is involved, and a routing-only remediation target must
     #: say so rather than answer 202 to work nothing will execute.
     VOICE_PROFILE_REQUIRED = "voice_profile_required"
+    #: A paid deployment refuses to start a workflow the project cannot fund:
+    #: every paid activity reserves against the T23 budget, so a missing or
+    #: zero-ceiling budget is a precondition failure, not a mid-run surprise.
+    PROJECT_BUDGET_REQUIRED = "project_budget_required"
     COMMAND_UPSTREAM_STALE = "command_upstream_stale"
     REMEDIATION_UNSUPPORTED = "remediation_unsupported"
     ATTEMPT_NOT_ELIGIBLE = "attempt_not_eligible"

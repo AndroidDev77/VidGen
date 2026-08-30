@@ -53,6 +53,13 @@ export interface CreateProjectInput {
   humor_intensity: number;
   /** A voice from this deployment's catalog, chosen during setup. */
   voice_profile_id?: string;
+  /**
+   * The project's spend caps in USD, as exact decimal strings. Sending a number
+   * would let a binary float round the limit the owner typed, so the form keeps
+   * the text it collected.
+   */
+  budget_warning_cap: string;
+  budget_hard_cap: string;
 }
 
 export function listProjects(

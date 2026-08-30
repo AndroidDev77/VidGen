@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 from datetime import datetime
+from decimal import Decimal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class CreateProjectRequest(BaseModel):
@@ -24,6 +25,29 @@ class CreateProjectRequest(BaseModel):
     #: An externally provisioned voice, named by its configured provider.
     voice_provider: str | None = Field(default=None, min_length=1, max_length=64)
     voice_provider_voice_id: str | None = Field(default=None, min_length=1, max_length=255)
+    #: The project's T23 spend caps, in USD, as exact decimal strings. The
+    #: warning cap is where the ledger starts flagging spend; the hard cap is
+    #: the ceiling every paid activity reserves against. Both default to zero,
+    #: which is a complete budget for a fake-provider run and is refused on a
+    #: deployment that has a paid provider credential configured.
+    budget_warning_cap: str = "0"
+    budget_hard_cap: str = "0"
+
+    @field_validator("budget_warning_cap", "budget_hard_cap", mode="before")
+    @classmethod
+    def exact_decimal_text(cls, value: object) -> object:
+        """Accept only a value that is still exact by the time it arrives.
+
+        A JSON float has already lost the amount the owner typed, so it is
+        refused here rather than stored as an approximation of a spend limit.
+        Integers and ``Decimal`` are exact and are rendered as text; the amount
+        itself is validated by ``services.costs.project_budget``.
+        """
+        if isinstance(value, bool) or isinstance(value, float):
+            raise ValueError('provide the amount as an exact decimal string, for example "25.00"')
+        if isinstance(value, int | Decimal):
+            return str(value)
+        return value
 
 
 class ProjectResponse(BaseModel):

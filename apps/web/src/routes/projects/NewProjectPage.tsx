@@ -36,6 +36,15 @@ const useStyles = makeStyles({
 const MIN_DURATION = 60;
 const MAX_DURATION = 900;
 
+/** An exact, non-negative decimal amount with at most six decimal places. */
+const AMOUNT_PATTERN = /^\d{1,12}(\.\d{1,6})?$/;
+
+function amountError(value: string, label: string): string | null {
+  return AMOUNT_PATTERN.test(value.trim())
+    ? null
+    : `Enter ${label} as an amount in dollars, for example 25.00.`;
+}
+
 export function NewProjectPage(): JSX.Element {
   const styles = useStyles();
   const client = useApiClient();
@@ -46,7 +55,12 @@ export function NewProjectPage(): JSX.Element {
   const [targetDuration, setTargetDuration] = useState(300);
   const [visualStyle, setVisualStyle] = useState("flat editorial cartoon");
   const [humorIntensity, setHumorIntensity] = useState(5);
+  // Kept as the text the owner typed. Parsing to a number here would round the
+  // spend limit before it ever reached the ledger, which stores exact decimals.
+  const [warningCap, setWarningCap] = useState("0.00");
+  const [hardCap, setHardCap] = useState("0.00");
   const [nameError, setNameError] = useState<string | null>(null);
+  const [budgetError, setBudgetError] = useState<string | null>(null);
   const [project, setProject] = useState<ProjectDetail | null>(null);
   // T12 narration resolves the project's voice, and the workflow refuses to
   // start without one. Tracking it here means the start button is disabled with
@@ -63,6 +77,8 @@ export function NewProjectPage(): JSX.Element {
           target_duration_seconds: targetDuration,
           visual_style: visualStyle.trim(),
           humor_intensity: humorIntensity,
+          budget_warning_cap: warningCap.trim(),
+          budget_hard_cap: hardCap.trim(),
         },
         client,
       ).then((response) => response.data),
@@ -90,9 +106,20 @@ export function NewProjectPage(): JSX.Element {
         return;
       }
       setNameError(null);
+      const capError =
+        amountError(warningCap, "the warning cap") ?? amountError(hardCap, "the hard cap");
+      if (capError !== null) {
+        setBudgetError(capError);
+        return;
+      }
+      if (Number(hardCap) < Number(warningCap)) {
+        setBudgetError("The hard cap must be at least the warning cap.");
+        return;
+      }
+      setBudgetError(null);
       create.mutate();
     },
-    [create, name],
+    [create, hardCap, name, warningCap],
   );
 
   const uploadComplete = upload.state.phase === "complete";
@@ -146,6 +173,37 @@ export function NewProjectPage(): JSX.Element {
             value={humorIntensity}
             disabled={project !== null}
             onChange={(_, data) => setHumorIntensity(data.value)}
+          />
+        </Field>
+
+        <Field
+          label="Warning cap (USD)"
+          hint="Where the cost ledger starts warning you. Leave it at 0.00 to be warned from the first generation."
+        >
+          <Input
+            value={warningCap}
+            disabled={project !== null}
+            inputMode="decimal"
+            onChange={(_, data) => setWarningCap(data.value)}
+          />
+        </Field>
+
+        <Field
+          label="Hard cap (USD)"
+          hint={
+            "The maximum provider spending allowed for this project. Every image, video, " +
+            "narration and QA request reserves against it, and a request that would exceed " +
+            "it is refused rather than charged. A project on a deployment with paid " +
+            "provider credentials needs a hard cap above 0.00 before its workflow can start."
+          }
+          validationState={budgetError === null ? "none" : "error"}
+          validationMessage={budgetError ?? undefined}
+        >
+          <Input
+            value={hardCap}
+            disabled={project !== null}
+            inputMode="decimal"
+            onChange={(_, data) => setHardCap(data.value)}
           />
         </Field>
 

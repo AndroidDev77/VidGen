@@ -30,6 +30,10 @@ test.describe("T18 MVP acceptance", () => {
     // 1. Create a project.
     await page.goto("/projects/new");
     await page.getByLabel(/Project name/).fill("Season 3 Episode 4");
+    // The project's spend caps. A fake-provider run costs nothing, so the
+    // zero-dollar default is left in place; the field is asserted to be there
+    // because a paid deployment refuses to start a project without a cap.
+    await expect(page.getByLabel(/Hard cap/)).toHaveValue("0.00");
     await page.getByRole("button", { name: "Create project" }).click();
 
     // 2-4. Select a synthetic source file; it is hashed and uploaded in parts.

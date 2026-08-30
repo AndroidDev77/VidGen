@@ -1034,6 +1034,7 @@ export type ApiErrorCode =
   | "render_not_verified"
   | "render_stale"
   | "shot_not_retryable"
+  | "project_budget_required"
   | "attempt_not_eligible"
   | "budget_denied"
   | "provider_unavailable"
