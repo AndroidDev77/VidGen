@@ -212,10 +212,11 @@ class ProjectGenerationRunRecord(UUIDPrimaryKeyMixin, TimestampMixin, Base):
             name="generation_run_status",
         ),
         # A run that is no longer the project's lineage cannot still be active,
-        # and an active run cannot be terminal.
+        # and an active run cannot be terminal. Written with the boolean itself
+        # rather than a comparison to 0 or 1, which PostgreSQL rejects.
         CheckConstraint(
-            "(active = 0 AND status IN ('completed','failed','cancelled','superseded')) "
-            "OR (active <> 0 AND status IN ('active','awaiting_review'))",
+            "(NOT active AND status IN ('completed','failed','cancelled','superseded')) "
+            "OR (active AND status IN ('active','awaiting_review'))",
             name="generation_run_active_status",
         ),
     )

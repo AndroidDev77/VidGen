@@ -1027,3 +1027,141 @@ def test_a_running_render_command_settles_from_the_workflow_result(
         assert settled is not None
         assert settled.status == ControlCommandStatus.COMPLETED.value
         assert settled.result_summary["render_status"] == "render_complete"
+
+
+# ---------------------------------------------------------------------------
+# Interruption and PostgreSQL concurrency
+# ---------------------------------------------------------------------------
+
+
+def test_a_dispatcher_killed_mid_dispatch_leaves_a_recoverable_command(
+    client: TestClient,
+    graph: ProjectGraph,
+    review_client: tuple[TestClient, sessionmaker[Session], FakeWorkflowController],
+) -> None:
+    """An interrupted dispatch must not strand the command or dispatch twice."""
+    _, factory, workflow_controller = review_client
+    created = client.post(
+        api(graph.project_id, "/final-qa:run"),
+        json={"provider": "fake", "adjudicate": False},
+        headers=headers(if_match=1, key="final-qa-1"),
+    ).json()
+
+    class DyingDispatcher(ControlCommandDispatcher):
+        """A dispatcher that is killed after claiming and before dispatching."""
+
+        def _dispatch_one(self, *args: object, **kwargs: object) -> bool:
+            raise KeyboardInterrupt("the replica was terminated mid-dispatch")
+
+    settings = APISettings()
+    dying = DyingDispatcher(
+        factory,
+        workflow_controller,
+        dispatcher_id="dying",
+        lease_seconds=1,
+        image_provider_name=settings.image_provider_name,
+        image_model=settings.image_model,
+        video_provider_name=settings.video_provider_name,
+        visual_capability_profile=settings.visual_capability_profile,
+    )
+    with pytest.raises(KeyboardInterrupt):
+        dying.run_once()
+
+    with factory() as session:
+        stranded = session.get(ControlCommandRecord, UUID(created["command_id"]))
+        assert stranded is not None
+        assert stranded.status == ControlCommandStatus.CLAIMED.value
+        assert stranded.claim_owner == "dying"
+        # Expire the lease exactly as wall-clock time would.
+        stranded.lease_expires_at = datetime.now(UTC) - timedelta(minutes=1)
+        session.commit()
+
+    survivor = ControlCommandDispatcher(
+        factory,
+        workflow_controller,
+        dispatcher_id="survivor",
+        image_provider_name=settings.image_provider_name,
+        image_model=settings.image_model,
+        video_provider_name=settings.video_provider_name,
+        visual_capability_profile=settings.visual_capability_profile,
+    )
+    report = survivor.run_once()
+    assert (report.claimed, report.dispatched) == (1, 1)
+    with factory() as session:
+        recovered = session.get(ControlCommandRecord, UUID(created["command_id"]))
+        assert recovered is not None
+        assert recovered.status == ControlCommandStatus.RUNNING.value
+        assert recovered.workflow_id is not None
+        # Two attempts, one dispatch: the interruption cost an attempt, not a
+        # duplicate workflow.
+        assert recovered.attempt == 2
+    assert len(workflow_controller.final_qa) == 1
+
+
+@pytest.mark.postgres
+def test_concurrent_postgres_dispatchers_claim_a_command_exactly_once(
+    tmp_path: Path,
+) -> None:
+    """The claim must be exclusive on the database the deployment actually uses.
+
+    SQLite serialises writes, so it cannot prove this on its own. The guarded
+    ``UPDATE`` is the same statement on both backends; here it runs against real
+    concurrent PostgreSQL sessions.
+    """
+    import os
+
+    from sqlalchemy import create_engine, text
+
+    url = os.getenv("VIDGEN_DATABASE_URL", "")
+    if not url.startswith("postgresql"):
+        pytest.skip("PostgreSQL is not configured for this run")
+    engine = create_engine(url)
+    try:
+        with engine.connect() as connection:
+            connection.execute(text("SELECT 1"))
+    except Exception:
+        pytest.skip("PostgreSQL is not reachable")
+    from vidgen.db.base import Base
+
+    schema = f"t18b_{uuid4().hex[:12]}"
+    with engine.begin() as connection:
+        connection.execute(text(f'CREATE SCHEMA "{schema}"'))
+    scoped = create_engine(url, connect_args={"options": f"-csearch_path={schema}"})
+    try:
+        Base.metadata.create_all(scoped)
+        factory = sessionmaker(bind=scoped, expire_on_commit=False)
+        with factory() as session:
+            project = Project(
+                name="concurrency", visual_style="flat", owner_subject="owner-a"
+            )
+            session.add(project)
+            session.flush()
+            record = ControlCommandRepository(session).create(_request(project.id)).record
+            session.commit()
+            project_id, command_id = project.id, record.id
+
+        claims: list[bool] = []
+        sessions = [factory() for _ in range(4)]
+        try:
+            candidates = [
+                (ControlCommandRepository(session), session) for session in sessions
+            ]
+            fetched = [
+                (repository, session, repository.get(project_id, command_id))
+                for repository, session in candidates
+            ]
+            for index, (repository, session, candidate) in enumerate(fetched):
+                assert candidate is not None
+                claims.append(
+                    repository.claim(candidate, claim_owner=f"dispatcher-{index}")
+                )
+                session.commit()
+        finally:
+            for session in sessions:
+                session.close()
+        assert claims.count(True) == 1, "more than one dispatcher claimed the same command"
+    finally:
+        scoped.dispose()
+        with engine.begin() as connection:
+            connection.execute(text(f'DROP SCHEMA "{schema}" CASCADE'))
+        engine.dispose()
