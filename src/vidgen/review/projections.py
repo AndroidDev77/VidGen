@@ -213,14 +213,13 @@ def project_summary(
         ),
         Decimal(0),
     )
-    has_failures = (
-        session.scalar(
-            select(PipelineFailureEvent.id)
-            .where(PipelineFailureEvent.project_id == project.id)
-            .limit(1)
-        )
-        is not None
+    latest_failure = session.scalar(
+        select(PipelineFailureEvent)
+        .where(PipelineFailureEvent.project_id == project.id)
+        .order_by(PipelineFailureEvent.created_at.desc())
+        .limit(1)
     )
+    has_failures = latest_failure is not None
     run = session.scalar(
         select(ProjectWorkflowRun).where(ProjectWorkflowRun.project_id == project.id)
     )
@@ -242,6 +241,8 @@ def project_summary(
         committed_cost_amount=str(committed),
         hard_cap_amount=str(budget.hard_cap) if budget else None,
         has_failures=has_failures,
+        latest_failure_stage=latest_failure.stage if latest_failure else None,
+        latest_failure_code=latest_failure.error_code if latest_failure else None,
         row_version=versions.current(project.id, "project", project.id),
     )
 
