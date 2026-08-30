@@ -43,7 +43,14 @@ test.describe("T18 MVP acceptance", () => {
     expect(state.uploadedParts.sort((a, b) => a - b)).toEqual([0, 1, 2]);
     expect(state.uploadComplete).toBe(true);
 
-    // 5. Start the project workflow. A duplicate submission must not start two.
+    // 5. The workflow cannot start without a narration voice, so setup shows
+    // the selection and the button only enables once one is chosen. Before
+    // T18b this project reached T12 and failed there.
+    // The caption only renders once the selection has resolved, so asserting it
+    // proves the picker actually resolved a voice rather than merely rendering.
+    await expect(page.getByText(/Model fake-tts, en, wav\./)).toBeVisible();
+
+    // 6. Start the project workflow. A duplicate submission must not start two.
     const start = page.getByTestId("start-workflow");
     await expect(start).toBeEnabled();
     await start.click();
@@ -51,9 +58,13 @@ test.describe("T18 MVP acceptance", () => {
     expect(state.workflowStarts).toHaveLength(1);
     expect(state.workflowStarts[0]).toMatch(/^workflow-start-/);
 
-    // 6. Progress reaches the browser.
+    // 7. Progress reaches the browser, and the control plane is visible beside
+    // it: the dashboard names the active generation run rather than inferring
+    // project state from whatever it last polled.
     await expect(page.getByRole("heading", { name: "Pipeline stages" })).toBeVisible();
     await expect(page.getByText(/10 of 10 shots locked/)).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Commands" })).toBeVisible();
+    await expect(page.getByText("Generation run 1, from upload.")).toBeVisible();
 
     // 7-8. Open the transcript and edit one segment.
     await page.getByRole("link", { name: "Review the transcript" }).click();

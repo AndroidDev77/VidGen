@@ -64,8 +64,8 @@ export function CommandsPanel({ projectId }: CommandsPanelProps): JSX.Element {
       listCommands(projectId, client, signal).then((response) => response.data),
     enabled: projectId !== "",
     refetchInterval: ({ state }) => {
-      const items = state.data?.items ?? [];
-      const active = items.some((item) => !isTerminalCommandStatus(item.status));
+      const pending = Array.isArray(state.data?.items) ? state.data.items : [];
+      const active = pending.some((item) => !isTerminalCommandStatus(item.status));
       return active ? 3_000 : false;
     },
   });
@@ -77,8 +77,13 @@ export function CommandsPanel({ projectId }: CommandsPanelProps): JSX.Element {
     return <ErrorState error={commands.error} onRetry={() => void commands.refetch()} />;
   }
 
-  const items = commands.data.items;
-  const runs = commands.data.generation_runs;
+  // Read defensively. A dashboard must not be taken down by one unexpected
+  // response shape from a single panel's query - the other panels here follow
+  // the same rule.
+  const items = Array.isArray(commands.data?.items) ? commands.data.items : [];
+  const runs = Array.isArray(commands.data?.generation_runs)
+    ? commands.data.generation_runs
+    : [];
   const active = runs.find((run) => run.status === "active" || run.status === "awaiting_review");
 
   return (
@@ -89,10 +94,9 @@ export function CommandsPanel({ projectId }: CommandsPanelProps): JSX.Element {
           <Caption1>
             {active === undefined
               ? "No generation run is active."
-              : `Generation run ${active.sequence}, from ${active.entry_stage.replaceAll(
-                  "_",
-                  " ",
-                )}.`}
+              : `Generation run ${active.sequence}, from ${String(
+                  active.entry_stage ?? "",
+                ).replaceAll("_", " ")}.`}
           </Caption1>
         }
       />

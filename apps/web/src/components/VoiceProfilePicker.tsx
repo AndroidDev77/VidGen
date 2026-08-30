@@ -57,7 +57,9 @@ export function VoiceProfilePicker({
     },
   });
 
-  const items = profiles.data?.items ?? [];
+  // Defensive for the same reason the commands panel is: a surprising response
+  // must not take down the setup screen that is meant to fix a bad project.
+  const items = Array.isArray(profiles.data?.items) ? profiles.data.items : [];
   const selectedId = profiles.data?.selected_voice_profile_id ?? undefined;
   const selected = items.find((item) => item.voice_profile_id === selectedId);
 
