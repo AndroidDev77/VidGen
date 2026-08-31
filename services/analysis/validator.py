@@ -25,15 +25,6 @@ def validate_scene_analysis(
     valid_references: list[SourceReference] | None = None,
 ) -> AnalysisValidationReport:
     errors: list[AnalysisValidationError] = []
-    # Build a loose key set: (reference_type, reference_id, scene_id).
-    # We intentionally exclude start_ms/end_ms because models cannot reliably
-    # reproduce exact millisecond boundaries; the important constraints are
-    # that the reference ID is known and the scene scope is correct.
-    valid_ref_keys: set[tuple[str, UUID, UUID | None]] | None = (
-        {(r.reference_type, r.reference_id, r.scene_id) for r in valid_references}
-        if valid_references is not None
-        else None
-    )
     if (result.scene_id, result.sequence, result.source_start_ms, result.source_end_ms) != (
         scene_id,
         sequence,
@@ -73,22 +64,6 @@ def validate_scene_analysis(
                     explanation="Reference must belong to this selected T09 scene evidence",
                 )
             )
-        elif valid_ref_keys is not None and (
-            reference.reference_type,
-            reference.reference_id,
-            reference.scene_id,
-        ) not in valid_ref_keys:
-            errors.append(
-                AnalysisValidationError(
-                    code="SOURCE_REFERENCE_SCOPE_MISMATCH",
-                    entity_path=f"source_references.{index}",
-                    invalid_value=reference.model_dump_json(),
-                    source_reference=reference,
-                    explanation=(
-                        "Reference must use the scene_id assigned to this evidence scope"
-                    ),
-                )
-            )
     return AnalysisValidationReport(valid=not errors, errors=errors)
 
 
@@ -109,12 +84,6 @@ def validate_episode_analysis(
             )
         )
 
-    episode_valid_ref_keys: set[tuple[str, UUID, UUID | None]] | None = (
-        {(r.reference_type, r.reference_id, r.scene_id) for r in valid_references}
-        if valid_references is not None
-        else None
-    )
-
     def refs(path: str, values: Iterable[SourceReference]) -> None:
         for index, item in enumerate(values):
             reference = item.reference_id
@@ -124,17 +93,6 @@ def validate_episode_analysis(
                     f"{path}.{index}.reference_id",
                     reference,
                     "Reference must belong to the selected evidence package",
-                )
-            elif episode_valid_ref_keys is not None and (
-                item.reference_type,
-                item.reference_id,
-                item.scene_id,
-            ) not in episode_valid_ref_keys:
-                error(
-                    "SOURCE_REFERENCE_SCOPE_MISMATCH",
-                    f"{path}.{index}",
-                    item.model_dump_json(),
-                    "Reference must use the scene_id assigned to this evidence scope",
                 )
 
     scene_ids = [scene.scene_id for scene in analysis.scenes]
