@@ -17,6 +17,8 @@ export interface ProjectListItem {
   committed_cost_amount: string | null;
   hard_cap_amount: string | null;
   has_failures: boolean;
+  latest_failure_stage: string | null;
+  latest_failure_code: string | null;
   row_version: number;
 }
 
@@ -93,6 +95,13 @@ export function createProject(
   client: VidGenClient = apiClient,
 ): Promise<ApiResponse<ProjectDetail>> {
   return client.post<ProjectDetail>("/api/v1/projects", { body: input });
+}
+
+export function deleteProject(
+  projectId: string,
+  client: VidGenClient = apiClient,
+): Promise<ApiResponse<void>> {
+  return client.delete<void>(`/api/v1/projects/${projectId}`);
 }
 
 export function getCosts(

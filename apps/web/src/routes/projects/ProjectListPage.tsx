@@ -29,6 +29,7 @@ import {
   formatMoney,
   formatStage,
   formatTimestamp,
+  humanize,
 } from "../../state/format";
 
 const useStyles = makeStyles({
@@ -75,6 +76,15 @@ const useStyles = makeStyles({
   numeric: { fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" },
   cost: { display: "flex", flexDirection: "column", gap: "2px", minWidth: "120px" },
   nowrap: { whiteSpace: "nowrap" },
+  failureNotice: {
+    display: "flex",
+    flexDirection: "column",
+    gap: "2px",
+  },
+  failureReason: {
+    color: tokens.colorPaletteRedForeground1,
+    fontSize: tokens.fontSizeBase200,
+  },
 });
 
 export function ProjectListPage(): JSX.Element {
@@ -180,19 +190,31 @@ export function ProjectListPage(): JSX.Element {
                 {visible.map((project) => (
                   <TableRow key={project.id} className={styles.row}>
                     <TableCell className={styles.nameCell}>
-                      <span className={styles.name}>
-                        <Link className={styles.nameLink} to={`/projects/${project.id}`}>
-                          {project.name}
-                        </Link>
-                        {project.has_failures && (
-                          <Badge
-                            appearance="tint"
-                            shape="rounded"
-                            color="danger"
-                            aria-label="Has failures"
-                          >
-                            Failures
-                          </Badge>
+                      <span className={styles.failureNotice}>
+                        <span className={styles.name}>
+                          <Link className={styles.nameLink} to={`/projects/${project.id}`}>
+                            {project.name}
+                          </Link>
+                          {project.has_failures && (
+                            <Badge
+                              appearance="tint"
+                              shape="rounded"
+                              color="danger"
+                              aria-label="Has failures"
+                            >
+                              Failed
+                            </Badge>
+                          )}
+                        </span>
+                        {project.has_failures && (project.latest_failure_stage !== null || project.latest_failure_code !== null) && (
+                          <Caption1 className={styles.failureReason}>
+                            {[
+                              project.latest_failure_stage ? humanize(project.latest_failure_stage) : null,
+                              project.latest_failure_code ? humanize(project.latest_failure_code) : null,
+                            ]
+                              .filter(Boolean)
+                              .join(" \u2014 ")}
+                          </Caption1>
                         )}
                       </span>
                     </TableCell>

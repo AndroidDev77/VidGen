@@ -61,6 +61,10 @@ class ProjectWorkflowInput(StrictContract):
     #: The earliest stage this run must execute. Stages before it already have
     #: authoritative, compatible outputs and are deliberately not rerun.
     entry_stage: str = Field(default="upload", min_length=1, max_length=64)
+    #: Optional pre-existing subtitle assets to prefer during transcript
+    #: acquisition. When present these are tried before provider search and
+    #: Whisper transcription.
+    sidecar_asset_ids: tuple[UUID, ...] = Field(default=())
 
     @field_validator("entry_stage")
     @classmethod
@@ -76,6 +80,7 @@ class StageActivityInput(StrictContract):
     source_video_id: UUID
     stage: str
     idempotency_key: str = Field(min_length=1, max_length=255)
+    sidecar_asset_ids: tuple[UUID, ...] = Field(default=())
 
 
 class AnimationActivityInput(StrictContract):

@@ -112,6 +112,8 @@ class ProjectListItemResponse(ProjectResponse):
     committed_cost_amount: str | None = None
     hard_cap_amount: str | None = None
     has_failures: bool = False
+    latest_failure_stage: str | None = None
+    latest_failure_code: str | None = None
     row_version: int = Field(ge=1)
 
 
