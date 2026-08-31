@@ -140,6 +140,19 @@ class CanonicalScene(StrictContract):
         return self
 
 
+class CharacterAlias(StrictContract):
+    """A character's known aliases, keyed by character identifier.
+
+    OpenAI's structured-output strict mode does not support free-form dict
+    schemas (``additionalProperties`` with a value schema), so the mapping that
+    would otherwise be ``dict[str, list[str]]`` is expressed as a list of these
+    pairs instead.
+    """
+
+    character_id: str = Field(min_length=1)
+    aliases: list[str] = Field(default_factory=list)
+
+
 class SceneAnalysisResult(StrictContract):
     schema_version: Version = "1.0"
     scene_id: UUID
@@ -149,7 +162,7 @@ class SceneAnalysisResult(StrictContract):
     summary: str = Field(min_length=1)
     dramatic_purpose: str = Field(min_length=1)
     observed_characters: list[CharacterCandidate] = Field(default_factory=list)
-    character_aliases: dict[str, list[str]] = Field(default_factory=dict)
+    character_aliases: list[CharacterAlias] = Field(default_factory=list)
     anonymous_speaker_references: list[str] = Field(default_factory=list)
     location_candidates: list[LocationCandidate] = Field(default_factory=list)
     state_changes: list[StateEvent] = Field(default_factory=list)

@@ -129,14 +129,21 @@ def _prompt(filename: str, version: str) -> str:
 
 
 def _strict_schema(value: Any) -> Any:
-    """Convert Pydantic JSON Schema objects to the strict Responses subset."""
+    """Convert Pydantic JSON Schema objects to the strict Responses subset.
+
+    Only objects with explicit ``properties`` get the strict treatment
+    (``additionalProperties: false`` and a complete ``required`` list).
+    Objects without ``properties`` — i.e. free-form ``dict`` fields whose
+    pydantic schema carries ``additionalProperties`` as a value schema — are
+    left alone so the value schema is not silently overwritten.
+    """
     if isinstance(value, list):
         return [_strict_schema(item) for item in value]
     if not isinstance(value, dict):
         return value
     result = {key: _strict_schema(item) for key, item in value.items()}
-    if result.get("type") == "object" or "properties" in result:
-        properties = result.get("properties", {})
+    if "properties" in result:
+        properties = result["properties"]
         result["additionalProperties"] = False
         result["required"] = list(properties)
     return result
