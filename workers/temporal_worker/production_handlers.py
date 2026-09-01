@@ -54,7 +54,9 @@ from services.narration.openai_adapter import OpenAINarrationProvider
 from services.narration.pipeline import NarrationPipeline
 from services.narration.providers import NarrationProvider
 from services.qa.commands import (
+    VisualQABlocked,
     VisualQACommandOptions,
+    VisualQAReviewRequired,
     VisualRepairCommandOptions,
     evaluate_shot_stage,
     run_visual_repair,
@@ -361,16 +363,25 @@ def _run_shot_visual_qa(
         ),
         ocr_threshold=settings.visual_qa_ocr_threshold,
     )
-    result = asyncio.run(
-        evaluate_shot_stage(
-            session,
-            blob_store,
-            project_id=request.project_id,
-            shot_id=shot.id,
-            target_type=target_type,
-            options=options,
+    try:
+        result = asyncio.run(
+            evaluate_shot_stage(
+                session,
+                blob_store,
+                project_id=request.project_id,
+                shot_id=shot.id,
+                target_type=target_type,
+                options=options,
+            )
         )
-    )
+    except VisualQABlocked as exc:
+        raise ApplicationError(
+            str(exc), type="VisualQABlocked", non_retryable=True
+        ) from exc
+    except VisualQAReviewRequired as exc:
+        raise ApplicationError(
+            str(exc), type="VisualQAReviewRequired", non_retryable=True
+        ) from exc
     state = (
         ShotWorkflowStatus.KEYFRAME_QA
         if target_type is VisualQATargetType.KEYFRAME

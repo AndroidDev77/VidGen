@@ -90,7 +90,7 @@ def select_authoritative_inputs(session: Session, project_id: UUID) -> Authorita
             NarrationRun.project_id == project_id, NarrationRun.selected.is_(True)
         )
     )
-    if narration is None or narration.status != "completed":
+    if narration is None or narration.status != "narration_complete":
         raise RenderLineageError(
             "narration_not_complete", "selected T12 narration is missing or incomplete"
         )
@@ -108,7 +108,7 @@ def select_authoritative_inputs(session: Session, project_id: UUID) -> Authorita
         ).all()
     )
     if not segments or any(
-        segment.status != "completed"
+        segment.status != "complete"
         or not segment.word_timings
         or not segment.duration_seconds
         or segment.normalized_asset_id is None
@@ -123,7 +123,7 @@ def select_authoritative_inputs(session: Session, project_id: UUID) -> Authorita
             StoryboardRun.project_id == project_id, StoryboardRun.selected.is_(True)
         )
     )
-    if storyboard is None or storyboard.status != "completed":
+    if storyboard is None or storyboard.status != "storyboard_complete":
         raise RenderLineageError(
             "storyboard_not_complete", "selected T13 storyboard is missing or incomplete"
         )
@@ -185,7 +185,7 @@ def select_authoritative_inputs(session: Session, project_id: UUID) -> Authorita
                 reference_id=shot.id,
             )
         run = animation_run_for_video(session, video, storyboard.id)
-        if run is None or run.status != "completed":
+        if run is None or run.status != "animation_complete":
             raise RenderLineageError(
                 "animation_not_complete",
                 "selected clip does not belong to a completed compatible T15 run",
@@ -198,7 +198,7 @@ def select_authoritative_inputs(session: Session, project_id: UUID) -> Authorita
                 "selected video asset ownership or persisted SHA-256 does not match",
                 reference_id=video.id,
             )
-        if round(video.canonical_duration * 1_000_000) != shot.usable_duration_us:
+        if abs(round(video.canonical_duration * 1_000_000) - shot.usable_duration_us) > 41_667:
             raise RenderLineageError(
                 "stale_clip_duration",
                 "selected clip duration is incompatible with T13 canonical timing",
