@@ -1,9 +1,16 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { MessageBar, MessageBarBody, MessageBarTitle } from "@fluentui/react-components";
+import {
+  Button,
+  MessageBar,
+  MessageBarActions,
+  MessageBarBody,
+  MessageBarTitle,
+} from "@fluentui/react-components";
 import type { InvalidationSet, ScriptSegmentProjection } from "@vidgen/contracts";
 import { useEffect, useState, type JSX } from "react";
 
 import { newIdempotencyKey } from "../../api/client";
+import { continueWorkflow } from "../../api/commands";
 import { VidGenApiError } from "../../api/errors";
 import { queryKeys } from "../../api/queryKeys";
 import { getScript, listScripts, selectScript, updateScriptSegment } from "../../api/scripts";
@@ -99,6 +106,22 @@ export function ScriptPage(): JSX.Element {
     },
   });
 
+  const retryScript = useMutation({
+    mutationFn: () =>
+      continueWorkflow(
+        projectId,
+        { entry_stage: "script_generation", reason: "review_resolved" },
+        newIdempotencyKey("script-retry"),
+        client,
+      ),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.workflow(projectId) });
+    },
+  });
+
+  const status = workflow.data?.status ?? "";
+  const scriptReviewRequired = status === "script_review_required" && script.isError;
+
   return (
     <PageStack>
       <ProjectStatusHeader
@@ -110,7 +133,25 @@ export function ScriptPage(): JSX.Element {
       />
 
       {script.isPending && <LoadingState label="Loading the script" rows={5} />}
-      {script.isError && (
+      {scriptReviewRequired && (
+        <MessageBar intent="warning">
+          <MessageBarBody>
+            <MessageBarTitle>Script generation needs a retry</MessageBarTitle>
+            The automatic script generation did not produce a valid result this time. You can retry
+            it — the pipeline will attempt a fresh compression and writing pass.
+          </MessageBarBody>
+          <MessageBarActions>
+            <Button
+              appearance="primary"
+              disabled={retryScript.isPending}
+              onClick={() => retryScript.mutate()}
+            >
+              {retryScript.isPending ? "Retrying…" : "Retry script generation"}
+            </Button>
+          </MessageBarActions>
+        </MessageBar>
+      )}
+      {script.isError && !scriptReviewRequired && (
         <ErrorState
           error={script.error}
           title="No approved script yet"

@@ -398,11 +398,19 @@ class DeterministicRenderPipeline:
 
             final_path = attempt / "final.mp4"
             metadata = probe(final_path)
+            # Each shot's clip is frame-aligned by the provider, so its canonical
+            # duration may differ from the storyboard usable_duration_us by up to
+            # one frame (1 000 000 // fps µs). The cumulative drift across all shots
+            # is at most n_shots × frame_period_us, so we expand the verification
+            # tolerance accordingly rather than failing on expected rounding noise.
+            frame_period_us = 1_000_000 // manifest.video_profile.frame_rate
+            duration_tolerance_us = 80_000 + len(manifest.shots) * frame_period_us
             streams = verify_streams(
                 metadata,
                 fps=manifest.video_profile.frame_rate,
                 duration_us=manifest.narration_duration_us,
                 selectable_subtitles=manifest.subtitle_mode in {"selectable", "both"},
+                tolerance_us=duration_tolerance_us,
             )
             decode_complete(final_path)
             black_intervals = diagnostic_intervals(final_path, "black")

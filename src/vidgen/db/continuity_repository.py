@@ -57,7 +57,7 @@ class ContinuityRepository:
                 .where(
                     EpisodeAnalysisRecord.project_id == project_id,
                     EpisodeAnalysisRecord.selected.is_(True),
-                    EpisodeAnalysisRun.status == "completed",
+                    EpisodeAnalysisRun.status == "episode_analyzed",
                 )
             )
         )
@@ -72,7 +72,7 @@ class ContinuityRepository:
                 select(StoryboardRun).where(
                     StoryboardRun.project_id == project_id,
                     StoryboardRun.selected.is_(True),
-                    StoryboardRun.status == "completed",
+                    StoryboardRun.status == "storyboard_complete",
                 )
             )
         )

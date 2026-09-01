@@ -112,10 +112,10 @@ class NarrationPipeline:
         profile = self.repo.voice_profile(voice_profile_id, project_id)
         cfg = profile.configuration
         material = {
-            "project": project_id,
-            "script": script.id,
+            "project": str(project_id),
+            "script": str(script.id),
             "version": script.version,
-            "voice": profile.id,
+            "voice": str(profile.id),
             "voice_version": profile.version,
             "voice_hash": profile.configuration_hash,
             "provider": self.provider.name,

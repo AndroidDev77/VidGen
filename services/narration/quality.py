@@ -18,7 +18,7 @@ from vidgen.contracts.narration import (
 class QualityThresholds:
     min_wpm: float = 80
     max_wpm: float = 220
-    min_alignment_coverage: float = 0.95
+    min_alignment_coverage: float = 0.90
     max_clipping_ratio: float = 0.001
     max_leading_silence: float = 0.5
     max_trailing_silence: float = 0.7

@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import os
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from decimal import Decimal
 from uuid import UUID
 
@@ -20,6 +20,7 @@ from services.animation.veo import DEFAULT_VEO_LOCATION
 from services.animation.veo_adapter import AlternateVideoProvider
 from services.qa.fake_visual_agent import FakeDefect, FakeVisualAgent
 from services.qa.pipeline import VisualQAOptions, VisualQAPipeline
+from services.qa.rubric import DETERMINISTIC_THRESHOLDS
 from services.qa.repair import RepairOptions, Revalidator, VisualRepairPipeline
 from services.qa.repair_policy import default_policy
 from services.qa.visual_agent import VisualAgent, VisualQARole
@@ -50,6 +51,7 @@ class VisualQACommandOptions:
     first_pass_model: str | None = None
     adjudicator_model: str | None = None
     fake_defects: dict[UUID, FakeDefect] = field(default_factory=dict)
+    ocr_threshold: float | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -261,7 +263,11 @@ async def evaluate_shot_stage(
         adjudicator=second,
         shot_workflow_identity_resolver=identity_resolver or shot_workflow_identity_resolver,
         options=VisualQAOptions(
-            expected_width=options.expected_width, expected_height=options.expected_height
+            expected_width=options.expected_width,
+            expected_height=options.expected_height,
+            thresholds=DETERMINISTIC_THRESHOLDS
+            if options.ocr_threshold is None
+            else replace(DETERMINISTIC_THRESHOLDS, ocr_confidence_warning=options.ocr_threshold),
         ),
     )
     result = await pipeline.evaluate_shot(

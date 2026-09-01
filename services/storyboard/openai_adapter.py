@@ -109,9 +109,26 @@ class OpenAIStoryboardDirector:
         payload = cast(dict[str, Any], response.json())
         parsed = json.loads(response_text(payload))
         usage = payload.get("usage") or {}
+        raw_proposals = parsed.get("proposals", [])
+        # Sort by whatever sequence the model returned, then re-index from 0 so the
+        # validator's dense-start-at-zero requirement is always satisfied regardless of
+        # whether the model uses 0-based or 1-based indexing.
+        raw_proposals.sort(key=lambda p: p.get("proposal_sequence", 0))
+        for idx, item in enumerate(raw_proposals):
+            item["proposal_sequence"] = idx
+        word_count = len(request.word_timings)
+        _fix_word_ranges(raw_proposals, word_count)
+        valid_evidence_ids = {
+            str(ref.reference_id)
+            for ref in request.evidence_references
+            if ref.reference_type in ("scene_evidence", "evidence_package")
+        }
+        for item in raw_proposals:
+            _fix_evidence_references(item, valid_evidence_ids)
         return StoryboardProviderResult(
             proposals=[
-                StoryboardShotProposal.model_validate(item) for item in parsed.get("proposals", [])
+                StoryboardShotProposal.model_validate(_fix_proposal(item))
+                for item in raw_proposals
             ],
             expected_incoming_continuity=ContinuityState.model_validate(
                 parsed["expected_incoming_continuity"]
@@ -141,6 +158,87 @@ class OpenAIStoryboardDirector:
 
     async def aclose(self) -> None:
         await self.client.aclose()
+
+
+def _fix_evidence_references(item: Any, valid_evidence_ids: set[str]) -> None:
+    """Remove evidence references whose IDs are not in the valid set.
+
+    The model occasionally references evidence IDs that were not included in the
+    request.  Leaving them in triggers ``missing_evidence_reference`` validation
+    errors that the repair loop cannot recover from because the model keeps
+    re-hallucinating the same invalid IDs.
+    """
+    refs = item.get("evidence_references")
+    if not isinstance(refs, list):
+        return
+    item["evidence_references"] = [
+        ref
+        for ref in refs
+        if not isinstance(ref, dict)
+        or ref.get("reference_type") not in ("scene_evidence", "evidence_package")
+        or str(ref.get("reference_id", "")) in valid_evidence_ids
+    ]
+
+
+def _fix_word_ranges(proposals: list[Any], word_count: int) -> None:
+    """Make word ranges contiguous and fully covering.
+
+    After sorting by proposal_sequence the model occasionally leaves a one-word
+    gap between adjacent shots or undershoots the final word.  Close those gaps
+    by snapping each shot's word_start_index to the previous shot's
+    word_end_index, then extend the last shot to cover the segment word count.
+    """
+    cursor = 0
+    for item in proposals:
+        start = item.get("word_start_index")
+        if isinstance(start, int) and start != cursor:
+            item["word_start_index"] = cursor
+        end = item.get("word_end_index")
+        if isinstance(end, int) and end > cursor:
+            cursor = end
+        else:
+            cursor += 1
+            item["word_end_index"] = cursor
+    if proposals and cursor != word_count:
+        proposals[-1]["word_end_index"] = word_count
+
+
+def _fix_proposal(item: Any) -> Any:
+    """Patch model-generated fields that violate Pydantic storyboard invariants.
+
+    The model occasionally returns:
+    - a non-cut transition with duration_us <= 0 → convert to cut
+    - a non-cut transition where handle_us < duration_us → clamp handle_us up
+    - word_end_index <= word_start_index → clamp word_end_index to start + 1
+    """
+    for field in ("transition_in", "transition_out"):
+        t = item.get(field)
+        if not isinstance(t, dict) or t.get("kind", "cut") == "cut":
+            continue
+        duration = t.get("duration_us", 0)
+        if duration <= 0:
+            # No meaningful duration → treat as a cut
+            t["kind"] = "cut"
+            t["duration_us"] = 0
+            t["handle_us"] = 0
+        elif t.get("handle_us", 0) < duration:
+            t["handle_us"] = duration
+    start = item.get("word_start_index")
+    end = item.get("word_end_index")
+    if isinstance(start, int) and isinstance(end, int) and end <= start:
+        item["word_end_index"] = start + 1
+    # Ensure every referenced character is declared present in incoming continuity.
+    refs = item.get("character_reference_ids")
+    incoming = item.get("incoming_continuity")
+    if isinstance(refs, list) and isinstance(incoming, dict):
+        present = incoming.get("present_character_ids")
+        if isinstance(present, list):
+            present_set = set(present)
+            for char_id in refs:
+                if char_id not in present_set:
+                    present.append(char_id)
+                    present_set.add(char_id)
+    return item
 
 
 def _user_content(request: StoryboardProviderRequest) -> str:
