@@ -201,6 +201,11 @@ class VisualQAPipeline:
         except VisualQALineageError:
             raise
         except BaseException as error:
+            logger.exception(
+                "visual QA pipeline failed for run %s: %s",
+                run.id if run is not None else "unknown",
+                error,
+            )
             self.session.rollback()
             durable = self.session.get(VisualQARun, run.id)
             if durable is not None:
@@ -1029,21 +1034,31 @@ class VisualQAPipeline:
         run.repair_codes = [code.value for code in outcome.repair_codes]
         run.warning_codes = list(outcome.warning_codes)
         run.status = "visual_qa_complete"
-        run.completed_at = datetime.now(UTC)
+        if run.completed_at is None:
+            run.completed_at = datetime.now(UTC)
         result = self._build_result(run, inputs, report, manifest, outcome, adjudication)
         if run.report_asset_id is None:
-            stored = self.assets.store(
-                content=json.dumps(
-                    result.model_dump(mode="json"), sort_keys=True, separators=(",", ":")
-                ).encode(),
-                kind="visual_qa_report",
-                media_type="application/json",
-                project_id=run.project_id,
-                parent_asset_ids=(run.target_asset_id,),
-                idempotency_key=f"visual-qa-report:{run.qa_identity}",
-                generation_parameters=self._asset_provenance(run, inputs),
-            )
-            run.report_asset_id = stored.id
+            _report_key = f"visual-qa-report:{run.qa_identity}"
+            # A prior attempt may have committed the asset but not the run (if the
+            # session was rolled back after the asset commit). Reuse it rather than
+            # trying to store a new report under the same idempotency key with
+            # potentially different content (non-deterministic completed_at).
+            _prior = self.assets.assets.get_by_idempotency(run.project_id, _report_key)
+            if _prior is not None:
+                run.report_asset_id = _prior.id
+            else:
+                stored = self.assets.store(
+                    content=json.dumps(
+                        result.model_dump(mode="json"), sort_keys=True, separators=(",", ":")
+                    ).encode(),
+                    kind="visual_qa_report",
+                    media_type="application/json",
+                    project_id=run.project_id,
+                    parent_asset_ids=(run.target_asset_id,),
+                    idempotency_key=_report_key,
+                    generation_parameters=self._asset_provenance(run, inputs),
+                )
+                run.report_asset_id = stored.id
         self.session.commit()
         # The run is durable and canonical from here on. Observability must never
         # be able to undo it: an exception raised while emitting would otherwise

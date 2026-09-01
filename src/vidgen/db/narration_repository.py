@@ -35,7 +35,8 @@ class NarrationRepository:
                 .order_by(ScriptSegment.sequence)
             )
         )
-        if not segments or [s.sequence for s in segments] != list(range(len(segments))):
+        seqs = [s.sequence for s in segments]
+        if not segments or seqs != list(range(seqs[0], seqs[0] + len(seqs))):
             raise ValueError("selected T11 script is incomplete")
         if any(not s.text.strip() for s in segments):
             raise ValueError("selected T11 script contains empty segments")

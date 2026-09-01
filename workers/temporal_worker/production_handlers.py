@@ -359,6 +359,7 @@ def _run_shot_visual_qa(
         idempotency_key=shot_activity_idempotency_key(
             request.shot_input_hash, f"t20-{target_type.value}"
         ),
+        ocr_threshold=settings.visual_qa_ocr_threshold,
     )
     result = asyncio.run(
         evaluate_shot_stage(

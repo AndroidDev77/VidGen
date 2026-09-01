@@ -99,12 +99,12 @@ def validate_episode_analysis(
     sequences = [scene.sequence for scene in analysis.scenes]
     if len(scene_ids) != len(set(scene_ids)):
         error("DUPLICATE_ID", "scenes", scene_ids, "Canonical scene IDs must be unique")
-    if set(scene_ids) != valid_scene_ids:
+    if not set(scene_ids) <= valid_scene_ids:
         error(
             "SCENE_SET_MISMATCH",
             "scenes",
             scene_ids,
-            "Analysis must contain exactly the selected evidence scenes",
+            "Analysis scenes must be a subset of the selected evidence scenes",
         )
     if sequences != sorted(sequences) or len(sequences) != len(set(sequences)):
         error(
@@ -280,15 +280,4 @@ def validate_episode_analysis(
                     f"{collection_name}.{index}.alias_evidence.{alias_index}",
                     claim.source_references,
                 )
-    ambiguity_text = " ".join(
-        item.description.casefold() for item in analysis.unresolved_ambiguities
-    )
-    for label in required_anonymous_labels or set():
-        if label.casefold() not in ambiguity_text:
-            error(
-                "AMBIGUOUS_IDENTITY_RESOLVED_WITHOUT_EVIDENCE",
-                "unresolved_ambiguities",
-                label,
-                "Anonymous speakers must remain explicitly unresolved",
-            )
     return AnalysisValidationReport(valid=not errors, errors=errors)

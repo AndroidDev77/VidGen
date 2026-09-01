@@ -139,7 +139,8 @@ class StoryboardRepository:
         )
         if not segments:
             raise StoryboardLineageError("script_incomplete", "selected T11 script has no segments")
-        if [segment.sequence for segment in segments] != list(range(len(segments))):
+        seqs = [segment.sequence for segment in segments]
+        if seqs != list(range(seqs[0], seqs[0] + len(seqs))):
             raise StoryboardLineageError(
                 "script_incomplete", "selected T11 script has a non-dense segment sequence"
             )
