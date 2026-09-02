@@ -634,7 +634,9 @@ class AnimationPipeline:
                 item.error_code = failure.error_code
                 task.provider_status = "submission_failed"
                 task.failure_code = failure.error_code
-                task.failure_message = failure.sanitized_message
+                _body = getattr(error, "body", None)
+                _provider_msg = _body.get("error") if isinstance(_body, dict) else None
+                task.failure_message = (_provider_msg or failure.sanitized_message)[:1024]
                 self.session.commit()
                 raise
             task.remote_task_id = provider_task.remote_task_id
