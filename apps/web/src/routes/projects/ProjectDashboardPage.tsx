@@ -22,6 +22,7 @@ import { listFailures, listProviderAttempts } from "../../api/costs";
 import { deleteProject, getCosts, getProjectStatus } from "../../api/projects";
 import { queryKeys } from "../../api/queryKeys";
 import { getProjectVisualQa } from "../../api/visualQa";
+import { continueWorkflow } from "../../api/commands";
 import { cancelWorkflow, startWorkflow } from "../../api/workflows";
 import { useApiClient } from "../../app/apiContext";
 import { CommandsPanel } from "../../components/CommandsPanel";
@@ -153,6 +154,14 @@ export function ProjectDashboardPage(): JSX.Element {
       void navigate("/projects");
     },
     onError: () => {},
+  });
+  const retry = useMutation({
+    mutationFn: () =>
+      continueWorkflow(projectId, { entry_stage: "shot_generation", reason: "operator_request" }, undefined, client),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.workflow(projectId) });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.providerAttempts(projectId) });
+    },
   });
   const removeErrorMessage =
     remove.isError
@@ -368,7 +377,12 @@ export function ProjectDashboardPage(): JSX.Element {
           </SectionCard>
         )}
         {failures.isSuccess && attempts.isSuccess && (
-          <FailurePanel failures={failures.data.items} attempts={attempts.data.items} />
+          <FailurePanel
+            failures={failures.data.items}
+            attempts={attempts.data.items}
+            onRetry={() => retry.mutate()}
+            isRetrying={retry.isPending}
+          />
         )}
       </div>
 

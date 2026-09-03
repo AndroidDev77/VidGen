@@ -1603,6 +1603,7 @@ export interface ProviderAttemptListItem {
   failureClass: string | null;
   latencyMs: number | null;
   startedAt: string;
+  errorMessage: string | null;
 }
 
 export interface ProviderAttemptListResponse {
