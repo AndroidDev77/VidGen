@@ -54,6 +54,7 @@ class MotionIntent(StrictContract):
     expected_end_pose: str
     camera_movement: str
     motion_intensity: str
+    style_lock: str = Field(default="")
     subject_priority: list[str] = Field(default_factory=list)
     character_state: list[str] = Field(default_factory=list)
     prop_state: list[str] = Field(default_factory=list)

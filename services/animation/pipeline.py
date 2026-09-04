@@ -216,7 +216,7 @@ class AnimationPipeline:
     ) -> ShotAnimationResult:
         shot = StoryboardShot.model_validate(row.contract)
         frame = inputs.keyframes[row.id]
-        intent = self._motion_intent(shot)
+        intent = self._motion_intent(shot, inputs.storyboard.project.visual_style)
         package = compile_motion_prompt(intent)
         hero = float(shot.provenance.get("importance", 0)) >= 0.8
         settings = inputs.storyboard.project.settings
@@ -673,7 +673,7 @@ class AnimationPipeline:
         return remaining >= estimate_runway_cost("gen4.5", duration)
 
     @staticmethod
-    def _motion_intent(shot: StoryboardShot) -> MotionIntent:
+    def _motion_intent(shot: StoryboardShot, visual_style: str = "") -> MotionIntent:
         incoming = shot.incoming_continuity
         outgoing = shot.expected_outgoing_continuity
         return MotionIntent(
@@ -689,6 +689,7 @@ class AnimationPipeline:
             ),
             camera_movement=shot.camera.movement,
             motion_intensity=shot.camera.movement_intensity,
+            style_lock=visual_style,
             subject_priority=[str(value) for value in incoming.present_character_ids],
             character_state=[
                 item.model_dump_json() for item in incoming.character_appearance_states

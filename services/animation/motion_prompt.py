@@ -6,8 +6,8 @@ import hashlib
 
 from vidgen.contracts.animation import MotionIntent, MotionPromptPackage
 
-COMPILER_VERSION = "1.0.0"
-TEMPLATE_VERSION = "runway-motion-v1"
+COMPILER_VERSION = "1.1.0"
+TEMPLATE_VERSION = "runway-motion-v2"
 
 
 def compile_motion_prompt(intent: MotionIntent, *, limit: int = 1000) -> MotionPromptPackage:
@@ -19,6 +19,7 @@ def compile_motion_prompt(intent: MotionIntent, *, limit: int = 1000) -> MotionP
         "Environment: " + "; ".join(intent.environment_motion) + "."
         if intent.environment_motion
         else "",
+        f"Style: {intent.style_lock}." if intent.style_lock else "",
         "Preserve: " + "; ".join(intent.continuity_invariants) + "."
         if intent.continuity_invariants
         else "",
