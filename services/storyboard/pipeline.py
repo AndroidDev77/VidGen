@@ -12,6 +12,7 @@ from collections.abc import Callable
 from dataclasses import replace
 from datetime import UTC, datetime
 from decimal import Decimal
+from math import ceil
 from typing import Any, Literal
 from uuid import UUID
 
@@ -683,7 +684,10 @@ class StoryboardPipeline:
             trace_context=self._trace_context(),
             attempt_number=attempt,
         )
-        expected_shots = max(1, duration_us // self.pacing.target_midpoint_us)
+        # The reservation must be an upper bound: the hard cap is enforced when
+        # the estimate is reserved, not when the actual cost reconciles, so the
+        # shot count is a ceiling over the preset's shortest target shot.
+        expected_shots = max(1, ceil(duration_us / self.pacing.target_min_us))
         outcome = await self.director.direct(
             request,
             input_hash=checkpoint.input_hash,
