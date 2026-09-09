@@ -27,11 +27,13 @@ const useStyles = makeStyles({
   meta: { display: "flex", gap: tokens.spacingHorizontalM, flexWrap: "wrap", alignItems: "center" },
   actions: { display: "flex", gap: tokens.spacingHorizontalS, flexWrap: "wrap" },
   scroll: { overflowX: "auto" },
+  video: { width: "100%", borderRadius: tokens.borderRadiusMedium, backgroundColor: "#000" },
 });
 
 export interface ShotInspectorProps {
   readonly detail: ShotDetailProjection;
   readonly busy: boolean;
+  readonly videoUrl?: string | null;
   readonly onRegenerate: () => void;
   readonly onRetry: () => void;
   readonly onCancel: () => void;
@@ -42,6 +44,7 @@ export interface ShotInspectorProps {
 export function ShotInspector({
   detail,
   busy,
+  videoUrl,
   onRegenerate,
   onRetry,
   onCancel,
@@ -55,6 +58,10 @@ export function ShotInspector({
       <Title3 as="h2" id="shot-inspector-heading">
         Shot {shot.global_sequence + 1}
       </Title3>
+      {videoUrl && (
+        // eslint-disable-next-line jsx-a11y/media-has-caption
+        <video key={videoUrl} src={videoUrl} controls className={styles.video} data-testid="shot-video-player" />
+      )}
       <div className={styles.meta}>
         <StatusBadge status={detail.child_workflow_status} />
         {detail.child_workflow_retryable && (
