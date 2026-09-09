@@ -28,7 +28,6 @@ from services.animation.pipeline import PIPELINE_VERSION as T15_PIPELINE_VERSION
 from services.animation.pipeline import AnimationPipeline
 from services.animation.providers import VideoGenerationProvider
 from services.animation.runway import RunwayVideoProvider
-from vidgen.telemetry.failures import classify_failure
 from services.continuity.orchestrator import (
     ContinuityOrchestrationError,
     ContinuityReferenceOrchestrator,
@@ -146,6 +145,7 @@ from vidgen.db.workflow_models import EvidencePackageRecord, SceneEvidenceRecord
 from vidgen.storage.asset_service import AssetService
 from vidgen.storage.blob import BlobStore
 from vidgen.storage.factory import build_blob_store
+from vidgen.telemetry.failures import classify_failure
 
 
 def build_production_handlers(
@@ -541,9 +541,7 @@ def _run_shot_animation(
     except Exception as exc:
         failure = classify_failure(exc, status_code=getattr(exc, "status_code", None))
         if not failure.retryable:
-            raise ApplicationError(
-                failure.sanitized_message, non_retryable=True
-            ) from exc
+            raise ApplicationError(failure.sanitized_message, non_retryable=True) from exc
         raise
     item_result = result.items[0] if result.items else None
     candidate = item_result.candidate if item_result is not None else None
