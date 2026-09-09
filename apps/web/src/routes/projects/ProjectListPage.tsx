@@ -87,6 +87,9 @@ const useStyles = makeStyles({
   },
 });
 
+/** How often the list re-reads project status while the page is visible. */
+export const PROJECT_LIST_POLL_INTERVAL_MS = 5_000;
+
 export function ProjectListPage(): JSX.Element {
   const styles = useStyles();
   const client = useApiClient();
@@ -95,8 +98,19 @@ export function ProjectListPage(): JSX.Element {
   const query = useQuery({
     queryKey: queryKeys.projects(),
     queryFn: ({ signal }) => listProjects(client, signal).then((response) => response.data),
+    // Project status changes while the pipeline runs, so the list refreshes
+    // itself rather than asking for a reload. Polling pauses while the tab is
+    // hidden: an interval refetch only runs when the document is visible.
+    refetchInterval: PROJECT_LIST_POLL_INTERVAL_MS,
+    refetchIntervalInBackground: false,
   });
 
+  // A background refresh keeps the last good response in `query.data`, so the
+  // table below is keyed on having data rather than on the query being
+  // settled. Only the very first load shows a skeleton, and a refresh that
+  // fails keeps the last known state on screen instead of replacing it with
+  // an error panel; the next tick retries.
+  const hasProjects = query.data !== undefined;
   const projects = useMemo(() => query.data ?? [], [query.data]);
   // Filtering is local because the list endpoint returns the caller's own
   // projects in full; a round trip per keystroke would buy nothing.
@@ -119,13 +133,13 @@ export function ProjectListPage(): JSX.Element {
         <div className={styles.headings}>
           <h1 className={styles.title}>Projects</h1>
           <Caption1 className={styles.subtitle}>
-            {query.isSuccess
+            {hasProjects
               ? `${projects.length} project${projects.length === 1 ? "" : "s"} in this workspace.`
               : "Every recap you have started, and where each one stands."}
           </Caption1>
         </div>
         <div className={styles.spacer} />
-        {query.isSuccess && projects.length > 0 && (
+        {hasProjects && projects.length > 0 && (
           <Input
             className={styles.search}
             value={filter}
@@ -145,8 +159,10 @@ export function ProjectListPage(): JSX.Element {
       </div>
 
       {query.isPending && <LoadingState label="Loading your projects" rows={4} />}
-      {query.isError && <ErrorState error={query.error} onRetry={() => void query.refetch()} />}
-      {query.isSuccess && projects.length === 0 && (
+      {query.isError && !hasProjects && (
+        <ErrorState error={query.error} onRetry={() => void query.refetch()} />
+      )}
+      {hasProjects && projects.length === 0 && (
         <EmptyState
           title="No projects yet"
           description="Create a project and upload a source video to produce your first recap."
@@ -158,7 +174,7 @@ export function ProjectListPage(): JSX.Element {
           }
         />
       )}
-      {query.isSuccess && projects.length > 0 && visible.length === 0 && (
+      {hasProjects && projects.length > 0 && visible.length === 0 && (
         <EmptyState
           title="No matching projects"
           description="No project matches that filter. Clear it to see the whole workspace again."
@@ -170,7 +186,7 @@ export function ProjectListPage(): JSX.Element {
           }
         />
       )}
-      {query.isSuccess && visible.length > 0 && (
+      {hasProjects && visible.length > 0 && (
         <SectionCard flush>
           <div className={styles.scroll}>
             <Table aria-label="Your projects">
