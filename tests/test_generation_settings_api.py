@@ -120,7 +120,11 @@ def test_settings_can_be_replaced_and_the_identity_moves_with_them(tmp_path: Pat
         assert before.status_code == 200
         updated = client.put(
             f"/api/v1/projects/{project_id}/generation-settings",
-            json={"generation_quality": "premium", "shot_pacing": "relaxed"},
+            json={
+                "generation_quality": "premium",
+                "shot_pacing": "relaxed",
+                "premium_fallback_allowed": False,
+            },
             headers=OWNER,
         )
         assert updated.status_code == 200, updated.text
@@ -130,7 +134,8 @@ def test_settings_can_be_replaced_and_the_identity_moves_with_them(tmp_path: Pat
         assert body["settings"]["premium_fallback_allowed"] is False
         assert body["generation_policy_identity"] != before.json()["generation_policy_identity"]
         assert body["estimate"]["shot_pacing"] == "relaxed"
-        # Partial writes and unknown fields are refused.
+        # Partial writes and unknown fields are refused: omitting the fallback
+        # flag must never silently reset a stored value.
         assert (
             client.put(
                 f"/api/v1/projects/{project_id}/generation-settings",
@@ -142,7 +147,20 @@ def test_settings_can_be_replaced_and_the_identity_moves_with_them(tmp_path: Pat
         assert (
             client.put(
                 f"/api/v1/projects/{project_id}/generation-settings",
-                json={"generation_quality": "economy", "shot_pacing": "fast", "model": "gen4.5"},
+                json={"generation_quality": "premium", "shot_pacing": "relaxed"},
+                headers=OWNER,
+            ).status_code
+            == 422
+        )
+        assert (
+            client.put(
+                f"/api/v1/projects/{project_id}/generation-settings",
+                json={
+                    "generation_quality": "economy",
+                    "shot_pacing": "fast",
+                    "premium_fallback_allowed": False,
+                    "model": "gen4.5",
+                },
                 headers=OWNER,
             ).status_code
             == 422

@@ -831,7 +831,11 @@ function generationEstimate() {
       mode("balanced", "gen4_turbo", "gen4.5", "18.21", "21.85", "3.16", "3.79"),
       mode("premium", "gen4.5", "gen4.5", "36.12", "43.34", "21.07", "25.28"),
     ],
-    notes: ["Video generation only."],
+    notes: [
+    "Video generation only; analysis, script, narration, keyframe and QA spend is the same in every mode.",
+    "The low figure assumes no regenerated shots; the high figure allows bounded quality repairs.",
+    "Runway bills whole generated seconds, so every shot rounds up to the next second.",
+  ],
   };
 }
 

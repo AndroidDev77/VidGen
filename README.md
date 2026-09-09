@@ -377,7 +377,7 @@ curl -sS -X POST http://localhost:8000/api/v1/projects/generation-estimate \
 # Change an existing project. It applies to the next generation run.
 curl -sS -X PUT http://localhost:8000/api/v1/projects/$PROJECT_ID/generation-settings \
   -H 'Content-Type: application/json' -H 'X-VidGen-User: local-user' \
-  -d '{"generation_quality":"balanced","shot_pacing":"relaxed"}'
+  -d '{"generation_quality":"balanced","shot_pacing":"relaxed","premium_fallback_allowed":false}'
 ```
 
 A project created before these settings existed resolves to `economy` and `normal`, which is the

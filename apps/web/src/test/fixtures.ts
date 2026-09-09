@@ -109,7 +109,8 @@ export const generationEstimate = {
       estimated_high: "21.85",
       delta_from_economy_low: "3.16",
       delta_from_economy_high: "3.79",
-      summary: "Gen-4 Turbo normally; about 15% of shots use Gen-4.5.",
+      summary:
+        "Gen-4 Turbo normally; about 15% of shots (hero shots and quality repairs) use Gen-4.5.",
     },
     {
       schema_version: "1.0",
@@ -123,7 +124,11 @@ export const generationEstimate = {
       summary: "Every compatible shot uses Gen-4.5 at 0.12 USD per generated second.",
     },
   ],
-  notes: ["Video generation only."],
+  notes: [
+    "Video generation only; analysis, script, narration, keyframe and QA spend is the same in every mode.",
+    "The low figure assumes no regenerated shots; the high figure allows bounded quality repairs.",
+    "Runway bills whole generated seconds, so every shot rounds up to the next second.",
+  ],
 };
 
 export const generationSettings = {

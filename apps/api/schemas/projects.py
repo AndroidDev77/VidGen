@@ -89,7 +89,7 @@ class SetGenerationSettingsRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     generation_quality: GenerationQuality
     shot_pacing: ShotPacing
-    premium_fallback_allowed: bool = False
+    premium_fallback_allowed: bool
 
     def generation_settings(self) -> ProjectGenerationSettings:
         return ProjectGenerationSettings(
