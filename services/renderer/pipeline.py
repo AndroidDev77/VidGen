@@ -401,7 +401,7 @@ class DeterministicRenderPipeline:
             # Each shot's clip is frame-aligned by the provider, so its canonical
             # duration may differ from the storyboard usable_duration_us by up to
             # one frame (1 000 000 // fps µs). The cumulative drift across all shots
-            # is at most n_shots × frame_period_us, so we expand the verification
+            # is at most n_shots * frame_period_us, so we expand the verification
             # tolerance accordingly rather than failing on expected rounding noise.
             frame_period_us = 1_000_000 // manifest.video_profile.frame_rate
             duration_tolerance_us = 80_000 + len(manifest.shots) * frame_period_us

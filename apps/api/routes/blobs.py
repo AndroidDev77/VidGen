@@ -9,6 +9,7 @@ signature and streaming the content back to the browser.
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from typing import Annotated
 from urllib.parse import quote
 
@@ -45,7 +46,7 @@ def serve_blob(
     except FileNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="blob not found") from exc
 
-    def _chunks(data: bytes, size: int):
+    def _chunks(data: bytes, size: int) -> Iterator[bytes]:
         for offset in range(0, len(data), size):
             yield data[offset : offset + size]
 

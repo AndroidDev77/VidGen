@@ -20,9 +20,9 @@ from services.animation.veo import DEFAULT_VEO_LOCATION
 from services.animation.veo_adapter import AlternateVideoProvider
 from services.qa.fake_visual_agent import FakeDefect, FakeVisualAgent
 from services.qa.pipeline import VisualQAOptions, VisualQAPipeline
-from services.qa.rubric import DETERMINISTIC_THRESHOLDS
 from services.qa.repair import RepairOptions, Revalidator, VisualRepairPipeline
 from services.qa.repair_policy import default_policy
+from services.qa.rubric import DETERMINISTIC_THRESHOLDS
 from services.qa.visual_agent import VisualAgent, VisualQARole
 from vidgen.contracts.repair import RepairOutcome
 from vidgen.contracts.visual_qa import VisualQAResult, VisualQATargetType

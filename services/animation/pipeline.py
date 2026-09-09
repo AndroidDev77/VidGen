@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
-import math
 from collections.abc import Callable
 from decimal import Decimal
 from pathlib import Path

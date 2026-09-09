@@ -338,7 +338,7 @@ class FinalQAConfiguration(StrictContract):
 
     # Media tolerances
     # The fps=24 filter rounds each shot's output to a frame boundary, so the
-    # cumulative duration drift across N shots is up to N × 41 667 µs.  For a
+    # cumulative duration drift across N shots is up to N * 41 667 µs.  For a
     # 20-shot project that is ≈833 ms.  The defaults here are widened to 1 s
     # so that frame-aligned renders pass T22 without requiring a re-encode.
     duration_tolerance_us: int = Field(default=1_000_000, ge=0, le=2_000_000)

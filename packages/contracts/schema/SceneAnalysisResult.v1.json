@@ -121,6 +121,29 @@
       "title": "BeatDependency",
       "type": "object"
     },
+    "CharacterAlias": {
+      "additionalProperties": false,
+      "description": "A character's known aliases, keyed by character identifier.\n\nOpenAI's structured-output strict mode does not support free-form dict\nschemas (``additionalProperties`` with a value schema), so the mapping that\nwould otherwise be ``dict[str, list[str]]`` is expressed as a list of these\npairs instead.",
+      "properties": {
+        "aliases": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Aliases",
+          "type": "array"
+        },
+        "character_id": {
+          "minLength": 1,
+          "title": "Character Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "character_id"
+      ],
+      "title": "CharacterAlias",
+      "type": "object"
+    },
     "CharacterCandidate": {
       "additionalProperties": false,
       "properties": {
@@ -504,14 +527,11 @@
       "type": "array"
     },
     "character_aliases": {
-      "additionalProperties": {
-        "items": {
-          "type": "string"
-        },
-        "type": "array"
+      "items": {
+        "$ref": "#/$defs/CharacterAlias"
       },
       "title": "Character Aliases",
-      "type": "object"
+      "type": "array"
     },
     "confidence": {
       "maximum": 1,

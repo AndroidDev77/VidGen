@@ -15,7 +15,7 @@
       "type": "string"
     },
     "av_drift_tolerance_us": {
-      "default": 150000,
+      "default": 1000000,
       "maximum": 2000000,
       "minimum": 0,
       "title": "Av Drift Tolerance Us",
@@ -35,7 +35,7 @@
       "type": "integer"
     },
     "caption_timing_tolerance_us": {
-      "default": 250000,
+      "default": 1000000,
       "maximum": 5000000,
       "minimum": 0,
       "title": "Caption Timing Tolerance Us",
@@ -61,7 +61,7 @@
       "type": "string"
     },
     "duration_tolerance_us": {
-      "default": 120000,
+      "default": 1000000,
       "maximum": 2000000,
       "minimum": 0,
       "title": "Duration Tolerance Us",
@@ -190,7 +190,7 @@
       "type": "integer"
     },
     "max_caption_reading_speed_cps": {
-      "default": 21.0,
+      "default": 26.0,
       "exclusiveMinimum": 0,
       "maximum": 60,
       "title": "Max Caption Reading Speed Cps",
@@ -252,7 +252,7 @@
       "type": "number"
     },
     "narration_timing_tolerance_us": {
-      "default": 250000,
+      "default": 1000000,
       "maximum": 5000000,
       "minimum": 0,
       "title": "Narration Timing Tolerance Us",

@@ -26,8 +26,6 @@ from typing import Any, cast
 
 import httpx
 
-_log = logging.getLogger(__name__)
-
 from services.qa.visual_agent import (
     DEFAULT_REGISTRY,
     VisualAgentCall,
@@ -35,6 +33,8 @@ from services.qa.visual_agent import (
     VisualQARole,
 )
 from vidgen.contracts.visual_qa import VisualQAProviderResult
+
+_log = logging.getLogger(__name__)
 
 PROMPTS = {
     VisualQARole.LUNA_FIRST_PASS: "visual_qa_v1.txt",

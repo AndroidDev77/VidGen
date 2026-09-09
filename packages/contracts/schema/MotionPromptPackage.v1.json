@@ -75,6 +75,11 @@
           "title": "Start Pose",
           "type": "string"
         },
+        "style_lock": {
+          "default": "",
+          "title": "Style Lock",
+          "type": "string"
+        },
         "subject_priority": {
           "items": {
             "type": "string"
