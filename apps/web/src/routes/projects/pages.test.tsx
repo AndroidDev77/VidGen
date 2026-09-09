@@ -3,7 +3,7 @@ import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { HttpResponse, http } from "msw";
 import { Route, Routes } from "react-router-dom";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { apiError } from "../../test/handlers";
 import * as fixtures from "../../test/fixtures";
@@ -12,7 +12,7 @@ import { server } from "../../test/server";
 import { FinalReviewPage } from "./FinalReviewPage";
 import { NewProjectPage } from "./NewProjectPage";
 import { ProjectDashboardPage } from "./ProjectDashboardPage";
-import { ProjectListPage } from "./ProjectListPage";
+import { PROJECT_LIST_POLL_INTERVAL_MS, ProjectListPage } from "./ProjectListPage";
 import { ScriptPage } from "./ScriptPage";
 import { StoryboardPage } from "./StoryboardPage";
 import { TranscriptPage } from "./TranscriptPage";
@@ -96,6 +96,43 @@ describe("ProjectListPage", () => {
   it("shows a loading state before the data arrives", () => {
     renderWithProviders(<ProjectListPage />, { route: "/projects" });
     expect(screen.getByRole("status")).toBeInTheDocument();
+  });
+
+  it("refreshes each project's status in the background without a loading state", async () => {
+    // The first response is the fixture in review; every later poll reports the
+    // pipeline finished. Fake timers drive the 5-second interval while real
+    // time keeps advancing so the mocked network still resolves.
+    let responses = 0;
+    server.use(
+      http.get(`${BASE}/api/v1/projects`, () => {
+        responses += 1;
+        return HttpResponse.json([
+          responses === 1
+            ? fixtures.projectListItem
+            : { ...fixtures.projectListItem, status: "complete", has_failures: false },
+        ]);
+      }),
+    );
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      renderWithProviders(<ProjectListPage />, { route: "/projects" });
+      expect(await screen.findByLabelText("Status: Review")).toBeVisible();
+      expect(screen.getByLabelText("Has failures")).toBeVisible();
+
+      // Fire the interval synchronously and let `findBy` observe the refetch
+      // landing, so the resulting render happens inside testing-library's wait.
+      vi.advanceTimersByTime(PROJECT_LIST_POLL_INTERVAL_MS);
+
+      expect(await screen.findByLabelText("Status: Complete")).toBeVisible();
+      expect(responses).toBe(2);
+      expect(screen.queryByLabelText("Status: Review")).not.toBeInTheDocument();
+      expect(screen.queryByLabelText("Has failures")).not.toBeInTheDocument();
+      // The row was updated in place: the table never gave way to a skeleton.
+      expect(screen.queryByText("Loading your projects")).not.toBeInTheDocument();
+      expect(screen.getByRole("link", { name: "Season 3 Episode 4" })).toBeVisible();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 
