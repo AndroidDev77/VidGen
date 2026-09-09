@@ -140,6 +140,16 @@ class AzureBlobStore:
         finally:
             temporary.unlink(missing_ok=True)
 
+    # -- deletes --------------------------------------------------------------
+
+    def delete(self, key: str) -> None:
+        from azure.core.exceptions import ResourceNotFoundError
+
+        try:
+            self._container.get_blob_client(key).delete_blob()
+        except ResourceNotFoundError:
+            pass
+
     # -- signed reads ---------------------------------------------------------
 
     def _user_delegation_key(self, now: dt.datetime) -> Any:

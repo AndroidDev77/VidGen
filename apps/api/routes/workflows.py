@@ -126,13 +126,19 @@ def start_workflow(
                 "PUT /api/v1/projects/{id}/budget.",
             )
         runs = GenerationRunService(session)
+        sidecar_ids = tuple(request.subtitle_asset_ids)
+        material: dict[str, str] = {"source_video_id": str(source.id)}
+        if sidecar_ids:
+            material["subtitle_asset_ids"] = ",".join(
+                sorted(str(i) for i in sidecar_ids)
+            )
         generation_run, _ = runs.open(
             project_id=project.id,
             entry_stage="upload",
             input_identity=generation_input_identity(
                 project_id=project.id,
                 entry_stage="upload",
-                material={"source_video_id": str(source.id)},
+                material=material,
             ),
         )
         started_workflow_id, run_id = controller.start_project(
@@ -143,6 +149,7 @@ def start_workflow(
                 provider_configuration_version=request.provider_configuration_version,
                 generation_run_id=generation_run.id,
                 entry_stage="upload",
+                sidecar_asset_ids=sidecar_ids,
             )
         )
         runs.bind_workflow(generation_run, workflow_id=started_workflow_id, run_id=run_id)
@@ -205,7 +212,14 @@ def cancel_workflow(
             ApiErrorCode.WORKFLOW_NOT_STARTED,
             "This project has no workflow to cancel.",
         )
-    controller.cancel_project(run.workflow_id)
+    try:
+        controller.cancel_project(run.workflow_id)
+    except Exception as exc:
+        # Temporal raises RPCError("workflow execution already completed") when
+        # the workflow finished between the status check and the cancel signal.
+        # Treat it as a successful cancel: the workflow is gone either way.
+        if "already completed" not in str(exc):
+            raise
     run.status = "cancelled"
     session.flush()
     events_for(session).append(

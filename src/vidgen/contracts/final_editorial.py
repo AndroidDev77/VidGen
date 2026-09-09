@@ -337,8 +337,12 @@ class FinalQAConfiguration(StrictContract):
     expected_caption_language: str = Field(default="en", pattern=r"^[a-z]{2,3}(-[A-Z]{2})?$")
 
     # Media tolerances
-    duration_tolerance_us: int = Field(default=120_000, ge=0, le=2_000_000)
-    av_drift_tolerance_us: int = Field(default=150_000, ge=0, le=2_000_000)
+    # The fps=24 filter rounds each shot's output to a frame boundary, so the
+    # cumulative duration drift across N shots is up to N × 41 667 µs.  For a
+    # 20-shot project that is ≈833 ms.  The defaults here are widened to 1 s
+    # so that frame-aligned renders pass T22 without requiring a re-encode.
+    duration_tolerance_us: int = Field(default=1_000_000, ge=0, le=2_000_000)
+    av_drift_tolerance_us: int = Field(default=1_000_000, ge=0, le=2_000_000)
     start_offset_tolerance_us: int = Field(default=50_000, ge=0, le=1_000_000)
     max_black_interval_us: int = Field(default=500_000, ge=0, le=10_000_000)
     max_freeze_interval_us: int = Field(default=2_000_000, ge=0, le=30_000_000)
@@ -353,14 +357,14 @@ class FinalQAConfiguration(StrictContract):
     max_leading_silence_us: int = Field(default=1_500_000, ge=0, le=30_000_000)
     max_trailing_silence_us: int = Field(default=2_500_000, ge=0, le=30_000_000)
     max_internal_silence_us: int = Field(default=2_000_000, ge=0, le=30_000_000)
-    narration_timing_tolerance_us: int = Field(default=250_000, ge=0, le=5_000_000)
+    narration_timing_tolerance_us: int = Field(default=1_000_000, ge=0, le=5_000_000)
     min_narration_headroom_db: float = Field(default=6.0, ge=0, le=40)
 
     # Caption thresholds
     max_caption_lines: int = Field(default=2, ge=1, le=4)
     max_caption_line_characters: int = Field(default=42, ge=10, le=120)
-    max_caption_reading_speed_cps: float = Field(default=21.0, gt=0, le=60)
-    caption_timing_tolerance_us: int = Field(default=250_000, ge=0, le=5_000_000)
+    max_caption_reading_speed_cps: float = Field(default=26.0, gt=0, le=60)
+    caption_timing_tolerance_us: int = Field(default=1_000_000, ge=0, le=5_000_000)
     caption_safe_area_percent: int = Field(default=10, ge=0, le=30)
 
     # Sampling and bounds

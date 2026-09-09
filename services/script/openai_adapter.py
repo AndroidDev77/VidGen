@@ -90,7 +90,10 @@ class OpenAIScriptGenerationProvider:
         )
         response.raise_for_status()
         payload = response.json()
-        parsed = schema.model_validate(json.loads(_response_text(payload)))
+        raw = json.loads(_response_text(payload))
+        if schema is RecapScript:
+            _patch_anonymous_segments(raw)
+        parsed = schema.model_validate(raw)
         return parsed, payload
 
     def _metadata(
@@ -176,6 +179,17 @@ class OpenAIScriptGenerationProvider:
             rubric_version=request.rubric_version,
         )
         return ProviderComedyEditResult(output=output, metadata=metadata)
+
+
+def _patch_anonymous_segments(raw: Any) -> None:
+    """Fill in a placeholder label for anonymous segments the model forgot to label.
+
+    The Pydantic validator on RecapScript raises before our pipeline can handle
+    missing anonymous_speaker_label, so we patch the raw dict in-place here.
+    """
+    for seg in raw.get("segments", []):
+        if seg.get("speaker_kind") == "anonymous" and not seg.get("anonymous_speaker_label"):
+            seg["anonymous_speaker_label"] = "Unknown Speaker"
 
 
 def _prompt(filename: str) -> str:

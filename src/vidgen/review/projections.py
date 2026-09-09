@@ -213,19 +213,25 @@ def project_summary(
         ),
         Decimal(0),
     )
-    has_failures = (
-        session.scalar(
-            select(PipelineFailureEvent.id)
-            .where(PipelineFailureEvent.project_id == project.id)
-            .limit(1)
-        )
-        is not None
+    latest_failure = session.scalar(
+        select(PipelineFailureEvent)
+        .where(PipelineFailureEvent.project_id == project.id)
+        .order_by(PipelineFailureEvent.created_at.desc())
+        .limit(1)
     )
-    stage = WORKFLOW_STAGE_ALIASES.get(project.status)
+    has_failures = latest_failure is not None
+    run = session.scalar(
+        select(ProjectWorkflowRun).where(ProjectWorkflowRun.project_id == project.id)
+    )
+    if run is not None and run.status == "cancelled":
+        effective_status = "cancelled"
+    else:
+        effective_status = project.status
+    stage = WORKFLOW_STAGE_ALIASES.get(effective_status)
     return ProjectSummaryProjection(
         project_id=project.id,
         name=project.name,
-        status=project.status,
+        status=effective_status,
         current_stage=stage,
         progress_percentage=None,
         target_duration_seconds=project.target_duration_seconds,
@@ -235,6 +241,8 @@ def project_summary(
         committed_cost_amount=str(committed),
         hard_cap_amount=str(budget.hard_cap) if budget else None,
         has_failures=has_failures,
+        latest_failure_stage=latest_failure.stage if latest_failure else None,
+        latest_failure_code=latest_failure.error_code if latest_failure else None,
         row_version=versions.current(project.id, "project", project.id),
     )
 
@@ -268,7 +276,9 @@ def workflow_status(
     """Project the parent workflow's compact status onto the UI timeline."""
     completed: list[str] = list(getattr(workflow_state, "completed_stages", []) or [])
     status = str(getattr(workflow_state, "status", None) or (run.status if run else "not_started"))
-    cancelled = bool(getattr(workflow_state, "cancelled", False))
+    cancelled = bool(getattr(workflow_state, "cancelled", False)) or (
+        run is not None and run.status == "cancelled"
+    )
     current = WORKFLOW_STAGE_ALIASES.get(status)
     storyboard = session.scalar(
         select(StoryboardRun).where(

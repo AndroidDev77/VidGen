@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 from apps.api.auth import Principal, get_current_user
 from apps.api.dependencies import get_session
 from apps.api.routes.projects import owned_project
+from vidgen.db.animation_models import RunwayTask
 from vidgen.db.cost_models import (
     CostLedgerEntry,
     PipelineFailureEvent,
@@ -75,7 +76,11 @@ def attempts(
     limit: int = Query(50, ge=1, le=200),
 ) -> dict[str, object]:
     owned_project(session, project_id, principal)
-    query = select(ProviderAttempt).where(ProviderAttempt.project_id == project_id)
+    query = (
+        select(ProviderAttempt, RunwayTask.failure_message)
+        .outerjoin(RunwayTask, RunwayTask.provider_attempt_id == ProviderAttempt.id)
+        .where(ProviderAttempt.project_id == project_id)
+    )
     for column, value in (
         (ProviderAttempt.provider, provider),
         (ProviderAttempt.model, model),
@@ -86,7 +91,7 @@ def attempts(
         if value is not None:
             query = query.where(column == value)
     total = session.scalar(select(func.count()).select_from(query.subquery())) or 0
-    rows = session.scalars(
+    rows = session.execute(
         query.order_by(ProviderAttempt.started_at.desc()).offset(offset).limit(limit)
     ).all()
     return {
@@ -95,14 +100,15 @@ def attempts(
         "limit": limit,
         "items": [
             {
-                "id": str(r.id),
-                "provider": r.provider,
-                "model": r.model,
-                "operation": r.operation,
-                "status": r.status,
-                "failureClass": r.failure_class,
-                "latencyMs": r.latency_ms,
-                "startedAt": r.started_at,
+                "id": str(r.ProviderAttempt.id),
+                "provider": r.ProviderAttempt.provider,
+                "model": r.ProviderAttempt.model,
+                "operation": r.ProviderAttempt.operation,
+                "status": r.ProviderAttempt.status,
+                "failureClass": r.ProviderAttempt.failure_class,
+                "latencyMs": r.ProviderAttempt.latency_ms,
+                "startedAt": r.ProviderAttempt.started_at,
+                "errorMessage": r.failure_message,
             }
             for r in rows
         ],

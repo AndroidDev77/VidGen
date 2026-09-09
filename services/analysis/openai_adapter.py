@@ -32,6 +32,11 @@ class OpenAIAnalysisConfig:
     configuration_version: str = "openai-responses-v1"
     base_url: str = "https://api.openai.com/v1"
     timeout_seconds: float = 120
+    # The episode synthesis (global-reduce) call sends the full set of scene
+    # results in one payload, which can be much larger and slower than a single
+    # scene analysis. Give it a longer ceiling so the httpx client does not time
+    # out before OpenAI finishes reasoning over the whole episode.
+    synthesis_timeout_seconds: float = 600
 
 
 class OpenAIEpisodeAnalysisProvider:
@@ -41,6 +46,9 @@ class OpenAIEpisodeAnalysisProvider:
         self.config = config
         self.client = client or httpx.AsyncClient(
             base_url=config.base_url, timeout=config.timeout_seconds
+        )
+        self._synthesis_client = httpx.AsyncClient(
+            base_url=config.base_url, timeout=config.synthesis_timeout_seconds
         )
 
     @property
@@ -54,6 +62,7 @@ class OpenAIEpisodeAnalysisProvider:
         schema: type[SceneAnalysisResult] | type[EpisodeAnalysis],
         prompt: str,
         context: GenerationContext,
+        client: httpx.AsyncClient | None = None,
     ) -> tuple[Any, ProviderMetadata]:
         user_content = request.model_dump_json()
         if context.validation_errors_json:
@@ -73,7 +82,7 @@ class OpenAIEpisodeAnalysisProvider:
                 }
             },
         }
-        response = await self.client.post(
+        response = await (client or self.client).post(
             "/responses",
             headers={
                 "Authorization": f"Bearer {self.config.api_key}",
@@ -118,6 +127,7 @@ class OpenAIEpisodeAnalysisProvider:
             schema=EpisodeAnalysis,
             prompt=_prompt("episode_reduce_v1.txt", request.prompt_version),
             context=context,
+            client=self._synthesis_client,
         )
         return ProviderEpisodeAnalysisResult(output=output, metadata=metadata)
 
@@ -129,14 +139,21 @@ def _prompt(filename: str, version: str) -> str:
 
 
 def _strict_schema(value: Any) -> Any:
-    """Convert Pydantic JSON Schema objects to the strict Responses subset."""
+    """Convert Pydantic JSON Schema objects to the strict Responses subset.
+
+    Only objects with explicit ``properties`` get the strict treatment
+    (``additionalProperties: false`` and a complete ``required`` list).
+    Objects without ``properties`` — i.e. free-form ``dict`` fields whose
+    pydantic schema carries ``additionalProperties`` as a value schema — are
+    left alone so the value schema is not silently overwritten.
+    """
     if isinstance(value, list):
         return [_strict_schema(item) for item in value]
     if not isinstance(value, dict):
         return value
     result = {key: _strict_schema(item) for key, item in value.items()}
-    if result.get("type") == "object" or "properties" in result:
-        properties = result.get("properties", {})
+    if "properties" in result:
+        properties = result["properties"]
         result["additionalProperties"] = False
         result["required"] = list(properties)
     return result

@@ -448,6 +448,8 @@ class ProjectSummaryProjection(StrictContract):
     committed_cost_amount: str | None = Field(default=None, max_length=32)
     hard_cap_amount: str | None = Field(default=None, max_length=32)
     has_failures: bool = False
+    latest_failure_stage: str | None = Field(default=None, max_length=64)
+    latest_failure_code: str | None = Field(default=None, max_length=64)
     row_version: int = Field(ge=1)
 
 

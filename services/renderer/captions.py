@@ -68,10 +68,12 @@ def build_caption_track(
         text = _join([item.text for item in candidate])
         elapsed = word.end_us - candidate[0].start_us
         boundary = bool(re.search(r"[.!?;:]$", word.text))
-        overflow = (
-            len(text) > config.max_chars_per_line * config.max_lines
-            or len(candidate) > config.max_words_per_cue
-        )
+        try:
+            _wrap(text, config.max_chars_per_line, config.max_lines)
+            wraps = False
+        except ValueError:
+            wraps = True
+        overflow = wraps or len(candidate) > config.max_words_per_cue
         too_long = elapsed > config.max_duration_us
         if current and (overflow or too_long):
             groups.append(current)

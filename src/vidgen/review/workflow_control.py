@@ -342,12 +342,20 @@ class TemporalWorkflowController:
         self._run(run())
 
     def describe_project(self, workflow_id: str) -> ProjectWorkflowState | None:
+        from temporalio.service import RPCError
+
         from packages.workflows.project import ProjectWorkflow
 
         async def run() -> ProjectWorkflowState | None:
             client = await self._client()
             handle = client.get_workflow_handle(workflow_id)  # type: ignore[attr-defined]
-            state = await handle.query(ProjectWorkflow.project_state)
+            try:
+                state = await handle.query(ProjectWorkflow.project_state)
+            except RPCError:
+                # Query can fail transiently when no worker is currently polling
+                # (e.g. immediately after a worker restart). Return None so the
+                # dispatcher skips this command and retries on the next pass.
+                return None
             return state if isinstance(state, ProjectWorkflowState) else None
 
         result = self._run(run())

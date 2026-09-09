@@ -121,6 +121,11 @@ class ProjectWorkflow:
                 source_video_id=request.source_video_id,
                 stage=stage,
                 idempotency_key=f"{request.idempotency_key}:{stage}",
+                sidecar_asset_ids=(
+                    request.sidecar_asset_ids
+                    if stage == "transcript_acquisition"
+                    else ()
+                ),
             )
             result = await workflow.execute_activity(
                 activity_name,
@@ -134,6 +139,14 @@ class ProjectWorkflow:
             if self._cancelled:
                 self._state.cancelled = True
                 self._state.status = "cancelled"
+                return self._state
+            # Some stages are human-gated: the pipeline succeeds but produces no
+            # entity (entity_id is None) and sets the project status to a review
+            # sentinel. The workflow must surface that pause rather than charging
+            # into the next stage, which would fail immediately for lack of input.
+            if result.entity_id is None and stage == "script_generation":
+                self._state.waiting_reason = "script_review_required"
+                self._state.next_actions = ["review_script", "continue_project"]
                 return self._state
         # T19 sits between the authoritative storyboard and any T14 spend, so
         # the continuity inputs are resolved here for every run - including one

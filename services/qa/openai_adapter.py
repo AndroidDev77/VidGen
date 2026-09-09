@@ -19,11 +19,14 @@ from __future__ import annotations
 
 import base64
 import json
+import logging
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, cast
 
 import httpx
+
+_log = logging.getLogger(__name__)
 
 from services.qa.visual_agent import (
     DEFAULT_REGISTRY,
@@ -101,6 +104,12 @@ class OpenAIVisualAgent:
             },
             json=self._body(call),
         )
+        if response.is_error:
+            _log.error(
+                "OpenAI /responses returned %s: %s",
+                response.status_code,
+                response.text[:2000],
+            )
         response.raise_for_status()
         payload = response.json()
         parsed = _parse(payload)
@@ -207,6 +216,22 @@ def _data_url(content: bytes, media_type: str) -> str:
     return f"data:{media_type};base64,{base64.b64encode(content).decode()}"
 
 
+def _is_open_dict(schema: Any) -> bool:
+    """Return True for dict[str, T] schemas: objects with no fixed property set.
+
+    OpenAI strict mode cannot represent arbitrary-key maps, so these fields
+    are dropped from the structured-output schema. The adapter fills in
+    ``usage`` and ``redacted_metadata`` via ``model_copy`` after parsing, so
+    they do not need to appear in the model's response.
+    """
+    return (
+        isinstance(schema, dict)
+        and schema.get("type") == "object"
+        and "properties" not in schema
+        and "additionalProperties" in schema
+    )
+
+
 def _strict_schema(value: Any) -> Any:
     """Convert Pydantic JSON Schema objects to the strict Responses subset."""
     if isinstance(value, list):
@@ -214,9 +239,13 @@ def _strict_schema(value: Any) -> Any:
     if not isinstance(value, dict):
         return value
     result = {key: _strict_schema(item) for key, item in value.items()}
-    if result.get("type") == "object" or "properties" in result:
+    if "properties" in result:
+        # Drop dict-type properties before computing required so the model is
+        # never asked to produce a value that strict mode cannot validate.
+        props = {k: v for k, v in result["properties"].items() if not _is_open_dict(v)}
+        result["properties"] = props
         result["additionalProperties"] = False
-        result["required"] = list(result.get("properties", {}))
+        result["required"] = list(props)
     return result
 
 

@@ -31,7 +31,7 @@ import { UploadPanel } from "../../components/UploadPanel";
 import { VoiceProfilePicker } from "../../components/VoiceProfilePicker";
 import { ErrorState } from "../../components/states";
 import { useResumableUpload } from "../../hooks/useResumableUpload";
-import { startWorkflow } from "../../api/workflows";
+import { startWorkflow, uploadSubtitle } from "../../api/workflows";
 
 const useStyles = makeStyles({
   // A single-column form reads best on a measured column; letting it run the
@@ -122,6 +122,9 @@ export function NewProjectPage(): JSX.Element {
   // start without one. Tracking it here means the start button is disabled with
   // an explanation rather than failing after the click.
   const [voiceProfileId, setVoiceProfileId] = useState<string | null>(null);
+  const [subtitleAssetId, setSubtitleAssetId] = useState<string | null>(null);
+  const [subtitleFilename, setSubtitleFilename] = useState<string | null>(null);
+  const [subtitleError, setSubtitleError] = useState<string | null>(null);
 
   const upload = useResumableUpload({ client });
 
@@ -147,7 +150,12 @@ export function NewProjectPage(): JSX.Element {
 
   const start = useMutation({
     mutationFn: (projectId: string) =>
-      startWorkflow(projectId, newIdempotencyKey("workflow-start"), client),
+      startWorkflow(
+        projectId,
+        newIdempotencyKey("workflow-start"),
+        client,
+        subtitleAssetId ? [subtitleAssetId] : undefined,
+      ),
     onSuccess: (_, projectId) => {
       void queryClient.invalidateQueries({ queryKey: queryKeys.workflow(projectId) });
       void navigate(`/projects/${projectId}`);
@@ -308,7 +316,7 @@ export function NewProjectPage(): JSX.Element {
           <MessageBar intent="success">
             <MessageBarBody>
               <MessageBarTitle>Project created</MessageBarTitle>
-              “{project.name}” is created. Upload its source video to continue.
+              "{project.name}" is created. Upload its source video to continue.
             </MessageBarBody>
           </MessageBar>
 
@@ -329,6 +337,36 @@ export function NewProjectPage(): JSX.Element {
               upload={upload}
               onFileSelected={(file) => void upload.start(project.id, file)}
             />
+          </SectionCard>
+
+          <SectionCard title="Subtitle file (optional)" headingAs="h3">
+            <Field
+              hint="Upload an SRT file to use instead of auto-transcription."
+              validationState={subtitleError === null ? "none" : "error"}
+              validationMessage={subtitleError ?? undefined}
+            >
+              <input
+                type="file"
+                accept=".srt,text/plain,application/x-subrip"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (!file) return;
+                  setSubtitleError(null);
+                  setSubtitleFilename(file.name);
+                  void uploadSubtitle(project.id, file, client).then((res) => {
+                    setSubtitleAssetId(res.data.asset_id);
+                  }).catch(() => {
+                    setSubtitleError("Subtitle upload failed. You can still start without it.");
+                    setSubtitleAssetId(null);
+                  });
+                }}
+              />
+            </Field>
+            {subtitleFilename !== null && subtitleAssetId !== null && (
+              <Body1 as="p" role="status">
+                Subtitle ready: {subtitleFilename}
+              </Body1>
+            )}
           </SectionCard>
 
           <div className={styles.actions}>

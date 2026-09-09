@@ -25,6 +25,8 @@ class BlobStore(Protocol):
 
     def signed_read_url(self, key: str, expires_in_seconds: int = 900) -> str: ...
 
+    def delete(self, key: str) -> None: ...
+
 
 @runtime_checkable
 class RangedBlobStore(Protocol):
@@ -129,6 +131,9 @@ class FilesystemBlobStore:
         expires = int(self.clock()) + expires_in_seconds
         signature = self._signature(key, expires)
         return f"vidgen-file://blob/{quote(key)}?expires={expires}&signature={signature}"
+
+    def delete(self, key: str) -> None:
+        self._path(key).unlink(missing_ok=True)
 
     def read_signed_url(self, url: str) -> bytes:
         parsed = urlparse(url)

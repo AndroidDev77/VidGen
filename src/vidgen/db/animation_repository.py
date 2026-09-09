@@ -55,6 +55,7 @@ class AnimationRepository:
         *,
         storyboard_id: UUID | None = None,
         image_run_id: UUID | None = None,
+        shot_id: UUID | None = None,
     ) -> AnimationInputs:
         selected = ImageGenerationRepository(self.session).selected_storyboard(
             project_id, storyboard_id
@@ -65,8 +66,36 @@ class AnimationRepository:
             ImageGenerationRun.storyboard_version == selected.storyboard.version,
             ImageGenerationRun.status == "keyframes_complete",
         )
+        # When a specific shot is targeted, authoritativeness is scoped to runs
+        # that contain items for that shot. This supports concurrent per-shot T14
+        # runs where each shot workflow creates its own ImageGenerationRun: the
+        # globally most-recent run may belong to a sibling shot, not this one.
+        #
+        # shot_id may be either the shot's primary key or its stable_shot_id
+        # (production_handlers passes request.storyboard_shot_id, which is the
+        # stable_shot_id). Resolve to the primary key so the ImageGenerationItem
+        # FK join and the keyframe lookup both use the correct UUID.
+        shot_pk_id: UUID | None = None
+        if shot_id is not None:
+            shot_record = next(
+                (s for s in selected.shots if s.id == shot_id or s.stable_shot_id == shot_id),
+                None,
+            )
+            if shot_record is None:
+                raise AnimationLineageError(
+                    "shot_not_in_storyboard",
+                    f"shot {shot_id} is not part of the selected storyboard",
+                )
+            shot_pk_id = shot_record.id
+            authoritative_query = (
+                base_query.join(
+                    ImageGenerationItem, ImageGenerationItem.run_id == ImageGenerationRun.id
+                ).where(ImageGenerationItem.shot_id == shot_pk_id)
+            )
+        else:
+            authoritative_query = base_query
         authoritative = self.session.scalar(
-            base_query.order_by(ImageGenerationRun.created_at.desc())
+            authoritative_query.order_by(ImageGenerationRun.created_at.desc())
         )
         query = base_query
         if image_run_id is not None:
@@ -85,8 +114,16 @@ class AnimationRepository:
                 "image_run_cross_project", "T14 run belongs to another project"
             )
 
+        # When targeting a specific shot, only validate keyframes for that shot.
+        # Sibling shots' keyframes live in their own runs and are validated by
+        # their own T15 activities; checking them here would always fail.
+        shots_to_validate = (
+            [s for s in selected.shots if s.id == shot_pk_id]
+            if shot_id is not None
+            else selected.shots
+        )
         result: dict[UUID, SelectedKeyframes] = {}
-        for shot in selected.shots:
+        for shot in shots_to_validate:
             frames = list(
                 self.session.scalars(
                     select(GeneratedKeyframeImage).where(

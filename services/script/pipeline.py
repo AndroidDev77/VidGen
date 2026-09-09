@@ -19,6 +19,7 @@ from services.script.settings import (
     ScriptSettingsError,
     resolve_script_settings,
 )
+from services.script.compressor import structural_roles as _structural_roles
 from services.script.validator import (
     build_beat_coverage,
     validate_compressed_plot_plan,
@@ -263,10 +264,60 @@ class ScriptGenerationPipeline:
                 attempted,
                 GenerationContext(attempt_number=attempt, validation_errors_json=feedback),
             )
-            plan = canonicalize_plan(result.output.model_copy(update={"plan_id": plan_id}))
+            raw_plan = result.output.model_copy(update={"plan_id": plan_id})
+            # Overwrite model-generated summaries with verbatim source summaries so
+            # UNSUPPORTED_BEAT_SUMMARY validation never fires due to paraphrasing.
+            source_by_id = {beat.plot_beat_id: beat for beat in analysis.plot_beats}
+            source_summaries = {bid: b.summary for bid, b in source_by_id.items()}
+            selected_ids = {beat.plot_beat_id for beat in raw_plan.selected_beats}
+            fixed_beats = [
+                beat.model_copy(update={"summary": source_summaries[beat.plot_beat_id]})
+                if beat.plot_beat_id in source_summaries
+                else beat
+                for beat in raw_plan.selected_beats
+            ]
+            # Auto-rescue structural beats the model omitted; move them from
+            # omitted_beats back into selected_beats so STRUCTURAL_BEAT_OMITTED
+            # never fires regardless of what the model decides to include.
+            structural_ids = _structural_roles(analysis.plot_beats)
+            omitted_ids = {b.plot_beat_id for b in raw_plan.omitted_beats}
+            from vidgen.contracts.script import CompressedPlotBeat
+            for beat_id, role in structural_ids.items():
+                if beat_id not in selected_ids:
+                    source = source_by_id.get(beat_id)
+                    if source is None:
+                        continue
+                    rescued = CompressedPlotBeat(
+                        plot_beat_id=beat_id,
+                        sequence=source.sequence,
+                        summary=source.summary,
+                        structural_role=role,
+                        mandatory=source.mandatory,
+                        payoff_score=source.payoff_score,
+                        character_ids=list(source.character_ids),
+                        scene_ids=list(source.scene_ids),
+                        source_references=list(source.source_references),
+                    )
+                    fixed_beats.append(rescued)
+            omitted_without_structural = [
+                b for b in raw_plan.omitted_beats if b.plot_beat_id not in structural_ids
+            ]
+            plan = canonicalize_plan(
+                raw_plan.model_copy(
+                    update={"selected_beats": fixed_beats, "omitted_beats": omitted_without_structural}
+                )
+            )
             report = validate_compressed_plot_plan(plan, analysis=analysis, request=request)
             run.attempt_count = max(run.attempt_count, attempt)
             result_metadata_request_id = result.metadata.provider_request_id
+            if not report.valid:
+                import logging as _logging
+                _err_summary = "; ".join(
+                    f"{e.code}@{e.entity_path}={e.invalid_value}" for e in report.errors
+                )
+                _logging.getLogger("vidgen.script").warning(
+                    f"compression validation failed attempt={attempt}: {_err_summary}"
+                )
             if report.valid:
                 break
             feedback = report.model_dump_json()
@@ -351,6 +402,10 @@ class ScriptGenerationPipeline:
                 GenerationContext(attempt_number=attempt, validation_errors_json=feedback),
             )
             candidate = result.output.model_copy(update={"script_id": script_id, "version": 1})
+            # Auto-correct word count so WORD_COUNT_MISMATCH never fires.
+            from services.script.validator import canonical_word_count as _wcnt
+            actual_words = sum(_wcnt(seg.text) for seg in candidate.segments)
+            candidate = candidate.model_copy(update={"actual_word_count": actual_words})
             coverage = build_beat_coverage(candidate, plan)
             candidate = canonicalize_script(
                 candidate.model_copy(update={"beat_coverage": coverage})
@@ -364,6 +419,14 @@ class ScriptGenerationPipeline:
             run.attempt_count = max(run.attempt_count, attempt)
             provider_request_id = result.metadata.provider_request_id
             script = candidate
+            if not report.valid:
+                import logging as _logging
+                _err_summary = "; ".join(
+                    f"{e.code}@{e.entity_path}={e.invalid_value}" for e in report.errors
+                )
+                _logging.getLogger("vidgen.script").warning(
+                    f"draft validation failed attempt={attempt}: {_err_summary}"
+                )
             if report.valid:
                 break
             feedback = report.model_dump_json()

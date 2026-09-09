@@ -1,5 +1,7 @@
 import {
   Badge,
+  Body1,
+  Button,
   Caption1,
   Table,
   TableBody,
@@ -10,7 +12,7 @@ import {
   makeStyles,
   tokens,
 } from "@fluentui/react-components";
-import { ShieldTaskRegular } from "@fluentui/react-icons";
+import { ArrowCounterclockwiseRegular, ShieldTaskRegular } from "@fluentui/react-icons";
 import type { JSX } from "react";
 import type { PipelineFailureListItem, ProviderAttemptListItem } from "@vidgen/contracts";
 
@@ -29,15 +31,27 @@ const useStyles = makeStyles({
   },
   muted: { color: tokens.colorNeutralForeground3 },
   nowrap: { whiteSpace: "nowrap" },
+  errorMessage: {
+    color: tokens.colorPaletteRedForeground1,
+    fontStyle: "italic",
+  },
+  retryRow: {
+    display: "flex",
+    justifyContent: "flex-end",
+    marginBottom: tokens.spacingVerticalS,
+  },
 });
 
 export interface FailurePanelProps {
   readonly failures: readonly PipelineFailureListItem[];
   readonly attempts: readonly ProviderAttemptListItem[];
+  readonly onRetry?: () => void;
+  readonly isRetrying?: boolean;
 }
 
-export function FailurePanel({ failures, attempts }: FailurePanelProps): JSX.Element {
+export function FailurePanel({ failures, attempts, onRetry, isRetrying }: FailurePanelProps): JSX.Element {
   const styles = useStyles();
+  const hasFailedAttempts = attempts.some((a) => a.status === "FAILED" && a.errorMessage);
   return (
     <SectionCard
       title="Failures and provider attempts"
@@ -48,6 +62,18 @@ export function FailurePanel({ failures, attempts }: FailurePanelProps): JSX.Ele
           : `${failures.length} recorded failure${failures.length === 1 ? "" : "s"}.`
       }
     >
+      {onRetry && hasFailedAttempts && (
+        <div className={styles.retryRow}>
+          <Button
+            appearance="primary"
+            icon={<ArrowCounterclockwiseRegular />}
+            disabled={isRetrying}
+            onClick={onRetry}
+          >
+            {isRetrying ? "Retrying…" : "Retry"}
+          </Button>
+        </div>
+      )}
       {failures.length === 0 ? (
         <EmptyState
           title="No pipeline failures"
@@ -107,7 +133,14 @@ export function FailurePanel({ failures, attempts }: FailurePanelProps): JSX.Ele
                   <TableCell>{attempt.provider}</TableCell>
                   <TableCell className={styles.muted}>{attempt.model}</TableCell>
                   <TableCell>{humanize(attempt.operation)}</TableCell>
-                  <TableCell>{humanize(attempt.status)}</TableCell>
+                  <TableCell>
+                    {humanize(attempt.status)}
+                    {attempt.errorMessage && (
+                      <Body1 as="p" className={styles.errorMessage}>
+                        {attempt.errorMessage}
+                      </Body1>
+                    )}
+                  </TableCell>
                   <TableCell className={styles.nowrap}>
                     {formatTimestamp(attempt.startedAt)}
                   </TableCell>

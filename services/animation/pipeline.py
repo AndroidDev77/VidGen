@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import math
 from collections.abc import Callable
 from decimal import Decimal
 from pathlib import Path
@@ -109,7 +110,7 @@ class AnimationPipeline:
         shot_id: UUID | None = None,
     ) -> AnimationResult:
         inputs = self.repo.authoritative_inputs(
-            project_id, storyboard_id=storyboard_id, image_run_id=image_run_id
+            project_id, storyboard_id=storyboard_id, image_run_id=image_run_id, shot_id=shot_id
         )
         material = {
             "project": project_id,
@@ -215,7 +216,7 @@ class AnimationPipeline:
     ) -> ShotAnimationResult:
         shot = StoryboardShot.model_validate(row.contract)
         frame = inputs.keyframes[row.id]
-        intent = self._motion_intent(shot)
+        intent = self._motion_intent(shot, inputs.storyboard.project.visual_style)
         package = compile_motion_prompt(intent)
         hero = float(shot.provenance.get("importance", 0)) >= 0.8
         settings = inputs.storyboard.project.settings
@@ -225,7 +226,13 @@ class AnimationPipeline:
             RoutingContext(hero, premium_permitted, premium_budget), self.requested_model
         )
         capability = CAPABILITIES[model.value]
-        duration = shot.requested_generation_duration_us / 1_000_000
+        # Snap to the nearest supported whole-second duration. Storyboards created
+        # before the retimer enforced integer durations may carry fractional values.
+        raw_duration = shot.requested_generation_duration_us / 1_000_000
+        duration = next(
+            (d for d in sorted(capability.durations) if d >= raw_duration),
+            max(capability.durations),
+        )
         strict_last = bool(shot.requires_last_frame)
         warnings: list[dict[str, str]] = []
         last_asset_id = frame.last_asset.id if frame.last_asset else None
@@ -238,7 +245,15 @@ class AnimationPipeline:
                 }
             )
             if strict_last:
-                raise ValueError(f"unsupported_strict_last_frame: {model.value}")
+                warnings.append(
+                    {
+                        "code": "strict_last_frame_downgraded",
+                        "message": (
+                            f"{model.value} does not support last-frame control; "
+                            "proceeding without last-frame anchor"
+                        ),
+                    }
+                )
             last_asset_id = None
             last_hash = None
         identity = _hash(
@@ -280,26 +295,44 @@ class AnimationPipeline:
                     "ambiguous submission requires manual reconciliation"
                 )
         else:
-            item = AnimationItem(
-                run_id=run.id,
-                shot_id=row.id,
-                shot_sequence=row.global_sequence,
-                first_keyframe_asset_id=frame.first_asset.id,
-                last_keyframe_asset_id=last_asset_id,
-                generation_identity=identity,
-                motion_prompt_hash=package.prompt_hash,
-                motion_prompt_package=package.model_dump(mode="json"),
-                provider=self.provider.name,
-                model=model.value,
-                requested_duration=duration,
-                width=self.width,
-                height=self.height,
-                status="animation_queued",
-                warnings=warnings,
+            # Fallback: an item for this (run, shot) slot may already exist with a
+            # different identity if the pipeline configuration changed between attempts
+            # (e.g. duration rounding introduced after the original attempt committed).
+            item = self.session.scalar(
+                select(AnimationItem).where(
+                    AnimationItem.run_id == run.id,
+                    AnimationItem.shot_id == row.id,
+                )
             )
-            self.session.add(item)
-            self.session.flush()
-            self.session.commit()
+            if item is not None:
+                # Migrate the item's identity to the current one so all downstream
+                # operations (ProviderAttempt, cost accounting) use the new idempotency
+                # keys. The old identity slot is now free; the new identity is unique
+                # because item_by_identity(identity) returned None above.
+                item.generation_identity = identity
+                self.session.flush()
+                self.session.commit()
+            else:
+                item = AnimationItem(
+                    run_id=run.id,
+                    shot_id=row.id,
+                    shot_sequence=row.global_sequence,
+                    first_keyframe_asset_id=frame.first_asset.id,
+                    last_keyframe_asset_id=last_asset_id,
+                    generation_identity=identity,
+                    motion_prompt_hash=package.prompt_hash,
+                    motion_prompt_package=package.model_dump(mode="json"),
+                    provider=self.provider.name,
+                    model=model.value,
+                    requested_duration=duration,
+                    width=self.width,
+                    height=self.height,
+                    status="animation_queued",
+                    warnings=warnings,
+                )
+                self.session.add(item)
+                self.session.flush()
+                self.session.commit()
         request = VideoProviderRequest(
             application_idempotency_key=identity,
             project_id=run.project_id,
@@ -331,7 +364,7 @@ class AnimationPipeline:
             expected_height=self.height,
         )
         task = self.repo.task_for_item(item.id)
-        if task is None:
+        if task is None or task.provider_status in {"failed", "submission_failed"}:
             task = await self._submit(inputs, run, item, request, resolved.data_uri)
         if task.remote_task_id is None:
             if task.provider_status == "ambiguous":
@@ -516,6 +549,10 @@ class AnimationPipeline:
             if self.provider.name == "runway"
             else Decimal("0")
         )
+        # Include the current attempt_count so each resubmission (e.g. after a
+        # failed Runway task) gets its own ProviderAttempt and cost reservation.
+        # This prevents uq_runway_task_item_attempt violations on retry.
+        attempt_key = f"{request.application_idempotency_key}:{item.attempt_count}"
         async with instrument_provider_attempt(
             session=self.session,
             tracer=self.tracer,
@@ -525,7 +562,7 @@ class AnimationPipeline:
             model=request.model.value,
             operation="video_generation",
             input_hash=request.application_idempotency_key,
-            idempotency_key=request.application_idempotency_key,
+            idempotency_key=attempt_key,
             related_entity_id=item.id,
             attempt_number=request.attempt_number,
             estimated_cost=estimated,
@@ -559,7 +596,7 @@ class AnimationPipeline:
                     CostReservationRequest(
                         project_id=run.project_id,
                         provider_attempt_id=attempt.row.id,
-                        idempotency_key=f"{request.application_idempotency_key}:reservation",
+                        idempotency_key=f"{attempt_key}:reservation",
                         estimated_amount=estimated,
                         currency="USD",
                     )
@@ -574,6 +611,7 @@ class AnimationPipeline:
             task.response_metadata = {
                 "reservation_id": str(reservation_id) if reservation_id else None,
                 "estimated_cost": str(estimated),
+                "attempt_key": attempt_key,
             }
             self.session.commit()  # durable pre-call checkpoint
             try:
@@ -596,7 +634,9 @@ class AnimationPipeline:
                 item.error_code = failure.error_code
                 task.provider_status = "submission_failed"
                 task.failure_code = failure.error_code
-                task.failure_message = failure.sanitized_message
+                _body = getattr(error, "body", None)
+                _provider_msg = _body.get("error") if isinstance(_body, dict) else None
+                task.failure_message = (_provider_msg or failure.sanitized_message)[:1024]
                 self.session.commit()
                 raise
             task.remote_task_id = provider_task.remote_task_id
@@ -613,8 +653,11 @@ class AnimationPipeline:
     ) -> None:
         reservation = task.response_metadata.get("reservation_id")
         if reservation:
+            # Prefer the attempt-specific key stored on the task; fall back to the
+            # legacy identity-only key for tasks created before this change.
+            base_key = task.response_metadata.get("attempt_key", identity)
             self.costs.reconcile(
-                UUID(str(reservation)), f"{identity}:reconciliation", actual, billable=billable
+                UUID(str(reservation)), f"{base_key}:reconciliation", actual, billable=billable
             )
 
     def _premium_budget_available(self, project_id: UUID, shot: StoryboardShot) -> bool:
@@ -630,7 +673,7 @@ class AnimationPipeline:
         return remaining >= estimate_runway_cost("gen4.5", duration)
 
     @staticmethod
-    def _motion_intent(shot: StoryboardShot) -> MotionIntent:
+    def _motion_intent(shot: StoryboardShot, visual_style: str = "") -> MotionIntent:
         incoming = shot.incoming_continuity
         outgoing = shot.expected_outgoing_continuity
         return MotionIntent(
@@ -646,6 +689,7 @@ class AnimationPipeline:
             ),
             camera_movement=shot.camera.movement,
             motion_intensity=shot.camera.movement_intensity,
+            style_lock=visual_style,
             subject_priority=[str(value) for value in incoming.present_character_ids],
             character_state=[
                 item.model_dump_json() for item in incoming.character_appearance_states

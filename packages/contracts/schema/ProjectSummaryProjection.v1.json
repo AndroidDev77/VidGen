@@ -73,6 +73,32 @@
       "title": "Humor Intensity",
       "type": "integer"
     },
+    "latest_failure_code": {
+      "anyOf": [
+        {
+          "maxLength": 64,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Latest Failure Code"
+    },
+    "latest_failure_stage": {
+      "anyOf": [
+        {
+          "maxLength": 64,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Latest Failure Stage"
+    },
     "name": {
       "maxLength": 255,
       "title": "Name",

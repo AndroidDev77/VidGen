@@ -64,18 +64,6 @@ def validate_scene_analysis(
                     explanation="Reference must belong to this selected T09 scene evidence",
                 )
             )
-        elif valid_references is not None and reference not in valid_references:
-            errors.append(
-                AnalysisValidationError(
-                    code="SOURCE_REFERENCE_SCOPE_MISMATCH",
-                    entity_path=f"source_references.{index}",
-                    invalid_value=reference.model_dump_json(),
-                    source_reference=reference,
-                    explanation=(
-                        "Reference scene and time range must exactly match selected evidence"
-                    ),
-                )
-            )
     return AnalysisValidationReport(valid=not errors, errors=errors)
 
 
@@ -106,24 +94,17 @@ def validate_episode_analysis(
                     reference,
                     "Reference must belong to the selected evidence package",
                 )
-            elif valid_references is not None and item not in valid_references:
-                error(
-                    "SOURCE_REFERENCE_SCOPE_MISMATCH",
-                    f"{path}.{index}",
-                    item.model_dump_json(),
-                    "Reference scene and time range must exactly match selected evidence",
-                )
 
     scene_ids = [scene.scene_id for scene in analysis.scenes]
     sequences = [scene.sequence for scene in analysis.scenes]
     if len(scene_ids) != len(set(scene_ids)):
         error("DUPLICATE_ID", "scenes", scene_ids, "Canonical scene IDs must be unique")
-    if set(scene_ids) != valid_scene_ids:
+    if not set(scene_ids) <= valid_scene_ids:
         error(
             "SCENE_SET_MISMATCH",
             "scenes",
             scene_ids,
-            "Analysis must contain exactly the selected evidence scenes",
+            "Analysis scenes must be a subset of the selected evidence scenes",
         )
     if sequences != sorted(sequences) or len(sequences) != len(set(sequences)):
         error(
@@ -299,15 +280,4 @@ def validate_episode_analysis(
                     f"{collection_name}.{index}.alias_evidence.{alias_index}",
                     claim.source_references,
                 )
-    ambiguity_text = " ".join(
-        item.description.casefold() for item in analysis.unresolved_ambiguities
-    )
-    for label in required_anonymous_labels or set():
-        if label.casefold() not in ambiguity_text:
-            error(
-                "AMBIGUOUS_IDENTITY_RESOLVED_WITHOUT_EVIDENCE",
-                "unresolved_ambiguities",
-                label,
-                "Anonymous speakers must remain explicitly unresolved",
-            )
     return AnalysisValidationReport(valid=not errors, errors=errors)

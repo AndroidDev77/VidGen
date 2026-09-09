@@ -11,6 +11,7 @@ from apps.api.dependencies import get_engine
 from apps.api.errors import register_error_handlers
 from apps.api.routes import (
     assets,
+    blobs,
     control_commands,
     costs,
     events,
@@ -73,6 +74,7 @@ def create_app() -> FastAPI:
         references,
         uploads,
         assets,
+        blobs,
         costs,
         workflows,
         events,

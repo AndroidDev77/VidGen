@@ -49,6 +49,10 @@ class APISettings(BaseSettings):
     # check the provider's current official documentation before changing one.
     visual_qa_first_pass_model: str = "gpt-5.6"
     visual_qa_adjudicator_model: str = "gpt-5.6"
+    #: Override the unintended-text detector threshold (0.0–1.0; default 0.80).
+    #: Raise toward 1.0 for environments where the edge-detection algorithm
+    #: produces false positives on AI-generated imagery.
+    visual_qa_ocr_threshold: float = 0.80
     # T22 final editorial QA reuses the same two-role policy over the assembled
     # recap: Luna evaluates on the inexpensive vision model, Terra adjudicates
     # only borderline findings on the stronger one. Both default to the model

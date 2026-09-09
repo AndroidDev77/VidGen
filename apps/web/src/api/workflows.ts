@@ -23,11 +23,30 @@ export function startWorkflow(
   projectId: string,
   idempotencyKey: string,
   client: VidGenClient = apiClient,
+  subtitleAssetIds?: string[],
 ): Promise<ApiResponse<StartWorkflowResult>> {
   return client.post<StartWorkflowResult>(`/api/v1/projects/${projectId}/workflow:start`, {
-    body: {},
+    body: subtitleAssetIds?.length ? { subtitle_asset_ids: subtitleAssetIds } : {},
     idempotencyKey,
   });
+}
+
+export interface SubtitleUploadResult {
+  asset_id: string;
+}
+
+export function uploadSubtitle(
+  projectId: string,
+  file: File,
+  client: VidGenClient = apiClient,
+): Promise<ApiResponse<SubtitleUploadResult>> {
+  return client.post<SubtitleUploadResult>(
+    `/api/v1/projects/${projectId}/subtitle-uploads`,
+    {
+      rawBody: file,
+      contentType: "application/x-subrip",
+    },
+  );
 }
 
 export function cancelWorkflow(

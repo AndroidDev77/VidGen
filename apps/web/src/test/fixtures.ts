@@ -49,6 +49,8 @@ export const projectListItem: ProjectListItem = {
   committed_cost_amount: "1.000000",
   hard_cap_amount: "20.000000",
   has_failures: true,
+  latest_failure_stage: "episode_analysis",
+  latest_failure_code: "openai_api_error",
   row_version: 1,
 };
 

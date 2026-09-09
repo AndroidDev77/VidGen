@@ -82,6 +82,7 @@ def test_storyboard_activity_carries_only_identifiers(
         "source_video_id",
         "stage",
         "idempotency_key",
+        "sidecar_asset_ids",
     }
     assert set(result.model_dump()) == {
         "schema_version",

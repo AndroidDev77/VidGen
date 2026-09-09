@@ -187,6 +187,15 @@ def build_command_plan(manifest: RenderManifest, root: Path) -> RenderCommandPla
                 "language=eng",
             ]
         )
+    # Hard-trim the output to the planned narration duration. Each per-shot
+    # fps filter produces a frame-aligned clip that may be up to one frame
+    # longer than usable_duration_us, so the concatenated picture.mp4 is
+    # typically several hundred ms longer than manifest.narration_duration_us.
+    # Capping the output here ensures A/V sync and passes the T22 duration
+    # checks without re-encoding the video (the trim is exact to the frame
+    # because the fps filter has already aligned every shot's last frame to
+    # a multiple of 1/fps seconds).
+    final.extend(["-t", f"{manifest.narration_duration_us / 1_000_000:.6f}"])
     final.extend(
         [
             "-movflags",

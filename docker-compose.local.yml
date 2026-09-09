@@ -10,6 +10,7 @@ x-vidgen-app: &vidgen-app
     VIDGEN_BLOB_BACKEND: filesystem
     VIDGEN_BLOB_ROOT: /data/blobs
     VIDGEN_UPLOAD_ROOT: /data/uploads
+    VIDGEN_RENDER_WORK_ROOT: /data/render-work
 
     VIDGEN_TEMPORAL_TARGET_HOST: temporal:7233
     TEMPORAL_ADDRESS: temporal:7233
@@ -17,7 +18,7 @@ x-vidgen-app: &vidgen-app
     TEMPORAL_TASK_QUEUE: vidgen-projects
 
     VIDGEN_TEMPORAL_USE_FAKE_WORKFLOW_CONTROLLER: "false"
-    VIDGEN_TEMPORAL_ALLOW_FAKE_PROVIDERS: "false"
+    VIDGEN_TEMPORAL_ALLOW_FAKE_PROVIDERS: "true"
     VIDGEN_IMAGE_PROVIDER_NAME: openai
     VIDGEN_VIDEO_PROVIDER_NAME: runway
     VIDGEN_VISUAL_CAPABILITY_PROFILE: runway-gen4-turbo
@@ -33,7 +34,7 @@ services:
     command:
       - sh
       - -c
-      - mkdir -p /data/blobs /data/uploads && chown -R 10001:10001 /data
+      - mkdir -p /data/blobs /data/uploads /data/render-work && chown -R 10001:10001 /data
     volumes:
       - vidgen-local-data:/data
     restart: "no"
