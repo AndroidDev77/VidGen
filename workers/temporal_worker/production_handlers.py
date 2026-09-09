@@ -28,6 +28,7 @@ from services.animation.pipeline import PIPELINE_VERSION as T15_PIPELINE_VERSION
 from services.animation.pipeline import AnimationPipeline
 from services.animation.providers import VideoGenerationProvider
 from services.animation.runway import RunwayVideoProvider
+from vidgen.telemetry.failures import classify_failure
 from services.continuity.orchestrator import (
     ContinuityOrchestrationError,
     ContinuityReferenceOrchestrator,
@@ -519,23 +520,31 @@ def _run_shot_animation(
     )
     if image_run is None or image_run.status != "keyframes_complete":
         raise ValueError("InvalidLineage: compatible completed T14 run is missing")
-    result = asyncio.run(
-        AnimationPipeline(
-            session,
-            blob_store,
-            video_provider,
-            provider_configuration_version=(
-                request.workflow_identity.t15_capability_profile_identity
-            ),
-            cancellation_check=activity.is_cancelled,
-        ).process(
-            project_id=request.project_id,
-            storyboard_id=request.storyboard_run_id,
-            image_run_id=image_run.id,
-            shot_id=request.storyboard_shot_id,
-            idempotency_key=shot_activity_idempotency_key(request.shot_input_hash, "t15"),
+    try:
+        result = asyncio.run(
+            AnimationPipeline(
+                session,
+                blob_store,
+                video_provider,
+                provider_configuration_version=(
+                    request.workflow_identity.t15_capability_profile_identity
+                ),
+                cancellation_check=activity.is_cancelled,
+            ).process(
+                project_id=request.project_id,
+                storyboard_id=request.storyboard_run_id,
+                image_run_id=image_run.id,
+                shot_id=request.storyboard_shot_id,
+                idempotency_key=shot_activity_idempotency_key(request.shot_input_hash, "t15"),
+            )
         )
-    )
+    except Exception as exc:
+        failure = classify_failure(exc, status_code=getattr(exc, "status_code", None))
+        if not failure.retryable:
+            raise ApplicationError(
+                failure.sanitized_message, non_retryable=True
+            ) from exc
+        raise
     item_result = result.items[0] if result.items else None
     candidate = item_result.candidate if item_result is not None else None
     if candidate is None:
