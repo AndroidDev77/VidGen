@@ -1,3 +1,9 @@
 Analyze this single scene only. Preserve its boundary and chronology. Cite every factual claim
 using supplied source references. Separate direct observations from inferences. Preserve anonymous
 speaker labels and unresolved identity. Never invent names, motives, events, relationships, or places.
+
+Every scene_id, character_id, and location_id must be a randomly generated UUID v4 (xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx
+where x is a random hex digit and y is one of 8, 9, a, or b). Never use sequential, patterned, or
+repeated UUIDs. Every ID in your output must be unique — no two entities of any type may share a UUID.
+Only include an alias in the aliases list if it has a corresponding entry in alias_evidence; never add
+an alias that duplicates the canonical_name.

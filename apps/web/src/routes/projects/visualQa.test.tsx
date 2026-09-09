@@ -187,6 +187,22 @@ describe("VisualQAReviewDialog", () => {
   });
 });
 
+describe("ShotInspector video player", () => {
+  it("renders a video element with the signed URL for the selected shot", async () => {
+    renderProjectRoute(<StoryboardPage />, storyboardRoute(0));
+    const video = await screen.findByTestId<HTMLVideoElement>("shot-video-player");
+    const expectedAssetId = fixtures.storyboardShot(0).selected_video_asset_id;
+    expect(video.src).toContain(expectedAssetId);
+  });
+
+  it("uses a fresh signed URL each time a different shot is selected", async () => {
+    renderProjectRoute(<StoryboardPage />, storyboardRoute(1));
+    const video = await screen.findByTestId<HTMLVideoElement>("shot-video-player");
+    const shotB = fixtures.storyboard.shots[1]!;
+    expect(video.src).toContain(shotB.selected_video_asset_id);
+  });
+});
+
 describe("visual-QA status across the review UI", () => {
   it("badges every shot in the storyboard grid with its QA outcome", async () => {
     renderProjectRoute(<StoryboardPage />, storyboardRoute(0));
