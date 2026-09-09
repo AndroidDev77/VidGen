@@ -40,6 +40,28 @@ def costs(project_id: UUID, session: S, principal: P) -> dict[str, object]:
             )
         return {k: str(v) for k, v in sorted(out.items())}
 
+    # The routing reason lives on the provider attempt each ledger entry settles,
+    # so spend can be read by *why* a model was chosen, not only by which model.
+    attempt_ids = {row.provider_attempt_id for row in rows}
+    attempts = (
+        {
+            attempt.id: attempt
+            for attempt in session.scalars(
+                select(ProviderAttempt).where(ProviderAttempt.id.in_(attempt_ids))
+            )
+        }
+        if attempt_ids
+        else {}
+    )
+    by_routing_reason: dict[str, Decimal] = {}
+    by_quality_mode: dict[str, Decimal] = {}
+    for row in rows:
+        attempt = attempts.get(row.provider_attempt_id)
+        metadata = attempt.redacted_metadata if attempt is not None else {}
+        reason = str(metadata.get("routing_reason") or "unrouted")
+        mode = str(metadata.get("quality_mode") or "unrouted")
+        by_routing_reason[reason] = by_routing_reason.get(reason, Decimal(0)) + row.actual_amount
+        by_quality_mode[mode] = by_quality_mode.get(mode, Decimal(0)) + row.actual_amount
     committed = sum((r.actual_amount for r in rows), Decimal(0))
     reserved = budget.reserved_amount if budget else Decimal(0)
     released = sum((r.released_amount for r in rows), Decimal(0))
@@ -59,6 +81,8 @@ def costs(project_id: UUID, session: S, principal: P) -> dict[str, object]:
         "byModel": breakdown("model"),
         "byOperation": breakdown("operation"),
         "byReason": breakdown("reason"),
+        "byRoutingReason": {k: str(v) for k, v in sorted(by_routing_reason.items())},
+        "byQualityMode": {k: str(v) for k, v in sorted(by_quality_mode.items())},
     }
 
 

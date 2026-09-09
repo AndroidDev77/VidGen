@@ -4,7 +4,7 @@ import asyncio
 import hashlib
 import json
 from collections.abc import Callable
-from typing import Literal
+from typing import Any, Literal
 from uuid import UUID
 
 from sqlalchemy import select
@@ -27,6 +27,7 @@ from services.animation.fake_provider import FakeVideoProvider
 from services.animation.pipeline import PIPELINE_VERSION as T15_PIPELINE_VERSION
 from services.animation.pipeline import AnimationPipeline
 from services.animation.providers import VideoGenerationProvider
+from services.animation.routing import RoutingError
 from services.animation.runway import RunwayVideoProvider
 from services.continuity.orchestrator import (
     ContinuityOrchestrationError,
@@ -39,6 +40,10 @@ from services.control_plane.references import (
     resolve_reference_inputs,
 )
 from services.control_plane.shot_commands import SEQUENCE_KEY, next_regeneration_sequence
+from services.generation.settings import (
+    generation_policy_identity,
+    project_generation_settings,
+)
 from services.image_generation.openai_image import OpenAIImageProvider
 from services.image_generation.pipeline import (
     PIPELINE_VERSION as T14_PIPELINE_VERSION,
@@ -184,6 +189,8 @@ def _shot_input(
     regeneration: dict[str, str | int] = (
         {"regeneration_sequence": regeneration_sequence} if regeneration_sequence else {}
     )
+    if request.generation_policy_identity:
+        regeneration["generation_policy_identity"] = request.generation_policy_identity
     material: dict[str, str | int] = {
         **regeneration,
         "project_id": str(request.project_id),
@@ -202,8 +209,13 @@ def _shot_input(
     }
     digest = identity_hash(material)
     identity = ShotWorkflowIdentity(
-        **{key: value for key, value in material.items() if key != "regeneration_sequence"},
+        **{
+            key: value
+            for key, value in material.items()
+            if key not in {"regeneration_sequence", "generation_policy_identity"}
+        },
         regeneration_sequence=regeneration_sequence,
+        generation_policy_identity=request.generation_policy_identity,
         identity_hash=digest,
     )
     return ShotWorkflowInput(
@@ -238,10 +250,27 @@ def _resolve_shot_fanout(
             "t15_capability_profile_identity": (
                 f"{video_provider.name}:{settings.visual_capability_profile}:runway/2024-11-06"
             ),
+            # Resolved here, in an activity, from the project's persisted
+            # settings and the selected storyboard's capability profile: the
+            # workflow carries only this compact string.
+            "generation_policy_identity": _generation_policy_identity(session, selected),
         }
     )
     return ResolveShotFanoutResult(
         shots=[_shot_input(request, selected, shot) for shot in selected.shots]
+    )
+
+
+def _generation_policy_identity(session: Session, selected: Any) -> str:
+    """The compact identity of everything that decides a shot's model and durations."""
+    storyboard = selected.storyboard
+    project = session.get(Project, storyboard.project_id)
+    if project is None:
+        raise ValueError("InvalidLineage: the storyboard's project no longer exists")
+    return generation_policy_identity(
+        project_generation_settings(project),
+        capability_profile_id=storyboard.capability_profile_id,
+        capability_hash=storyboard.capability_hash,
     )
 
 
@@ -255,6 +284,16 @@ def _authoritative_shot(session: Session, request: ShotWorkflowInput) -> tuple[o
     )
     if shot is None:
         raise ValueError("InvalidLineage: shot is not part of selected storyboard")
+    bound = request.workflow_identity.generation_policy_identity
+    if bound and bound != _generation_policy_identity(session, selected):
+        # The project's quality mode, pacing preset, routing policy or provider
+        # capabilities changed after this child was minted. Its outputs would no
+        # longer be the ones this identity promised, so the run stops here and
+        # a new generation run mints a fresh identity.
+        raise ValueError(
+            "InvalidLineage: the project's generation settings changed after this shot "
+            "workflow started; start a new generation run"
+        )
     fanout = ProjectShotFanoutInput(
         project_id=request.project_id,
         storyboard_run_id=request.storyboard_run_id,
@@ -262,6 +301,7 @@ def _authoritative_shot(session: Session, request: ShotWorkflowInput) -> tuple[o
         trace_context=request.trace_context,
         t14_configuration_identity=request.workflow_identity.t14_configuration_identity,
         t15_capability_profile_identity=(request.workflow_identity.t15_capability_profile_identity),
+        generation_policy_identity=bound,
         attempt_policy_version=request.attempt_policy_version,
     )
     # A replacement child carries the regeneration sequence its command minted;
@@ -501,6 +541,23 @@ _REPAIR_STATES: dict[RepairRunState, ShotWorkflowStatus] = {
 }
 
 
+def terminal_animation_error(exc: Exception) -> ApplicationError | None:
+    """The non-retryable Temporal error for a terminal T15 failure, or None.
+
+    A routing refusal - a budget the selected model cannot meet, a capability
+    it lacks, a configuration the policy rejects - is deterministic, so it is
+    surfaced with its own exception type (which the shot workflow maps to
+    ``BUDGET_DENIAL`` or ``UNSUPPORTED_CAPABILITY``) and its actionable message.
+    Every other terminal failure keeps the sanitized classification message.
+    """
+    if isinstance(exc, RoutingError):
+        return ApplicationError(str(exc)[:500], type=type(exc).__name__, non_retryable=True)
+    failure = classify_failure(exc, status_code=getattr(exc, "status_code", None))
+    if failure.retryable:
+        return None
+    return ApplicationError(failure.sanitized_message, type=type(exc).__name__, non_retryable=True)
+
+
 def _run_shot_animation(
     session: Session,
     blob_store: BlobStore,
@@ -539,9 +596,9 @@ def _run_shot_animation(
             )
         )
     except Exception as exc:
-        failure = classify_failure(exc, status_code=getattr(exc, "status_code", None))
-        if not failure.retryable:
-            raise ApplicationError(failure.sanitized_message, non_retryable=True) from exc
+        terminal = terminal_animation_error(exc)
+        if terminal is not None:
+            raise terminal from exc
         raise
     item_result = result.items[0] if result.items else None
     candidate = item_result.candidate if item_result is not None else None

@@ -1,0 +1,203 @@
+{
+  "$defs": {
+    "GenerationQuality": {
+      "description": "Which Runway model tier a project may spend on.\n\n``economy`` always animates with Gen-4 Turbo. ``balanced`` animates with\nGen-4 Turbo and reserves Gen-4.5 for hero shots and bounded quality-repair\nescalations when the budget permits. ``premium`` animates every compatible\nshot with Gen-4.5 and refuses the run rather than silently downgrading.",
+      "enum": [
+        "economy",
+        "balanced",
+        "premium"
+      ],
+      "title": "GenerationQuality",
+      "type": "string"
+    },
+    "RoutingReasonCode": {
+      "description": "The bounded vocabulary of reasons a model was selected.",
+      "enum": [
+        "economy_turbo",
+        "explicit_model",
+        "balanced_default_turbo",
+        "balanced_hero_premium",
+        "balanced_hero_budget_insufficient",
+        "balanced_hero_capability_unavailable",
+        "balanced_quality_escalation",
+        "balanced_escalation_budget_insufficient",
+        "balanced_escalation_capability_unavailable",
+        "balanced_escalation_exhausted",
+        "premium_gen4_5",
+        "premium_fallback_budget",
+        "premium_fallback_capability"
+      ],
+      "title": "RoutingReasonCode",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Why one provider attempt used the model it used. Bounded and durable.",
+  "properties": {
+    "attempt_number": {
+      "default": 1,
+      "minimum": 1,
+      "title": "Attempt Number",
+      "type": "integer"
+    },
+    "budget_enforced": {
+      "title": "Budget Enforced",
+      "type": "boolean"
+    },
+    "candidates": {
+      "items": {
+        "type": "string"
+      },
+      "maxItems": 8,
+      "title": "Candidates",
+      "type": "array"
+    },
+    "capability_hash": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Capability Hash",
+      "type": "string"
+    },
+    "capability_profile_id": {
+      "maxLength": 128,
+      "minLength": 1,
+      "title": "Capability Profile Id",
+      "type": "string"
+    },
+    "currency": {
+      "default": "USD",
+      "pattern": "^[A-Z]{3}$",
+      "title": "Currency",
+      "type": "string"
+    },
+    "escalation_attempt": {
+      "default": 0,
+      "minimum": 0,
+      "title": "Escalation Attempt",
+      "type": "integer"
+    },
+    "estimated_cost": {
+      "maxLength": 32,
+      "minLength": 1,
+      "title": "Estimated Cost",
+      "type": "string"
+    },
+    "generation_duration_seconds": {
+      "exclusiveMinimum": 0,
+      "title": "Generation Duration Seconds",
+      "type": "integer"
+    },
+    "height": {
+      "exclusiveMinimum": 0,
+      "title": "Height",
+      "type": "integer"
+    },
+    "hero_shot": {
+      "title": "Hero Shot",
+      "type": "boolean"
+    },
+    "prior_models": {
+      "items": {
+        "type": "string"
+      },
+      "maxItems": 16,
+      "title": "Prior Models",
+      "type": "array"
+    },
+    "quality_escalation": {
+      "default": false,
+      "title": "Quality Escalation",
+      "type": "boolean"
+    },
+    "quality_mode": {
+      "$ref": "#/$defs/GenerationQuality"
+    },
+    "quality_repair_policy_version": {
+      "maxLength": 64,
+      "minLength": 1,
+      "title": "Quality Repair Policy Version",
+      "type": "string"
+    },
+    "reason": {
+      "maxLength": 255,
+      "minLength": 1,
+      "title": "Reason",
+      "type": "string"
+    },
+    "reason_code": {
+      "$ref": "#/$defs/RoutingReasonCode"
+    },
+    "remaining_budget": {
+      "anyOf": [
+        {
+          "maxLength": 32,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Remaining Budget"
+    },
+    "requested_duration_seconds": {
+      "exclusiveMinimum": 0,
+      "title": "Requested Duration Seconds",
+      "type": "number"
+    },
+    "requested_model": {
+      "anyOf": [
+        {
+          "maxLength": 32,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Requested Model"
+    },
+    "routing_policy_version": {
+      "maxLength": 64,
+      "minLength": 1,
+      "title": "Routing Policy Version",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "selected_model": {
+      "maxLength": 32,
+      "minLength": 1,
+      "title": "Selected Model",
+      "type": "string"
+    },
+    "width": {
+      "exclusiveMinimum": 0,
+      "title": "Width",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "routing_policy_version",
+    "quality_repair_policy_version",
+    "quality_mode",
+    "selected_model",
+    "hero_shot",
+    "reason_code",
+    "reason",
+    "requested_duration_seconds",
+    "generation_duration_seconds",
+    "width",
+    "height",
+    "estimated_cost",
+    "budget_enforced",
+    "capability_profile_id",
+    "capability_hash"
+  ],
+  "title": "RoutingDecision",
+  "type": "object"
+}

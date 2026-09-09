@@ -138,9 +138,7 @@ def test_an_anonymous_speaker_left_unresolved_is_reported_but_does_not_block() -
         valid_reference_ids={scene.scene_id},
         required_anonymous_labels={"speaker_001"},
     )
-    assert "AMBIGUOUS_IDENTITY_RESOLVED_WITHOUT_EVIDENCE" in {
-        item.code for item in report.warnings
-    }
+    assert "AMBIGUOUS_IDENTITY_RESOLVED_WITHOUT_EVIDENCE" in {item.code for item in report.warnings}
     assert "speaker_001" in " ".join(item.message for item in report.warnings)
     assert report.valid, report.errors
 

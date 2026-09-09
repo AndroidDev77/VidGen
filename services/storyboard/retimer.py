@@ -31,7 +31,7 @@ from vidgen.contracts.storyboard import (
     VisualProviderCapability,
 )
 
-RETIMER_VERSION = "storyboard-retimer/1.0.0"
+RETIMER_VERSION = "storyboard-retimer/1.1.0"
 
 #: Higher is preferred when snapping a split to an approved boundary.
 _BOUNDARY_RANK: dict[BoundaryKind, int] = {"sentence": 3, "clause": 2, "beat": 1, "word": 0}
@@ -51,9 +51,15 @@ class RetimerConfig:
     """Deterministic solver configuration. Part of the storyboard input identity."""
 
     version: str = RETIMER_VERSION
+    #: The defaults are the ``normal`` pacing preset's hard bounds, so a project
+    #: that never chose a preset keeps exactly the timing it always had.
     min_shot_duration_us: int = 1_000_000
     max_shot_duration_us: int = 7_500_000
     boundary_snap_window_us: int = 500_000
+    #: The pacing preset these bounds were derived from. Part of the identity
+    #: so changing the preset never reuses a storyboard planned for another.
+    pacing_preset: str = "normal"
+    pacing_version: str = "shot-pacing/1"
 
     def material(self) -> dict[str, int | str]:
         return {
@@ -61,6 +67,8 @@ class RetimerConfig:
             "min_shot_duration_us": self.min_shot_duration_us,
             "max_shot_duration_us": self.max_shot_duration_us,
             "boundary_snap_window_us": self.boundary_snap_window_us,
+            "pacing_preset": self.pacing_preset,
+            "pacing_version": self.pacing_version,
         }
 
 

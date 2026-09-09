@@ -64,6 +64,87 @@ export const projectDetail = {
   created_at: "2026-08-01T09:00:00Z",
   updated_at: "2026-08-02T10:30:00Z",
   voice_profile_id: uuid(9, 1),
+  generation_quality: "balanced",
+  shot_pacing: "normal",
+  premium_fallback_allowed: false,
+};
+
+/**
+ * The pre-workflow estimate the API computes from the pricing registry. The
+ * figures are `estimate_generation_costs(300, "normal")` verbatim, and
+ * `tests/test_generation_settings_api.py` pins the backend to them.
+ */
+export const generationEstimate = {
+  schema_version: "1.0",
+  estimate_version: "generation-estimate/1",
+  pricing_version: "runway-pricing-2026-09-09",
+  capability_registry_hash: "f".repeat(64),
+  currency: "USD",
+  target_duration_seconds: 300,
+  shot_pacing: "normal",
+  estimated_shot_count_low: 43,
+  estimated_shot_count_high: 75,
+  generated_seconds_low: 301,
+  generated_seconds_high: 301,
+  hero_share: "0.15",
+  retry_factor: "1.2",
+  modes: [
+    {
+      schema_version: "1.0",
+      generation_quality: "economy",
+      primary_model: "gen4_turbo",
+      hero_model: "gen4_turbo",
+      estimated_low: "15.05",
+      estimated_high: "18.06",
+      delta_from_economy_low: "0.00",
+      delta_from_economy_high: "0.00",
+      summary: "Cheapest. Every shot uses Gen-4 Turbo at 0.05 USD per generated second.",
+    },
+    {
+      schema_version: "1.0",
+      generation_quality: "balanced",
+      primary_model: "gen4_turbo",
+      hero_model: "gen4.5",
+      estimated_low: "18.21",
+      estimated_high: "21.85",
+      delta_from_economy_low: "3.16",
+      delta_from_economy_high: "3.79",
+      summary:
+        "Gen-4 Turbo normally; about 15% of shots (hero shots and quality repairs) use Gen-4.5.",
+    },
+    {
+      schema_version: "1.0",
+      generation_quality: "premium",
+      primary_model: "gen4.5",
+      hero_model: "gen4.5",
+      estimated_low: "36.12",
+      estimated_high: "43.34",
+      delta_from_economy_low: "21.07",
+      delta_from_economy_high: "25.28",
+      summary: "Every compatible shot uses Gen-4.5 at 0.12 USD per generated second.",
+    },
+  ],
+  notes: [
+    "Video generation only; analysis, script, narration, keyframe and QA spend is the same in every mode.",
+    "The low figure assumes no regenerated shots; the high figure allows bounded quality repairs.",
+    "Runway bills whole generated seconds, so every shot rounds up to the next second.",
+  ],
+};
+
+export const generationSettings = {
+  project_id: PROJECT_ID,
+  settings: {
+    schema_version: "1.0",
+    settings_version: "generation-settings/1",
+    generation_quality: "balanced",
+    shot_pacing: "normal",
+    premium_fallback_allowed: false,
+    origin: "explicit",
+  },
+  generation_policy_identity:
+    "gq=balanced;sp=normal;pf=0;rp=runway-routing-v2;qr=quality-repair/1;cp=runway-gen4-turbo@0123456789abcdef;rg=0123456789abcdef",
+  workflow_started: true,
+  estimate: generationEstimate,
 };
 
 /** The voices a fake-provider deployment offers, and the one selected. */
@@ -473,6 +554,8 @@ export const costs: ProjectCostSummaryResponse = {
   byModel: { "fake-video": "1.000000" },
   byOperation: { video_generation: "1.000000" },
   byReason: { generation: "1.000000" },
+  byRoutingReason: { balanced_default_turbo: "1.000000" },
+  byQualityMode: { balanced: "1.000000" },
 };
 
 export const providerAttempts: ProviderAttemptListResponse = {

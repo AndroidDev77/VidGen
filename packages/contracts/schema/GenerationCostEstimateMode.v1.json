@@ -1,0 +1,80 @@
+{
+  "$defs": {
+    "GenerationQuality": {
+      "description": "Which Runway model tier a project may spend on.\n\n``economy`` always animates with Gen-4 Turbo. ``balanced`` animates with\nGen-4 Turbo and reserves Gen-4.5 for hero shots and bounded quality-repair\nescalations when the budget permits. ``premium`` animates every compatible\nshot with Gen-4.5 and refuses the run rather than silently downgrading.",
+      "enum": [
+        "economy",
+        "balanced",
+        "premium"
+      ],
+      "title": "GenerationQuality",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "delta_from_economy_high": {
+      "maxLength": 32,
+      "minLength": 1,
+      "title": "Delta From Economy High",
+      "type": "string"
+    },
+    "delta_from_economy_low": {
+      "maxLength": 32,
+      "minLength": 1,
+      "title": "Delta From Economy Low",
+      "type": "string"
+    },
+    "estimated_high": {
+      "maxLength": 32,
+      "minLength": 1,
+      "title": "Estimated High",
+      "type": "string"
+    },
+    "estimated_low": {
+      "maxLength": 32,
+      "minLength": 1,
+      "title": "Estimated Low",
+      "type": "string"
+    },
+    "generation_quality": {
+      "$ref": "#/$defs/GenerationQuality"
+    },
+    "hero_model": {
+      "maxLength": 32,
+      "minLength": 1,
+      "title": "Hero Model",
+      "type": "string"
+    },
+    "primary_model": {
+      "maxLength": 32,
+      "minLength": 1,
+      "title": "Primary Model",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "summary": {
+      "maxLength": 255,
+      "minLength": 1,
+      "title": "Summary",
+      "type": "string"
+    }
+  },
+  "required": [
+    "generation_quality",
+    "primary_model",
+    "hero_model",
+    "estimated_low",
+    "estimated_high",
+    "delta_from_economy_low",
+    "delta_from_economy_high",
+    "summary"
+  ],
+  "title": "GenerationCostEstimateMode",
+  "type": "object"
+}

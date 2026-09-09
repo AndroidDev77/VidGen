@@ -1,0 +1,63 @@
+{
+  "additionalProperties": false,
+  "description": "The pacing preference handed to the Storyboard Director.\n\nRanges are creative targets. The Director cuts only at approved boundaries,\nmay cut a punchline or reaction shot shorter than the target, and may hold an\nestablishing, emotional or hero shot longer; the retimer owns final timing.",
+  "properties": {
+    "hard_max_duration_us": {
+      "exclusiveMinimum": 0,
+      "title": "Hard Max Duration Us",
+      "type": "integer"
+    },
+    "hero_max_duration_us": {
+      "exclusiveMinimum": 0,
+      "title": "Hero Max Duration Us",
+      "type": "integer"
+    },
+    "min_punchline_duration_us": {
+      "exclusiveMinimum": 0,
+      "title": "Min Punchline Duration Us",
+      "type": "integer"
+    },
+    "preset": {
+      "enum": [
+        "relaxed",
+        "normal",
+        "fast"
+      ],
+      "title": "Preset",
+      "type": "string"
+    },
+    "profile_version": {
+      "maxLength": 32,
+      "minLength": 1,
+      "title": "Profile Version",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "target_max_duration_us": {
+      "exclusiveMinimum": 0,
+      "title": "Target Max Duration Us",
+      "type": "integer"
+    },
+    "target_min_duration_us": {
+      "exclusiveMinimum": 0,
+      "title": "Target Min Duration Us",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "preset",
+    "profile_version",
+    "target_min_duration_us",
+    "target_max_duration_us",
+    "hard_max_duration_us",
+    "min_punchline_duration_us",
+    "hero_max_duration_us"
+  ],
+  "title": "ShotPacingGuidance",
+  "type": "object"
+}

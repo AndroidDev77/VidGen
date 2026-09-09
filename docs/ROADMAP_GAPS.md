@@ -203,6 +203,20 @@ existing project's narration identity changes.
 
 ---
 
+## Gen-4.5 quality modes and shot pacing: remaining limitations
+
+The enhancement documented in
+[`IMPLEMENTATION_STATUS.md`](IMPLEMENTATION_STATUS.md#gen-45-quality-modes-and-shot-pacing) is
+complete; these are the limitations it confirmed rather than solved.
+
+| Gap | Evidence | Impact | Suggested home |
+| --- | --- | --- | --- |
+| Gen-4.5 durations above ten seconds | The Gen-4.5 image-to-video schema states "Must be an integer from 2 to 10" | A relaxed shot longer than ten seconds is split at an approved boundary rather than generated whole | Extend `durations` on the registry entry when Runway raises the limit; everything else follows it |
+| Hero designation depends on the Director's `importance` | `hero_shot` is derived from `importance >= 0.8` in `StoryboardShot.provenance`; there is no owner-facing override per shot | An owner cannot promote one shot to Gen-4.5 in balanced mode without regenerating it under premium | A per-shot `hero_shot` override on the storyboard review page, bound into the shot contract hash |
+| The pre-workflow estimate is heuristic | `services/generation/estimate.py` assumes a 15% hero share and a 1.2 repair factor over the pacing range | The range is honest but not a quote; the real shot count depends on the script | Re-estimate from the selected storyboard once it exists, and show both numbers |
+| The storyboard plans against one Runway profile | `VIDGEN_VISUAL_CAPABILITY_PROFILE` selects a single T13 profile; premium routing relies on both models sharing the same durations and ratios | If the two models' capabilities ever diverge, a storyboard planned against Turbo could carry a duration Gen-4.5 rejects; the router refuses it rather than sending it | Plan against the intersection of the models the quality mode may select |
+| The pinned `runwayml` SDK (3.x) has no typed Gen-4.5 overload | `pyproject.toml` pins `runwayml>=3.10,<4`; the 5.x SDK adds the typed request but is a major upgrade | The adapter forwards `gen4.5` correctly (covered by a mocked test) but gets no static typing for it | Upgrade the SDK in its own change with the lockfile and a re-verification of the request types |
+
 ## Smaller confirmed gaps
 
 These are narrower than a roadmap task and are recorded so they are not rediscovered.

@@ -1,0 +1,197 @@
+{
+  "$defs": {
+    "GenerationCostEstimateMode": {
+      "additionalProperties": false,
+      "properties": {
+        "delta_from_economy_high": {
+          "maxLength": 32,
+          "minLength": 1,
+          "title": "Delta From Economy High",
+          "type": "string"
+        },
+        "delta_from_economy_low": {
+          "maxLength": 32,
+          "minLength": 1,
+          "title": "Delta From Economy Low",
+          "type": "string"
+        },
+        "estimated_high": {
+          "maxLength": 32,
+          "minLength": 1,
+          "title": "Estimated High",
+          "type": "string"
+        },
+        "estimated_low": {
+          "maxLength": 32,
+          "minLength": 1,
+          "title": "Estimated Low",
+          "type": "string"
+        },
+        "generation_quality": {
+          "$ref": "#/$defs/GenerationQuality"
+        },
+        "hero_model": {
+          "maxLength": 32,
+          "minLength": 1,
+          "title": "Hero Model",
+          "type": "string"
+        },
+        "primary_model": {
+          "maxLength": 32,
+          "minLength": 1,
+          "title": "Primary Model",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "summary": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Summary",
+          "type": "string"
+        }
+      },
+      "required": [
+        "generation_quality",
+        "primary_model",
+        "hero_model",
+        "estimated_low",
+        "estimated_high",
+        "delta_from_economy_low",
+        "delta_from_economy_high",
+        "summary"
+      ],
+      "title": "GenerationCostEstimateMode",
+      "type": "object"
+    },
+    "GenerationQuality": {
+      "description": "Which Runway model tier a project may spend on.\n\n``economy`` always animates with Gen-4 Turbo. ``balanced`` animates with\nGen-4 Turbo and reserves Gen-4.5 for hero shots and bounded quality-repair\nescalations when the budget permits. ``premium`` animates every compatible\nshot with Gen-4.5 and refuses the run rather than silently downgrading.",
+      "enum": [
+        "economy",
+        "balanced",
+        "premium"
+      ],
+      "title": "GenerationQuality",
+      "type": "string"
+    },
+    "ShotPacing": {
+      "description": "How long an edited shot should typically run.\n\nA preset is a creative preference the Storyboard Director plans against;\nthe deterministic retimer remains the timing authority.",
+      "enum": [
+        "relaxed",
+        "normal",
+        "fast"
+      ],
+      "title": "ShotPacing",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "description": "A pre-workflow estimate of video-generation spend for each quality mode.\n\nIt prices only Runway video generation, which is the spend the quality mode\nchanges. Everything else a run buys - analysis, script, narration, keyframes,\nQA - is the same whichever mode is chosen.",
+  "properties": {
+    "capability_registry_hash": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Capability Registry Hash",
+      "type": "string"
+    },
+    "currency": {
+      "default": "USD",
+      "pattern": "^[A-Z]{3}$",
+      "title": "Currency",
+      "type": "string"
+    },
+    "estimate_version": {
+      "const": "generation-estimate/1",
+      "default": "generation-estimate/1",
+      "title": "Estimate Version",
+      "type": "string"
+    },
+    "estimated_shot_count_high": {
+      "minimum": 1,
+      "title": "Estimated Shot Count High",
+      "type": "integer"
+    },
+    "estimated_shot_count_low": {
+      "minimum": 1,
+      "title": "Estimated Shot Count Low",
+      "type": "integer"
+    },
+    "generated_seconds_high": {
+      "minimum": 1,
+      "title": "Generated Seconds High",
+      "type": "integer"
+    },
+    "generated_seconds_low": {
+      "minimum": 1,
+      "title": "Generated Seconds Low",
+      "type": "integer"
+    },
+    "hero_share": {
+      "maxLength": 16,
+      "minLength": 1,
+      "title": "Hero Share",
+      "type": "string"
+    },
+    "modes": {
+      "items": {
+        "$ref": "#/$defs/GenerationCostEstimateMode"
+      },
+      "maxItems": 3,
+      "minItems": 3,
+      "title": "Modes",
+      "type": "array"
+    },
+    "notes": {
+      "items": {
+        "type": "string"
+      },
+      "maxItems": 8,
+      "title": "Notes",
+      "type": "array"
+    },
+    "pricing_version": {
+      "maxLength": 64,
+      "minLength": 1,
+      "title": "Pricing Version",
+      "type": "string"
+    },
+    "retry_factor": {
+      "maxLength": 16,
+      "minLength": 1,
+      "title": "Retry Factor",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "shot_pacing": {
+      "$ref": "#/$defs/ShotPacing"
+    },
+    "target_duration_seconds": {
+      "exclusiveMinimum": 0,
+      "title": "Target Duration Seconds",
+      "type": "number"
+    }
+  },
+  "required": [
+    "pricing_version",
+    "capability_registry_hash",
+    "target_duration_seconds",
+    "shot_pacing",
+    "estimated_shot_count_low",
+    "estimated_shot_count_high",
+    "generated_seconds_low",
+    "generated_seconds_high",
+    "hero_share",
+    "retry_factor",
+    "modes"
+  ],
+  "title": "GenerationCostEstimate",
+  "type": "object"
+}

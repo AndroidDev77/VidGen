@@ -153,14 +153,14 @@ export interface ImageGenerationResult extends ImageGenerationRunResult { items:
 
 export type ShotWorkflowStatus = "defined" | "prompting" | "keyframe_generating" | "keyframe_qa" | "animating" | "video_qa" | "locked" | "failed" | "cancelled";
 export interface ShotWorkflowFailure { schema_version: "1.0"; classification: string; code: string; retryable: boolean; attempt: number; message: string }
-export interface ShotWorkflowIdentity { schema_version: "1.0"; project_id: UUID; storyboard_run_id: UUID; storyboard_input_hash: string; storyboard_shot_id: UUID; canonical_shot_hash: string; shot_sequence: number; timing_manifest_hash: string; t14_configuration_identity: string; t15_capability_profile_identity: string; t14_pipeline_version: string; t15_pipeline_version: string; t16_workflow_version: "t16/1"; attempt_policy_version: "shot-attempt/1"; identity_hash: string }
+export interface ShotWorkflowIdentity { schema_version: "1.0"; project_id: UUID; storyboard_run_id: UUID; storyboard_input_hash: string; storyboard_shot_id: UUID; canonical_shot_hash: string; shot_sequence: number; timing_manifest_hash: string; t14_configuration_identity: string; t15_capability_profile_identity: string; t14_pipeline_version: string; t15_pipeline_version: string; t16_workflow_version: "t16/1"; attempt_policy_version: "shot-attempt/1"; regeneration_sequence: number; generation_policy_identity: string; identity_hash: string }
 export interface ShotWorkflowInput { schema_version: "1.0"; project_id: UUID; storyboard_run_id: UUID; storyboard_shot_id: UUID; shot_input_hash: string; workflow_identity: ShotWorkflowIdentity; t14_run_id: UUID | null; t15_run_id: UUID | null; parent_workflow_id: string | null; idempotency_key: string; trace_context: Record<string, string>; attempt_policy_version: "shot-attempt/1" }
 export interface ShotWorkflowProgress { schema_version: "1.0"; state: ShotWorkflowStatus; current_stage: string; current_attempt: number; retryable: boolean; t14_run_id: UUID | null; t15_run_id: UUID | null; selected_keyframe_asset_id: UUID | null; selected_video_asset_id: UUID | null; last_failure: ShotWorkflowFailure | null; last_checkpoint: string | null; started_at: string | null; updated_at: string | null; cost_microusd: number; warning_codes: string[] }
 export interface ShotWorkflowCommand { schema_version: "1.0"; command_id: string; project_id: UUID; storyboard_shot_id: UUID; command: "inspect" | "resume" | "retry" | "cancel" | "regenerate" | "outputs"; expected_state: ShotWorkflowStatus | null; new_shot_input_hash: string | null }
 export interface ShotWorkflowCommandResult { schema_version: "1.0"; command_id: string; accepted: boolean; state: ShotWorkflowStatus; code: string }
 export interface ShotWorkflowQueryResult { schema_version: "1.0"; workflow_id: string; identity_hash: string; progress: ShotWorkflowProgress }
 export interface ShotWorkflowResult { schema_version: "1.0"; shot_id: UUID; child_workflow_id: string; identity_hash: string; final_state: ShotWorkflowStatus; t14_run_id: UUID | null; selected_keyframe_asset_id: UUID | null; t15_run_id: UUID | null; selected_video_asset_id: UUID | null; exact_usable_duration_us: number | null; provider_generation_duration_us: number | null; trim_instructions_asset_id: UUID | null; failure: ShotWorkflowFailure | null; warning_codes: string[] }
-export interface ProjectShotFanoutInput { schema_version: "1.0"; project_id: UUID; storyboard_run_id: UUID; idempotency_key: string; concurrency: number; trace_context: Record<string, string>; t14_configuration_identity: string; t15_capability_profile_identity: string; attempt_policy_version: "shot-attempt/1" }
+export interface ProjectShotFanoutInput { schema_version: "1.0"; project_id: UUID; storyboard_run_id: UUID; idempotency_key: string; concurrency: number; trace_context: Record<string, string>; t14_configuration_identity: string; t15_capability_profile_identity: string; generation_policy_identity: string; attempt_policy_version: "shot-attempt/1" }
 export interface ProjectShotFanoutResult { schema_version: "1.0"; project_id: UUID; storyboard_run_id: UUID; status: "shot_generation_queued" | "shot_generation_running" | "shot_generation_partial" | "shot_generation_retrying" | "shot_generation_complete" | "shot_generation_failed" | "shot_generation_cancelled"; results: ShotWorkflowResult[]; total_count: number; queued_count: number; active_count: number; locked_count: number; retryable_failure_count: number; terminal_failure_count: number; cancelled_count: number; current_concurrency: number }
 
 // ---------------------------------------------------------------------------
@@ -1592,6 +1592,102 @@ export interface ProjectCostSummaryResponse {
   byModel: Record<string, string>;
   byOperation: Record<string, string>;
   byReason: Record<string, string>;
+  /** Spend keyed by the bounded routing reason that selected each model. */
+  byRoutingReason: Record<string, string>;
+  /** Spend keyed by the project quality mode each attempt was routed under. */
+  byQualityMode: Record<string, string>;
+}
+
+// --- Generation settings, routing decisions and cost estimates (generation-settings/1) ---
+
+export type GenerationQuality = "economy" | "balanced" | "premium";
+export type ShotPacing = "relaxed" | "normal" | "fast";
+export type GenerationSettingsOrigin = "explicit" | "legacy_default";
+export interface ProjectGenerationSettings {
+  schema_version: "1.0";
+  settings_version: "generation-settings/1";
+  generation_quality: GenerationQuality;
+  shot_pacing: ShotPacing;
+  premium_fallback_allowed: boolean;
+  origin: GenerationSettingsOrigin;
+}
+export type RoutingReasonCode =
+  | "economy_turbo"
+  | "explicit_model"
+  | "balanced_default_turbo"
+  | "balanced_hero_premium"
+  | "balanced_hero_budget_insufficient"
+  | "balanced_hero_capability_unavailable"
+  | "balanced_quality_escalation"
+  | "balanced_escalation_budget_insufficient"
+  | "balanced_escalation_capability_unavailable"
+  | "balanced_escalation_exhausted"
+  | "premium_gen4_5"
+  | "premium_fallback_budget"
+  | "premium_fallback_capability";
+export interface RoutingDecision {
+  schema_version: "1.0";
+  routing_policy_version: string;
+  quality_repair_policy_version: string;
+  quality_mode: GenerationQuality;
+  selected_model: string;
+  requested_model: string | null;
+  hero_shot: boolean;
+  quality_escalation: boolean;
+  escalation_attempt: number;
+  attempt_number: number;
+  prior_models: string[];
+  reason_code: RoutingReasonCode;
+  reason: string;
+  requested_duration_seconds: number;
+  generation_duration_seconds: number;
+  width: number;
+  height: number;
+  estimated_cost: string;
+  currency: string;
+  budget_enforced: boolean;
+  remaining_budget: string | null;
+  capability_profile_id: string;
+  capability_hash: string;
+  candidates: string[];
+}
+export interface GenerationCostEstimateMode {
+  schema_version: "1.0";
+  generation_quality: GenerationQuality;
+  primary_model: string;
+  hero_model: string;
+  estimated_low: string;
+  estimated_high: string;
+  delta_from_economy_low: string;
+  delta_from_economy_high: string;
+  summary: string;
+}
+export interface GenerationCostEstimate {
+  schema_version: "1.0";
+  estimate_version: "generation-estimate/1";
+  pricing_version: string;
+  capability_registry_hash: string;
+  currency: string;
+  target_duration_seconds: number;
+  shot_pacing: ShotPacing;
+  estimated_shot_count_low: number;
+  estimated_shot_count_high: number;
+  generated_seconds_low: number;
+  generated_seconds_high: number;
+  hero_share: string;
+  retry_factor: string;
+  modes: GenerationCostEstimateMode[];
+  notes: string[];
+}
+export interface ShotPacingGuidance {
+  schema_version: "1.0";
+  preset: ShotPacing;
+  profile_version: string;
+  target_min_duration_us: number;
+  target_max_duration_us: number;
+  hard_max_duration_us: number;
+  min_punchline_duration_us: number;
+  hero_max_duration_us: number;
 }
 
 export interface ProviderAttemptListItem {
