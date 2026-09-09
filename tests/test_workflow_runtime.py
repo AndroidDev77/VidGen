@@ -1,21 +1,27 @@
 from collections.abc import Awaitable, Callable
 from pathlib import Path
 from time import sleep
+from types import SimpleNamespace
 from uuid import UUID, uuid4
 
 import pytest
 from pydantic import ValidationError
 from temporalio import activity
 from temporalio.contrib.pydantic import pydantic_data_converter
+from temporalio.exceptions import ApplicationError
 from temporalio.testing import WorkflowEnvironment
 from temporalio.worker import Worker
 
 from apps.api.settings import APISettings
 from packages.workflows import activities
 from packages.workflows.project import ProjectWorkflow
+from packages.workflows.shot_policy import identity_hash
+from vidgen.contracts.shot_workflow import ShotWorkflowIdentity, ShotWorkflowInput
 from vidgen.contracts.workflow import ProjectWorkflowInput, StageActivityInput, StageActivityResult
 from vidgen.db.transcription_models import SpeakerTurnRecord, TranscriptSegmentRecord
+from workers.temporal_worker import production_handlers
 from workers.temporal_worker.production_handlers import (
+    _run_shot_animation,
     _segments_with_speakers,
     build_production_handlers,
     build_shot_production_handlers,
@@ -259,3 +265,119 @@ def _shot_workflow_input() -> object:
         workflow_identity=identity,
         idempotency_key="keyless-guard",
     )
+
+
+# --- T15 animation activity: terminal provider errors must not be retried ---
+
+_SHOT_PROJECT = UUID("00000000-0000-0000-0000-0000000000a1")
+_SHOT_STORYBOARD = UUID("00000000-0000-0000-0000-0000000000a2")
+_SHOT_ID = UUID("00000000-0000-0000-0000-0000000000a3")
+_SHOT_HASH = "b" * 64
+
+
+class _ProviderError(Exception):
+    """Stands in for a provider HTTP failure carrying its status code."""
+
+    def __init__(self, status_code: int) -> None:
+        super().__init__(f"provider returned {status_code}")
+        self.status_code = status_code
+
+
+def _shot_animation_request() -> ShotWorkflowInput:
+    fields: dict[str, str | int] = {
+        "project_id": str(_SHOT_PROJECT),
+        "storyboard_run_id": str(_SHOT_STORYBOARD),
+        "storyboard_input_hash": _SHOT_HASH,
+        "storyboard_shot_id": str(_SHOT_ID),
+        "canonical_shot_hash": _SHOT_HASH,
+        "shot_sequence": 0,
+        "timing_manifest_hash": _SHOT_HASH,
+        "t14_configuration_identity": "image-provider/1",
+        "t15_capability_profile_identity": "runway/2024-11-06",
+        "t14_pipeline_version": "t14/1",
+        "t15_pipeline_version": "t15/1",
+        "t16_workflow_version": "t16/1",
+        "attempt_policy_version": "shot-attempt/1",
+    }
+    identity = ShotWorkflowIdentity(**fields, identity_hash=identity_hash(fields))
+    return ShotWorkflowInput(
+        project_id=_SHOT_PROJECT,
+        storyboard_run_id=_SHOT_STORYBOARD,
+        storyboard_shot_id=_SHOT_ID,
+        shot_input_hash=identity.identity_hash,
+        workflow_identity=identity,
+        idempotency_key="fanout:shot",
+    )
+
+
+def _run_shot_animation_failing_with(monkeypatch: pytest.MonkeyPatch, error: BaseException) -> None:
+    """Drive ``_run_shot_animation`` with a pipeline that fails with ``error``.
+
+    Lineage lookups are stubbed so the test exercises only the error
+    translation between the T15 pipeline and Temporal.
+    """
+
+    class _FailingPipeline:
+        def __init__(self, *_args: object, **_kwargs: object) -> None:
+            pass
+
+        async def process(self, **_kwargs: object) -> object:
+            raise error
+
+    class _Session:
+        def scalar(self, _statement: object) -> object:
+            return SimpleNamespace(id=UUID(int=14), status="keyframes_complete")
+
+    monkeypatch.setattr(production_handlers, "AnimationPipeline", _FailingPipeline)
+    monkeypatch.setattr(
+        production_handlers, "_authoritative_shot", lambda _session, _request: (object(), object())
+    )
+    _run_shot_animation(
+        _Session(),  # type: ignore[arg-type]
+        object(),  # type: ignore[arg-type]
+        object(),  # type: ignore[arg-type]
+        object(),  # type: ignore[arg-type]
+        object(),  # type: ignore[arg-type]
+        _shot_animation_request().model_dump(mode="json"),
+    )
+
+
+@pytest.mark.parametrize(
+    ("status_code", "error_code"),
+    [
+        # Out of credits, a rejected prompt, a bad model name: retrying only burns budget.
+        (400, "PROVIDER_INVALID_REQUEST"),
+        (401, "PROVIDER_AUTHENTICATION"),
+        (403, "PROVIDER_AUTHORIZATION"),
+    ],
+)
+def test_terminal_provider_errors_stop_the_animation_activity_from_retrying(
+    monkeypatch: pytest.MonkeyPatch, status_code: int, error_code: str
+) -> None:
+    error = _ProviderError(status_code)
+    with pytest.raises(ApplicationError) as raised:
+        _run_shot_animation_failing_with(monkeypatch, error)
+    assert raised.value.non_retryable is True
+    assert error_code in str(raised.value)
+    # The classification keeps the original failure as the cause for diagnostics
+    # while its raw message stays out of Temporal history.
+    assert raised.value.__cause__ is error
+    assert "provider returned" not in str(raised.value)
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        _ProviderError(429),
+        _ProviderError(503),
+        TimeoutError("provider did not answer"),
+    ],
+    ids=["rate-limited", "unavailable", "timeout"],
+)
+def test_transient_provider_errors_leave_the_animation_activity_retryable(
+    monkeypatch: pytest.MonkeyPatch, error: Exception
+) -> None:
+    with pytest.raises(type(error)) as raised:
+        _run_shot_animation_failing_with(monkeypatch, error)
+    assert raised.value is error
+    assert not isinstance(raised.value, ApplicationError)
