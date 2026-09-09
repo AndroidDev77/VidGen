@@ -4,7 +4,7 @@ from typing import Annotated
 from urllib.parse import parse_qs, quote, unquote, urlparse
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from apps.api.auth import Principal, get_current_user
@@ -19,7 +19,6 @@ router = APIRouter(prefix="/assets", tags=["assets"])
 @router.get("/{asset_id}/download-url", response_model=DownloadURLResponse)
 def get_download_url(
     asset_id: UUID,
-    request: Request,
     session: Annotated[Session, Depends(get_session)],
     principal: Annotated[Principal, Depends(get_current_user)],
     blob_store: Annotated[BlobStore, Depends(get_blob_store)],
@@ -38,9 +37,8 @@ def get_download_url(
         expires = qs["expires"][0]
         signature = qs["signature"][0]
         ct = quote(asset.media_type, safe="")
-        base = str(request.base_url).rstrip("/")
         url = (
-            f"{base}/api/v1/blobs/{quote(key)}"
+            f"/api/v1/blobs/{quote(key)}"
             f"?expires={expires}&signature={signature}&content_type={ct}"
         )
     return DownloadURLResponse(
