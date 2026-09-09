@@ -69,7 +69,11 @@ export const projectDetail = {
   premium_fallback_allowed: false,
 };
 
-/** The pre-workflow estimate the API computes from the pricing registry. */
+/**
+ * The pre-workflow estimate the API computes from the pricing registry. The
+ * figures are `estimate_generation_costs(300, "normal")` verbatim, and
+ * `tests/test_generation_settings_api.py` pins the backend to them.
+ */
 export const generationEstimate = {
   schema_version: "1.0",
   estimate_version: "generation-estimate/1",
@@ -81,7 +85,7 @@ export const generationEstimate = {
   estimated_shot_count_low: 43,
   estimated_shot_count_high: 75,
   generated_seconds_low: 301,
-  generated_seconds_high: 300,
+  generated_seconds_high: 301,
   hero_share: "0.15",
   retry_factor: "1.2",
   modes: [
@@ -91,7 +95,7 @@ export const generationEstimate = {
       primary_model: "gen4_turbo",
       hero_model: "gen4_turbo",
       estimated_low: "15.05",
-      estimated_high: "18.00",
+      estimated_high: "18.06",
       delta_from_economy_low: "0.00",
       delta_from_economy_high: "0.00",
       summary: "Cheapest. Every shot uses Gen-4 Turbo at 0.05 USD per generated second.",
@@ -102,9 +106,9 @@ export const generationEstimate = {
       primary_model: "gen4_turbo",
       hero_model: "gen4.5",
       estimated_low: "18.21",
-      estimated_high: "21.78",
+      estimated_high: "21.85",
       delta_from_economy_low: "3.16",
-      delta_from_economy_high: "3.78",
+      delta_from_economy_high: "3.79",
       summary: "Gen-4 Turbo normally; about 15% of shots use Gen-4.5.",
     },
     {
@@ -113,9 +117,9 @@ export const generationEstimate = {
       primary_model: "gen4.5",
       hero_model: "gen4.5",
       estimated_low: "36.12",
-      estimated_high: "43.20",
+      estimated_high: "43.34",
       delta_from_economy_low: "21.07",
-      delta_from_economy_high: "25.20",
+      delta_from_economy_high: "25.28",
       summary: "Every compatible shot uses Gen-4.5 at 0.12 USD per generated second.",
     },
   ],

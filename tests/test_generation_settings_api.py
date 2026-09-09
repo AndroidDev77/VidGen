@@ -201,3 +201,18 @@ def test_the_estimate_reflects_pacing_and_is_deterministic() -> None:
     assert Decimal(relaxed.modes[0].estimated_high) <= Decimal(fast.modes[0].estimated_high)
     with pytest.raises(ValueError):
         estimate_generation_costs(target_duration_seconds=0, shot_pacing=ShotPacing.NORMAL)
+
+
+def test_the_default_estimate_matches_the_web_fixtures_verbatim() -> None:
+    """The web test fixtures and the e2e fake API quote these exact figures."""
+    estimate = estimate_generation_costs(target_duration_seconds=300, shot_pacing=ShotPacing.NORMAL)
+    assert (estimate.estimated_shot_count_low, estimate.estimated_shot_count_high) == (43, 75)
+    assert (estimate.generated_seconds_low, estimate.generated_seconds_high) == (301, 301)
+    assert [
+        (m.estimated_low, m.estimated_high, m.delta_from_economy_low, m.delta_from_economy_high)
+        for m in estimate.modes
+    ] == [
+        ("15.05", "18.06", "0.00", "0.00"),
+        ("18.21", "21.85", "3.16", "3.79"),
+        ("36.12", "43.34", "21.07", "25.28"),
+    ]

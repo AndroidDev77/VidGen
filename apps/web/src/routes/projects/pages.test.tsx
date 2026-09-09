@@ -252,11 +252,11 @@ describe("NewProjectPage", () => {
       name: "Estimated generation cost by quality mode",
     });
     expect(within(table).getByTestId("estimate-economy")).toHaveTextContent("$15.05");
-    expect(within(table).getByTestId("estimate-economy")).toHaveTextContent("$18.00");
+    expect(within(table).getByTestId("estimate-economy")).toHaveTextContent("$18.06");
     expect(within(table).getByTestId("estimate-balanced")).toHaveTextContent("(selected)");
     expect(within(table).getByTestId("estimate-balanced")).toHaveTextContent("+$3.16");
     expect(within(table).getByTestId("estimate-premium")).toHaveTextContent("$36.12");
-    expect(within(table).getByTestId("estimate-premium")).toHaveTextContent("+$25.20");
+    expect(within(table).getByTestId("estimate-premium")).toHaveTextContent("+$25.28");
   });
 
   it("offers the upload panel once the project exists", async () => {

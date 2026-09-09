@@ -156,6 +156,7 @@ class VideoCapability:
             "supports_last_frame": self.supports_last_frame,
             "formats": list(self.formats),
             "max_input_bytes": self.max_input_bytes,
+            "max_input_url_bytes": self.max_input_url_bytes,
             "input_media_types": list(self.input_media_types),
             "input_aspect_ratio_range": [str(item) for item in self.input_aspect_ratio_range],
         }

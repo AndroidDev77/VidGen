@@ -823,13 +823,13 @@ function generationEstimate() {
     estimated_shot_count_low: 43,
     estimated_shot_count_high: 75,
     generated_seconds_low: 301,
-    generated_seconds_high: 300,
+    generated_seconds_high: 301,
     hero_share: "0.15",
     retry_factor: "1.2",
     modes: [
-      mode("economy", "gen4_turbo", "gen4_turbo", "15.05", "18.00", "0.00", "0.00"),
-      mode("balanced", "gen4_turbo", "gen4.5", "18.21", "21.78", "3.16", "3.78"),
-      mode("premium", "gen4.5", "gen4.5", "36.12", "43.20", "21.07", "25.20"),
+      mode("economy", "gen4_turbo", "gen4_turbo", "15.05", "18.06", "0.00", "0.00"),
+      mode("balanced", "gen4_turbo", "gen4.5", "18.21", "21.85", "3.16", "3.79"),
+      mode("premium", "gen4.5", "gen4.5", "36.12", "43.34", "21.07", "25.28"),
     ],
     notes: ["Video generation only."],
   };
