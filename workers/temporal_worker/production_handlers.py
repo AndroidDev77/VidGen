@@ -27,6 +27,7 @@ from services.animation.fake_provider import FakeVideoProvider
 from services.animation.pipeline import PIPELINE_VERSION as T15_PIPELINE_VERSION
 from services.animation.pipeline import AnimationPipeline
 from services.animation.providers import VideoGenerationProvider
+from services.animation.routing import RoutingError
 from services.animation.runway import RunwayVideoProvider
 from services.continuity.orchestrator import (
     ContinuityOrchestrationError,
@@ -540,6 +541,23 @@ _REPAIR_STATES: dict[RepairRunState, ShotWorkflowStatus] = {
 }
 
 
+def terminal_animation_error(exc: Exception) -> ApplicationError | None:
+    """The non-retryable Temporal error for a terminal T15 failure, or None.
+
+    A routing refusal - a budget the selected model cannot meet, a capability
+    it lacks, a configuration the policy rejects - is deterministic, so it is
+    surfaced with its own exception type (which the shot workflow maps to
+    ``BUDGET_DENIAL`` or ``UNSUPPORTED_CAPABILITY``) and its actionable message.
+    Every other terminal failure keeps the sanitized classification message.
+    """
+    if isinstance(exc, RoutingError):
+        return ApplicationError(str(exc)[:500], type=type(exc).__name__, non_retryable=True)
+    failure = classify_failure(exc, status_code=getattr(exc, "status_code", None))
+    if failure.retryable:
+        return None
+    return ApplicationError(failure.sanitized_message, type=type(exc).__name__, non_retryable=True)
+
+
 def _run_shot_animation(
     session: Session,
     blob_store: BlobStore,
@@ -578,9 +596,9 @@ def _run_shot_animation(
             )
         )
     except Exception as exc:
-        failure = classify_failure(exc, status_code=getattr(exc, "status_code", None))
-        if not failure.retryable:
-            raise ApplicationError(failure.sanitized_message, non_retryable=True) from exc
+        terminal = terminal_animation_error(exc)
+        if terminal is not None:
+            raise terminal from exc
         raise
     item_result = result.items[0] if result.items else None
     candidate = item_result.candidate if item_result is not None else None

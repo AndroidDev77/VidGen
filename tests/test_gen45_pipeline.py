@@ -291,3 +291,24 @@ def test_temporal_messages_stay_compact_and_bind_the_generation_policy() -> None
         ProjectShotFanoutInput.model_validate(
             {**fanout.model_dump(mode="json"), "capability_profile": {"durations": [2, 3]}}
         )
+
+
+def test_routing_refusals_reach_temporal_typed_actionable_and_non_retryable() -> None:
+    from temporalio.exceptions import ApplicationError
+
+    from services.animation.routing import UnsupportedCapability
+    from workers.temporal_worker.production_handlers import terminal_animation_error
+
+    denied = terminal_animation_error(
+        BudgetDenied("premium mode cannot afford this shot: raise the hard cap")
+    )
+    assert isinstance(denied, ApplicationError)
+    assert denied.non_retryable is True
+    assert denied.type == "BudgetDenied"
+    assert "raise the hard cap" in str(denied)
+    unsupported = terminal_animation_error(UnsupportedCapability("Gen-4.5 is not available"))
+    assert unsupported is not None and unsupported.type == "UnsupportedCapability"
+    # A transport failure stays retryable, so no terminal error is raised for it.
+    assert terminal_animation_error(ConnectionError("reset")) is None
+    other = terminal_animation_error(RuntimeError("provider output failed validation"))
+    assert other is not None and other.non_retryable is True and other.type == "RuntimeError"
