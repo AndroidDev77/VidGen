@@ -386,7 +386,10 @@ def test_a_duration_that_disagrees_with_the_manifest_is_a_blocking_failure(
 ) -> None:
     config = configuration()
     measurements = final_deterministic.measure(delivery, config)  # type: ignore[arg-type]
-    # The manifest says the timeline is a second longer than the file.
+    # The manifest claims a timeline longer than the file by more than the
+    # configured tolerance allows. Derived from the tolerance rather than fixed,
+    # so widening it cannot silently stop this from testing anything.
+    overrun_us = DEFAULT_CONFIGURATION.duration_tolerance_us + 500_000
     longer = make_input(
         narration_duration_us=TIMELINE_US,
         timeline_duration_us=TIMELINE_US,
@@ -395,9 +398,9 @@ def test_a_duration_that_disagrees_with_the_manifest_is_a_blocking_failure(
         update={
             "shots": [
                 *longer.shots[:-1],
-                longer.shots[-1].model_copy(update={"global_end_us": TIMELINE_US + 1_000_000}),
+                longer.shots[-1].model_copy(update={"global_end_us": TIMELINE_US + overrun_us}),
             ],
-            "timeline_duration_us": TIMELINE_US + 1_000_000,
+            "timeline_duration_us": TIMELINE_US + overrun_us,
         }
     )
     checks = final_deterministic.evaluate(measurements, stretched, config)  # type: ignore[arg-type]
@@ -496,18 +499,22 @@ def test_audio_checks_catch_drift_between_the_audio_and_visual_timelines(
     tmp_path: Path,
 ) -> None:
     config = configuration()
+    # Expressed against the configured tolerance rather than a fixed number of
+    # microseconds, so widening the tolerance cannot silently stop this from
+    # testing anything.
+    drift_us = DEFAULT_CONFIGURATION.av_drift_tolerance_us + 500_000
     checks, _ = final_audio.evaluate(
         tmp_path / "unused.mp4",
         make_input(),
         config,  # type: ignore[arg-type]
-        measurements_with(audio_duration_us=TIMELINE_US - 900_000),
+        measurements_with(audio_duration_us=TIMELINE_US - drift_us),
         narration_intervals=narration_intervals(),
         loudness={"integrated_lufs": -14.0, "true_peak_dbtp": -1.5},
         statistics={"Number_of_samples": 1000.0, "Number_of_clipped_samples": 0.0},
     )
     drift = next(check for check in checks if check.code is FinalIssueCode.AUDIO_VIDEO_DRIFT)
     assert drift.status == "fail"
-    assert drift.measurement == pytest.approx(900_000)
+    assert drift.measurement == pytest.approx(drift_us)
 
 
 def test_a_duplicated_narration_segment_is_reported(tmp_path: Path) -> None:

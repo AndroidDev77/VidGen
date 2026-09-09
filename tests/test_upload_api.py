@@ -93,7 +93,13 @@ def test_project_api_and_resumable_upload(
     assert metadata.status_code == 200
     download = client.get(f"/api/v1/assets/{result['asset_id']}/download-url")
     assert download.status_code == 200
-    assert download.json()["url"].startswith("vidgen-file://")
+    # The filesystem backend signs a vidgen-file:// URL that only the API
+    # process can read, so the route rewrites it to the signed blob endpoint a
+    # browser can actually load. The signature has to survive that rewrite.
+    url = download.json()["url"]
+    assert url.startswith("http://testserver/api/v1/blobs/")
+    assert "signature=" in url and "expires=" in url
+    assert client.get(url.removeprefix("http://testserver")).status_code == 200
 
     with factory() as session:
         source = session.get(SourceVideo, UUID(result["source_video_id"]))

@@ -11,6 +11,7 @@ from vidgen.contracts.episode_analysis import (
     EpisodeAnalysis,
     SceneAnalysisResult,
     SourceReference,
+    StructuredNote,
 )
 
 
@@ -280,4 +281,23 @@ def validate_episode_analysis(
                     f"{collection_name}.{index}.alias_evidence.{alias_index}",
                     claim.source_references,
                 )
-    return AnalysisValidationReport(valid=not errors, errors=errors)
+    # An anonymous speaker the diarizer could not name must stay explicitly
+    # unresolved rather than being quietly resolved into a character. This is
+    # reported, not enforced: a model that omits the label is describing its own
+    # output badly, which is worth surfacing but is not worth discarding an
+    # otherwise sound analysis and paying to generate it again.
+    ambiguity_text = " ".join(
+        item.description.casefold() for item in analysis.unresolved_ambiguities
+    )
+    warnings = [
+        StructuredNote(
+            code="AMBIGUOUS_IDENTITY_RESOLVED_WITHOUT_EVIDENCE",
+            message=(
+                f"Anonymous speaker {label} is not named in unresolved_ambiguities; "
+                "an identity the evidence does not support may have been assumed."
+            ),
+        )
+        for label in sorted(required_anonymous_labels or set())
+        if label.casefold() not in ambiguity_text
+    ]
+    return AnalysisValidationReport(valid=not errors, errors=errors, warnings=warnings)

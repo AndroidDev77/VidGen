@@ -77,7 +77,10 @@ def _stage_activities(executed: list[str]) -> Activities:
     def make(stage: str) -> Callable[..., Awaitable[object]]:
         async def handler(request: StageActivityInput) -> StageActivityResult:
             executed.append(request.stage)
-            return StageActivityResult(stage=request.stage)
+            # A real stage always names the entity it produced; the parent
+            # workflow treats a script_generation stage that names none as a
+            # request for human script review and stops there.
+            return StageActivityResult(stage=request.stage, entity_id=uuid4())
 
         return activity.defn(name=f"run_{stage}_activity")(handler)
 

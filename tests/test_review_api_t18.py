@@ -1045,14 +1045,33 @@ def test_correlation_id_is_echoed_into_error_projections(
 
 
 def test_route_modules_do_not_import_providers_or_ffmpeg() -> None:
-    """Route handlers must not reach providers, FFmpeg, or workflow activities."""
+    """Route handlers must not reach providers, FFmpeg, or workflow activities.
+
+    The check is on what a module *imports*, not on the text of the file: a
+    route may legitimately name a provider-shaped table (``RunwayTask`` is a
+    row in this database, not a client), and matching raw source would forbid
+    reading it. What must never appear is the provider SDK, an FFmpeg or
+    subprocess call, or a workflow activity.
+    """
+    import ast
     import pathlib
 
-    forbidden = ("openai", "runway", "elevenlabs", "ffmpeg", "subprocess", "workflows.activities")
+    forbidden = ("openai", "runwayml", "elevenlabs", "ffmpeg", "subprocess", "workflows.activities")
+
+    def imported_modules(tree: ast.Module) -> set[str]:
+        modules: set[str] = set()
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                modules.update(alias.name for alias in node.names)
+            elif isinstance(node, ast.ImportFrom) and node.module:
+                modules.add(node.module)
+        return modules
+
     for path in pathlib.Path("apps/api/routes").glob("*.py"):
-        source = path.read_text().lower()
-        for token in forbidden:
-            assert token not in source, f"{path} references {token}"
+        for module in imported_modules(ast.parse(path.read_text())):
+            lowered = module.lower()
+            for token in forbidden:
+                assert token not in lowered, f"{path} imports {module}"
 
 
 def test_events_are_appended_for_every_mutation(
