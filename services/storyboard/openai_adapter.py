@@ -127,8 +127,7 @@ class OpenAIStoryboardDirector:
             _fix_evidence_references(item, valid_evidence_ids)
         return StoryboardProviderResult(
             proposals=[
-                StoryboardShotProposal.model_validate(_fix_proposal(item))
-                for item in raw_proposals
+                StoryboardShotProposal.model_validate(_fix_proposal(item)) for item in raw_proposals
             ],
             expected_incoming_continuity=ContinuityState.model_validate(
                 parsed["expected_incoming_continuity"]

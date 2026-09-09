@@ -38,8 +38,7 @@ def get_download_url(
         signature = qs["signature"][0]
         ct = quote(asset.media_type, safe="")
         url = (
-            f"/api/v1/blobs/{quote(key)}"
-            f"?expires={expires}&signature={signature}&content_type={ct}"
+            f"/api/v1/blobs/{quote(key)}?expires={expires}&signature={signature}&content_type={ct}"
         )
     return DownloadURLResponse(
         asset_id=asset.id,

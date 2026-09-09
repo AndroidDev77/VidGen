@@ -87,11 +87,9 @@ class AnimationRepository:
                     f"shot {shot_id} is not part of the selected storyboard",
                 )
             shot_pk_id = shot_record.id
-            authoritative_query = (
-                base_query.join(
-                    ImageGenerationItem, ImageGenerationItem.run_id == ImageGenerationRun.id
-                ).where(ImageGenerationItem.shot_id == shot_pk_id)
-            )
+            authoritative_query = base_query.join(
+                ImageGenerationItem, ImageGenerationItem.run_id == ImageGenerationRun.id
+            ).where(ImageGenerationItem.shot_id == shot_pk_id)
         else:
             authoritative_query = base_query
         authoritative = self.session.scalar(
