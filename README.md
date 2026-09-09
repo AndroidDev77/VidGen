@@ -10,6 +10,12 @@ This README is the working guide: install it, run it locally, test it, and fix i
 - Architecture and the full T01-T26 roadmap: [`docs/TECHNICAL_DESIGN.md`](docs/TECHNICAL_DESIGN.md)
 - What each roadmap task delivered: [`docs/IMPLEMENTATION_STATUS.md`](docs/IMPLEMENTATION_STATUS.md)
 - Contributor rules: [`AGENTS.md`](AGENTS.md)
+- Licensing: [`LICENSE`](LICENSE) — proprietary, all rights reserved
+
+> **Proprietary software.** Copyright (c) 2026 Chris Urquhart. All rights reserved. VidGen is
+> closed source. Being able to read this repository grants no license: you may not copy,
+> reproduce, run, modify, or distribute any part of it without a written license from the
+> copyright holder. See [`LICENSE`](LICENSE) and [`NOTICE`](NOTICE).
 
 ## What VidGen does
 
@@ -1171,3 +1177,16 @@ Nothing is ever republished automatically, and a prior YouTube upload is never d
 | `.env.example`, `apps/web/.env.example` | Every environment variable with its local default |
 | `packages/contracts/schema` | Exported JSON Schema for the inter-stage contracts (`make schemas`) |
 | <http://localhost:8000/docs> | Generated OpenAPI documentation for the running API |
+
+## License
+
+VidGen is proprietary and closed source.
+
+Copyright (c) 2026 Chris Urquhart. All rights reserved.
+
+No part of this repository may be copied, reproduced, used, executed, modified, or distributed
+without a written license from the copyright holder. Publication of the source does not grant any
+license. The full terms are in [`LICENSE`](LICENSE); the summary that ships with distributions is in
+[`NOTICE`](NOTICE). Third-party dependencies remain governed by their own licenses.
+
+To request a license, contact <curquhart1990@gmail.com>.

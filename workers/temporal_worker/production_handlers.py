@@ -375,13 +375,9 @@ def _run_shot_visual_qa(
             )
         )
     except VisualQABlocked as exc:
-        raise ApplicationError(
-            str(exc), type="VisualQABlocked", non_retryable=True
-        ) from exc
+        raise ApplicationError(str(exc), type="VisualQABlocked", non_retryable=True) from exc
     except VisualQAReviewRequired as exc:
-        raise ApplicationError(
-            str(exc), type="VisualQAReviewRequired", non_retryable=True
-        ) from exc
+        raise ApplicationError(str(exc), type="VisualQAReviewRequired", non_retryable=True) from exc
     state = (
         ShotWorkflowStatus.KEYFRAME_QA
         if target_type is VisualQATargetType.KEYFRAME

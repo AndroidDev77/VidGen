@@ -7,6 +7,11 @@ name = "vidgen"
 version = "0.1.0"
 description = "Restartable animated comedy recap pipeline"
 readme = "README.md"
+authors = [{ name = "Chris Urquhart" }]
+# Proprietary and closed source. Nothing here may be copied, used, or
+# redistributed without a written license from the copyright holder.
+license = "LicenseRef-Proprietary"
+license-files = ["LICENSE", "NOTICE"]
 requires-python = ">=3.12"
 dependencies = [
   "alembic>=1.16,<2",

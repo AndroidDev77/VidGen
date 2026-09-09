@@ -74,7 +74,9 @@ LABEL org.opencontainers.image.title="vidgen-app" \
       org.opencontainers.image.source="${VIDGEN_SOURCE_URL}" \
       org.opencontainers.image.revision="${VIDGEN_COMMIT_SHA}" \
       org.opencontainers.image.created="${VIDGEN_BUILD_TIMESTAMP}" \
-      org.opencontainers.image.licenses="UNLICENSED"
+      org.opencontainers.image.licenses="UNLICENSED" \
+      org.opencontainers.image.vendor="Chris Urquhart" \
+      org.opencontainers.image.authors="Chris Urquhart <curquhart1990@gmail.com>"
 
 # uvicorn installs its own SIGTERM handler and drains in-flight requests, so the
 # exec form is required: the process must be PID 1 and receive the signal.

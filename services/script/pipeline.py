@@ -12,6 +12,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from services.script.canonicalize import canonicalize_plan, canonicalize_script
+from services.script.compressor import structural_roles as _structural_roles
 from services.script.provider import GenerationContext, ScriptGenerationProvider
 from services.script.rubric import approval_recommendation, default_rubric
 from services.script.settings import (
@@ -19,7 +20,6 @@ from services.script.settings import (
     ScriptSettingsError,
     resolve_script_settings,
 )
-from services.script.compressor import structural_roles as _structural_roles
 from services.script.validator import (
     build_beat_coverage,
     validate_compressed_plot_plan,
@@ -280,7 +280,6 @@ class ScriptGenerationPipeline:
             # omitted_beats back into selected_beats so STRUCTURAL_BEAT_OMITTED
             # never fires regardless of what the model decides to include.
             structural_ids = _structural_roles(analysis.plot_beats)
-            omitted_ids = {b.plot_beat_id for b in raw_plan.omitted_beats}
             from vidgen.contracts.script import CompressedPlotBeat
             for beat_id, role in structural_ids.items():
                 if beat_id not in selected_ids:
@@ -304,7 +303,10 @@ class ScriptGenerationPipeline:
             ]
             plan = canonicalize_plan(
                 raw_plan.model_copy(
-                    update={"selected_beats": fixed_beats, "omitted_beats": omitted_without_structural}
+                    update={
+                        "selected_beats": fixed_beats,
+                        "omitted_beats": omitted_without_structural,
+                    }
                 )
             )
             report = validate_compressed_plot_plan(plan, analysis=analysis, request=request)

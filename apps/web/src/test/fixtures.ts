@@ -487,6 +487,7 @@ export const providerAttempts: ProviderAttemptListResponse = {
       operation: "video_generation",
       status: "succeeded",
       failureClass: null,
+      errorMessage: null,
       latencyMs: 1200,
       startedAt: "2026-08-01T10:00:00Z",
     },

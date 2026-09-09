@@ -234,9 +234,12 @@ def stage_activities() -> list[Callable[..., Awaitable[object]]]:
 
     def make(stage: str) -> Callable[..., Awaitable[object]]:
         async def handler(request: StageActivityInput) -> StageActivityResult:
+            # Every real stage handler returns the entity it produced. Script
+            # generation in particular must: the parent workflow reads a missing
+            # entity_id there as "the script needs human review" and stops.
             return StageActivityResult(
                 stage=request.stage,
-                entity_id=STORYBOARD_RUN if request.stage == "storyboard" else None,
+                entity_id=STORYBOARD_RUN if request.stage == "storyboard" else uuid4(),
             )
 
         return activity.defn(name=f"run_{stage}_activity")(handler)

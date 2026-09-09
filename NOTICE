@@ -1,0 +1,12 @@
+VidGen
+Copyright (c) 2026 Chris Urquhart. All rights reserved.
+
+This repository is proprietary and closed source. It may not be copied,
+reproduced, used, modified, or distributed without a written license from the
+copyright holder. See the LICENSE file for the full terms.
+
+Every source file in this repository is covered by that LICENSE whether or not
+it carries an individual copyright header.
+
+Third-party dependencies declared in pyproject.toml, package.json, uv.lock, and
+pnpm-lock.yaml remain subject to their own licenses.

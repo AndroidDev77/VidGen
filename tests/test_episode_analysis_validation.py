@@ -7,6 +7,7 @@ from vidgen.contracts.episode_analysis import (
     CharacterCandidate,
     EpisodeAnalysis,
     PlotBeat,
+    UnresolvedAmbiguity,
 )
 
 
@@ -33,7 +34,14 @@ def test_missing_and_cross_package_reference_is_rejected() -> None:
     assert "UNKNOWN_SOURCE_REFERENCE" in {item.code for item in _validate(analysis).errors}
 
 
-def test_reference_scope_must_match_selected_evidence() -> None:
+def test_reference_timestamps_need_not_match_the_selected_evidence_exactly() -> None:
+    """Membership in the selected evidence is the gate, not exact metadata.
+
+    A model cannot reliably reproduce the scene_id and timestamps of the
+    evidence it was handed, so a reference is judged by whether its
+    reference_id is one of the selected ones. Only that is enforced; a
+    disagreeing time boundary is tolerated.
+    """
     analysis = _golden().model_copy(deep=True)
     expected = analysis.source_references[0].model_copy(deep=True)
     analysis.source_references[0].end_ms = 999
@@ -44,7 +52,7 @@ def test_reference_scope_must_match_selected_evidence() -> None:
         valid_reference_ids={scene.scene_id},
         valid_references=[expected],
     )
-    assert "SOURCE_REFERENCE_SCOPE_MISMATCH" in {item.code for item in report.errors}
+    assert report.valid, report.errors
 
 
 def test_unknown_character_and_overlapping_chronology_are_rejected() -> None:
@@ -115,7 +123,13 @@ def test_missing_dependency_endpoint_is_rejected() -> None:
     assert "UNKNOWN_BEAT_DEPENDENCY" in {item.code for item in _validate(analysis).errors}
 
 
-def test_anonymous_speaker_must_remain_unresolved() -> None:
+def test_an_anonymous_speaker_left_unresolved_is_reported_but_does_not_block() -> None:
+    """Reported as a warning, not an error.
+
+    Quietly resolving an anonymous speaker into a character is worth
+    surfacing, but not worth discarding an otherwise sound analysis and paying
+    to generate it again.
+    """
     analysis = _golden()
     scene = analysis.scenes[0]
     report = validate_episode_analysis(
@@ -124,7 +138,31 @@ def test_anonymous_speaker_must_remain_unresolved() -> None:
         valid_reference_ids={scene.scene_id},
         required_anonymous_labels={"speaker_001"},
     )
-    assert "AMBIGUOUS_IDENTITY_RESOLVED_WITHOUT_EVIDENCE" in {item.code for item in report.errors}
+    assert "AMBIGUOUS_IDENTITY_RESOLVED_WITHOUT_EVIDENCE" in {
+        item.code for item in report.warnings
+    }
+    assert "speaker_001" in " ".join(item.message for item in report.warnings)
+    assert report.valid, report.errors
+
+
+def test_an_anonymous_speaker_declared_unresolved_produces_no_warning() -> None:
+    analysis = _golden().model_copy(deep=True)
+    scene = analysis.scenes[0]
+    analysis.unresolved_ambiguities = [
+        UnresolvedAmbiguity(
+            ambiguity_id=uuid4(),
+            description="speaker_001 could not be attributed to any character",
+            source_references=analysis.source_references[:1],
+        )
+    ]
+    report = validate_episode_analysis(
+        analysis,
+        valid_scene_ids={scene.scene_id},
+        valid_reference_ids={scene.scene_id},
+        required_anonymous_labels={"speaker_001"},
+    )
+    assert not report.warnings
+    assert report.valid, report.errors
 
 
 def test_strict_openai_schema_requires_every_property_and_closes_objects() -> None:
