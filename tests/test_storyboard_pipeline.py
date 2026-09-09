@@ -19,8 +19,8 @@ from services.storyboard.pipeline import (
     StoryboardValidationFailed,
 )
 from services.storyboard.providers import (
-    CONTINUOUS_PROFILE,
     DISCRETE_PROFILE,
+    RUNWAY_GEN4_TURBO_PROFILE,
     CapabilityProfileError,
     load_capability_profile,
 )
@@ -619,8 +619,16 @@ def test_anonymous_speaker_never_receives_a_character_identity(tmp_path: Path) -
     assert any(shot.character_reference_ids for shot in named_shots)
 
 
+#: One segment long enough that the pacing-aware fake director cuts it into two
+#: shots at its sentence boundary, so a contradiction between them can be planted.
+TWO_BEAT_TEXTS = (
+    "Our hero wakes up late again, and the toaster is already on fire. "
+    "He sprints for the bus, drops the toast, and the dog wins breakfast.",
+)
+
+
 def test_continuity_contradiction_is_diagnosed_and_repaired(tmp_path: Path) -> None:
-    fixture = build_fixture(tmp_path)
+    fixture = build_fixture(tmp_path, texts=TWO_BEAT_TEXTS)
 
     class _ContradictingDirector(FakeStoryboardDirector):
         """Changes time of day between consecutive shots with no explanation."""
@@ -658,7 +666,7 @@ def test_continuity_contradiction_is_diagnosed_and_repaired(tmp_path: Path) -> N
 
 
 def test_an_explained_continuity_change_is_not_a_contradiction(tmp_path: Path) -> None:
-    fixture = build_fixture(tmp_path)
+    fixture = build_fixture(tmp_path, texts=TWO_BEAT_TEXTS)
 
     class _ExplainedDirector(FakeStoryboardDirector):
         async def propose(self, request):
@@ -872,7 +880,7 @@ def test_assets_record_full_upstream_provenance(tmp_path: Path) -> None:
     for segment in fixture.narration_segments:
         assert segment.normalized_asset_id in parents
     parameters = storyboard_asset.generation_parameters
-    assert parameters["capability_hash"] == CONTINUOUS_PROFILE.capability_hash
+    assert parameters["capability_hash"] == RUNWAY_GEN4_TURBO_PROFILE.capability_hash
     assert (
         parameters["input_hash"]
         == fixture.session.get(StoryboardRun, result.storyboard_run_id).input_hash

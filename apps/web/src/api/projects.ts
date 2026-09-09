@@ -1,4 +1,10 @@
-import type { ProjectCostSummaryResponse } from "@vidgen/contracts";
+import type {
+  GenerationCostEstimate,
+  GenerationQuality,
+  ProjectCostSummaryResponse,
+  ProjectGenerationSettings,
+  ShotPacing,
+} from "@vidgen/contracts";
 
 import { apiClient, type ApiResponse, type VidGenClient } from "./client";
 
@@ -37,6 +43,30 @@ export interface ProjectDetail {
    * letting the start button fail.
    */
   voice_profile_id: string | null;
+  /** The resolved generation settings; legacy projects resolve deterministically. */
+  generation_quality: GenerationQuality;
+  shot_pacing: ShotPacing;
+  premium_fallback_allowed: boolean;
+}
+
+/** The owner's choice of Runway model tier and shot pacing. */
+export interface GenerationSettingsInput {
+  generation_quality: GenerationQuality;
+  shot_pacing: ShotPacing;
+  premium_fallback_allowed: boolean;
+}
+
+export interface GenerationSettingsResponse {
+  project_id: string;
+  settings: ProjectGenerationSettings;
+  generation_policy_identity: string;
+  workflow_started: boolean;
+  estimate: GenerationCostEstimate;
+}
+
+export interface GenerationEstimateInput {
+  target_duration_seconds: number;
+  shot_pacing: ShotPacing;
 }
 
 export interface ProjectStatus {
@@ -62,6 +92,10 @@ export interface CreateProjectInput {
    */
   budget_warning_cap: string;
   budget_hard_cap: string;
+  /** Strict values: "economy" | "balanced" | "premium" and "relaxed" | "normal" | "fast". */
+  generation_quality: GenerationQuality;
+  shot_pacing: ShotPacing;
+  premium_fallback_allowed: boolean;
 }
 
 export function listProjects(
@@ -112,5 +146,38 @@ export function getCosts(
   return client.get<ProjectCostSummaryResponse>(
     `/api/v1/projects/${projectId}/costs`,
     signal ? { signal } : {},
+  );
+}
+
+export function getGenerationEstimate(
+  input: GenerationEstimateInput,
+  client: VidGenClient = apiClient,
+  signal?: AbortSignal,
+): Promise<ApiResponse<GenerationCostEstimate>> {
+  return client.post<GenerationCostEstimate>("/api/v1/projects/generation-estimate", {
+    body: input,
+    ...(signal ? { signal } : {}),
+  });
+}
+
+export function getGenerationSettings(
+  projectId: string,
+  client: VidGenClient = apiClient,
+  signal?: AbortSignal,
+): Promise<ApiResponse<GenerationSettingsResponse>> {
+  return client.get<GenerationSettingsResponse>(
+    `/api/v1/projects/${projectId}/generation-settings`,
+    signal ? { signal } : {},
+  );
+}
+
+export function setGenerationSettings(
+  projectId: string,
+  input: GenerationSettingsInput,
+  client: VidGenClient = apiClient,
+): Promise<ApiResponse<GenerationSettingsResponse>> {
+  return client.put<GenerationSettingsResponse>(
+    `/api/v1/projects/${projectId}/generation-settings`,
+    { body: input },
   );
 }

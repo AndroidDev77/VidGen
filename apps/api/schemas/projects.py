@@ -6,6 +6,14 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from vidgen.contracts.generation import (
+    GenerationCostEstimate,
+    GenerationQuality,
+    GenerationSettingsOrigin,
+    ProjectGenerationSettings,
+    ShotPacing,
+)
+
 
 def exact_decimal_text(value: object) -> object:
     """Accept only a budget amount that is still exact by the time it arrives.
@@ -47,10 +55,72 @@ class CreateProjectRequest(BaseModel):
     #: deployment that has a paid provider credential configured.
     budget_warning_cap: str = "0"
     budget_hard_cap: str = "0"
+    #: Which Runway model tier the project may spend on. ``economy`` is Gen-4
+    #: Turbo everywhere, ``balanced`` adds Gen-4.5 for hero shots and bounded
+    #: quality repairs, ``premium`` is Gen-4.5 wherever compatible.
+    generation_quality: GenerationQuality = GenerationQuality.BALANCED
+    #: How long an edited shot should typically run: ``relaxed`` makes fewer,
+    #: longer shots; ``fast`` makes more, shorter ones.
+    shot_pacing: ShotPacing = ShotPacing.NORMAL
+    #: Premium only: animate with Gen-4 Turbo instead of refusing when Gen-4.5
+    #: cannot generate or the budget cannot afford a shot.
+    premium_fallback_allowed: bool = False
 
     _exact_caps = field_validator("budget_warning_cap", "budget_hard_cap", mode="before")(
         exact_decimal_text
     )
+
+    def generation_settings(self) -> ProjectGenerationSettings:
+        return ProjectGenerationSettings(
+            generation_quality=self.generation_quality,
+            shot_pacing=self.shot_pacing,
+            premium_fallback_allowed=self.premium_fallback_allowed,
+            origin=GenerationSettingsOrigin.EXPLICIT,
+        )
+
+
+class SetGenerationSettingsRequest(BaseModel):
+    """New generation settings for an existing project.
+
+    Every field is required so a settings write is always the whole, explicit
+    choice: there is no partial update that silently keeps a legacy default.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+    generation_quality: GenerationQuality
+    shot_pacing: ShotPacing
+    premium_fallback_allowed: bool = False
+
+    def generation_settings(self) -> ProjectGenerationSettings:
+        return ProjectGenerationSettings(
+            generation_quality=self.generation_quality,
+            shot_pacing=self.shot_pacing,
+            premium_fallback_allowed=self.premium_fallback_allowed,
+            origin=GenerationSettingsOrigin.EXPLICIT,
+        )
+
+
+class GenerationSettingsResponse(BaseModel):
+    """The project's resolved generation settings and their provenance."""
+
+    model_config = ConfigDict(extra="forbid")
+    project_id: UUID
+    settings: ProjectGenerationSettings
+    #: The bounded identity Temporal binds; it changes whenever a material
+    #: setting, policy version or provider capability changes.
+    generation_policy_identity: str = Field(min_length=1, max_length=160)
+    #: Whether a workflow run currently binds these settings. A change after
+    #: that point applies to the next generation run, never to the running one.
+    workflow_started: bool
+    estimate: GenerationCostEstimate
+
+
+class GenerationEstimateRequest(BaseModel):
+    """What the pre-creation estimate needs: a length and a pacing preset."""
+
+    model_config = ConfigDict(extra="forbid")
+    target_duration_seconds: float = Field(default=300, gt=0, le=900)
+    shot_pacing: ShotPacing = ShotPacing.NORMAL
 
 
 class SetProjectBudgetRequest(BaseModel):
@@ -98,6 +168,11 @@ class ProjectResponse(BaseModel):
     #: without one cannot start its workflow, so the UI needs to see the
     #: difference without a second request.
     voice_profile_id: UUID | None = None
+    #: The resolved generation settings. A project created before they existed
+    #: resolves to ``economy`` and ``normal`` deterministically.
+    generation_quality: GenerationQuality = GenerationQuality.BALANCED
+    shot_pacing: ShotPacing = ShotPacing.NORMAL
+    premium_fallback_allowed: bool = False
 
 
 class ProjectListItemResponse(ProjectResponse):

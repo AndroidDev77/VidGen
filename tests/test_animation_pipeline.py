@@ -32,16 +32,9 @@ def prepared(tmp_path: Path):
         .order_by(StoryboardShotRecord.global_sequence)
     )
     assert shot is not None
-    # The generic T13 fixture uses a 3.5-second visual-provider profile. T15's
-    # Runway capability fixture requires an exact supported four-second job.
-    shot.requested_generation_duration_us = 4_000_000
-    shot.trim_end_us = 4_000_000 - shot.usable_duration_us
-    shot.contract = {
-        **shot.contract,
-        "requested_generation_duration_us": 4_000_000,
-        "trim_end_us": shot.trim_end_us,
-    }
-    fixture.session.commit()
+    # The storyboard plans against the Runway Gen-4 Turbo profile, so the shot
+    # already carries a whole-second generation duration the adapter accepts.
+    assert shot.requested_generation_duration_us % 1_000_000 == 0
     return fixture, shot
 
 
@@ -177,7 +170,8 @@ def test_t23_reservation_reconciliation_is_idempotent(tmp_path: Path) -> None:
     assert fixture.session.scalar(select(func.count()).select_from(CostLedgerEntry)) == 1
     budget = fixture.session.scalar(select(ProjectBudget))
     assert budget is not None
-    assert budget.committed_amount == Decimal("0.200000")
+    # 6.5 s of narration rounds up to a 7-second Gen-4 Turbo job at $0.05/s.
+    assert budget.committed_amount == Decimal("0.350000")
     asyncio.run(
         pipeline.process(
             project_id=fixture.project.id,

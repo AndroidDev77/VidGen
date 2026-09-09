@@ -129,9 +129,7 @@ def start_workflow(
         sidecar_ids = tuple(request.subtitle_asset_ids)
         material: dict[str, str] = {"source_video_id": str(source.id)}
         if sidecar_ids:
-            material["subtitle_asset_ids"] = ",".join(
-                sorted(str(i) for i in sidecar_ids)
-            )
+            material["subtitle_asset_ids"] = ",".join(sorted(str(i) for i in sidecar_ids))
         generation_run, _ = runs.open(
             project_id=project.id,
             entry_stage="upload",

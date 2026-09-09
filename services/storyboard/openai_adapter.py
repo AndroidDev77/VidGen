@@ -50,7 +50,21 @@ SYSTEM_PROMPT = (
     "anonymous speaker, reference no character identity at all.\n"
     "7. Declare each shot's incoming assumptions and expected outgoing continuity state. Any "
     "deliberate continuity change must carry an explaining warning.\n"
-    "8. Do not write provider prompts; a later stage compiles these structured shots."
+    "8. Do not write provider prompts; a later stage compiles these structured shots.\n"
+    "Pacing:\n"
+    "9. The pacing field gives the preferred edited-shot range for this project. Aim for shots "
+    "inside target_min_duration_us to target_max_duration_us; it is a creative preference, "
+    "never a quota, and never a fixed number of shots per minute.\n"
+    "10. Cut only where the sentence, clause, comedy beat, action, or visual objective actually "
+    "changes. Do not cut a shot merely because it reaches the target; do not join unrelated "
+    "beats merely to reach it.\n"
+    "11. A punchline or reaction shot may run shorter than the target range, down to "
+    "min_punchline_duration_us, when the beat lands better that way.\n"
+    "12. An establishing, emotional, or hero shot may run longer than the target range, up to "
+    "hero_max_duration_us, when the visual objective has not changed. Mark hero shots with "
+    "importance of 0.8 or above; they may be animated with the premium model.\n"
+    "13. Never plan a shot longer than hard_max_duration_us or the capability profile's "
+    "maximum generated duration; the retimer would split it at an approved boundary anyway."
 )
 
 
@@ -127,8 +141,7 @@ class OpenAIStoryboardDirector:
             _fix_evidence_references(item, valid_evidence_ids)
         return StoryboardProviderResult(
             proposals=[
-                StoryboardShotProposal.model_validate(_fix_proposal(item))
-                for item in raw_proposals
+                StoryboardShotProposal.model_validate(_fix_proposal(item)) for item in raw_proposals
             ],
             expected_incoming_continuity=ContinuityState.model_validate(
                 parsed["expected_incoming_continuity"]

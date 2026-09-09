@@ -281,6 +281,7 @@ class ScriptGenerationPipeline:
             # never fires regardless of what the model decides to include.
             structural_ids = _structural_roles(analysis.plot_beats)
             from vidgen.contracts.script import CompressedPlotBeat
+
             for beat_id, role in structural_ids.items():
                 if beat_id not in selected_ids:
                     source = source_by_id.get(beat_id)
@@ -314,6 +315,7 @@ class ScriptGenerationPipeline:
             result_metadata_request_id = result.metadata.provider_request_id
             if not report.valid:
                 import logging as _logging
+
                 _err_summary = "; ".join(
                     f"{e.code}@{e.entity_path}={e.invalid_value}" for e in report.errors
                 )
@@ -406,6 +408,7 @@ class ScriptGenerationPipeline:
             candidate = result.output.model_copy(update={"script_id": script_id, "version": 1})
             # Auto-correct word count so WORD_COUNT_MISMATCH never fires.
             from services.script.validator import canonical_word_count as _wcnt
+
             actual_words = sum(_wcnt(seg.text) for seg in candidate.segments)
             candidate = candidate.model_copy(update={"actual_word_count": actual_words})
             coverage = build_beat_coverage(candidate, plan)
@@ -423,6 +426,7 @@ class ScriptGenerationPipeline:
             script = candidate
             if not report.valid:
                 import logging as _logging
+
                 _err_summary = "; ".join(
                     f"{e.code}@{e.entity_path}={e.invalid_value}" for e in report.errors
                 )

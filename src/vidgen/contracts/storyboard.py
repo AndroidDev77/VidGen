@@ -24,6 +24,9 @@ from vidgen.contracts.episode_analysis import StructuredNote
 
 CONTRACT_VERSION = "storyboard/1.0"
 MICROSECONDS_PER_SECOND = 1_000_000
+#: A Director importance at or above this designates a hero shot. Routing may
+#: animate hero shots with the premium model; QA holds them to a higher bar.
+HERO_IMPORTANCE_FLOOR = 0.8
 
 Microseconds = Annotated[int, Field(ge=0)]
 PositiveMicroseconds = Annotated[int, Field(gt=0)]
@@ -262,6 +265,32 @@ class StoryboardSourceReference(StrictContract):
     def end_after_start(self) -> StoryboardSourceReference:
         if self.start_us is not None and self.end_us is not None and self.end_us <= self.start_us:
             raise ValueError("end_us must be greater than start_us")
+        return self
+
+
+class ShotPacingGuidance(StrictContract):
+    """The pacing preference handed to the Storyboard Director.
+
+    Ranges are creative targets. The Director cuts only at approved boundaries,
+    may cut a punchline or reaction shot shorter than the target, and may hold an
+    establishing, emotional or hero shot longer; the retimer owns final timing.
+    """
+
+    schema_version: Literal["1.0"] = "1.0"
+    preset: Literal["relaxed", "normal", "fast"]
+    profile_version: str = Field(min_length=1, max_length=32)
+    target_min_duration_us: PositiveMicroseconds
+    target_max_duration_us: PositiveMicroseconds
+    hard_max_duration_us: PositiveMicroseconds
+    min_punchline_duration_us: PositiveMicroseconds
+    hero_max_duration_us: PositiveMicroseconds
+
+    @model_validator(mode="after")
+    def ranges_are_ordered(self) -> ShotPacingGuidance:
+        if self.target_max_duration_us < self.target_min_duration_us:
+            raise ValueError("target_max_duration_us must not be below the minimum")
+        if self.hard_max_duration_us < self.target_max_duration_us:
+            raise ValueError("hard_max_duration_us must cover the target range")
         return self
 
 
@@ -549,6 +578,8 @@ class StoryboardProviderRequest(StrictContract):
     anonymous_speaker_label: str | None = None
     incoming_continuity: ContinuityState
     capability: VisualProviderCapability
+    #: Absent only for requests persisted before pacing presets existed.
+    pacing: ShotPacingGuidance | None = None
     contract_version: str = Field(min_length=1, max_length=32)
     prompt_version: str = Field(min_length=1, max_length=32)
     provider_options: dict[str, str | int | float | bool] = Field(default_factory=dict)

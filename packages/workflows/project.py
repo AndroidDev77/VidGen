@@ -122,9 +122,7 @@ class ProjectWorkflow:
                 stage=stage,
                 idempotency_key=f"{request.idempotency_key}:{stage}",
                 sidecar_asset_ids=(
-                    request.sidecar_asset_ids
-                    if stage == "transcript_acquisition"
-                    else ()
+                    request.sidecar_asset_ids if stage == "transcript_acquisition" else ()
                 ),
             )
             result = await workflow.execute_activity(

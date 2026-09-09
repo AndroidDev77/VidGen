@@ -33,6 +33,19 @@ export const handlers: HttpHandler[] = [
   http.post(`${BASE}/api/v1/projects`, () =>
     HttpResponse.json(fixtures.projectDetail, { status: 201 }),
   ),
+  http.post(`${BASE}/api/v1/projects/generation-estimate`, () =>
+    HttpResponse.json(fixtures.generationEstimate),
+  ),
+  http.get(`${project}/generation-settings`, () =>
+    HttpResponse.json(fixtures.generationSettings),
+  ),
+  http.put(`${project}/generation-settings`, async ({ request }) => {
+    const body = (await request.json()) as Record<string, unknown>;
+    return HttpResponse.json({
+      ...fixtures.generationSettings,
+      settings: { ...fixtures.generationSettings.settings, ...body },
+    });
+  }),
   http.get(project, () => HttpResponse.json(fixtures.projectDetail)),
   http.get(`${project}/status`, () => HttpResponse.json(fixtures.projectStatus)),
   http.get(`${project}/workflow`, () => HttpResponse.json(fixtures.workflowStatus)),

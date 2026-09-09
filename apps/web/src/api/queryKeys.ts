@@ -49,6 +49,10 @@ export const queryKeys = {
   voiceProfiles: (projectId: string) => ["projects", projectId, "voice-profiles"] as const,
   voiceProfile: (projectId: string) => ["projects", projectId, "voice-profile"] as const,
   costs: (projectId: string) => ["projects", projectId, "costs"] as const,
+  generationSettings: (projectId: string) =>
+    ["projects", projectId, "generation-settings"] as const,
+  generationEstimate: (targetDurationSeconds: number, shotPacing: string) =>
+    ["generation-estimate", targetDurationSeconds, shotPacing] as const,
   providerAttempts: (projectId: string) =>
     ["projects", projectId, "provider-attempts"] as const,
   failures: (projectId: string) => ["projects", projectId, "failures"] as const,

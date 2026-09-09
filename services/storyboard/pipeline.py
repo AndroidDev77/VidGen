@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable
+from dataclasses import replace
 from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any, Literal
@@ -17,6 +18,7 @@ from uuid import UUID
 from opentelemetry import trace
 from sqlalchemy.orm import Session
 
+from services.generation.settings import project_generation_settings
 from services.storyboard.boundaries import (
     approved_boundaries,
     word_boundaries,
@@ -29,6 +31,7 @@ from services.storyboard.canonicalize import (
     stable_id,
 )
 from services.storyboard.director import InstrumentedStoryboardDirector
+from services.storyboard.pacing import PacingProfile, pacing_profile, retimer_config_for
 from services.storyboard.providers import (
     DIRECTOR_VERSION,
     PROMPT_VERSION,
@@ -54,6 +57,7 @@ from services.storyboard.validator import (
 from vidgen.contracts.episode_analysis import StructuredNote
 from vidgen.contracts.storyboard import (
     CONTRACT_VERSION,
+    HERO_IMPORTANCE_FLOOR,
     ContinuityState,
     NarrationBoundary,
     Storyboard,
@@ -127,7 +131,11 @@ class StoryboardPipeline:
         self.provider = provider
         self.capability_profile_id = capability_profile_id
         self.capability_override = capability_override
+        #: An explicit configuration keeps its bounds; otherwise the project's
+        #: pacing preset supplies them when the run resolves its settings.
+        self.explicit_retimer_config = retimer_config
         self.retimer_config = retimer_config or RetimerConfig()
+        self.pacing: PacingProfile = pacing_profile(None)
         self.metrics = metrics or Metrics()
         self.tracer = trace.NoOpTracerProvider().get_tracer("vidgen.storyboard")
         self.cancellation_check = cancellation_check or (lambda: False)
@@ -167,6 +175,7 @@ class StoryboardPipeline:
             self.capability_profile_id or self._configured_profile_id(inputs.project),
             self.capability_override or self._configured_override(inputs.project),
         )
+        self._resolve_pacing(inputs.project)
         material = self._input_material(inputs, capability)
         input_hash = canonical_hash(material)
         run = self._resolve_run(inputs, capability, idempotency_key, input_hash, material)
@@ -220,6 +229,24 @@ class StoryboardPipeline:
         )
 
     # -- authoritative identity --------------------------------------------------
+
+    def _resolve_pacing(self, project: Project) -> None:
+        """Bind the project's shot-pacing preset into this run's retimer bounds.
+
+        The preset is a creative preference the Director plans against; here it
+        only sets the hard bounds above which the retimer splits at an approved
+        boundary. An explicitly injected configuration keeps its own bounds and
+        merely records the preset, so tests and tooling stay in control.
+        """
+        self.pacing = pacing_profile(project_generation_settings(project).shot_pacing)
+        if self.explicit_retimer_config is not None:
+            self.retimer_config = replace(
+                self.explicit_retimer_config,
+                pacing_preset=self.pacing.preset.value,
+                pacing_version=self.pacing.version,
+            )
+        else:
+            self.retimer_config = retimer_config_for(self.pacing)
 
     @staticmethod
     def _configured_profile_id(project: Project) -> str | None:
@@ -283,6 +310,8 @@ class StoryboardPipeline:
             "director_version": DIRECTOR_VERSION,
             "retimer_version": self.retimer_config.version,
             "retimer_config": self.retimer_config.material(),
+            "shot_pacing": self.pacing.preset.value,
+            "pacing_profile": self.pacing.material(),
             "validator_version": VALIDATOR_VERSION,
             "pipeline_version": PIPELINE_VERSION,
             "provider": self.provider.name,
@@ -647,13 +676,14 @@ class StoryboardPipeline:
             anonymous_speaker_label=script_segment.anonymous_speaker_label,
             incoming_continuity=incoming,
             capability=capability,
+            pacing=self.pacing.guidance(),
             contract_version=CONTRACT_VERSION,
             prompt_version=PROMPT_VERSION,
             validation_diagnostics=diagnostics,
             trace_context=self._trace_context(),
             attempt_number=attempt,
         )
-        expected_shots = max(1, duration_us // 4_000_000)
+        expected_shots = max(1, duration_us // self.pacing.target_midpoint_us)
         outcome = await self.director.direct(
             request,
             input_hash=checkpoint.input_hash,
@@ -971,6 +1001,13 @@ class StoryboardPipeline:
                 "prompt_version": PROMPT_VERSION,
                 "retimer_version": self.retimer_config.version,
                 "contract_version": CONTRACT_VERSION,
+                # Routing and QA read these: the Director's importance decides
+                # which shots are hero shots, and the pacing preset explains
+                # why the shot was planned at this length.
+                "importance": proposal.importance,
+                "hero_shot": proposal.importance >= HERO_IMPORTANCE_FLOOR,
+                "beat_intent": proposal.action.beat_intent,
+                "shot_pacing": self.pacing.preset.value,
             },
         )
 

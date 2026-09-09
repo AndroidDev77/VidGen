@@ -216,6 +216,49 @@ describe("NewProjectPage", () => {
     expect(called).toBe(false);
   });
 
+  it("explains the quality modes and pacing presets and sends the strict values", async () => {
+    const user = userEvent.setup();
+    let body: Record<string, unknown> | null = null;
+    server.use(
+      http.post(`${BASE}/api/v1/projects`, async ({ request }) => {
+        body = (await request.json()) as Record<string, unknown>;
+        return HttpResponse.json(fixtures.projectDetail, { status: 201 });
+      }),
+    );
+    renderWithProviders(<NewProjectPage />, { route: "/projects/new" });
+    expect(screen.getByLabelText(/Generation quality/)).toBeInTheDocument();
+    expect(screen.getByLabelText(/Shot pacing/)).toBeInTheDocument();
+    expect(screen.getByText(/Cheapest\. Every shot is animated with Runway Gen-4 Turbo/)).toBeVisible();
+    expect(screen.getByText(/Gen-4 Turbo normally; Gen-4\.5 for hero shots/)).toBeVisible();
+    expect(screen.getByText(/Gen-4\.5 wherever the shot is compatible/)).toBeVisible();
+    expect(screen.getByText(/Fewer, longer shots/)).toBeVisible();
+    expect(screen.getByText(/Normal \(default\)/)).toBeVisible();
+    expect(screen.getByText(/More, shorter shots/)).toBeVisible();
+    await user.type(screen.getByLabelText(/Project name/), "My recap");
+    await user.click(screen.getByRole("radio", { name: /Premium/ }));
+    await user.click(screen.getByRole("radio", { name: /Fast/ }));
+    await user.click(screen.getByRole("button", { name: "Create project" }));
+    await waitFor(() => expect(body).not.toBeNull());
+    expect(body).toMatchObject({
+      generation_quality: "premium",
+      shot_pacing: "fast",
+      premium_fallback_allowed: false,
+    });
+  });
+
+  it("shows the estimated cost of every quality mode before the workflow starts", async () => {
+    renderWithProviders(<NewProjectPage />, { route: "/projects/new" });
+    const table = await screen.findByRole("table", {
+      name: "Estimated generation cost by quality mode",
+    });
+    expect(within(table).getByTestId("estimate-economy")).toHaveTextContent("$15.05");
+    expect(within(table).getByTestId("estimate-economy")).toHaveTextContent("$18.00");
+    expect(within(table).getByTestId("estimate-balanced")).toHaveTextContent("(selected)");
+    expect(within(table).getByTestId("estimate-balanced")).toHaveTextContent("+$3.16");
+    expect(within(table).getByTestId("estimate-premium")).toHaveTextContent("$36.12");
+    expect(within(table).getByTestId("estimate-premium")).toHaveTextContent("+$25.20");
+  });
+
   it("offers the upload panel once the project exists", async () => {
     const user = userEvent.setup();
     renderWithProviders(<NewProjectPage />, { route: "/projects/new" });
@@ -227,6 +270,30 @@ describe("NewProjectPage", () => {
 });
 
 describe("ProjectDashboardPage", () => {
+  it("lets the owner change the generation settings for the next run", async () => {
+    let body: Record<string, unknown> | null = null;
+    server.use(
+      http.put(`${BASE}/api/v1/projects/${PROJECT_ID}/generation-settings`, async ({ request }) => {
+        body = (await request.json()) as Record<string, unknown>;
+        return HttpResponse.json({
+          ...fixtures.generationSettings,
+          settings: { ...fixtures.generationSettings.settings, ...body },
+        });
+      }),
+    );
+    const { queryClient } = renderProjectRoute(<ProjectDashboardPage />, `/projects/${PROJECT_ID}`);
+    expect(await screen.findByRole("heading", { name: "Generation settings" })).toBeVisible();
+    await settle(queryClient);
+    const save = screen.getByTestId("save-generation-settings");
+    expect(save).toBeDisabled();
+    expect(screen.getByText(/A change applies to the next generation run/)).toBeVisible();
+    fireEvent.click(screen.getByRole("radio", { name: /Economy/ }));
+    await waitFor(() => expect(save).toBeEnabled());
+    fireEvent.click(save);
+    await waitFor(() => expect(body).not.toBeNull());
+    expect(body).toMatchObject({ generation_quality: "economy", shot_pacing: "normal" });
+  });
+
   it("renders the stage timeline, cost summary and failures", async () => {
     renderProjectRoute(<ProjectDashboardPage />, `/projects/${PROJECT_ID}`);
     expect(await screen.findByRole("heading", { name: "Dashboard" })).toBeVisible();

@@ -12,6 +12,12 @@
       "title": "Canonical Shot Hash",
       "type": "string"
     },
+    "generation_policy_identity": {
+      "default": "",
+      "maxLength": 160,
+      "title": "Generation Policy Identity",
+      "type": "string"
+    },
     "identity_hash": {
       "pattern": "^[a-f0-9]{64}$",
       "title": "Identity Hash",

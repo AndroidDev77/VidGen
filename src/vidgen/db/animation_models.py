@@ -96,6 +96,10 @@ class AnimationItem(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     )
     error_code: Mapped[str | None] = mapped_column(String(128))
     warnings: Mapped[list[dict[str, Any]]] = mapped_column(JSON, default=list)
+    #: The bounded ``RoutingDecision`` that chose ``model``: policy version,
+    #: quality mode, hero designation, reason code and estimate. Null only for
+    #: items generated before routing decisions were persisted.
+    routing_decision: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
     __table_args__ = (
         UniqueConstraint("run_id", "shot_id", name="uq_animation_item_shot"),
         CheckConstraint("shot_sequence >= 0", name="animation_item_sequence"),

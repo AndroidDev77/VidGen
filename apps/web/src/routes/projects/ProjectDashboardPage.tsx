@@ -27,6 +27,7 @@ import { cancelWorkflow, startWorkflow } from "../../api/workflows";
 import { useApiClient } from "../../app/apiContext";
 import { CommandsPanel } from "../../components/CommandsPanel";
 import { CostSummary } from "../../components/CostSummary";
+import { GenerationSettingsCard } from "../../components/GenerationSettingsCard";
 import { FailurePanel } from "../../components/FailurePanel";
 import { ProjectStatusHeader } from "../../components/ProjectStatusHeader";
 import { StageTimeline } from "../../components/StageTimeline";
@@ -368,6 +369,8 @@ export function ProjectDashboardPage(): JSX.Element {
           )}
           {costs.isSuccess && <CostSummary costs={costs.data} />}
         </div>
+
+        <GenerationSettingsCard projectId={projectId} />
 
         <CommandsPanel projectId={projectId} />
 

@@ -18,7 +18,7 @@ from __future__ import annotations
 import hashlib
 import json
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
@@ -35,7 +35,8 @@ from services.animation.input_assets import resolve_input_asset
 from services.animation.pipeline_errors import AmbiguousVideoSubmission
 from services.animation.pricing import estimate_runway_cost
 from services.animation.probe import probe_video
-from services.animation.providers import CAPABILITIES, VideoGenerationProvider
+from services.animation.providers import VideoGenerationProvider, capability_for
+from services.animation.routing import RoutingContext, RoutingError, route_model
 from services.animation.task_poller import PollingWindowExpired, poll_task
 from services.animation.trim import trim_video
 from services.animation.validation import validate_video
@@ -53,6 +54,7 @@ from services.animation.veo_adapter import (
     VeoInputImages,
     temporary_download_path,
 )
+from services.generation.settings import project_generation_settings
 from services.qa.contracts import AuthoritativeInputSelector, AuthoritativeQAInputs
 from services.qa.repair_classifier import (
     ClassificationContext,
@@ -91,6 +93,7 @@ from vidgen.contracts.animation import (
     VideoTaskStatus,
 )
 from vidgen.contracts.costs import BudgetDecision, CostReservationRequest
+from vidgen.contracts.generation import GenerationQuality, RoutingDecision
 from vidgen.contracts.repair import (
     HumanReviewReason,
     ParallaxRenderManifest,
@@ -111,7 +114,7 @@ from vidgen.contracts.repair import (
     VeoGenerationRequest,
     VeoOperationState,
 )
-from vidgen.contracts.storyboard import StoryboardShot
+from vidgen.contracts.storyboard import HERO_IMPORTANCE_FLOOR, StoryboardShot
 from vidgen.contracts.visual_qa import (
     VisualQAOutcome,
     VisualQARepairCode,
@@ -180,6 +183,9 @@ class RepairOptions:
     height: int = 720
     frame_rate: int = 24
     provider_configuration_version: str = "runway/2024-11-06"
+    #: The model a same-provider repair falls back to when the routing policy
+    #: cannot be consulted. Every real repair is routed through the versioned
+    #: policy, which may escalate a balanced project's shot to Gen-4.5.
     same_provider_model: RunwayModel = RunwayModel.GEN4_TURBO
     alternate_provider_model: str | None = None
     max_polls: int = 20
@@ -493,7 +499,7 @@ class VisualRepairPipeline:
                 provider_attempt_id=inputs.root_video.provider_attempt_id,
                 generated_video_id=inputs.root_video.id,
                 provider=self.same_provider.name,
-                model=self.options.same_provider_model.value,
+                model=self._original_model(inputs),
                 provider_operation_id=inputs.root_video.remote_task_id,
                 output_asset_ids=[str(inputs.root_video.canonical_asset_id)],
                 output_qa_result_id=inputs.qa_record.id,
@@ -521,7 +527,7 @@ class VisualRepairPipeline:
         prospective = _prospective_kind(
             counts, self.options.policy, alternate_available=self.alternate_provider is not None
         )
-        estimate = self._estimate(inputs, prospective)
+        estimate = self._estimate(run, inputs, prospective)
         allowed, denial, remaining = self._budget_state(run, estimate)
         eligibility = self._eligibility(inputs, result)
         context = RouteContext(
@@ -583,7 +589,7 @@ class VisualRepairPipeline:
         # Price the route actually chosen. It can differ from the prospective
         # one - a free fallback taken because no alternate provider is
         # configured - and a plan must carry its own route's cost.
-        planned_estimate = self._estimate(inputs, decision.attempt_kind)
+        planned_estimate = self._estimate(run, inputs, decision.attempt_kind)
         try:
             plan, attempt = self._plan(
                 run, inputs, classification, decision.attempt_kind, planned_estimate, result
@@ -668,7 +674,7 @@ class VisualRepairPipeline:
     ) -> tuple[RepairPlan, RepairAttemptRecord]:
         ordinal = self.repository.next_ordinal(run.id)
         predecessor = self.repository.latest_attempt(run.id)
-        provider, model = self._provider_for(kind)
+        provider, model = self._provider_for(kind, run, inputs)
         identity = _hash(
             {
                 "repair_run": str(run.id),
@@ -858,7 +864,8 @@ class VisualRepairPipeline:
     ) -> None:
         """One bounded same-provider repair, resuming any durable task."""
         duration = inputs.shot.requested_generation_duration_us / 1_000_000
-        capability = CAPABILITIES[self.options.same_provider_model.value]
+        model = RunwayModel(plan.model)
+        capability = capability_for(model)
         prompt = self._repaired_prompt(inputs, plan)
         if len(prompt) > capability.prompt_characters:
             raise _AttemptFailed(
@@ -878,7 +885,7 @@ class VisualRepairPipeline:
             first_keyframe_sha256=inputs.keyframe_asset.sha256,
             compiled_motion_prompt=prompt,
             provider=VideoProvider(self.same_provider.name),
-            model=self.options.same_provider_model,
+            model=model,
             requested_duration_seconds=duration,
             width=self.options.width,
             height=self.options.height,
@@ -888,7 +895,7 @@ class VisualRepairPipeline:
         )
         remote_task_id = attempt.provider_operation_id
         if remote_task_id is None:
-            remote_task_id = await self._submit_same_provider(run, plan, attempt, request)
+            remote_task_id = await self._submit_same_provider(run, inputs, plan, attempt, request)
         try:
             task = await poll_task(
                 self.same_provider,
@@ -917,7 +924,7 @@ class VisualRepairPipeline:
         self.session.commit()
         downloaded = await download_video(task.output_handles[0])
         actual = (
-            estimate_runway_cost(self.options.same_provider_model.value, duration)
+            estimate_runway_cost(model.value, duration)
             if self.same_provider.name == "runway"
             else Decimal("0")
         )
@@ -937,6 +944,7 @@ class VisualRepairPipeline:
     async def _submit_same_provider(
         self,
         run: RepairRun,
+        inputs: _Inputs,
         plan: RepairPlan,
         attempt: RepairAttemptRecord,
         request: VideoProviderRequest,
@@ -946,17 +954,18 @@ class VisualRepairPipeline:
         resolved = resolve_input_asset(
             self.blob_store,
             keyframe,
-            CAPABILITIES[self.options.same_provider_model.value],
+            capability_for(request.model),
             expected_width=self.options.width,
             expected_height=self.options.height,
         )
+        routing = self._routing_summary(self._same_provider_decision(run, inputs, attempt))
         async with instrument_provider_attempt(
             session=self.session,
             tracer=self.tracer,
             metrics=self.metrics,
             project_id=run.project_id,
             provider=self.same_provider.name,
-            model=self.options.same_provider_model.value,
+            model=request.model.value,
             operation=REPAIR_OPERATION,
             input_hash=attempt.attempt_identity,
             idempotency_key=attempt.attempt_identity,
@@ -976,7 +985,8 @@ class VisualRepairPipeline:
                 raise
             attempt.provider_operation_id = task.remote_task_id
             provider_attempt.set_result(
-                provider_request_id=task.provider_request_id or task.remote_task_id
+                provider_request_id=task.provider_request_id or task.remote_task_id,
+                metadata=routing,
             )
             self.session.commit()  # the remote ID is durable before the first poll
             return task.remote_task_id
@@ -1560,7 +1570,7 @@ class VisualRepairPipeline:
             return False, HumanReviewReason.PROJECT_BUDGET_DENIED, max(remaining, Decimal("0"))
         return True, None, remaining
 
-    def _estimate(self, inputs: _Inputs, kind: RepairAttemptKind | None) -> Decimal:
+    def _estimate(self, run: RepairRun, inputs: _Inputs, kind: RepairAttemptKind | None) -> Decimal:
         if kind is RepairAttemptKind.ALTERNATE_PROVIDER and self.alternate_provider is not None:
             profile = self.alternate_provider.capabilities
             try:
@@ -1572,7 +1582,7 @@ class VisualRepairPipeline:
             return estimate_veo_cost(self.alternate_provider.model, float(seconds))
         if kind is RepairAttemptKind.SAME_PROVIDER_REPAIR and self.same_provider.name == "runway":
             return estimate_runway_cost(
-                self.options.same_provider_model.value,
+                self._next_same_provider_model(run, inputs).value,
                 inputs.shot.requested_generation_duration_us / 1_000_000,
             )
         return Decimal("0")
@@ -1590,12 +1600,117 @@ class VisualRepairPipeline:
             raise RepairLineageError("a required input asset is missing")
         return self.blob_store.read(asset.storage_key)
 
-    def _provider_for(self, kind: RepairAttemptKind) -> tuple[str, str]:
+    def _provider_for(
+        self, kind: RepairAttemptKind, run: RepairRun, inputs: _Inputs
+    ) -> tuple[str, str]:
         if kind is RepairAttemptKind.ALTERNATE_PROVIDER and self.alternate_provider is not None:
             return self.alternate_provider.name, self.alternate_provider.model
         if kind is RepairAttemptKind.DETERMINISTIC_FALLBACK:
             return "parallax", RENDERER_VERSION
-        return self.same_provider.name, self.options.same_provider_model.value
+        return self.same_provider.name, self._next_same_provider_model(run, inputs).value
+
+    # --- quality-repair escalation ------------------------------------------
+    def _routing_context(self, inputs: _Inputs, *, escalation_attempt: int) -> RoutingContext:
+        """The versioned routing view of the *next* same-provider repair.
+
+        A T21 repair exists only because T20 failed the clip on visual quality,
+        so every same-provider repair is a quality-repair escalation candidate.
+        Deterministic configuration failures never reach T21 and therefore never
+        escalate. The escalation is bounded by the same policy that bounds the
+        repairs themselves: it is eligible only while another same-provider
+        repair is still allowed.
+        """
+        generation = project_generation_settings(inputs.authoritative.project)
+        enforced, remaining, hard_cap = False, None, None
+        if self.same_provider.name == "runway":
+            budget = self.session.scalar(
+                select(ProjectBudget).where(
+                    ProjectBudget.project_id == inputs.storyboard.project_id
+                )
+            )
+            if budget is not None:
+                enforced = True
+                remaining = budget.hard_cap - budget.committed_amount - budget.reserved_amount
+                hard_cap = budget.hard_cap
+        provenance = inputs.shot.provenance
+        try:
+            importance = float(provenance.get("importance", 0))
+        except (TypeError, ValueError):
+            importance = 0.0
+        return RoutingContext(
+            quality_mode=generation.generation_quality,
+            hero_shot=bool(provenance.get("hero_shot")) or importance >= HERO_IMPORTANCE_FLOOR,
+            quality_escalation=True,
+            escalation_attempt=escalation_attempt,
+            max_escalation_attempts=self.options.policy.max_same_provider_repairs,
+            requested_duration_seconds=inputs.shot.requested_generation_duration_us / 1_000_000,
+            width=self.options.width,
+            height=self.options.height,
+            capability_enforced=self.same_provider.name == "runway",
+            budget_enforced=enforced,
+            remaining_budget=remaining,
+            hard_cap=hard_cap,
+            premium_fallback_allowed=generation.premium_fallback_allowed,
+            attempt_number=escalation_attempt + 1,
+            prior_models=(self._original_model(inputs),),
+            capability_profile_id=inputs.shot.capability_profile_id,
+            capability_hash=inputs.shot.capability_hash,
+        )
+
+    def _next_same_provider_model(self, run: RepairRun, inputs: _Inputs) -> RunwayModel:
+        """The model the next same-provider repair would use, never raising.
+
+        Pricing a prospective route must not fail the run: a budget the premium
+        model cannot meet is reported by the existing budget gate, and a
+        capability the premium model lacks means the original model continues.
+        """
+        used = self.repository.counts(run.id)[RepairAttemptKind.SAME_PROVIDER_REPAIR]
+        try:
+            decision = route_model(self._routing_context(inputs, escalation_attempt=used + 1))
+        except RoutingError:
+            return self.options.same_provider_model
+        return RunwayModel(decision.selected_model)
+
+    def _same_provider_decision(
+        self, run: RepairRun, inputs: _Inputs, attempt: RepairAttemptRecord
+    ) -> RoutingDecision:
+        """Re-derive the bounded decision for a planned attempt so it can be persisted."""
+        counts = self.repository.counts(run.id)
+        # This attempt is already recorded, so the escalation ordinal is its own.
+        ordinal = max(1, counts[RepairAttemptKind.SAME_PROVIDER_REPAIR])
+        try:
+            return route_model(self._routing_context(inputs, escalation_attempt=ordinal))
+        except RoutingError:
+            context = self._routing_context(inputs, escalation_attempt=ordinal)
+            # The attempt was already planned with a model the policy accepted at
+            # planning time; record that model rather than failing a submission
+            # over a budget movement between planning and dispatch.
+            fallback = replace(
+                context,
+                quality_mode=GenerationQuality.PREMIUM,
+                requested_model=RunwayModel(attempt.model or self.options.same_provider_model),
+                budget_enforced=False,
+            )
+            return route_model(fallback)
+
+    def _original_model(self, inputs: _Inputs) -> str:
+        item = self.session.get(AnimationItem, inputs.root_video.animation_item_id)
+        return item.model if item is not None else self.options.same_provider_model.value
+
+    @staticmethod
+    def _routing_summary(decision: RoutingDecision) -> dict[str, object]:
+        return {
+            "routing_policy_version": decision.routing_policy_version,
+            "quality_repair_policy_version": decision.quality_repair_policy_version,
+            "quality_mode": decision.quality_mode.value,
+            "selected_model": decision.selected_model,
+            "hero_shot": decision.hero_shot,
+            "quality_escalation": decision.quality_escalation,
+            "escalation_attempt": decision.escalation_attempt,
+            "routing_reason": decision.reason_code.value,
+            "routing_reason_text": decision.reason,
+            "estimated_cost": decision.estimated_cost,
+        }
 
     def _capability_hash(self, kind: RepairAttemptKind | None) -> str | None:
         if kind is RepairAttemptKind.ALTERNATE_PROVIDER:

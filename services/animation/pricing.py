@@ -1,28 +1,44 @@
-"""Versioned Runway pricing verified against official documentation."""
+"""Versioned Runway pricing, derived from the centralized capability registry.
+
+The per-second credit price of each model is declared once, on its
+``VideoCapability``; this module only projects it into the T23 catalog shape and
+the per-request estimate. Verified against the official pricing guide on the
+registry's verification date.
+"""
 
 from __future__ import annotations
 
-from datetime import UTC, date, datetime
+from datetime import UTC, datetime
 from decimal import Decimal
 from uuid import NAMESPACE_URL, uuid5
 
+from services.animation.providers import (
+    CAPABILITIES,
+    CAPABILITY_VERIFICATION_DATE,
+    CREDIT_USD,
+    capability_for,
+)
 from vidgen.contracts.costs import PricingCatalogVersion, PricingRate
 from vidgen.contracts.telemetry import UsageUnit
 
-PRICING_CONFIGURATION_VERSION = "runway-pricing-2026-08-27"
+PRICING_CONFIGURATION_VERSION = "runway-pricing-2026-09-09"
 PRICING_SOURCE = "https://docs.dev.runwayml.com/guides/pricing/"
-PRICING_VERIFICATION_DATE = date(2026, 8, 27)
-CREDIT_USD = Decimal("0.01")
-CREDITS_PER_SECOND = {
-    "gen4_turbo": Decimal("5"),
-    "gen4.5": Decimal("12"),
+PRICING_VERIFICATION_DATE = CAPABILITY_VERIFICATION_DATE
+CREDITS_PER_SECOND: dict[str, Decimal] = {
+    model: Decimal(capability.credits_per_second) for model, capability in CAPABILITIES.items()
 }
+MONEY = Decimal("0.000001")
 
 
 def runway_pricing_catalog() -> PricingCatalogVersion:
     """Return the immutable T23 catalog projection used for T15 estimates."""
     version_id = uuid5(NAMESPACE_URL, PRICING_CONFIGURATION_VERSION)
-    effective = datetime(2026, 8, 27, tzinfo=UTC)
+    effective = datetime(
+        PRICING_VERIFICATION_DATE.year,
+        PRICING_VERIFICATION_DATE.month,
+        PRICING_VERIFICATION_DATE.day,
+        tzinfo=UTC,
+    )
     rates = tuple(
         PricingRate(
             pricing_version_id=version_id,
@@ -51,9 +67,21 @@ def runway_pricing_catalog() -> PricingCatalogVersion:
     )
 
 
+def unit_price(model: str) -> Decimal:
+    """USD per generated second for one model."""
+    return capability_for(model).unit_price_usd
+
+
 def estimate_runway_cost(model: str, duration_seconds: float) -> Decimal:
+    """Price one generation of ``duration_seconds`` on ``model``.
+
+    Runway bills whole generated seconds, so a fractional request is priced at
+    the duration the registry would actually submit for it.
+    """
     try:
-        credits = CREDITS_PER_SECOND[model] * Decimal(str(duration_seconds))
-    except KeyError as error:
+        capability = capability_for(model)
+    except ValueError as error:
         raise ValueError(f"unknown Runway pricing model: {model}") from error
-    return (credits * CREDIT_USD).quantize(Decimal("0.000001"))
+    billed = capability.select_duration(duration_seconds)
+    seconds = Decimal(billed) if billed is not None else Decimal(str(duration_seconds))
+    return (capability.unit_price_usd * seconds).quantize(MONEY)
