@@ -28,6 +28,6 @@ def provider_activity_retry_policy() -> RetryPolicy:
         initial_interval=timedelta(seconds=5),
         backoff_coefficient=2,
         maximum_interval=timedelta(minutes=5),
-        maximum_attempts=12,
+        maximum_attempts=3,
         non_retryable_error_types=[*NON_RETRYABLE_ERROR_TYPES, "QuotaError"],
     )

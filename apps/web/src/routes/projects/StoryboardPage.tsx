@@ -73,6 +73,7 @@ export function StoryboardPage(): JSX.Element {
   const [pending, setPending] = useState<PendingAction>(null);
   const [invalidation, setInvalidation] = useState<InvalidationSet | null>(null);
   const [previewUrls, setPreviewUrls] = useState<ReadonlyMap<string, string>>(new Map());
+  const [selectedVideoUrl, setSelectedVideoUrl] = useState<string | null>(null);
   const [selectedQaRunId, setSelectedQaRunId] = useState<string | null>(null);
   const [qaDecision, setQaDecision] = useState<"approve" | "reject" | null>(null);
   const [selectedRepairRunId, setSelectedRepairRunId] = useState<string | null>(null);
@@ -266,6 +267,22 @@ export function StoryboardPage(): JSX.Element {
     };
   }, [client, storyboard.data]);
 
+  // Fetch a signed video URL whenever the selected shot changes.
+  useEffect(() => {
+    const videoAssetId = shot.data?.shot.selected_video_asset_id ?? null;
+    if (!videoAssetId) {
+      setSelectedVideoUrl(null);
+      return;
+    }
+    let cancelled = false;
+    void getDownloadUrl(videoAssetId, client).then(({ data }) => {
+      if (!cancelled) setSelectedVideoUrl(data.url);
+    }).catch(() => {
+      if (!cancelled) setSelectedVideoUrl(null);
+    });
+    return () => { cancelled = true; setSelectedVideoUrl(null); };
+  }, [client, shot.data?.shot.selected_video_asset_id]);
+
   const invalidateShot = (shotId: string) => {
     // Only this shot's queries plus the storyboard summary; sibling shot
     // queries are deliberately left untouched.
@@ -411,6 +428,7 @@ export function StoryboardPage(): JSX.Element {
               <ShotInspector
                 detail={shot.data}
                 busy={busy}
+                videoUrl={selectedVideoUrl}
                 onRegenerate={() => setPending("regenerate")}
                 onRetry={() => retry.mutate()}
                 onCancel={() => cancelOne.mutate()}
