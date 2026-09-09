@@ -36,7 +36,7 @@ export function GenerationSettingsCard({ projectId }: GenerationSettingsCardProp
   });
   const [draft, setDraft] = useState<GenerationSettingsInput | null>(null);
   useEffect(() => {
-    if (settings.data !== undefined) {
+    if (settings.data?.settings !== undefined) {
       setDraft({
         generation_quality: settings.data.settings.generation_quality,
         shot_pacing: settings.data.settings.shot_pacing,
@@ -70,7 +70,7 @@ export function GenerationSettingsCard({ projectId }: GenerationSettingsCardProp
       {settings.isError && (
         <ErrorState error={settings.error} onRetry={() => void settings.refetch()} />
       )}
-      {settings.isSuccess && draft !== null && (
+      {settings.isSuccess && settings.data.settings !== undefined && draft !== null && (
         <>
           <GenerationSettingsPanel
             value={draft}

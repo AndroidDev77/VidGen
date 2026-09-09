@@ -22,7 +22,6 @@ import { getGenerationEstimate, type GenerationSettingsInput } from "../api/proj
 import { queryKeys } from "../api/queryKeys";
 import { useApiClient } from "../app/apiContext";
 import { formatMoney } from "../state/format";
-import { ErrorState } from "./states";
 
 const useStyles = makeStyles({
   stack: { display: "flex", flexDirection: "column", gap: tokens.spacingVerticalM },
@@ -173,7 +172,9 @@ export function GenerationSettingsPanel({
         </RadioGroup>
       </Field>
       {fetched.isError && estimate === undefined && (
-        <ErrorState error={fetched.error} onRetry={() => void fetched.refetch()} />
+        <Caption1 className={styles.muted} role="status">
+          The cost estimate is unavailable right now; the settings above still apply.
+        </Caption1>
       )}
       {shown !== undefined && (
         <div className={styles.stack}>
