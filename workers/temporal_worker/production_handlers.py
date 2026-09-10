@@ -41,6 +41,7 @@ from services.control_plane.references import (
 )
 from services.control_plane.shot_commands import SEQUENCE_KEY, next_regeneration_sequence
 from services.generation.settings import (
+    effective_narration_quality_thresholds,
     effective_scene_detection_threshold,
     effective_script_warn_only_validation_codes,
     effective_warn_only_validation_codes,
@@ -1108,11 +1109,15 @@ def _generate_narration(
         provider = FakeNarrationProvider()
     else:
         raise ValueError("narration provider is not configured")
+    thresholds = effective_narration_quality_thresholds(
+        project_generation_settings(project), settings.narration_quality_thresholds()
+    )
     result = asyncio.run(
         NarrationPipeline(
             session,
             blob_store,
             provider,
+            thresholds=thresholds,
             aligner=OpenAIWhisperAligner(settings.openai_api_key)
             if settings.openai_api_key
             else None,

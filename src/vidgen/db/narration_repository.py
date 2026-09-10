@@ -38,7 +38,8 @@ class NarrationRepository:
         seqs = [s.sequence for s in segments]
         if not segments or seqs != list(range(seqs[0], seqs[0] + len(seqs))):
             raise ValueError("selected T11 script is incomplete")
-        if any(not s.text.strip() for s in segments):
+        # A PAUSE carries timing, not speech: empty text is its normal shape.
+        if any(not s.text.strip() for s in segments if s.segment_type != "PAUSE"):
             raise ValueError("selected T11 script contains empty segments")
         return script, segments
 
@@ -79,5 +80,25 @@ class NarrationRepository:
                 select(NarrationAttemptRecord)
                 .where(NarrationAttemptRecord.narration_segment_id == segment_id)
                 .order_by(NarrationAttemptRecord.attempt_number)
+            )
+        )
+
+    def attempts_for_identity(self, identity: str) -> list[NarrationAttemptRecord]:
+        """Every provider attempt made for one generation identity, across runs.
+
+        ``provider_idempotency_key`` is ``{identity}:{attempt_number}`` and is
+        globally unique, so the attempt sequence for an identity is shared by
+        every segment row that carries it, whichever ``NarrationRun`` created
+        the row. Ordered by attempt number; at most one row exists per number.
+        """
+        return list(
+            self.session.scalars(
+                select(NarrationAttemptRecord)
+                .join(
+                    NarrationSegment,
+                    NarrationSegment.id == NarrationAttemptRecord.narration_segment_id,
+                )
+                .where(NarrationSegment.generation_identity == identity)
+                .order_by(NarrationAttemptRecord.attempt_number, NarrationAttemptRecord.created_at)
             )
         )

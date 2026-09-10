@@ -18,6 +18,113 @@
       "title": "GenerationSettingsOrigin",
       "type": "string"
     },
+    "NarrationQualityThresholdOverrides": {
+      "additionalProperties": false,
+      "description": "A project's partial override of the deployment's quality thresholds.\n\nEvery limit is optional: ``None`` means \"use the deployment default\" for\nthat one limit, so a project may relax alignment coverage alone without\nrestating every other number. The warn-only set is overridden separately\non the generation settings, mirroring the validation-code overrides.",
+      "properties": {
+        "max_clipping_ratio": {
+          "anyOf": [
+            {
+              "maximum": 1,
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Max Clipping Ratio"
+        },
+        "max_internal_silence": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Max Internal Silence"
+        },
+        "max_leading_silence": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Max Leading Silence"
+        },
+        "max_trailing_silence": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Max Trailing Silence"
+        },
+        "max_wpm": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Max Wpm"
+        },
+        "min_alignment_coverage": {
+          "anyOf": [
+            {
+              "maximum": 1,
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Min Alignment Coverage"
+        },
+        "min_wpm": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Min Wpm"
+        },
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        }
+      },
+      "title": "NarrationQualityThresholdOverrides",
+      "type": "object"
+    },
     "ShotPacing": {
       "description": "How long an edited shot should typically run.\n\nA preset is a creative preference the Storyboard Director plans against;\nthe deterministic retimer remains the timing authority.",
       "enum": [
@@ -35,6 +142,33 @@
     "generation_quality": {
       "$ref": "#/$defs/GenerationQuality",
       "default": "balanced"
+    },
+    "narration_quality_thresholds": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/NarrationQualityThresholdOverrides"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "narration_warn_only_quality_codes": {
+      "anyOf": [
+        {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 16,
+          "type": "array"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Narration Warn Only Quality Codes"
     },
     "origin": {
       "$ref": "#/$defs/GenerationSettingsOrigin",

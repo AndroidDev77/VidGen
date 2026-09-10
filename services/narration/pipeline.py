@@ -120,7 +120,7 @@ class NarrationPipeline:
             "voice_hash": profile.configuration_hash,
             "provider": self.provider.name,
             "model": profile.model,
-            "quality": self.thresholds.__dict__,
+            "quality": self.thresholds.model_dump(mode="json"),
             "pipeline": PIPELINE_VERSION,
         }
         input_hash = canonical_hash(material)
@@ -266,9 +266,20 @@ class NarrationPipeline:
         text = str(source.text)
         if self.cancellation_check():
             raise RuntimeError("narration activity cancelled")
-        previous_attempts = self.repo.attempts(row.id)
+        # Attempt history is keyed by the generation identity, not by this run's
+        # segment row. The identity is a content hash of every provider-material
+        # input, so a retried workflow (a new NarrationRun, hence a fresh row for
+        # the same identity) must continue the earlier run's attempt sequence:
+        # resume an interrupted attempt, count a completed quality failure toward
+        # the budget of three, and never mint a provider idempotency key an
+        # earlier run already used.
+        previous_attempts = self.repo.attempts_for_identity(row.generation_identity)
         interrupted = next((item for item in previous_attempts if item.completed_at is None), None)
-        attempt_no = interrupted.attempt_number if interrupted else len(previous_attempts) + 1
+        attempt_no = (
+            interrupted.attempt_number
+            if interrupted
+            else max((item.attempt_number for item in previous_attempts), default=0) + 1
+        )
         if attempt_no > 3:
             raise RuntimeError("narration segment exhausted three attempts")
         key = f"{row.generation_identity}:{attempt_no}"

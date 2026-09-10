@@ -36,6 +36,8 @@ from services.costs.project_budget import (
 )
 from services.generation.estimate import estimate_generation_costs
 from services.generation.settings import (
+    GenerationSettingsError,
+    effective_narration_quality_thresholds,
     effective_scene_detection_threshold,
     effective_script_warn_only_validation_codes,
     effective_warn_only_validation_codes,
@@ -53,7 +55,11 @@ from services.progress.engine import StageProgress
 from services.progress.loaders import load_stage_progress
 from services.storyboard.providers import load_capability_profile
 from vidgen.contracts.episode_analysis import WARN_ONLY_ELIGIBLE_VALIDATION_CODES
-from vidgen.contracts.generation import GenerationCostEstimate
+from vidgen.contracts.generation import GenerationCostEstimate, ProjectGenerationSettings
+from vidgen.contracts.narration import (
+    NARRATION_WARN_ONLY_ELIGIBLE_QUALITY_CODES,
+    NarrationQualityThresholds,
+)
 from vidgen.contracts.review import ApiErrorField
 from vidgen.contracts.script import SCRIPT_WARN_ONLY_ELIGIBLE_VALIDATION_CODES
 from vidgen.db.cost_models import ProjectBudget
@@ -155,6 +161,8 @@ def create_project(
         validate_caps(request.budget_warning_cap, request.budget_hard_cap, deployment)
     except BudgetError as error:
         raise _budget_error(error) from error
+    generation = request.generation_settings()
+    _resolved_narration_quality(generation, settings)
     project = Project(
         name=request.name,
         owner_subject=principal.subject,
@@ -163,7 +171,7 @@ def create_project(
         visual_style=request.visual_style,
         humor_intensity=request.humor_intensity,
         # Written explicitly so the project never depends on the legacy default.
-        settings=with_generation_settings({}, request.generation_settings()),
+        settings=with_generation_settings({}, generation),
     )
     ProjectRepository(session).add(project)
     session.flush()
@@ -318,6 +326,7 @@ def _generation_settings_response(
         )
         is not None
     )
+    narration_quality = _resolved_narration_quality(generation, settings)
     return GenerationSettingsResponse(
         project_id=project.id,
         settings=generation,
@@ -346,7 +355,38 @@ def _generation_settings_response(
         available_script_warn_only_validation_codes=list(
             SCRIPT_WARN_ONLY_ELIGIBLE_VALIDATION_CODES
         ),
+        effective_narration_quality_thresholds=narration_quality,
+        effective_narration_warn_only_quality_codes=list(narration_quality.warn_only_codes),
+        available_narration_warn_only_quality_codes=list(
+            NARRATION_WARN_ONLY_ELIGIBLE_QUALITY_CODES
+        ),
     )
+
+
+def _resolved_narration_quality(
+    generation: ProjectGenerationSettings, settings: APISettings
+) -> NarrationQualityThresholds:
+    """The gate the narration worker will run under, or a 422 naming why it cannot.
+
+    Each limit is valid on its own but the combination may not be - a project
+    speaking-rate floor above the deployment ceiling, say - so the resolution
+    is checked at the boundary, before anything is written.
+    """
+    try:
+        return effective_narration_quality_thresholds(
+            generation, settings.narration_quality_thresholds()
+        )
+    except GenerationSettingsError as error:
+        raise validation_failed(
+            str(error),
+            [
+                ApiErrorField(
+                    field="narration_quality_thresholds",
+                    code="UNRESOLVABLE_NARRATION_QUALITY",
+                    message=str(error),
+                )
+            ],
+        ) from error
 
 
 @router.get("/{project_id}/generation-settings", response_model=GenerationSettingsResponse)
@@ -378,7 +418,9 @@ def set_generation_settings(
     planned or routed under the old ones.
     """
     project = owned_project(session, project_id, principal)
-    project.settings = with_generation_settings(project.settings, request.generation_settings())
+    generation = request.generation_settings()
+    _resolved_narration_quality(generation, settings)
+    project.settings = with_generation_settings(project.settings, generation)
     session.flush()
     session.commit()
     return _generation_settings_response(session, project, settings)

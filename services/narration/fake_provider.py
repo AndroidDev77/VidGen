@@ -31,7 +31,12 @@ class FakeNarrationProvider:
         return NarrationProviderResult(
             provider="fake",
             model=request.model,
-            provider_request_id=f"fake-{request.idempotency_key[:24]}",
+            # Derived from the whole key: it is ``{identity}:{attempt}`` and the
+            # 64-character identity alone would give every attempt one id,
+            # which the provider-attempt ledger rejects as a duplicate request.
+            provider_request_id=(
+                f"fake-{hashlib.sha256(request.idempotency_key.encode()).hexdigest()[:24]}"
+            ),
             attempt_number=request.attempt_number,
             content_type="audio/wav",
             audio_format="wav",

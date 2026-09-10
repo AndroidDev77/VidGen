@@ -4,26 +4,18 @@ from __future__ import annotations
 
 import math
 import wave
-from dataclasses import dataclass
 from pathlib import Path
 
 from vidgen.contracts.narration import (
     NarrationAlignment,
     NarrationQualityDiagnostic,
     NarrationQualityReport,
+    NarrationQualityThresholds,
 )
 
-
-@dataclass(frozen=True)
-class QualityThresholds:
-    min_wpm: float = 80
-    max_wpm: float = 220
-    min_alignment_coverage: float = 0.90
-    max_clipping_ratio: float = 0.001
-    max_leading_silence: float = 0.5
-    max_trailing_silence: float = 0.7
-    max_internal_silence: float = 1.5
-
+#: The pipeline's gate configuration is the resolved contract itself: the API,
+#: the worker and the identity material all speak the same strict values.
+QualityThresholds = NarrationQualityThresholds
 
 DEFAULT_THRESHOLDS = QualityThresholds()
 
@@ -63,13 +55,17 @@ def validate_quality(
     internal_silence = longest_silence / rate
     wpm = len(text.split()) / duration * 60
     diagnostics = []
+    warn_only = frozenset(t.warn_only_codes)
 
     def check(code: str, bad: bool, value: float, limit: float) -> None:
         if bad:
+            # A warn-only code is still measured and recorded on the report so
+            # the retry guidance and the operator can see it; it just does not
+            # fail the attempt and buy another provider call.
             diagnostics.append(
                 NarrationQualityDiagnostic(
                     code=code,
-                    severity="error",
+                    severity="warning" if code in warn_only else "error",
                     message=code.replace("_", " "),
                     measured_value=value,
                     threshold=limit,
@@ -93,7 +89,7 @@ def validate_quality(
         t.min_alignment_coverage,
     )
     return NarrationQualityReport(
-        valid=not diagnostics,
+        valid=not any(item.severity == "error" for item in diagnostics),
         diagnostics=diagnostics,
         clipping_ratio=clipping,
         leading_silence_seconds=leading,

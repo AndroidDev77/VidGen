@@ -34,6 +34,7 @@ from vidgen.contracts.generation import (
     ProjectGenerationSettings,
     ShotPacing,
 )
+from vidgen.contracts.narration import NarrationQualityThresholds
 from vidgen.db.models import Project
 
 GENERATION_SETTINGS_KEY = "generation"
@@ -116,6 +117,42 @@ def effective_script_warn_only_validation_codes(
         if generation.script_warn_only_validation_codes is not None
         else global_default
     )
+
+
+def effective_narration_warn_only_quality_codes(
+    generation: ProjectGenerationSettings, global_default: Sequence[str]
+) -> frozenset[str]:
+    """The T12 quality codes to demote to warnings for this project."""
+    return frozenset(
+        generation.narration_warn_only_quality_codes
+        if generation.narration_warn_only_quality_codes is not None
+        else global_default
+    )
+
+
+def effective_narration_quality_thresholds(
+    generation: ProjectGenerationSettings, deployment: NarrationQualityThresholds
+) -> NarrationQualityThresholds:
+    """The T12 quality gate the narration pipeline is handed for this project.
+
+    ``deployment`` carries the deployment-wide limits and warn-only set. The
+    project's limit overrides replace only the limits they set; its warn-only
+    override, when present, replaces the deployment's set outright (an empty
+    list means "every code fails"). Raises ``GenerationSettingsError`` when the
+    combination is not a valid gate, e.g. a project floor above the deployment
+    ceiling for speaking rate.
+    """
+    overrides = generation.narration_quality_thresholds
+    try:
+        resolved = overrides.apply(deployment) if overrides is not None else deployment
+        codes = effective_narration_warn_only_quality_codes(generation, deployment.warn_only_codes)
+        return NarrationQualityThresholds.model_validate(
+            {**resolved.model_dump(), "warn_only_codes": sorted(codes)}
+        )
+    except ValueError as error:
+        raise GenerationSettingsError(
+            f"narration quality settings cannot be resolved: {error}"
+        ) from error
 
 
 def generation_policy_identity(

@@ -6,9 +6,111 @@ from datetime import datetime
 from typing import Any, Literal
 from uuid import UUID
 
-from pydantic import Field, model_validator
+from pydantic import Field, field_validator, model_validator
 
 from .common import Score, StrictContract
+
+#: Every deterministic quality code the T12 gate can emit, and therefore every
+#: code a deployment or project may choose to demote to a warning. A warning
+#: is still recorded on the attempt's quality report; it just no longer makes
+#: the segment fail and pay for another provider attempt.
+NARRATION_QUALITY_CODES: tuple[str, ...] = (
+    "clipping",
+    "leading_silence",
+    "trailing_silence",
+    "internal_silence",
+    "speaking_rate",
+    "alignment_coverage",
+)
+NARRATION_WARN_ONLY_ELIGIBLE_QUALITY_CODES: tuple[str, ...] = NARRATION_QUALITY_CODES
+#: alignment_coverage by default: the coverage figure is how much of the
+#: approved text Whisper transcribed back verbatim, and Whisper is unreliable
+#: on names and domain vocabulary even when the audio is perfectly clear. A low
+#: figure is worth surfacing but is not worth discarding good audio and paying
+#: to regenerate it.
+DEFAULT_NARRATION_WARN_ONLY_QUALITY_CODES: tuple[str, ...] = ("alignment_coverage",)
+
+
+def _known_quality_codes(value: list[str]) -> list[str]:
+    unknown = sorted(set(value) - set(NARRATION_WARN_ONLY_ELIGIBLE_QUALITY_CODES))
+    if unknown:
+        raise ValueError(
+            f"unknown narration quality codes: {', '.join(unknown)}; "
+            f"expected any of {', '.join(NARRATION_WARN_ONLY_ELIGIBLE_QUALITY_CODES)}"
+        )
+    # Deterministic and duplicate-free: the list is bound into the narration
+    # generation identity and compared to decide whether settings changed.
+    return sorted(set(value))
+
+
+class NarrationQualityThresholds(StrictContract):
+    """The fully resolved T12 quality gate: every limit and the warn-only set.
+
+    The pipeline binds these values into each segment's generation identity, so
+    changing any of them mints new identities rather than silently accepting
+    or rejecting audio that was judged under different rules.
+    """
+
+    schema_version: Literal["1.0"] = "1.0"
+    min_wpm: float = Field(default=80, gt=0)
+    max_wpm: float = Field(default=220, gt=0)
+    min_alignment_coverage: float = Field(default=0.90, ge=0, le=1)
+    max_clipping_ratio: float = Field(default=0.001, ge=0, le=1)
+    max_leading_silence: float = Field(default=0.5, ge=0)
+    max_trailing_silence: float = Field(default=0.7, ge=0)
+    max_internal_silence: float = Field(default=1.5, ge=0)
+    #: Quality codes recorded as warnings instead of failing the attempt.
+    warn_only_codes: list[str] = Field(
+        default_factory=lambda: list(DEFAULT_NARRATION_WARN_ONLY_QUALITY_CODES), max_length=16
+    )
+
+    @field_validator("warn_only_codes")
+    @classmethod
+    def validate_warn_only_codes(cls, value: list[str]) -> list[str]:
+        return _known_quality_codes(value)
+
+    @model_validator(mode="after")
+    def speaking_rate_window_is_ordered(self) -> NarrationQualityThresholds:
+        if self.min_wpm >= self.max_wpm:
+            raise ValueError("min_wpm must be below max_wpm")
+        return self
+
+
+class NarrationQualityThresholdOverrides(StrictContract):
+    """A project's partial override of the deployment's quality thresholds.
+
+    Every limit is optional: ``None`` means "use the deployment default" for
+    that one limit, so a project may relax alignment coverage alone without
+    restating every other number. The warn-only set is overridden separately
+    on the generation settings, mirroring the validation-code overrides.
+    """
+
+    schema_version: Literal["1.0"] = "1.0"
+    min_wpm: float | None = Field(default=None, gt=0)
+    max_wpm: float | None = Field(default=None, gt=0)
+    min_alignment_coverage: float | None = Field(default=None, ge=0, le=1)
+    max_clipping_ratio: float | None = Field(default=None, ge=0, le=1)
+    max_leading_silence: float | None = Field(default=None, ge=0)
+    max_trailing_silence: float | None = Field(default=None, ge=0)
+    max_internal_silence: float | None = Field(default=None, ge=0)
+
+    @model_validator(mode="after")
+    def speaking_rate_window_is_ordered(self) -> NarrationQualityThresholdOverrides:
+        if self.min_wpm is not None and self.max_wpm is not None and self.min_wpm >= self.max_wpm:
+            raise ValueError("min_wpm must be below max_wpm")
+        return self
+
+    def apply(self, defaults: NarrationQualityThresholds) -> NarrationQualityThresholds:
+        """The deployment thresholds with every set override applied on top."""
+        values = defaults.model_dump(exclude={"schema_version"})
+        values.update(
+            {
+                key: value
+                for key, value in self.model_dump(exclude={"schema_version"}).items()
+                if value is not None
+            }
+        )
+        return NarrationQualityThresholds.model_validate(values)
 
 
 class VoiceProfile(StrictContract):

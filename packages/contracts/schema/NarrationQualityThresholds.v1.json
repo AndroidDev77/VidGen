@@ -1,0 +1,66 @@
+{
+  "additionalProperties": false,
+  "description": "The fully resolved T12 quality gate: every limit and the warn-only set.\n\nThe pipeline binds these values into each segment's generation identity, so\nchanging any of them mints new identities rather than silently accepting\nor rejecting audio that was judged under different rules.",
+  "properties": {
+    "max_clipping_ratio": {
+      "default": 0.001,
+      "maximum": 1,
+      "minimum": 0,
+      "title": "Max Clipping Ratio",
+      "type": "number"
+    },
+    "max_internal_silence": {
+      "default": 1.5,
+      "minimum": 0,
+      "title": "Max Internal Silence",
+      "type": "number"
+    },
+    "max_leading_silence": {
+      "default": 0.5,
+      "minimum": 0,
+      "title": "Max Leading Silence",
+      "type": "number"
+    },
+    "max_trailing_silence": {
+      "default": 0.7,
+      "minimum": 0,
+      "title": "Max Trailing Silence",
+      "type": "number"
+    },
+    "max_wpm": {
+      "default": 220,
+      "exclusiveMinimum": 0,
+      "title": "Max Wpm",
+      "type": "number"
+    },
+    "min_alignment_coverage": {
+      "default": 0.9,
+      "maximum": 1,
+      "minimum": 0,
+      "title": "Min Alignment Coverage",
+      "type": "number"
+    },
+    "min_wpm": {
+      "default": 80,
+      "exclusiveMinimum": 0,
+      "title": "Min Wpm",
+      "type": "number"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "warn_only_codes": {
+      "items": {
+        "type": "string"
+      },
+      "maxItems": 16,
+      "title": "Warn Only Codes",
+      "type": "array"
+    }
+  },
+  "title": "NarrationQualityThresholds",
+  "type": "object"
+}

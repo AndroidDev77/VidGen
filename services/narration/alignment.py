@@ -25,14 +25,45 @@ def _token(word: str) -> str:
     return "".join(c for c in word.casefold() if c.isalnum() or c == "'")
 
 
+def clamp_to_duration(
+    recognized: list[RecognizedWord], duration: float
+) -> tuple[list[RecognizedWord], list[str]]:
+    """Fit recognized words inside the measured audio, dropping what lies beyond it.
+
+    Whisper's word timestamps come from its own decoder and can overshoot the
+    ffprobe duration by a few frames, occasionally by a whole word after a
+    trailing breath. A word that merely ends late is clamped to the boundary; a
+    word that starts at or after the boundary would clamp to zero length, so it
+    is dropped instead and the downstream alignment records it as an omission.
+    Reversed or negative timestamps are still refused: they describe a broken
+    transcript, not an off-by-a-frame duration.
+    """
+    if any(w.start_seconds < 0 or w.end_seconds < w.start_seconds for w in recognized):
+        raise ValueError("recognized timestamps are reversed or negative")
+    kept: list[RecognizedWord] = []
+    clamped = dropped = 0
+    for word in recognized:
+        start = min(word.start_seconds, duration)
+        end = min(word.end_seconds, duration)
+        if end <= start:
+            dropped += 1
+            continue
+        if (start, end) != (word.start_seconds, word.end_seconds):
+            clamped += 1
+            word = RecognizedWord(word.word, start, end, word.confidence)
+        kept.append(word)
+    diagnostics: list[str] = []
+    if clamped:
+        diagnostics.append(f"clamped {clamped} word timestamp(s) to the measured duration")
+    if dropped:
+        diagnostics.append(f"dropped {dropped} zero-length word(s) at or beyond the duration")
+    return kept, diagnostics
+
+
 def reconcile_alignment(
     approved_text: str, recognized: list[RecognizedWord], duration: float
 ) -> NarrationAlignment:
-    if any(
-        w.start_seconds < 0 or w.end_seconds <= w.start_seconds or w.end_seconds > duration
-        for w in recognized
-    ):
-        raise ValueError("recognized timestamps are reversed or outside measured duration")
+    recognized, diagnostics = clamp_to_duration(recognized, duration)
     if any(b.start_seconds < a.end_seconds for a, b in pairwise(recognized)):
         raise ValueError("recognized timestamp reversal")
     approved = re.findall(
@@ -94,6 +125,7 @@ def reconcile_alignment(
         insertions=list(reversed(insertions)),
         omissions=list(reversed(omissions)),
         substitutions=list(reversed(substitutions)),
+        diagnostics=diagnostics,
     )
 
 

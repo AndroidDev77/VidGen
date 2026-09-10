@@ -5,12 +5,17 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Annotated
 
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 from vidgen.contracts.episode_analysis import (
     DEFAULT_WARN_ONLY_VALIDATION_CODES,
     WARN_ONLY_ELIGIBLE_VALIDATION_CODES,
+)
+from vidgen.contracts.narration import (
+    DEFAULT_NARRATION_WARN_ONLY_QUALITY_CODES,
+    NARRATION_WARN_ONLY_ELIGIBLE_QUALITY_CODES,
+    NarrationQualityThresholds,
 )
 from vidgen.contracts.script import (
     DEFAULT_SCRIPT_WARN_ONLY_VALIDATION_CODES,
@@ -59,6 +64,23 @@ class APISettings(BaseSettings):
     script_warn_only_validation_codes: Annotated[list[str], NoDecode] = Field(
         default_factory=lambda: list(DEFAULT_SCRIPT_WARN_ONLY_VALIDATION_CODES)
     )
+    #: T12 narration quality codes recorded as warnings instead of failing the
+    #: attempt. A project may override this via its generation settings;
+    #: unset, every project uses this default. Only codes in
+    #: ``NARRATION_WARN_ONLY_ELIGIBLE_QUALITY_CODES`` may be listed.
+    narration_warn_only_quality_codes: Annotated[list[str], NoDecode] = Field(
+        default_factory=lambda: list(DEFAULT_NARRATION_WARN_ONLY_QUALITY_CODES)
+    )
+    #: Deployment-wide T12 narration quality limits. Each is the default a
+    #: project without an override for that limit uses; see
+    #: ``NarrationQualityThresholds`` for what each one measures.
+    narration_min_wpm: float = Field(default=80, gt=0)
+    narration_max_wpm: float = Field(default=220, gt=0)
+    narration_min_alignment_coverage: float = Field(default=0.90, ge=0, le=1)
+    narration_max_clipping_ratio: float = Field(default=0.001, ge=0, le=1)
+    narration_max_leading_silence: float = Field(default=0.5, ge=0)
+    narration_max_trailing_silence: float = Field(default=0.7, ge=0)
+    narration_max_internal_silence: float = Field(default=1.5, ge=0)
     openai_api_key: str | None = None
     transcription_model: str = "whisper-1"
     diarization_model: str = "gpt-4o-transcribe-diarize"
@@ -240,6 +262,43 @@ class APISettings(BaseSettings):
                 f"unknown: {', '.join(unknown)}"
             )
         return sorted(set(value))
+
+    @field_validator("narration_warn_only_quality_codes", mode="before")
+    @classmethod
+    def parse_narration_warn_only_quality_codes(cls, value: object) -> object:
+        if isinstance(value, str):
+            return [item.strip().lower() for item in value.split(",") if item.strip()]
+        return value
+
+    @field_validator("narration_warn_only_quality_codes")
+    @classmethod
+    def validate_narration_warn_only_quality_codes(cls, value: list[str]) -> list[str]:
+        unknown = sorted(set(value) - set(NARRATION_WARN_ONLY_ELIGIBLE_QUALITY_CODES))
+        if unknown:
+            raise ValueError(
+                "narration_warn_only_quality_codes must name known quality codes; "
+                f"unknown: {', '.join(unknown)}"
+            )
+        return sorted(set(value))
+
+    @model_validator(mode="after")
+    def narration_speaking_rate_window_is_ordered(self) -> APISettings:
+        if self.narration_min_wpm >= self.narration_max_wpm:
+            raise ValueError("narration_min_wpm must be below narration_max_wpm")
+        return self
+
+    def narration_quality_thresholds(self) -> NarrationQualityThresholds:
+        """The deployment-wide T12 quality gate, before any project override."""
+        return NarrationQualityThresholds(
+            min_wpm=self.narration_min_wpm,
+            max_wpm=self.narration_max_wpm,
+            min_alignment_coverage=self.narration_min_alignment_coverage,
+            max_clipping_ratio=self.narration_max_clipping_ratio,
+            max_leading_silence=self.narration_max_leading_silence,
+            max_trailing_silence=self.narration_max_trailing_silence,
+            max_internal_silence=self.narration_max_internal_silence,
+            warn_only_codes=list(self.narration_warn_only_quality_codes),
+        )
 
     @field_validator("subtitle_languages", mode="before")
     @classmethod
