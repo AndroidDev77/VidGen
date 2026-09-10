@@ -1,10 +1,11 @@
-import { FluentProvider } from "@fluentui/react-components";
+import { FluentProvider, Toaster } from "@fluentui/react-components";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useState, type JSX, type ReactNode } from "react";
 
 import { apiClient, type VidGenClient } from "../api/client";
 import { VidGenApiError } from "../api/errors";
 import { ApiClientContext } from "./apiContext";
+import { APP_TOASTER_ID } from "./toast";
 import { THEME_STORAGE_KEY, vidgenDarkTheme, vidgenLightTheme, type ThemePreference } from "./theme";
 
 export function createQueryClient(): QueryClient {
@@ -82,6 +83,9 @@ export function AppProviders({ children, queryClient, client }: AppProvidersProp
       <ApiClientContext.Provider value={themeValue}>
         <FluentProvider theme={theme === "dark" ? vidgenDarkTheme : vidgenLightTheme}>
           {children}
+          {/* One toaster for the whole app: every page announces the outcome
+              of a background action through `useAppToast`. */}
+          <Toaster toasterId={APP_TOASTER_ID} position="top-end" pauseOnHover />
         </FluentProvider>
       </ApiClientContext.Provider>
     </QueryClientProvider>
