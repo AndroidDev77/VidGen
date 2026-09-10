@@ -100,6 +100,12 @@ class ShotWorkflowIdentity(StrictContract):
     #: replacement child gets the next sequence, which is reproducible from the
     #: durable regeneration commands rather than invented at dispatch time.
     regeneration_sequence: int = Field(default=0, ge=0)
+    #: The compact generation-policy identity: quality mode, pacing preset,
+    #: premium fallback, routing and quality-repair policy versions, the T13
+    #: capability profile and the provider capability registry hash. Empty for
+    #: identities minted before it existed, and then omitted from the hashed
+    #: material so every such identity keeps the hash it already has.
+    generation_policy_identity: str = Field(default="", max_length=160)
     identity_hash: str = Field(pattern=r"^[a-f0-9]{64}$")
 
     def material(self) -> dict[str, str | int]:
@@ -109,6 +115,8 @@ class ShotWorkflowIdentity(StrictContract):
             if self.regeneration_sequence
             else {}
         )
+        if self.generation_policy_identity:
+            extra["generation_policy_identity"] = self.generation_policy_identity
         return {
             **extra,
             "project_id": str(self.project_id),
@@ -252,6 +260,9 @@ class ProjectShotFanoutInput(StrictContract):
     trace_context: dict[str, str] = Field(default_factory=dict)
     t14_configuration_identity: str = "image-provider/1"
     t15_capability_profile_identity: str = "runway/2024-11-06"
+    #: Resolved by the fan-out activity from the project's persisted settings;
+    #: the workflow itself never reads configuration.
+    generation_policy_identity: str = Field(default="", max_length=160)
     attempt_policy_version: Literal["shot-attempt/1"] = "shot-attempt/1"
 
 

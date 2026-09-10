@@ -17,15 +17,21 @@ import {
   ArrowLeftRegular,
   MicRegular,
   MoviesAndTvRegular,
+  VideoClipRegular,
   WalletCreditCardRegular,
 } from "@fluentui/react-icons";
 import { useCallback, useState, type FormEvent, type JSX } from "react";
 import { Link, useNavigate } from "react-router-dom";
 
-import { createProject, type ProjectDetail } from "../../api/projects";
+import {
+  createProject,
+  type GenerationSettingsInput,
+  type ProjectDetail,
+} from "../../api/projects";
 import { queryKeys } from "../../api/queryKeys";
 import { newIdempotencyKey } from "../../api/client";
 import { useApiClient } from "../../app/apiContext";
+import { GenerationSettingsPanel } from "../../components/GenerationSettingsPanel";
 import { SectionCard } from "../../components/Surface";
 import { UploadPanel } from "../../components/UploadPanel";
 import { VoiceProfilePicker } from "../../components/VoiceProfilePicker";
@@ -113,6 +119,14 @@ export function NewProjectPage(): JSX.Element {
   // spend limit before it ever reached the ledger, which stores exact decimals.
   const [warningCap, setWarningCap] = useState("0.00");
   const [hardCap, setHardCap] = useState("0.00");
+  // Strict values the API validates: balanced quality and normal pacing are
+  // the defaults for a new project.
+  const [generation, setGeneration] = useState<GenerationSettingsInput>({
+    generation_quality: "balanced",
+    shot_pacing: "normal",
+    premium_fallback_allowed: false,
+    scene_detection_threshold: 0.3,
+  });
   const [nameError, setNameError] = useState<string | null>(null);
   // Tracked per field so an invalid warning cap is flagged on the warning cap.
   const [warningCapError, setWarningCapError] = useState<string | null>(null);
@@ -138,6 +152,10 @@ export function NewProjectPage(): JSX.Element {
           humor_intensity: humorIntensity,
           budget_warning_cap: warningCap.trim(),
           budget_hard_cap: hardCap.trim(),
+          generation_quality: generation.generation_quality,
+          shot_pacing: generation.shot_pacing,
+          premium_fallback_allowed: generation.premium_fallback_allowed,
+          scene_detection_threshold: generation.scene_detection_threshold,
         },
         client,
       ).then((response) => response.data),
@@ -256,6 +274,19 @@ export function NewProjectPage(): JSX.Element {
               onChange={(_, data) => setHumorIntensity(data.value)}
             />
           </Field>
+        </SectionCard>
+
+        <SectionCard
+          title="Generation"
+          icon={<VideoClipRegular />}
+          description="How much each shot may cost and how quickly the recap should cut."
+        >
+          <GenerationSettingsPanel
+            value={generation}
+            onChange={setGeneration}
+            disabled={project !== null}
+            targetDurationSeconds={targetDuration}
+          />
         </SectionCard>
 
         <SectionCard

@@ -429,6 +429,12 @@ export async function installFakeApi(page: Page, state: FakeApiState): Promise<v
     if (path === "/api/v1/projects" && method === "POST") {
       return json(route, projectDetail(), 201);
     }
+    if (path === "/api/v1/projects/generation-estimate" && method === "POST") {
+      return json(route, generationEstimate());
+    }
+    if (path === `/api/v1/projects/${PROJECT_ID}/generation-settings`) {
+      return json(route, generationSettings());
+    }
     if (path === `/api/v1/projects/${PROJECT_ID}/uploads`) {
       return json(route, uploadSession(), 201);
     }
@@ -483,6 +489,7 @@ export async function installFakeApi(page: Page, state: FakeApiState): Promise<v
         source_asset_id: "44444444-4444-4444-8444-444444444444",
         upload_status: "completed",
         error_code: null,
+        episode_analysis: null,
       });
     }
     if (path.endsWith("/transcript")) {
@@ -779,6 +786,75 @@ function projectDetail() {
     // A project created through the setup screen already has its narration
     // voice, because the screen selects one before the workflow can start.
     voice_profile_id: VOICE_PROFILE_ID,
+    generation_quality: "balanced",
+    shot_pacing: "normal",
+    premium_fallback_allowed: false,
+  };
+}
+
+/** The pre-workflow video-generation estimate for the three quality modes. */
+function generationEstimate() {
+  const mode = (
+    quality: string,
+    primary: string,
+    hero: string,
+    low: string,
+    high: string,
+    deltaLow: string,
+    deltaHigh: string,
+  ) => ({
+    schema_version: "1.0",
+    generation_quality: quality,
+    primary_model: primary,
+    hero_model: hero,
+    estimated_low: low,
+    estimated_high: high,
+    delta_from_economy_low: deltaLow,
+    delta_from_economy_high: deltaHigh,
+    summary: `${quality} summary`,
+  });
+  return {
+    schema_version: "1.0",
+    estimate_version: "generation-estimate/1",
+    pricing_version: "runway-pricing-2026-09-09",
+    capability_registry_hash: "f".repeat(64),
+    currency: "USD",
+    target_duration_seconds: 300,
+    shot_pacing: "normal",
+    estimated_shot_count_low: 43,
+    estimated_shot_count_high: 75,
+    generated_seconds_low: 301,
+    generated_seconds_high: 301,
+    hero_share: "0.15",
+    retry_factor: "1.2",
+    modes: [
+      mode("economy", "gen4_turbo", "gen4_turbo", "15.05", "18.06", "0.00", "0.00"),
+      mode("balanced", "gen4_turbo", "gen4.5", "18.21", "21.85", "3.16", "3.79"),
+      mode("premium", "gen4.5", "gen4.5", "36.12", "43.34", "21.07", "25.28"),
+    ],
+    notes: [
+    "Video generation only; analysis, script, narration, keyframe and QA spend is the same in every mode.",
+    "The low figure assumes no regenerated shots; the high figure allows bounded quality repairs.",
+    "Runway bills whole generated seconds, so every shot rounds up to the next second.",
+  ],
+  };
+}
+
+function generationSettings() {
+  return {
+    project_id: PROJECT_ID,
+    settings: {
+      schema_version: "1.0",
+      settings_version: "generation-settings/1",
+      generation_quality: "balanced",
+      shot_pacing: "normal",
+      premium_fallback_allowed: false,
+      origin: "explicit",
+    },
+    generation_policy_identity:
+      "gq=balanced;sp=normal;pf=0;rp=runway-routing-v2;qr=quality-repair/1;cp=runway-gen4-turbo@0123456789abcdef;rg=0123456789abcdef",
+    workflow_started: true,
+    estimate: generationEstimate(),
   };
 }
 
@@ -1315,5 +1391,7 @@ function costs() {
     byModel: { "fake-video": "1.000000" },
     byOperation: { video_generation: "1.000000" },
     byReason: { generation: "1.000000" },
+    byRoutingReason: { balanced_default_turbo: "1.000000" },
+    byQualityMode: { balanced: "1.000000" },
   };
 }

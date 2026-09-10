@@ -56,7 +56,8 @@ implemented against a deterministic fake provider and a mocked production adapte
   detection and frame extraction.
 - Restartable transcription, subtitle-first transcript acquisition, episode analysis, comedy script
   generation and provider-neutral narration.
-- Deterministic storyboard retiming, keyframe generation, Runway image-to-video generation and
+- Deterministic storyboard retiming with selectable shot pacing, keyframe generation, Runway
+  image-to-video generation on Gen-4 Turbo or Gen-4.5 under a per-project quality mode, and
   per-shot child workflows.
 - Semantic visual QA with a versioned rubric, bounded repair and fallback routing including a Google
   Veo alternate provider and a free 2.5D parallax fallback.
@@ -339,6 +340,52 @@ update, and a hard cap cannot be lowered below what the project has already comm
 Spend against the cap is also visible at `GET /api/v1/projects/{id}/costs` and through
 `scripts/cost_report.py`.
 
+### Choosing generation quality and shot pacing
+
+Two more project settings decide what the video-generation stage spends and how the recap cuts.
+Both are chosen on the setup screen, where the estimated video-generation cost of every quality
+mode is shown before the workflow starts, and both can be changed later from the dashboard.
+
+| `generation_quality` | What it does |
+| --- | --- |
+| `economy` | Cheapest. Every shot is animated with Runway Gen-4 Turbo. Never upgrades. |
+| `balanced` (default for new projects) | Gen-4 Turbo normally. Gen-4.5 for the storyboard's hero shots when the remaining budget covers it, and as a bounded quality-repair escalation after a Turbo clip fails visual QA. |
+| `premium` | Gen-4.5 for every compatible shot. The run is refused with an actionable error if Gen-4.5 is unavailable or the budget cannot afford a shot, unless `premium_fallback_allowed` is set. |
+
+| `shot_pacing` | Edited-shot target |
+| --- | --- |
+| `relaxed` | Fewer, longer shots: about 6 to 10 seconds each. |
+| `normal` (default) | About 4 to 7 seconds. |
+| `fast` | More, shorter shots: about 2.5 to 4 seconds. |
+
+Pacing is a creative preference, not a quota: the Storyboard Director cuts only at approved
+sentence, clause and comedy-beat boundaries, may cut a punchline or reaction shot shorter, and may
+hold an establishing or hero shot longer. The deterministic retimer remains the timing authority.
+
+```bash
+# Create a premium, fast-cut project (the fields default to balanced and normal).
+curl -sS -X POST http://localhost:8000/api/v1/projects \
+  -H 'Content-Type: application/json' -H 'X-VidGen-User: local-user' \
+  -d '{"name":"Real run","budget_warning_cap":"20.00","budget_hard_cap":"40.00",
+       "generation_quality":"premium","shot_pacing":"fast"}'
+
+# See what each mode would cost for a five-minute recap before creating anything.
+curl -sS -X POST http://localhost:8000/api/v1/projects/generation-estimate \
+  -H 'Content-Type: application/json' -H 'X-VidGen-User: local-user' \
+  -d '{"target_duration_seconds":300,"shot_pacing":"normal"}'
+
+# Change an existing project. It applies to the next generation run.
+curl -sS -X PUT http://localhost:8000/api/v1/projects/$PROJECT_ID/generation-settings \
+  -H 'Content-Type: application/json' -H 'X-VidGen-User: local-user' \
+  -d '{"generation_quality":"balanced","shot_pacing":"relaxed","premium_fallback_allowed":false}'
+```
+
+A project created before these settings existed resolves to `economy` and `normal`, which is the
+behaviour it always had. The current Runway model capabilities and prices, how hero-shot routing
+and quality escalation decide the model, and what a running workflow does when a setting changes
+are documented in
+[`docs/IMPLEMENTATION_STATUS.md`](docs/IMPLEMENTATION_STATUS.md#gen-45-quality-modes-and-shot-pacing).
+
 ### Selecting a narration voice
 
 The narration stage resolves its voice from the project. Since T18b this is part of the product:
@@ -418,7 +465,7 @@ are never committed.
 | Variable | Stages that use it | Required? |
 | --- | --- | --- |
 | `VIDGEN_OPENAI_API_KEY` | Transcription and diarization, episode analysis, script compression/writing/editing, narration and forced alignment, storyboard direction, keyframe image generation, semantic visual QA (T20), final editorial QA (T22) | Required for a production run |
-| `VIDGEN_RUNWAY_API_SECRET` | Image-to-video shot animation (T15/T16) | Required for a production run |
+| `VIDGEN_RUNWAY_API_SECRET` | Image-to-video shot animation with Gen-4 Turbo and Gen-4.5 (T15/T16/T21) | Required for a production run |
 | `VIDGEN_GOOGLE_CLOUD_PROJECT`, `VIDGEN_GOOGLE_ACCESS_TOKEN`, `VIDGEN_VEO_MODEL`, `VIDGEN_VEO_LOCATION` | The Google Veo alternate-provider repair attempt (T21) | Optional; only when `VIDGEN_REPAIR_ALTERNATE_PROVIDER=veo` |
 | `VIDGEN_ELEVENLABS_API_KEY` | `scripts/generate_narration.py --provider elevenlabs` only | Optional; the worker's narration stage uses OpenAI or the fake provider |
 | `VIDGEN_OPENSUBTITLES_API_KEY`, `VIDGEN_OPENSUBTITLES_USERNAME`, `VIDGEN_OPENSUBTITLES_PASSWORD` | External subtitle search during transcript acquisition | Optional; without it, acquisition uses embedded/sidecar subtitles or audio transcription |
@@ -434,6 +481,17 @@ VIDGEN_REPAIR_ALLOW_PARALLAX_FALLBACK=true   # the free deterministic 2.5D fallb
 
 There is no VoiceStudio integration in this repository. The optional third-party voice provider is
 ElevenLabs, and only through `scripts/generate_narration.py`.
+
+**Runway account and key.** Create an organisation at <https://dev.runwayml.com>, add credits, and
+create an API key under *API Keys*. Put it in `.env` as `VIDGEN_RUNWAY_API_SECRET`; the stage
+CLIs read the same key as `RUNWAYML_API_SECRET`. One credit is $0.01. Gen-4 Turbo bills 5 credits
+and Gen-4.5 bills 12 credits per generated second, so a five-minute recap costs roughly $15 to $18
+in economy mode, $18 to $22 balanced and $36 to $43 premium for video generation alone; the setup
+screen shows the exact estimate for the chosen length and pacing. Both models accept whole-second
+durations from 2 to 10 seconds and the 16:9, 9:16, 4:3, 3:4, 1:1 and 21:9 output ratios; Gen-4
+Turbo is image-to-video only. The full capability and pricing table, verified against the official
+documentation, lives in `services/animation/providers.py` and is summarised in
+[`docs/IMPLEMENTATION_STATUS.md`](docs/IMPLEMENTATION_STATUS.md#gen-45-quality-modes-and-shot-pacing).
 
 > **Warning — a set credential outranks the fake provider.** The worker chooses its provider by
 > credential presence, not by `VIDGEN_TEMPORAL_ALLOW_FAKE_PROVIDERS`. If `VIDGEN_OPENAI_API_KEY` or
@@ -463,6 +521,7 @@ positive hard cap and `workflow:start` refuses a project that has none — see
 | `VIDGEN_TEMPORAL_USE_FAKE_WORKFLOW_CONTROLLER` | `true` for UI-only, `false` for the real pipeline |
 | `VIDGEN_TEMPORAL_ALLOW_FAKE_PROVIDERS` | `true` for an offline pipeline |
 | `VIDGEN_IMAGE_PROVIDER_NAME` / `VIDGEN_VIDEO_PROVIDER_NAME` | `fake` / `fake` offline, `openai` / `runway` in production |
+| `VIDGEN_VISUAL_CAPABILITY_PROFILE` | `runway-gen4-turbo` (default) or `runway-gen4.5`; the Runway profile the storyboard plans durations against |
 | `VIDGEN_CORS_ALLOWED_ORIGINS` | empty; the Vite proxy keeps the browser same-origin |
 | `VIDGEN_BLOB_BACKEND` | `filesystem`; a deployed environment sets `azure` |
 | `AZURE_STORAGE_CONNECTION_STRING` | `UseDevelopmentStorage=true` for Azurite |

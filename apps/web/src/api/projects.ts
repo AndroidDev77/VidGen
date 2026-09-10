@@ -1,4 +1,10 @@
-import type { ProjectCostSummaryResponse } from "@vidgen/contracts";
+import type {
+  GenerationCostEstimate,
+  GenerationQuality,
+  ProjectCostSummaryResponse,
+  ProjectGenerationSettings,
+  ShotPacing,
+} from "@vidgen/contracts";
 
 import { apiClient, type ApiResponse, type VidGenClient } from "./client";
 
@@ -37,6 +43,60 @@ export interface ProjectDetail {
    * letting the start button fail.
    */
   voice_profile_id: string | null;
+  /** The resolved generation settings; legacy projects resolve deterministically. */
+  generation_quality: GenerationQuality;
+  shot_pacing: ShotPacing;
+  premium_fallback_allowed: boolean;
+}
+
+/** The owner's choice of Runway model tier, shot pacing and scene sensitivity. */
+export interface GenerationSettingsInput {
+  generation_quality: GenerationQuality;
+  shot_pacing: ShotPacing;
+  premium_fallback_allowed: boolean;
+  /** Scene-cut sensitivity for media processing (0.10-0.90, exclusive of 0 and 1). */
+  scene_detection_threshold: number;
+}
+
+export interface GenerationSettingsResponse {
+  project_id: string;
+  settings: ProjectGenerationSettings;
+  generation_policy_identity: string;
+  workflow_started: boolean;
+  estimate: GenerationCostEstimate;
+  /** The scene-cut sensitivity actually in effect: the override, or the deployment default. */
+  effective_scene_detection_threshold: number;
+}
+
+export interface GenerationEstimateInput {
+  target_duration_seconds: number;
+  shot_pacing: ShotPacing;
+}
+
+/** The phases an episode-analysis run moves through, in order. */
+export type EpisodeAnalysisPhase =
+  | "queued"
+  | "scene_analysis"
+  | "building_model"
+  | "validating"
+  | "completed"
+  | "failed";
+
+/**
+ * Where the project's episode analysis is (`EpisodeAnalysisProgressResponse`).
+ *
+ * The backend derives this from the durable scene checkpoints, so the figures
+ * survive a worker restart and never run ahead of what has been persisted.
+ */
+export interface EpisodeAnalysisProgress {
+  phase: EpisodeAnalysisPhase;
+  completed_scene_count: number;
+  total_scene_count: number;
+  /** 0 to 100. */
+  percentage: number;
+  message: string;
+  error_code: string | null;
+  updated_at: string | null;
 }
 
 export interface ProjectStatus {
@@ -46,6 +106,8 @@ export interface ProjectStatus {
   source_asset_id: string | null;
   upload_status: string | null;
   error_code: string | null;
+  /** `null` until the workflow has opened an episode-analysis run. */
+  episode_analysis: EpisodeAnalysisProgress | null;
 }
 
 export interface CreateProjectInput {
@@ -62,6 +124,12 @@ export interface CreateProjectInput {
    */
   budget_warning_cap: string;
   budget_hard_cap: string;
+  /** Strict values: "economy" | "balanced" | "premium" and "relaxed" | "normal" | "fast". */
+  generation_quality: GenerationQuality;
+  shot_pacing: ShotPacing;
+  premium_fallback_allowed: boolean;
+  /** Scene-cut sensitivity for media processing (0.10-0.90, exclusive of 0 and 1). */
+  scene_detection_threshold: number;
 }
 
 export function listProjects(
@@ -112,5 +180,38 @@ export function getCosts(
   return client.get<ProjectCostSummaryResponse>(
     `/api/v1/projects/${projectId}/costs`,
     signal ? { signal } : {},
+  );
+}
+
+export function getGenerationEstimate(
+  input: GenerationEstimateInput,
+  client: VidGenClient = apiClient,
+  signal?: AbortSignal,
+): Promise<ApiResponse<GenerationCostEstimate>> {
+  return client.post<GenerationCostEstimate>("/api/v1/projects/generation-estimate", {
+    body: input,
+    ...(signal ? { signal } : {}),
+  });
+}
+
+export function getGenerationSettings(
+  projectId: string,
+  client: VidGenClient = apiClient,
+  signal?: AbortSignal,
+): Promise<ApiResponse<GenerationSettingsResponse>> {
+  return client.get<GenerationSettingsResponse>(
+    `/api/v1/projects/${projectId}/generation-settings`,
+    signal ? { signal } : {},
+  );
+}
+
+export function setGenerationSettings(
+  projectId: string,
+  input: GenerationSettingsInput,
+  client: VidGenClient = apiClient,
+): Promise<ApiResponse<GenerationSettingsResponse>> {
+  return client.put<GenerationSettingsResponse>(
+    `/api/v1/projects/${projectId}/generation-settings`,
+    { body: input },
   );
 }

@@ -3,7 +3,7 @@ import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { HttpResponse, http } from "msw";
 import { Route, Routes } from "react-router-dom";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { apiError } from "../../test/handlers";
 import * as fixtures from "../../test/fixtures";
@@ -12,7 +12,7 @@ import { server } from "../../test/server";
 import { FinalReviewPage } from "./FinalReviewPage";
 import { NewProjectPage } from "./NewProjectPage";
 import { ProjectDashboardPage } from "./ProjectDashboardPage";
-import { ProjectListPage } from "./ProjectListPage";
+import { PROJECT_LIST_POLL_INTERVAL_MS, ProjectListPage } from "./ProjectListPage";
 import { ScriptPage } from "./ScriptPage";
 import { StoryboardPage } from "./StoryboardPage";
 import { TranscriptPage } from "./TranscriptPage";
@@ -96,6 +96,43 @@ describe("ProjectListPage", () => {
   it("shows a loading state before the data arrives", () => {
     renderWithProviders(<ProjectListPage />, { route: "/projects" });
     expect(screen.getByRole("status")).toBeInTheDocument();
+  });
+
+  it("refreshes each project's status in the background without a loading state", async () => {
+    // The first response is the fixture in review; every later poll reports the
+    // pipeline finished. Fake timers drive the 5-second interval while real
+    // time keeps advancing so the mocked network still resolves.
+    let responses = 0;
+    server.use(
+      http.get(`${BASE}/api/v1/projects`, () => {
+        responses += 1;
+        return HttpResponse.json([
+          responses === 1
+            ? fixtures.projectListItem
+            : { ...fixtures.projectListItem, status: "complete", has_failures: false },
+        ]);
+      }),
+    );
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      renderWithProviders(<ProjectListPage />, { route: "/projects" });
+      expect(await screen.findByLabelText("Status: Review")).toBeVisible();
+      expect(screen.getByLabelText("Has failures")).toBeVisible();
+
+      // Fire the interval synchronously and let `findBy` observe the refetch
+      // landing, so the resulting render happens inside testing-library's wait.
+      vi.advanceTimersByTime(PROJECT_LIST_POLL_INTERVAL_MS);
+
+      expect(await screen.findByLabelText("Status: Complete")).toBeVisible();
+      expect(responses).toBe(2);
+      expect(screen.queryByLabelText("Status: Review")).not.toBeInTheDocument();
+      expect(screen.queryByLabelText("Has failures")).not.toBeInTheDocument();
+      // The row was updated in place: the table never gave way to a skeleton.
+      expect(screen.queryByText("Loading your projects")).not.toBeInTheDocument();
+      expect(screen.getByRole("link", { name: "Season 3 Episode 4" })).toBeVisible();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 
@@ -216,6 +253,49 @@ describe("NewProjectPage", () => {
     expect(called).toBe(false);
   });
 
+  it("explains the quality modes and pacing presets and sends the strict values", async () => {
+    const user = userEvent.setup();
+    let body: Record<string, unknown> | null = null;
+    server.use(
+      http.post(`${BASE}/api/v1/projects`, async ({ request }) => {
+        body = (await request.json()) as Record<string, unknown>;
+        return HttpResponse.json(fixtures.projectDetail, { status: 201 });
+      }),
+    );
+    renderWithProviders(<NewProjectPage />, { route: "/projects/new" });
+    expect(screen.getByLabelText(/Generation quality/)).toBeInTheDocument();
+    expect(screen.getByLabelText(/Shot pacing/)).toBeInTheDocument();
+    expect(screen.getByText(/Cheapest\. Every shot is animated with Runway Gen-4 Turbo/)).toBeVisible();
+    expect(screen.getByText(/Gen-4 Turbo normally; Gen-4\.5 for hero shots/)).toBeVisible();
+    expect(screen.getByText(/Gen-4\.5 wherever the shot is compatible/)).toBeVisible();
+    expect(screen.getByText(/Fewer, longer shots/)).toBeVisible();
+    expect(screen.getByText(/Normal \(default\)/)).toBeVisible();
+    expect(screen.getByText(/More, shorter shots/)).toBeVisible();
+    await user.type(screen.getByLabelText(/Project name/), "My recap");
+    await user.click(screen.getByRole("radio", { name: /Premium/ }));
+    await user.click(screen.getByRole("radio", { name: /Fast/ }));
+    await user.click(screen.getByRole("button", { name: "Create project" }));
+    await waitFor(() => expect(body).not.toBeNull());
+    expect(body).toMatchObject({
+      generation_quality: "premium",
+      shot_pacing: "fast",
+      premium_fallback_allowed: false,
+    });
+  });
+
+  it("shows the estimated cost of every quality mode before the workflow starts", async () => {
+    renderWithProviders(<NewProjectPage />, { route: "/projects/new" });
+    const table = await screen.findByRole("table", {
+      name: "Estimated generation cost by quality mode",
+    });
+    expect(within(table).getByTestId("estimate-economy")).toHaveTextContent("$15.05");
+    expect(within(table).getByTestId("estimate-economy")).toHaveTextContent("$18.06");
+    expect(within(table).getByTestId("estimate-balanced")).toHaveTextContent("(selected)");
+    expect(within(table).getByTestId("estimate-balanced")).toHaveTextContent("+$3.16");
+    expect(within(table).getByTestId("estimate-premium")).toHaveTextContent("$36.12");
+    expect(within(table).getByTestId("estimate-premium")).toHaveTextContent("+$25.28");
+  });
+
   it("offers the upload panel once the project exists", async () => {
     const user = userEvent.setup();
     renderWithProviders(<NewProjectPage />, { route: "/projects/new" });
@@ -227,6 +307,30 @@ describe("NewProjectPage", () => {
 });
 
 describe("ProjectDashboardPage", () => {
+  it("lets the owner change the generation settings for the next run", async () => {
+    let body: Record<string, unknown> | null = null;
+    server.use(
+      http.put(`${BASE}/api/v1/projects/${PROJECT_ID}/generation-settings`, async ({ request }) => {
+        body = (await request.json()) as Record<string, unknown>;
+        return HttpResponse.json({
+          ...fixtures.generationSettings,
+          settings: { ...fixtures.generationSettings.settings, ...body },
+        });
+      }),
+    );
+    const { queryClient } = renderProjectRoute(<ProjectDashboardPage />, `/projects/${PROJECT_ID}`);
+    expect(await screen.findByRole("heading", { name: "Generation settings" })).toBeVisible();
+    await settle(queryClient);
+    const save = screen.getByTestId("save-generation-settings");
+    expect(save).toBeDisabled();
+    expect(screen.getByText(/A change applies to the next generation run/)).toBeVisible();
+    fireEvent.click(screen.getByRole("radio", { name: /Economy/ }));
+    await waitFor(() => expect(save).toBeEnabled());
+    fireEvent.click(save);
+    await waitFor(() => expect(body).not.toBeNull());
+    expect(body).toMatchObject({ generation_quality: "economy", shot_pacing: "normal" });
+  });
+
   it("renders the stage timeline, cost summary and failures", async () => {
     renderProjectRoute(<ProjectDashboardPage />, `/projects/${PROJECT_ID}`);
     expect(await screen.findByRole("heading", { name: "Dashboard" })).toBeVisible();

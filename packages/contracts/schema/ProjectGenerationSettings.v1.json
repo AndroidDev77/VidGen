@@ -1,0 +1,81 @@
+{
+  "$defs": {
+    "GenerationQuality": {
+      "description": "Which Runway model tier a project may spend on.\n\n``economy`` always animates with Gen-4 Turbo. ``balanced`` animates with\nGen-4 Turbo and reserves Gen-4.5 for hero shots and bounded quality-repair\nescalations when the budget permits. ``premium`` animates every compatible\nshot with Gen-4.5 and refuses the run rather than silently downgrading.",
+      "enum": [
+        "economy",
+        "balanced",
+        "premium"
+      ],
+      "title": "GenerationQuality",
+      "type": "string"
+    },
+    "GenerationSettingsOrigin": {
+      "enum": [
+        "explicit",
+        "legacy_default"
+      ],
+      "title": "GenerationSettingsOrigin",
+      "type": "string"
+    },
+    "ShotPacing": {
+      "description": "How long an edited shot should typically run.\n\nA preset is a creative preference the Storyboard Director plans against;\nthe deterministic retimer remains the timing authority.",
+      "enum": [
+        "relaxed",
+        "normal",
+        "fast"
+      ],
+      "title": "ShotPacing",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "description": "The project's persisted generation settings, always fully resolved.",
+  "properties": {
+    "generation_quality": {
+      "$ref": "#/$defs/GenerationQuality",
+      "default": "balanced"
+    },
+    "origin": {
+      "$ref": "#/$defs/GenerationSettingsOrigin",
+      "default": "explicit"
+    },
+    "premium_fallback_allowed": {
+      "default": false,
+      "title": "Premium Fallback Allowed",
+      "type": "boolean"
+    },
+    "scene_detection_threshold": {
+      "anyOf": [
+        {
+          "exclusiveMaximum": 1,
+          "exclusiveMinimum": 0,
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Scene Detection Threshold"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "settings_version": {
+      "const": "generation-settings/1",
+      "default": "generation-settings/1",
+      "title": "Settings Version",
+      "type": "string"
+    },
+    "shot_pacing": {
+      "$ref": "#/$defs/ShotPacing",
+      "default": "normal"
+    }
+  },
+  "title": "ProjectGenerationSettings",
+  "type": "object"
+}

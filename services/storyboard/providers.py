@@ -1,8 +1,12 @@
-"""Storyboard Director boundary and centralized visual-provider capability profiles.
+"""Storyboard Director boundary and the visual-provider capability profiles T13 plans against.
 
-The pipeline depends on this Protocol, never on an SDK response object. Model
-names and provider configuration live here so no adapter or solver bakes in a
-single vendor's limits.
+The Runway profiles are *derived* from the single capability registry in
+``services.animation.providers``: the durations, ratios and formats the retimer
+plans against are the same values the Runway adapter validates every request
+with, so the storyboard can never plan a duration the selected model cannot
+generate. The pipeline depends on the Protocol below, never on an SDK response
+object; model names and provider configuration live here so no adapter or
+solver bakes in a single vendor's limits.
 """
 
 from __future__ import annotations
@@ -10,6 +14,7 @@ from __future__ import annotations
 from decimal import Decimal
 from typing import Any, Protocol
 
+from services.animation.providers import CAPABILITIES, RUNWAY_ASPECT_LABELS, VideoCapability
 from services.storyboard.canonicalize import capability_profile_hash
 from vidgen.contracts.storyboard import (
     MICROSECONDS_PER_SECOND,
@@ -21,9 +26,28 @@ from vidgen.contracts.storyboard import (
 OPENAI_RESPONSES_PATH = "/responses"
 OPENAI_BASE_URL = "https://api.openai.com/v1"
 DEFAULT_STORYBOARD_MODEL = "gpt-5.6"
-DIRECTOR_VERSION = "storyboard-director/1.0.0"
-PROMPT_VERSION = "storyboard-director-v1"
+DIRECTOR_VERSION = "storyboard-director/1.1.0"
+#: v2 adds the shot-pacing guidance and the semantic cutting rules.
+PROMPT_VERSION = "storyboard-director-v2"
 FAKE_DIRECTOR_MODEL = "fake-storyboard-1"
+
+#: Every camera movement and transition the Runway motion-prompt compiler can
+#: express. Shared by both Runway profiles so they stay consistent.
+RUNWAY_CAMERA_MOVEMENTS = [
+    "static",
+    "pan_left",
+    "pan_right",
+    "tilt_up",
+    "tilt_down",
+    "dolly_in",
+    "dolly_out",
+    "tracking",
+    "crane",
+    "handheld",
+    "zoom_in",
+    "zoom_out",
+]
+RUNWAY_TRANSITIONS = ["cut", "dissolve", "fade_in", "fade_out", "match_cut", "whip_pan"]
 
 
 class StoryboardDirector(Protocol):
@@ -51,6 +75,47 @@ def build_capability_profile(**fields: Any) -> VisualProviderCapability:
 def _seconds(value: str) -> int:
     """Exact microseconds from a decimal literal, never a binary float."""
     return int(Decimal(value) * MICROSECONDS_PER_SECOND)
+
+
+def _aspect_ratio(width: int, height: int) -> str:
+    from math import gcd
+
+    label = RUNWAY_ASPECT_LABELS.get((width, height))
+    if label is not None:
+        return label
+    divisor = gcd(width, height)
+    return f"{width // divisor}:{height // divisor}"
+
+
+def runway_capability_profile(capability: VideoCapability) -> VisualProviderCapability:
+    """Project one registry entry into the provider-neutral T13 profile."""
+    durations = [second * MICROSECONDS_PER_SECOND for second in sorted(capability.durations)]
+    ratios: list[str] = []
+    for width, height in capability.dimensions:
+        ratio = _aspect_ratio(width, height)
+        if ratio not in ratios:
+            ratios.append(ratio)
+    return build_capability_profile(
+        capability_profile_id=capability.capability_profile_id,
+        profile_version=capability.profile_version,
+        provider="runway",
+        model_family=capability.model,
+        supported_generation_durations_us=durations,
+        min_generation_duration_us=durations[0],
+        max_generation_duration_us=durations[-1],
+        duration_increment_us=MICROSECONDS_PER_SECOND,
+        supported_aspect_ratios=ratios,
+        supported_resolutions=[f"{width}x{height}" for width, height in capability.dimensions],
+        max_characters_per_shot=3,
+        max_reference_images=3,
+        supports_camera_motion=True,
+        supported_camera_movements=list(RUNWAY_CAMERA_MOVEMENTS),
+        supported_transitions=list(RUNWAY_TRANSITIONS),
+        supports_image_to_video=capability.image_to_video,
+        supports_text_to_video=capability.text_to_video,
+        supports_continuity_seed=True,
+        trimming_policy="trim_end",
+    )
 
 
 #: Discrete-duration provider: Veo-style {4, 6, 8} second generations.
@@ -87,12 +152,19 @@ DISCRETE_PROFILE = build_capability_profile(
     trimming_policy="trim_end",
 )
 
-#: Continuous-duration provider: Runway-style Gen-4 Turbo on 100 ms steps.
+#: Gen-4 Turbo: whole seconds from 2 to 10, image-to-video only.
+RUNWAY_GEN4_TURBO_PROFILE = runway_capability_profile(CAPABILITIES["gen4_turbo"])
+#: Gen-4.5: the same generated durations and ratios, plus text-to-video.
+RUNWAY_GEN4_5_PROFILE = runway_capability_profile(CAPABILITIES["gen4.5"])
+
+#: A continuous-duration reference profile (100 ms steps from 1 s). It is not a
+#: real provider and is not registered for projects; it exists so the solver's
+#: continuous shape stays exercised by tests.
 CONTINUOUS_PROFILE = build_capability_profile(
-    capability_profile_id="runway-gen4-turbo",
+    capability_profile_id="continuous-reference",
     profile_version=1,
-    provider="runway",
-    model_family="gen4_turbo",
+    provider="reference",
+    model_family="continuous-reference",
     supported_generation_durations_us=[],
     min_generation_duration_us=_seconds("1"),
     max_generation_duration_us=_seconds("10"),
@@ -102,21 +174,8 @@ CONTINUOUS_PROFILE = build_capability_profile(
     max_characters_per_shot=3,
     max_reference_images=3,
     supports_camera_motion=True,
-    supported_camera_movements=[
-        "static",
-        "pan_left",
-        "pan_right",
-        "tilt_up",
-        "tilt_down",
-        "dolly_in",
-        "dolly_out",
-        "tracking",
-        "crane",
-        "handheld",
-        "zoom_in",
-        "zoom_out",
-    ],
-    supported_transitions=["cut", "dissolve", "fade_in", "fade_out", "match_cut", "whip_pan"],
+    supported_camera_movements=list(RUNWAY_CAMERA_MOVEMENTS),
+    supported_transitions=list(RUNWAY_TRANSITIONS),
     supports_image_to_video=True,
     supports_text_to_video=False,
     supports_continuity_seed=True,
@@ -125,9 +184,10 @@ CONTINUOUS_PROFILE = build_capability_profile(
 
 CAPABILITY_PROFILES: dict[str, VisualProviderCapability] = {
     DISCRETE_PROFILE.capability_profile_id: DISCRETE_PROFILE,
-    CONTINUOUS_PROFILE.capability_profile_id: CONTINUOUS_PROFILE,
+    RUNWAY_GEN4_TURBO_PROFILE.capability_profile_id: RUNWAY_GEN4_TURBO_PROFILE,
+    RUNWAY_GEN4_5_PROFILE.capability_profile_id: RUNWAY_GEN4_5_PROFILE,
 }
-DEFAULT_CAPABILITY_PROFILE_ID = CONTINUOUS_PROFILE.capability_profile_id
+DEFAULT_CAPABILITY_PROFILE_ID = RUNWAY_GEN4_TURBO_PROFILE.capability_profile_id
 
 
 class CapabilityProfileError(ValueError):

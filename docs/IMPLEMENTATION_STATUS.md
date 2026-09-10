@@ -319,9 +319,17 @@ Model names and provider configuration are centralized in `services/storyboard/p
 generated durations, duration bounds and increments, aspect ratios and resolutions, maximum
 characters and reference images per shot, camera-motion and transition support, image-to-video and
 text-to-video support, continuity/seed support, the trimming policy, and a content-bound
-`capability_hash`. Two profiles are configured: `runway-gen4-turbo` (continuous, 100 ms steps,
-1-10 s) and `veo-3.1-fast` (discrete, {4, 6, 8} s). The timing solver reads only this contract, so
-no single vendor's limits are baked into it.
+`capability_hash`. Three profiles are configured: `runway-gen4-turbo` and `runway-gen4.5` (both
+discrete whole seconds from 2 to 10, derived from the single Runway capability registry in
+`services/animation/providers.py`) and `veo-3.1-fast` (discrete, {4, 6, 8} s). The timing solver
+reads only this contract, so no single vendor's limits are baked into it, and because the Runway
+profiles are projections of the registry the adapter validates against, the storyboard can never
+plan a duration the selected model cannot generate. An earlier `runway-gen4-turbo` profile assumed
+a one-second minimum on 100 ms steps; the API accepts neither, and the profile is now version 2.
+
+The retimer's hard bounds come from the project's shot-pacing preset (see
+[Gen-4.5 quality modes and shot pacing](#gen-45-quality-modes-and-shot-pacing)); the `normal`
+preset reproduces the original 1 s minimum and 7.5 s maximum exactly.
 
 ### Deterministic retiming algorithm
 
@@ -461,11 +469,14 @@ Stale, cross-project, incomplete, invalid, or mismatched inputs fail with action
 The provider-neutral `VideoGenerationProvider` boundary separates task submission, retrieval, and
 cancellation from canonical orchestration. Production uses the official asynchronous Runway Python
 SDK; tests and local development use a deterministic fake that creates small H.264 MP4 files with
-FFmpeg and makes no network or paid calls. The versioned routing policy defaults to `gen4_turbo`.
-It selects `gen4.5` only for configured hero shots when the project quality profile, remaining
-budget, and capability registry permit the premium model. Current capability validation requires
-image-to-video, an exact supported 2-10 second T13 generation duration, a supported output ratio,
-an MP4 result, a bounded prompt, and a keyframe whose aspect ratio exactly matches the output.
+FFmpeg and makes no network or paid calls. The versioned routing policy (`runway-routing-v2`)
+selects `gen4_turbo` or `gen4.5` from the project's generation-quality mode, the shot's hero
+designation, any explicitly requested model, a quality-repair escalation, the remaining budget and
+hard cap, the retry history and the model's documented capabilities; see
+[Gen-4.5 quality modes and shot pacing](#gen-45-quality-modes-and-shot-pacing). Capability
+validation requires image-to-video, a whole-second 2-10 second T13 generation duration, a
+supported output ratio, an MP4 result, a bounded prompt, and a keyframe whose aspect ratio exactly
+matches the output.
 
 Motion prompts are compiled without an LLM in stable action, pose, camera, timing, environment,
 continuity, and restriction order. Runway receives the verified first keyframe as a bounded data
@@ -497,6 +508,149 @@ RUNWAYML_API_SECRET=... uv run python scripts/generate_shot_videos.py PROJECT_UU
 uv run python scripts/generate_shot_videos.py PROJECT_UUID --provider fake --shot-id SHOT_UUID
 RUNWAYML_API_SECRET=... uv run python scripts/generate_shot_videos.py PROJECT_UUID --provider runway --model gen4_turbo
 ```
+
+## Gen-4.5 quality modes and shot pacing
+
+This enhancement corrects the Runway capability definitions, adds a per-project generation-quality
+mode that decides between Gen-4 Turbo and Gen-4.5, and adds a per-project shot-pacing preset that
+guides the Storyboard Director. It touches provider capabilities, model routing, storyboard pacing,
+project configuration, the T23 budget integration, the API and the web console; no other pipeline
+stage was redesigned.
+
+### Verified Runway capabilities and pricing
+
+Everything VidGen assumes about Runway lives in `services/animation/providers.py` and was verified
+on 2026-09-09 against the official pricing, models and input guides and the request types the
+official `runwayml` SDK 5.20.0 generates from Runway's OpenAPI specification.
+
+| | `gen4_turbo` (Gen-4 Turbo) | `gen4.5` (Gen-4.5) |
+| --- | --- | --- |
+| Input | Image to video only | Image to video and text to video |
+| `duration` | Whole seconds, 2 to 10 | Whole seconds, 2 to 10 ("Must be an integer from 2 to 10") |
+| Image-to-video `ratio` | `1280:720`, `720:1280`, `1104:832`, `832:1104`, `960:960`, `1584:672` | The same six |
+| Text-to-video `ratio` | — | `1280:720`, `720:1280` |
+| `promptText` | Up to 1000 UTF-16 code units, optional | Up to 1000 UTF-16 code units, required |
+| `promptImage` | HTTPS URL (16 MB), upload URI or base64 data URI (5 MB); JPEG, PNG or WebP; aspect 0.5-2.0 | The same |
+| Output | H.264 `mp4` | `mp4` by default; ProRes, PNG-sequence and HDR formats at a surcharge, never requested |
+| Price | 5 credits per generated second ($0.05) | 12 credits per generated second ($0.12) |
+| Task states | `PENDING`, `THROTTLED` (queued at the concurrency limit), `RUNNING`, then `SUCCEEDED`, `FAILED` or `CANCELLED` | The same |
+
+Nothing longer than ten seconds is accepted for either model today; `durations` on the registry
+entry is the single place to extend when Runway raises the limit, and the storyboard profile, the
+adapter validation, the routing policy and the cost estimate all follow it. The T23 pricing
+catalog (`runway-pricing-2026-09-09`) is projected from the same registry. The pinned `runwayml`
+3.x SDK forwards `model="gen4.5"` and the camel-cased body unchanged, which `tests/test_gen45_capabilities.py`
+covers with a mocked client; no test or CI job makes a paid call.
+
+### Generation-quality modes
+
+`ProjectGenerationSettings` (`generation-settings/1`) is persisted under
+`Project.settings["generation"]` and resolved everywhere through
+`services/generation/settings.py`:
+
+| Mode | Behaviour |
+| --- | --- |
+| `economy` | Gen-4 Turbo for every compatible shot. An explicit Gen-4.5 request is a deterministic configuration failure. |
+| `balanced` | Gen-4 Turbo by default. Gen-4.5 for a hero shot when the remaining budget covers its estimate, and for a quality-repair escalation while the existing T21 retry policy still allows another same-provider repair. Never for a deterministic configuration failure. |
+| `premium` | Gen-4.5 for every compatible shot, hero or not. When Gen-4.5 is unavailable or the budget cannot afford the shot the run is refused with an actionable `UnsupportedCapability` or `BudgetDenied` error - both non-retryable in the T16 retry policy - unless `premium_fallback_allowed` is set, in which case Gen-4 Turbo is used and the reason recorded. |
+
+**Compatibility decision.** A project created before these settings existed has no `generation`
+block. Its effective behaviour on `main` was Gen-4 Turbo for every shot: the previous router
+upgraded only when `settings["quality_profile"]` named `premium` or `hero`, which nothing wrote,
+and only for shots marked as hero shots, which the storyboard never marked. Such a project
+therefore resolves to `economy` (origin `legacy_default`) so continuing it never starts spending on
+Gen-4.5 silently; a legacy `quality_profile` of `premium` or `hero` maps to `balanced`, which is the
+hero-only upgrade it expressed. New projects default to `balanced`.
+
+### Hero shots and routing
+
+The Storyboard Director's `importance` is now persisted in every shot's provenance together with
+`hero_shot` (importance at or above `HERO_IMPORTANCE_FLOOR`, 0.8), `beat_intent` and the pacing
+preset; the same floor classifies hero shots for T20. `services/animation/routing.py` is the one
+deterministic policy for every video generation. Its `RoutingContext` carries the quality mode,
+the explicitly requested model, the hero designation, the escalation flag and ordinal, the
+requested duration, the output ratio, the remaining budget and hard cap, the retry history and the
+capability profile; its `RoutingDecision` (`RoutingDecision.v1.json`) records the selected model,
+a bounded `reason_code` and reason text, the whole-second generation duration and the estimate.
+The decision is persisted on `animation_items.routing_decision` (migration
+`0022_generation_routing`), in the Runway task's request projection, in the provider attempt's
+redacted metadata and in the original asset's generation parameters, and every provider attempt
+and ledger entry names the model actually used. `GET /projects/{id}/costs` adds `byRoutingReason`
+and `byQualityMode` breakdowns.
+
+Quality escalation lives in T21: a same-provider repair is a quality-repair escalation candidate
+because T21 only runs after a visual-quality failure. Its model is routed with the escalation
+ordinal and the repair policy's `max_same_provider_repairs`, so a balanced project's repair is
+upgraded to Gen-4.5 at most as often as the policy allows and only when the budget covers it.
+
+### Identity and restart behaviour
+
+The animation run and item identities bind the quality mode, the routing-policy version, the
+quality-repair policy version, the capability registry hash, the T13 capability profile and hash,
+the selected model and the whole-second duration; the storyboard identity binds the pacing preset,
+the pacing profile material, the retimer configuration and version (`storyboard-retimer/1.1.0`)
+and the Director prompt version (`storyboard-director-v2`). A changed material setting therefore
+mints new identities instead of reusing incompatible outputs, while an identical retry - or a new
+run whose routing still selects the same model and duration for a shot - reuses the completed
+item, its assets, its provider attempt, its reservation and its ledger entry.
+
+Temporal carries only a compact `generation_policy_identity` string (at most 160 characters:
+quality, pacing, fallback flag, policy versions, capability profile and registry hash). The fan-out
+activity resolves it from the project and binds it into `ShotWorkflowIdentity`; identities minted
+before it existed omit it from the hashed material and keep their hash. Every shot activity
+re-derives it and fails with `InvalidLineage` if the project's settings changed after the child
+was minted, so a running workflow never adopts settings it did not start with.
+
+### Shot pacing
+
+`services/storyboard/pacing.py` defines the presets. Ranges are creative preferences the
+Director plans against; the retimer only takes its hard bounds from them:
+
+| Preset | Target | Hard maximum | Notes |
+| --- | --- | --- | --- |
+| `relaxed` | 6-10 s | 10 s | Fewer, longer shots |
+| `normal` | 4-7 s | 7.5 s | The retimer's original bounds |
+| `fast` | 2.5-4 s | 5 s | More, shorter shots |
+
+Every preset keeps a 1 s hard minimum, lets a punchline or reaction shot run as short as 1.5 s and
+an establishing, emotional or hero shot as long as 10 s. The Director request carries a
+`ShotPacingGuidance` contract; the OpenAI adapter's v2 prompt instructs the model to prefer the
+range, cut only at approved boundaries, never cut merely to reach the target and never join
+unrelated beats. The deterministic fake director now plans the same way, so tests cover
+semantic-boundary preservation and punchline exceptions without a provider. The retimer still
+covers measured narration exactly, keeps timing monotonic and gapless, never plans an unsupported
+duration, records deterministic trimming, and is byte-identical for identical inputs.
+
+### API and web console
+
+`POST /projects` accepts `generation_quality`, `shot_pacing` and `premium_fallback_allowed`
+(strict values, 422 otherwise); `GET/PUT /projects/{id}/generation-settings` reads and replaces
+them and returns the policy identity, whether a workflow already binds them, and the estimate;
+`POST /projects/generation-estimate` prices the three modes for a length and pacing before a
+project exists. The setup screen and the dashboard render `GenerationSettingsPanel`, which explains
+every option and shows the estimated low and high video-generation cost of each mode. The
+TypeScript contracts in `packages/ts-contracts` mirror the new schemas.
+
+### Local commands
+
+```bash
+# The stage CLIs read the project's persisted settings; --model still overrides routing explicitly.
+uv run python scripts/generate_storyboard.py PROJECT_UUID --provider fake
+uv run python scripts/generate_shot_videos.py PROJECT_UUID --provider fake
+RUNWAYML_API_SECRET=... uv run python scripts/generate_shot_videos.py PROJECT_UUID --provider runway --model gen4.5
+uv run python scripts/cost_report.py PROJECT_UUID
+```
+
+### Known provider limitations
+
+- Neither model accepts a generated duration above ten seconds today; a relaxed shot longer than
+  that is split by the retimer at an approved boundary.
+- Gen-4 Turbo has no text-to-video route and neither model has last-frame control, so strict
+  last-frame requests are downgraded with a recorded warning.
+- The Runway API documents no application idempotency key, so a submission whose response is lost
+  is still recorded as ambiguous and requires manual reconciliation.
+- The cost estimate is arithmetic over the pacing preset and the pricing registry; the real shot
+  count depends on the script and narration.
 
 ## T16 per-shot workflows
 

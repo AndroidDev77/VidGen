@@ -20,11 +20,23 @@ from services.animation.input_assets import resolve_input_asset
 from services.animation.motion_prompt import compile_motion_prompt
 from services.animation.pipeline_errors import AmbiguousVideoSubmission
 from services.animation.pricing import estimate_runway_cost
-from services.animation.providers import CAPABILITIES, VideoGenerationProvider, validate_request
-from services.animation.routing import ROUTING_POLICY_VERSION, RoutingContext, route_model
+from services.animation.providers import (
+    VideoGenerationProvider,
+    capability_for,
+    capability_registry_hash,
+    validate_request,
+)
+from services.animation.routing import (
+    QUALITY_REPAIR_POLICY_VERSION,
+    ROUTING_POLICY_VERSION,
+    RoutingContext,
+    route_model,
+    selected_model,
+)
 from services.animation.task_poller import PollingWindowExpired, poll_task
 from services.animation.trim import trim_video
 from services.animation.validation import validate_video
+from services.generation.settings import project_generation_settings
 from vidgen.contracts.animation import (
     AnimationResult,
     GeneratedVideoCandidate,
@@ -36,7 +48,9 @@ from vidgen.contracts.animation import (
     VideoTaskStatus,
 )
 from vidgen.contracts.costs import BudgetDecision, CostReservationRequest
-from vidgen.contracts.storyboard import StoryboardShot
+from vidgen.contracts.generation import RoutingDecision
+from vidgen.contracts.storyboard import HERO_IMPORTANCE_FLOOR, StoryboardShot
+from vidgen.contracts.telemetry import UsageUnit
 from vidgen.db.animation_models import (
     AnimationGeneratedVideo,
     AnimationItem,
@@ -44,7 +58,7 @@ from vidgen.db.animation_models import (
     RunwayTask,
 )
 from vidgen.db.animation_repository import AnimationInputs, AnimationRepository
-from vidgen.db.cost_models import ProjectBudget
+from vidgen.db.cost_models import ProjectBudget, ProviderAttempt
 from vidgen.db.cost_repository import BudgetExceededError, CostRepository
 from vidgen.db.models import Project
 from vidgen.storage.asset_service import AssetService
@@ -53,7 +67,7 @@ from vidgen.telemetry.failures import classify_failure
 from vidgen.telemetry.metrics import Metrics
 from vidgen.telemetry.provider import instrument_provider_attempt
 
-PIPELINE_VERSION = "animation/1.0.0"
+PIPELINE_VERSION = "animation/1.1.0"
 VALIDATION_VERSION = "technical-video/1.0"
 
 
@@ -111,6 +125,7 @@ class AnimationPipeline:
         inputs = self.repo.authoritative_inputs(
             project_id, storyboard_id=storyboard_id, image_run_id=image_run_id, shot_id=shot_id
         )
+        generation = project_generation_settings(inputs.storyboard.project)
         material = {
             "project": project_id,
             "storyboard": inputs.storyboard.storyboard.id,
@@ -121,7 +136,11 @@ class AnimationPipeline:
             "provider": self.provider.name,
             "requested_model": self.requested_model,
             "dimensions": [self.width, self.height],
+            "generation_quality": generation.generation_quality.value,
+            "premium_fallback_allowed": generation.premium_fallback_allowed,
             "routing": ROUTING_POLICY_VERSION,
+            "quality_repair_policy": QUALITY_REPAIR_POLICY_VERSION,
+            "capability_registry": capability_registry_hash(),
             "provider_configuration": self.provider_configuration_version,
             "pipeline": PIPELINE_VERSION,
             "validation": VALIDATION_VERSION,
@@ -217,21 +236,44 @@ class AnimationPipeline:
         frame = inputs.keyframes[row.id]
         intent = self._motion_intent(shot, inputs.storyboard.project.visual_style)
         package = compile_motion_prompt(intent)
-        hero = float(shot.provenance.get("importance", 0)) >= 0.8
-        settings = inputs.storyboard.project.settings
-        premium_permitted = bool(settings.get("quality_profile") in {"premium", "hero"})
-        premium_budget = self._premium_budget_available(inputs.storyboard.project.id, shot)
-        model = route_model(
-            RoutingContext(hero, premium_permitted, premium_budget), self.requested_model
-        )
-        capability = CAPABILITIES[model.value]
-        # Snap to the nearest supported whole-second duration. Storyboards created
-        # before the retimer enforced integer durations may carry fractional values.
+        generation = project_generation_settings(inputs.storyboard.project)
         raw_duration = shot.requested_generation_duration_us / 1_000_000
-        duration = next(
-            (d for d in sorted(capability.durations) if d >= raw_duration),
-            max(capability.durations),
+        prior = self.session.scalar(
+            select(AnimationItem).where(
+                AnimationItem.run_id == run.id, AnimationItem.shot_id == row.id
+            )
         )
+        enforced, remaining, hard_cap = self._budget_state(run.project_id)
+        # One versioned policy decides the model from the project's quality mode,
+        # the shot's hero designation, the requested model, the shot's duration
+        # and ratio, the remaining budget and the retry history. It refuses a
+        # request the selected model cannot serve or the budget cannot cover
+        # before anything is reserved or sent.
+        decision = route_model(
+            RoutingContext(
+                quality_mode=generation.generation_quality,
+                requested_model=self.requested_model,
+                hero_shot=self._hero_shot(shot),
+                requested_duration_seconds=raw_duration,
+                width=self.width,
+                height=self.height,
+                budget_enforced=enforced,
+                remaining_budget=remaining,
+                hard_cap=hard_cap,
+                premium_fallback_allowed=generation.premium_fallback_allowed,
+                attempt_number=(prior.attempt_count + 1) if prior is not None else 1,
+                prior_models=(prior.model,) if prior is not None else (),
+                capability_profile_id=shot.capability_profile_id,
+                capability_hash=shot.capability_hash,
+            )
+        )
+        model = selected_model(decision)
+        capability = capability_for(model)
+        # The routing policy already snapped the T13 duration to the smallest
+        # whole second the selected model accepts; the storyboard never plans a
+        # duration outside the profile, but a pre-integer storyboard may carry
+        # a fractional value.
+        duration = decision.generation_duration_seconds
         strict_last = bool(shot.requires_last_frame)
         warnings: list[dict[str, str]] = []
         last_asset_id = frame.last_asset.id if frame.last_asset else None
@@ -275,7 +317,9 @@ class AnimationPipeline:
                 "dimensions": [self.width, self.height],
                 "format": "mp4",
                 "capability_hash": shot.capability_hash,
+                "capability_registry": capability_registry_hash(),
                 "routing": ROUTING_POLICY_VERSION,
+                "quality_repair_policy": QUALITY_REPAIR_POLICY_VERSION,
                 "provider_configuration": self.provider_configuration_version,
                 "pipeline": PIPELINE_VERSION,
                 "validation": VALIDATION_VERSION,
@@ -309,6 +353,9 @@ class AnimationPipeline:
                 # keys. The old identity slot is now free; the new identity is unique
                 # because item_by_identity(identity) returned None above.
                 item.generation_identity = identity
+                item.model = model.value
+                item.requested_duration = duration
+                item.routing_decision = decision.model_dump(mode="json")
                 self.session.flush()
                 self.session.commit()
             else:
@@ -328,6 +375,7 @@ class AnimationPipeline:
                     height=self.height,
                     status="animation_queued",
                     warnings=warnings,
+                    routing_decision=decision.model_dump(mode="json"),
                 )
                 self.session.add(item)
                 self.session.flush()
@@ -364,7 +412,7 @@ class AnimationPipeline:
         )
         task = self.repo.task_for_item(item.id)
         if task is None or task.provider_status in {"failed", "submission_failed"}:
-            task = await self._submit(inputs, run, item, request, resolved.data_uri)
+            task = await self._submit(inputs, run, item, request, resolved.data_uri, decision)
         if task.remote_task_id is None:
             if task.provider_status == "ambiguous":
                 raise AmbiguousVideoSubmission("submission checkpoint has no remote task ID")
@@ -448,7 +496,7 @@ class AnimationPipeline:
                 provider_request_id=task.remote_task_id,
                 idempotency_key=f"animation-original:{identity}",
                 generation_parameters=self._generation_parameters(
-                    request, shot, package.prompt_hash
+                    request, shot, package.prompt_hash, decision
                 ),
                 metadata={
                     "animation_item_id": str(item.id),
@@ -522,11 +570,15 @@ class AnimationPipeline:
             self.session.flush()
             item.selected_generated_video_id = video.id
             item.status = "completed"
+            # Runway bills the whole seconds that were requested; the measured
+            # duration is recorded alongside so estimate and actual reconcile
+            # against what the provider really returned.
             actual = (
                 estimate_runway_cost(model.value, duration)
                 if self.provider.name == "runway"
                 else Decimal("0")
             )
+            self._record_usage(task, decision, report.probe.duration_seconds, actual)
             self._reconcile(task, identity, actual)
             self.session.commit()
             return self._result(item, video, "completed", shot.shot_id)
@@ -542,6 +594,7 @@ class AnimationPipeline:
         item: AnimationItem,
         request: VideoProviderRequest,
         prompt_image: str,
+        decision: RoutingDecision,
     ) -> RunwayTask:
         estimated = (
             estimate_runway_cost(request.model.value, request.requested_duration_seconds)
@@ -579,8 +632,10 @@ class AnimationPipeline:
                     "duration": request.requested_duration_seconds,
                     "ratio": f"{request.width}:{request.height}",
                     "prompt_hash": item.motion_prompt_hash,
+                    "routing": self._routing_summary(decision),
                 },
             )
+            attempt.row.redacted_metadata = self._routing_summary(decision)
             self.session.add(task)
             item.status = "animation_submitting"
             item.attempt_count += 1
@@ -642,7 +697,8 @@ class AnimationPipeline:
             task.provider_status = provider_task.status.value
             attempt.set_result(
                 provider_request_id=provider_task.provider_request_id
-                or provider_task.remote_task_id
+                or provider_task.remote_task_id,
+                metadata=self._routing_summary(decision),
             )
             self.session.commit()  # remote ID is durable before the first poll
             return task
@@ -659,17 +715,74 @@ class AnimationPipeline:
                 UUID(str(reservation)), f"{base_key}:reconciliation", actual, billable=billable
             )
 
-    def _premium_budget_available(self, project_id: UUID, shot: StoryboardShot) -> bool:
+    def _budget_state(self, project_id: UUID) -> tuple[bool, Decimal | None, Decimal | None]:
+        """Whether a T23 budget governs this provider, and what remains under it."""
         if self.provider.name != "runway":
-            return True
+            return False, None, None
         budget = self.session.scalar(
             select(ProjectBudget).where(ProjectBudget.project_id == project_id)
         )
         if budget is None:
-            return False
-        duration = shot.requested_generation_duration_us / 1_000_000
+            return False, None, None
         remaining = budget.hard_cap - budget.committed_amount - budget.reserved_amount
-        return remaining >= estimate_runway_cost("gen4.5", duration)
+        return True, remaining, budget.hard_cap
+
+    @staticmethod
+    def _hero_shot(shot: StoryboardShot) -> bool:
+        """The Director's designation, persisted in the shot's provenance."""
+        if bool(shot.provenance.get("hero_shot")):
+            return True
+        try:
+            return float(shot.provenance.get("importance", 0)) >= HERO_IMPORTANCE_FLOOR
+        except (TypeError, ValueError):
+            return False
+
+    @staticmethod
+    def _routing_summary(decision: RoutingDecision) -> dict[str, object]:
+        """The bounded routing facts persisted with every provider attempt."""
+        return {
+            "routing_policy_version": decision.routing_policy_version,
+            "quality_repair_policy_version": decision.quality_repair_policy_version,
+            "quality_mode": decision.quality_mode.value,
+            "selected_model": decision.selected_model,
+            "requested_model": decision.requested_model,
+            "hero_shot": decision.hero_shot,
+            "quality_escalation": decision.quality_escalation,
+            "routing_reason": decision.reason_code.value,
+            "routing_reason_text": decision.reason,
+            "generation_duration_seconds": decision.generation_duration_seconds,
+            "estimated_cost": decision.estimated_cost,
+        }
+
+    def _record_usage(
+        self,
+        task: RunwayTask,
+        decision: RoutingDecision,
+        measured_duration_seconds: float,
+        actual: Decimal,
+    ) -> None:
+        """Persist the generated duration and cost on the durable provider attempt."""
+        attempt = self.session.get(ProviderAttempt, task.provider_attempt_id)
+        if attempt is None:
+            return
+        attempt.usage = [
+            {
+                "unit": UsageUnit.VIDEO_OUTPUT_SECOND.value,
+                "quantity": decision.generation_duration_seconds,
+            }
+        ]
+        attempt.actual_cost = actual
+        attempt.redacted_metadata = {
+            **dict(attempt.redacted_metadata or {}),
+            **self._routing_summary(decision),
+            "measured_duration_seconds": measured_duration_seconds,
+            "actual_cost": str(actual),
+        }
+        task.response_metadata = {
+            **dict(task.response_metadata or {}),
+            "measured_duration_seconds": measured_duration_seconds,
+            "actual_cost": str(actual),
+        }
 
     @staticmethod
     def _motion_intent(shot: StoryboardShot, visual_style: str = "") -> MotionIntent:
@@ -710,11 +823,17 @@ class AnimationPipeline:
 
     @staticmethod
     def _generation_parameters(
-        request: VideoProviderRequest, shot: StoryboardShot, prompt_hash: str
+        request: VideoProviderRequest,
+        shot: StoryboardShot,
+        prompt_hash: str,
+        decision: RoutingDecision,
     ) -> dict[str, object]:
         return {
             "provider": request.provider.value,
             "model": request.model.value,
+            "quality_mode": decision.quality_mode.value,
+            "routing_reason": decision.reason_code.value,
+            "hero_shot": decision.hero_shot,
             "remote_configuration_version": request.provider_configuration_version,
             "requested_duration": request.requested_duration_seconds,
             "dimensions": [request.width, request.height],

@@ -4,7 +4,11 @@ from uuid import uuid4
 import httpx
 import pytest
 
-from services.analysis.openai_adapter import OpenAIAnalysisConfig, OpenAIEpisodeAnalysisProvider
+from services.analysis.openai_adapter import (
+    OpenAIAnalysisConfig,
+    OpenAIEpisodeAnalysisProvider,
+    _prompt,
+)
 from services.analysis.provider import GenerationContext
 from vidgen.contracts.episode_analysis import (
     SceneAnalysisRequest,
@@ -87,3 +91,42 @@ async def test_openai_scene_request_uses_strict_schema_and_parses_raw_response()
     assert "Validation errors to repair" in body["input"][1]["content"]
     assert result.output == output and result.metadata.provider_request_id == "resp_fake"
     await client.aclose()
+
+
+def _prompt_text(filename: str) -> str:
+    """The prompt with its hard line wraps collapsed so phrases match verbatim."""
+    return " ".join(_prompt(filename, "episode-analysis-v1").split())
+
+
+@pytest.mark.parametrize("filename", ["episode_scene_v1.txt", "episode_reduce_v1.txt"])
+def test_analysis_prompts_demand_random_globally_unique_uuids(filename: str) -> None:
+    """Regression guard for DUPLICATE_ID at reduce time.
+
+    Left to its own devices the model emitted sequential, patterned UUIDs, and
+    every chunk of a multi-chunk run produced the same sequence, so the reduce
+    step failed validation. The prompts must keep demanding random v4 values
+    that are unique across the whole output.
+    """
+    prompt = _prompt_text(filename)
+    assert "UUID v4" in prompt
+    assert "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx" in prompt
+    assert "Never use sequential, patterned, or repeated" in prompt
+    assert "no two entities of any type may share a UUID" in prompt
+
+
+@pytest.mark.parametrize("filename", ["episode_scene_v1.txt", "episode_reduce_v1.txt"])
+def test_analysis_prompts_forbid_aliases_that_repeat_the_canonical_name(filename: str) -> None:
+    """Regression guard for UNSUPPORTED_ALIAS_MERGE."""
+    prompt = _prompt_text(filename)
+    assert "never add an alias that duplicates the canonical_name" in prompt
+    assert "alias_evidence" in prompt
+
+
+def test_the_reduce_prompt_requires_uniqueness_across_input_chunks() -> None:
+    prompt = _prompt_text("episode_reduce_v1.txt")
+    assert "even if they come from different input chunks" in prompt
+
+
+def test_an_unknown_prompt_version_is_refused() -> None:
+    with pytest.raises(ValueError, match="unsupported prompt version"):
+        _prompt("episode_scene_v1.txt", "episode-analysis-v2")

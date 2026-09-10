@@ -24,7 +24,7 @@ import type {
 } from "@vidgen/contracts";
 import { PIPELINE_STAGE_ORDER } from "@vidgen/contracts";
 
-import type { ProjectListItem } from "../api/projects";
+import type { EpisodeAnalysisProgress, ProjectListItem, ProjectStatus } from "../api/projects";
 
 export const PROJECT_ID = "11111111-1111-4111-8111-111111111111";
 export const SHOT_COUNT = 10;
@@ -64,6 +64,89 @@ export const projectDetail = {
   created_at: "2026-08-01T09:00:00Z",
   updated_at: "2026-08-02T10:30:00Z",
   voice_profile_id: uuid(9, 1),
+  generation_quality: "balanced",
+  shot_pacing: "normal",
+  premium_fallback_allowed: false,
+};
+
+/**
+ * The pre-workflow estimate the API computes from the pricing registry. The
+ * figures are `estimate_generation_costs(300, "normal")` verbatim, and
+ * `tests/test_generation_settings_api.py` pins the backend to them.
+ */
+export const generationEstimate = {
+  schema_version: "1.0",
+  estimate_version: "generation-estimate/1",
+  pricing_version: "runway-pricing-2026-09-09",
+  capability_registry_hash: "f".repeat(64),
+  currency: "USD",
+  target_duration_seconds: 300,
+  shot_pacing: "normal",
+  estimated_shot_count_low: 43,
+  estimated_shot_count_high: 75,
+  generated_seconds_low: 301,
+  generated_seconds_high: 301,
+  hero_share: "0.15",
+  retry_factor: "1.2",
+  modes: [
+    {
+      schema_version: "1.0",
+      generation_quality: "economy",
+      primary_model: "gen4_turbo",
+      hero_model: "gen4_turbo",
+      estimated_low: "15.05",
+      estimated_high: "18.06",
+      delta_from_economy_low: "0.00",
+      delta_from_economy_high: "0.00",
+      summary: "Cheapest. Every shot uses Gen-4 Turbo at 0.05 USD per generated second.",
+    },
+    {
+      schema_version: "1.0",
+      generation_quality: "balanced",
+      primary_model: "gen4_turbo",
+      hero_model: "gen4.5",
+      estimated_low: "18.21",
+      estimated_high: "21.85",
+      delta_from_economy_low: "3.16",
+      delta_from_economy_high: "3.79",
+      summary:
+        "Gen-4 Turbo normally; about 15% of shots (hero shots and quality repairs) use Gen-4.5.",
+    },
+    {
+      schema_version: "1.0",
+      generation_quality: "premium",
+      primary_model: "gen4.5",
+      hero_model: "gen4.5",
+      estimated_low: "36.12",
+      estimated_high: "43.34",
+      delta_from_economy_low: "21.07",
+      delta_from_economy_high: "25.28",
+      summary: "Every compatible shot uses Gen-4.5 at 0.12 USD per generated second.",
+    },
+  ],
+  notes: [
+    "Video generation only; analysis, script, narration, keyframe and QA spend is the same in every mode.",
+    "The low figure assumes no regenerated shots; the high figure allows bounded quality repairs.",
+    "Runway bills whole generated seconds, so every shot rounds up to the next second.",
+  ],
+};
+
+export const generationSettings = {
+  project_id: PROJECT_ID,
+  settings: {
+    schema_version: "1.0",
+    settings_version: "generation-settings/1",
+    generation_quality: "balanced",
+    shot_pacing: "normal",
+    premium_fallback_allowed: false,
+    scene_detection_threshold: null,
+    origin: "explicit",
+  },
+  generation_policy_identity:
+    "gq=balanced;sp=normal;pf=0;rp=runway-routing-v2;qr=quality-repair/1;cp=runway-gen4-turbo@0123456789abcdef;rg=0123456789abcdef",
+  workflow_started: true,
+  estimate: generationEstimate,
+  effective_scene_detection_threshold: 0.3,
 };
 
 /** The voices a fake-provider deployment offers, and the one selected. */
@@ -185,14 +268,31 @@ export const commands = {
   ],
 };
 
-export const projectStatus = {
+export const projectStatus: ProjectStatus = {
   project_id: PROJECT_ID,
   status: "review",
   source_video_id: uuid(1, 3),
   source_asset_id: uuid(2, 3),
   upload_status: "completed",
   error_code: null,
+  episode_analysis: null,
 };
+
+/** A scene-analysis run part-way through, as the status endpoint reports it. */
+export function episodeAnalysisProgress(
+  overrides: Partial<EpisodeAnalysisProgress> = {},
+): EpisodeAnalysisProgress {
+  return {
+    phase: "scene_analysis",
+    completed_scene_count: 17,
+    total_scene_count: 32,
+    percentage: 42.5,
+    message: "Analyzing scene 18 of 32",
+    error_code: null,
+    updated_at: "2026-08-01T09:05:00Z",
+    ...overrides,
+  };
+}
 
 const stages: StageTimelineEntry[] = PIPELINE_STAGE_ORDER.map((stage) => ({
   schema_version: "1.0",
@@ -473,6 +573,8 @@ export const costs: ProjectCostSummaryResponse = {
   byModel: { "fake-video": "1.000000" },
   byOperation: { video_generation: "1.000000" },
   byReason: { generation: "1.000000" },
+  byRoutingReason: { balanced_default_turbo: "1.000000" },
+  byQualityMode: { balanced: "1.000000" },
 };
 
 export const providerAttempts: ProviderAttemptListResponse = {

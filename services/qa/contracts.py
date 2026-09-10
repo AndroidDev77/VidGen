@@ -18,6 +18,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from vidgen.contracts.storyboard import HERO_IMPORTANCE_FLOOR as STORYBOARD_HERO_IMPORTANCE_FLOOR
 from vidgen.contracts.storyboard import StoryboardShot
 from vidgen.contracts.visual_qa import (
     VisualQAFailure,
@@ -41,7 +42,8 @@ from vidgen.db.models import Asset, Project
 from vidgen.db.storyboard_models import StoryboardRun, StoryboardShotRecord
 
 #: Hero shots are classified by the T13 importance provenance the Director emits.
-HERO_IMPORTANCE_FLOOR: Final = 0.8
+#: The floor is defined once, on the storyboard contract, and shared with routing.
+HERO_IMPORTANCE_FLOOR: Final = STORYBOARD_HERO_IMPORTANCE_FLOOR
 UTILITY_IMPORTANCE_CEILING: Final = 0.3
 SUPPORTED_KEYFRAME_MEDIA: Final = frozenset({"image/png", "image/jpeg", "image/webp"})
 SUPPORTED_VIDEO_MEDIA: Final = frozenset({"video/mp4"})

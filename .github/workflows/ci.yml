@@ -53,6 +53,10 @@ jobs:
         with:
           node-version: 24
       - run: pnpm install --no-frozen-lockfile
+      # The hosted runner image ships a google-chrome apt source that CI never
+      # installs from, and its index intermittently fails apt's hash check,
+      # which aborts the apt-get update inside `playwright install --with-deps`.
+      - run: sudo rm -f /etc/apt/sources.list.d/google-chrome*
       - run: pnpm --filter @vidgen/web exec playwright install --with-deps chromium
       - run: pnpm --filter @vidgen/web build
       # The MVP acceptance run uses a deterministic in-browser API with
@@ -90,7 +94,11 @@ jobs:
           version: "0.11.33"
           enable-cache: true
       - name: Install FFmpeg
-        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+        # Drop the runner's unused google-chrome apt source first: its index
+        # intermittently fails apt's hash check and aborts apt-get update.
+        run: |
+          sudo rm -f /etc/apt/sources.list.d/google-chrome*
+          sudo apt-get update && sudo apt-get install -y ffmpeg
       - run: uv sync --all-groups --all-extras --frozen
       - run: uv run ruff check src apps services packages tests scripts migrations infra workers
       - run: uv run mypy --strict src apps services packages scripts

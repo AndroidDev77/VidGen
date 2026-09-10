@@ -13,6 +13,7 @@ from vidgen.contracts.animation import (
     VideoProvider,
     VideoProviderRequest,
 )
+from vidgen.contracts.generation import GenerationQuality
 
 
 def intent():
@@ -59,8 +60,10 @@ def request():
 def test_prompt_and_routing_are_stable():
     item = intent()
     assert compile_motion_prompt(item) == compile_motion_prompt(item)
-    assert route_model(RoutingContext()) == RunwayModel.GEN4_TURBO
-    assert route_model(RoutingContext(True, True, True)) == RunwayModel.GEN4_5
+    assert route_model(RoutingContext()).selected_model == RunwayModel.GEN4_TURBO.value
+    hero = RoutingContext(quality_mode=GenerationQuality.BALANCED, hero_shot=True)
+    assert route_model(hero).selected_model == RunwayModel.GEN4_5.value
+    assert route_model(hero) == route_model(hero)
 
 
 @pytest.mark.asyncio

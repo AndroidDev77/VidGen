@@ -13,14 +13,19 @@ from apps.api.auth import Principal, get_current_user
 from apps.api.dependencies import get_blob_store, get_session, get_workflow_controller
 from apps.api.schemas.projects import (
     CreateProjectRequest,
+    EpisodeAnalysisProgressResponse,
+    GenerationEstimateRequest,
+    GenerationSettingsResponse,
     ProjectBudgetResponse,
     ProjectListItemResponse,
     ProjectResponse,
     ProjectStatusResponse,
+    SetGenerationSettingsRequest,
     SetProjectBudgetRequest,
 )
 from apps.api.schemas.uploads import InitializeUploadRequest, UploadResponse
 from apps.api.settings import APISettings, get_settings
+from services.analysis.progress import EpisodeAnalysisProgress, load_progress
 from services.costs.project_budget import (
     BudgetDeployment,
     BudgetError,
@@ -30,12 +35,21 @@ from services.costs.project_budget import (
     stored_amount,
     validate_caps,
 )
+from services.generation.estimate import estimate_generation_costs
+from services.generation.settings import (
+    effective_scene_detection_threshold,
+    generation_policy_identity,
+    project_generation_settings,
+    with_generation_settings,
+)
 from services.narration.voice_profiles import (
     NarrationDeployment,
     VoiceProfileError,
     current_selection,
     select_profile,
 )
+from services.storyboard.providers import load_capability_profile
+from vidgen.contracts.generation import GenerationCostEstimate
 from vidgen.contracts.review import ApiErrorField
 from vidgen.db.cost_models import ProjectBudget
 from vidgen.db.models import Asset, Project, SourceVideo, asset_dependencies
@@ -43,7 +57,7 @@ from vidgen.db.repositories import ProjectRepository
 from vidgen.db.upload_models import UploadSession
 from vidgen.db.workflow_models import ProjectWorkflowRun
 from vidgen.review.errors import ReviewError, validation_failed
-from vidgen.review.projections import project_summary
+from vidgen.review.projections import project_summary, utc
 from vidgen.review.versions import RowVersionService
 from vidgen.review.workflow_control import WorkflowController
 from vidgen.storage.asset_service import AssetService
@@ -81,6 +95,7 @@ def _budget_error(error: BudgetError) -> ReviewError:
 
 def _project_response(session: Session, project: Project) -> ProjectResponse:
     selected = current_selection(session, project)
+    generation = project_generation_settings(project)
     return ProjectResponse(
         id=project.id,
         name=project.name,
@@ -91,6 +106,23 @@ def _project_response(session: Session, project: Project) -> ProjectResponse:
         created_at=project.created_at,
         updated_at=project.updated_at,
         voice_profile_id=selected.voice_profile_id if selected else None,
+        generation_quality=generation.generation_quality,
+        shot_pacing=generation.shot_pacing,
+        premium_fallback_allowed=generation.premium_fallback_allowed,
+    )
+
+
+@router.post("/generation-estimate", response_model=GenerationCostEstimate)
+def generation_estimate(request: GenerationEstimateRequest) -> GenerationCostEstimate:
+    """Estimate video-generation spend per quality mode before a project exists.
+
+    Pure arithmetic over the verified pricing registry and the pacing preset:
+    no provider is called and nothing is persisted, so the setup screen can show
+    the economy, balanced and premium ranges as the owner moves the controls.
+    """
+    return estimate_generation_costs(
+        target_duration_seconds=request.target_duration_seconds,
+        shot_pacing=request.shot_pacing,
     )
 
 
@@ -125,7 +157,8 @@ def create_project(
         target_duration_seconds=request.target_duration_seconds,
         visual_style=request.visual_style,
         humor_intensity=request.humor_intensity,
-        settings={},
+        # Written explicitly so the project never depends on the legacy default.
+        settings=with_generation_settings({}, request.generation_settings()),
     )
     ProjectRepository(session).add(project)
     session.flush()
@@ -261,6 +294,79 @@ def set_budget(
     return _budget_response(budget)
 
 
+def _generation_settings_response(
+    session: Session, project: Project, settings: APISettings
+) -> GenerationSettingsResponse:
+    generation = project_generation_settings(project)
+    storyboard_profile = None
+    settings_block = (
+        project.settings.get("storyboard") if isinstance(project.settings, dict) else None
+    )
+    if isinstance(settings_block, dict) and isinstance(
+        settings_block.get("capability_profile_id"), str
+    ):
+        storyboard_profile = settings_block["capability_profile_id"]
+    profile = load_capability_profile(storyboard_profile)
+    started = (
+        session.scalar(
+            select(ProjectWorkflowRun.id).where(ProjectWorkflowRun.project_id == project.id)
+        )
+        is not None
+    )
+    return GenerationSettingsResponse(
+        project_id=project.id,
+        settings=generation,
+        generation_policy_identity=generation_policy_identity(
+            generation,
+            capability_profile_id=profile.capability_profile_id,
+            capability_hash=profile.capability_hash,
+        ),
+        workflow_started=started,
+        estimate=estimate_generation_costs(
+            target_duration_seconds=project.target_duration_seconds,
+            shot_pacing=generation.shot_pacing,
+        ),
+        effective_scene_detection_threshold=effective_scene_detection_threshold(
+            generation, settings.scene_detection_threshold
+        ),
+    )
+
+
+@router.get("/{project_id}/generation-settings", response_model=GenerationSettingsResponse)
+def get_generation_settings(
+    project_id: UUID,
+    session: SessionDependency,
+    principal: PrincipalDependency,
+    settings: SettingsDependency,
+) -> GenerationSettingsResponse:
+    """The project's resolved quality mode, pacing preset and cost estimate."""
+    return _generation_settings_response(
+        session, owned_project(session, project_id, principal), settings
+    )
+
+
+@router.put("/{project_id}/generation-settings", response_model=GenerationSettingsResponse)
+def set_generation_settings(
+    project_id: UUID,
+    request: SetGenerationSettingsRequest,
+    session: SessionDependency,
+    principal: PrincipalDependency,
+    settings: SettingsDependency,
+) -> GenerationSettingsResponse:
+    """Replace the project's generation settings.
+
+    The write is whole and explicit. A workflow that is already running keeps
+    the identity it started with; the new settings take effect on the next
+    generation run, which mints new shot identities rather than reusing outputs
+    planned or routed under the old ones.
+    """
+    project = owned_project(session, project_id, principal)
+    project.settings = with_generation_settings(project.settings, request.generation_settings())
+    session.flush()
+    session.commit()
+    return _generation_settings_response(session, project, settings)
+
+
 @router.get("/{project_id}/status", response_model=ProjectStatusResponse)
 def get_project_status(
     project_id: UUID, session: SessionDependency, principal: PrincipalDependency
@@ -276,6 +382,7 @@ def get_project_status(
         .where(UploadSession.project_id == project.id)
         .order_by(UploadSession.created_at.desc())
     )
+    progress = load_progress(session, project.id)
     return ProjectStatusResponse(
         project_id=project.id,
         status=project.status,
@@ -283,6 +390,22 @@ def get_project_status(
         source_asset_id=source.asset_id if source else None,
         upload_status=upload.status if upload else None,
         error_code=upload.error_code if upload else None,
+        episode_analysis=_analysis_progress_response(progress) if progress else None,
+    )
+
+
+def _analysis_progress_response(
+    progress: EpisodeAnalysisProgress,
+) -> EpisodeAnalysisProgressResponse:
+    return EpisodeAnalysisProgressResponse(
+        phase=progress.phase,
+        completed_scene_count=progress.completed_scene_count,
+        total_scene_count=progress.total_scene_count,
+        percentage=progress.percentage,
+        message=progress.message,
+        error_code=progress.error_code,
+        # SQLite hands back naive timestamps; the browser needs the zone.
+        updated_at=utc(progress.updated_at),
     )
 
 
