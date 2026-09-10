@@ -13,6 +13,7 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
 from decimal import Decimal
+from typing import NamedTuple
 from uuid import UUID
 
 from opentelemetry import trace
@@ -42,6 +43,26 @@ REDUCE_OPERATION = "episode_analysis.reduce"
 ESTIMATED_CHARACTERS_PER_TOKEN = 4
 #: Rough output envelope per operation, again estimate-only.
 ESTIMATED_OUTPUT_TOKENS = {SCENE_OPERATION: 1_500, REDUCE_OPERATION: 6_000}
+
+#: Fallback token price used when the pricing catalog carries no rate for the
+#: configured analysis model: $0.01 per 1,000 tokens. ``provider_price_rates``
+#: stays authoritative wherever it has a rate; this only stops an unpriced
+#: deployment from reporting every analysis call at zero. It is a blended
+#: stand-in, not a quote: a call priced from it is marked ``fallback`` so the
+#: number is never mistaken for one the catalog stands behind.
+FALLBACK_UNIT_SIZE = Decimal(1_000)
+FALLBACK_UNIT_PRICE = Decimal("0.01")
+
+
+class PricedAmount(NamedTuple):
+    """One priced quantity, and where its price came from."""
+
+    amount: Decimal
+    pricing_version_id: UUID | None
+    #: "catalog" when every unit was priced from ``provider_price_rates``,
+    #: "fallback" when any unit fell back to :data:`FALLBACK_UNIT_PRICE`.
+    source: str
+
 
 AnalysisRequest = SceneAnalysisRequest | EpisodeSynthesisRequest
 AnalysisResult = ProviderSceneAnalysisResult | ProviderEpisodeAnalysisResult
@@ -113,23 +134,24 @@ class InstrumentedEpisodeAnalysisProvider:
             .order_by(ProviderPriceRate.effective_start.desc())
         )
 
-    def _price(
-        self, operation: str, quantities: dict[str, Decimal | None]
-    ) -> tuple[Decimal, UUID | None]:
-        """Price token quantities, returning the amount and the pricing version used."""
+    def _price(self, operation: str, quantities: dict[str, Decimal | None]) -> PricedAmount:
+        """Price token quantities from the catalog, falling back to a flat rate."""
         total = Decimal("0")
         pricing_version_id: UUID | None = None
+        source = "catalog"
         for unit, quantity in quantities.items():
             if quantity is None:
                 continue
             rate = self._rate(operation, unit)
             if rate is None:
+                total += quantity / FALLBACK_UNIT_SIZE * FALLBACK_UNIT_PRICE
+                source = "fallback"
                 continue
             pricing_version_id = rate.pricing_version_id
             total += quantity / rate.unit_size * rate.unit_price
-        return total, pricing_version_id
+        return PricedAmount(total, pricing_version_id, source)
 
-    def _estimate(self, operation: str, request: AnalysisRequest) -> tuple[Decimal, UUID | None]:
+    def _estimate(self, operation: str, request: AnalysisRequest) -> PricedAmount:
         input_tokens = Decimal(
             max(1, len(request.model_dump_json()) // ESTIMATED_CHARACTERS_PER_TOKEN)
         )
@@ -182,7 +204,7 @@ class InstrumentedEpisodeAnalysisProvider:
         context: GenerationContext,
         invoke: Callable[[], Awaitable[AnalysisResult]],
     ) -> AnalysisResult:
-        estimated, pricing_version_id = self._estimate(operation, request)
+        estimate = self._estimate(operation, request)
         # One physical provider call, one identity. A retry after a provider
         # error reuses the request's key, so the attempt number is what keeps
         # its attempt row, reservation and ledger entry distinct from the call
@@ -200,14 +222,14 @@ class InstrumentedEpisodeAnalysisProvider:
             idempotency_key=identity,
             related_entity_id=getattr(request, "scene_id", None),
             attempt_number=context.attempt_number,
-            estimated_cost=estimated,
-            pricing_version_id=pricing_version_id,
+            estimated_cost=estimate.amount,
+            pricing_version_id=estimate.pricing_version_id,
         ) as attempt:
             reservation_id = self._reserve(
                 project_id=request.project_id,
                 provider_attempt_id=attempt.row.id,
                 identity=identity,
-                estimated=estimated,
+                estimated=estimate.amount,
             )
             try:
                 result = await invoke()
@@ -238,7 +260,7 @@ class InstrumentedEpisodeAnalysisProvider:
                 None if metadata.output_tokens is None else Decimal(metadata.output_tokens)
             ),
         }
-        actual, pricing_version_id = self._price(operation, quantities)
+        priced = self._price(operation, quantities)
         for unit, quantity in quantities.items():
             direction = "input" if unit == "INPUT_TOKEN" else "output"
             if quantity is not None:
@@ -254,10 +276,11 @@ class InstrumentedEpisodeAnalysisProvider:
             ],
             metadata={
                 **metadata.redacted_response_metadata,
-                # An unpriced call still lands in the ledger, at zero, and says
-                # so: the tokens are real, and only the catalog rate is missing.
-                "pricing_status": "priced" if pricing_version_id is not None else "unpriced",
+                # A call priced off the fallback rather than a catalog rate says
+                # so, so an amount that came from a default is never mistaken for
+                # one the pricing catalog stands behind.
+                "pricing_status": priced.source,
             },
-            actual_cost=actual,
+            actual_cost=priced.amount,
         )
-        return actual
+        return priced.amount

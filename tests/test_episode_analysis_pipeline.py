@@ -424,3 +424,43 @@ async def test_a_retry_after_a_provider_error_commits_the_successful_call(tmp_pa
     # Two scenes plus the reduce retry are billed; the failed first reduce is not.
     assert budget.committed_amount == Decimal("0.045000")
     assert budget.reserved_amount == Decimal("0")
+
+
+@pytest.mark.asyncio
+async def test_an_uncatalogued_model_is_billed_at_the_fallback_rate(tmp_path: Path) -> None:
+    session, blobs, project, evidence = _database(tmp_path)
+    # A budget, but no pricing catalog at all: the deployment's analysis model
+    # has no rate, which is the state every real deployment starts in.
+    session.add(
+        ProjectBudget(
+            project_id=project.id,
+            warning_cap=Decimal("5"),
+            hard_cap=Decimal("10"),
+            currency="USD",
+            policy_version="v1",
+        )
+    )
+    session.commit()
+    await EpisodeAnalysisPipeline(session, blobs, _MeteredProvider()).process(
+        project_id=project.id, evidence_package_id=evidence.id, idempotency_key="uncatalogued"
+    )
+    entries = list(session.scalars(select(CostLedgerEntry)))
+    # 1500 tokens a call at the $0.01 / 1000-token fallback is $0.015.
+    assert [entry.actual_amount for entry in entries] == [Decimal("0.015000")] * 3
+    assert all(entry.pricing_version_id is None for entry in entries)
+    attempts = list(session.scalars(select(ProviderAttempt)))
+    assert all(row.redacted_metadata["pricing_status"] == "fallback" for row in attempts)
+
+
+@pytest.mark.asyncio
+async def test_a_catalogued_model_never_uses_the_fallback(tmp_path: Path) -> None:
+    session, blobs, project, evidence = _database(tmp_path)
+    _price_episode_analysis(session, project.id)
+    await EpisodeAnalysisPipeline(session, blobs, _MeteredProvider()).process(
+        project_id=project.id, evidence_package_id=evidence.id, idempotency_key="catalogued"
+    )
+    attempts = list(session.scalars(select(ProviderAttempt)))
+    assert attempts and all(
+        row.redacted_metadata["pricing_status"] == "catalog" for row in attempts
+    )
+    assert all(row.pricing_version_id is not None for row in attempts)

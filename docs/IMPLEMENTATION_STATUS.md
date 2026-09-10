@@ -231,9 +231,11 @@ Each call records a T23 provider attempt under the operations `episode_analysis.
 `episode_analysis.reduce`, reserves against the project budget, records the token usage the
 provider reports, and reconciles into the cost ledger the project dashboard reads. A budget denial
 is terminal rather than retried, and a failed call releases its reservation instead of holding the
-project's budget. Reconciled amounts come from `provider_price_rates`: with no catalog rate for the
-configured analysis model the tokens are still recorded, the ledger entry is zero, and the attempt
-is marked `pricing_status: unpriced`.
+project's budget. Reconciled amounts come from `provider_price_rates` where the catalog has a rate
+for the configured analysis model. Where it does not - which is every deployment today, since
+nothing seeds that table - the call is billed at a blended fallback of $0.01 per 1,000 tokens and
+the attempt is marked `pricing_status: fallback`, so a defaulted amount is never mistaken for one
+the catalog stands behind. Seeding real dated rates makes the fallback inert.
 
 ## T11 compression and comedy script pipeline
 
