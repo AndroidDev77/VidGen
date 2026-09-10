@@ -49,11 +49,13 @@ export interface ProjectDetail {
   premium_fallback_allowed: boolean;
 }
 
-/** The owner's choice of Runway model tier and shot pacing. */
+/** The owner's choice of Runway model tier, shot pacing and scene sensitivity. */
 export interface GenerationSettingsInput {
   generation_quality: GenerationQuality;
   shot_pacing: ShotPacing;
   premium_fallback_allowed: boolean;
+  /** Scene-cut sensitivity for media processing (0.10-0.90, exclusive of 0 and 1). */
+  scene_detection_threshold: number;
 }
 
 export interface GenerationSettingsResponse {
@@ -62,6 +64,8 @@ export interface GenerationSettingsResponse {
   generation_policy_identity: string;
   workflow_started: boolean;
   estimate: GenerationCostEstimate;
+  /** The scene-cut sensitivity actually in effect: the override, or the deployment default. */
+  effective_scene_detection_threshold: number;
 }
 
 export interface GenerationEstimateInput {
@@ -124,6 +128,8 @@ export interface CreateProjectInput {
   generation_quality: GenerationQuality;
   shot_pacing: ShotPacing;
   premium_fallback_allowed: boolean;
+  /** Scene-cut sensitivity for media processing (0.10-0.90, exclusive of 0 and 1). */
+  scene_detection_threshold: number;
 }
 
 export function listProjects(

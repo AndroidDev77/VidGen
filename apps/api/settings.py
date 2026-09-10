@@ -5,7 +5,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Annotated
 
-from pydantic import field_validator
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 from vidgen.storage.factory import SUPPORTED_BACKENDS
@@ -33,6 +33,11 @@ class APISettings(BaseSettings):
     # with a JSONDecodeError. ``NoDecode`` hands the raw string to the
     # ``mode="before"`` validators below, which split it on commas.
     allowed_video_types: Annotated[tuple[str, ...], NoDecode] = ("video/mp4", "video/quicktime")
+    #: Scene-cut sensitivity for media processing. Lower values detect more,
+    #: shorter scenes (more expensive downstream analysis); higher values detect
+    #: fewer scenes and risk missing a real cut. A project may override this via
+    #: its generation settings; unset, every project uses this default.
+    scene_detection_threshold: float = Field(default=0.30, gt=0, lt=1)
     openai_api_key: str | None = None
     transcription_model: str = "whisper-1"
     diarization_model: str = "gpt-4o-transcribe-diarize"

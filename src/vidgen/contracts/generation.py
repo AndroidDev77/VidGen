@@ -62,6 +62,10 @@ class ProjectGenerationSettings(StrictContract):
     #: Premium mode refuses a shot Gen-4.5 cannot generate, or cannot afford,
     #: unless this is set. Balanced and economy never consult it.
     premium_fallback_allowed: bool = False
+    #: Per-project override of the scene-cut sensitivity used during media
+    #: processing. ``None`` means the project has no override and uses the
+    #: deployment's global ``scene_detection_threshold`` setting.
+    scene_detection_threshold: float | None = Field(default=None, gt=0, lt=1)
     origin: GenerationSettingsOrigin = GenerationSettingsOrigin.EXPLICIT
 
 

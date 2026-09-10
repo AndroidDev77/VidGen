@@ -139,12 +139,14 @@ export const generationSettings = {
     generation_quality: "balanced",
     shot_pacing: "normal",
     premium_fallback_allowed: false,
+    scene_detection_threshold: null,
     origin: "explicit",
   },
   generation_policy_identity:
     "gq=balanced;sp=normal;pf=0;rp=runway-routing-v2;qr=quality-repair/1;cp=runway-gen4-turbo@0123456789abcdef;rg=0123456789abcdef",
   workflow_started: true,
   estimate: generationEstimate,
+  effective_scene_detection_threshold: 0.3,
 };
 
 /** The voices a fake-provider deployment offers, and the one selected. */

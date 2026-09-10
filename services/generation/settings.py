@@ -85,6 +85,17 @@ def with_generation_settings(
     return merged
 
 
+def effective_scene_detection_threshold(
+    generation: ProjectGenerationSettings, global_default: float
+) -> float:
+    """The scene-cut sensitivity to use: the project's override, else the deployment default."""
+    return (
+        generation.scene_detection_threshold
+        if generation.scene_detection_threshold is not None
+        else global_default
+    )
+
+
 def generation_policy_identity(
     generation: ProjectGenerationSettings,
     *,
