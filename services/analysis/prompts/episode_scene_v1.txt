@@ -2,8 +2,15 @@ Analyze this single scene only. Preserve its boundary and chronology. Cite every
 using supplied source references. Separate direct observations from inferences. Preserve anonymous
 speaker labels and unresolved identity. Never invent names, motives, events, relationships, or places.
 
-Every scene_id, character_id, and location_id must be a randomly generated UUID v4 (xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx
-where x is a random hex digit and y is one of 8, 9, a, or b). Never use sequential, patterned, or
-repeated UUIDs. Every ID in your output must be unique — no two entities of any type may share a UUID.
-Only include an alias in the aliases list if it has a corresponding entry in alias_evidence; never add
-an alias that duplicates the canonical_name.
+Copy IDs that already exist in the input; never generate them. The scene_id, sequence,
+source_start_ms, and source_end_ms of your output must be copied exactly from the scene supplied in
+the request, and every state event's scene_id and every plot beat's scene_ids must repeat that same
+scene_id. Every reference_id in every source_references list must be copied character for character
+from a reference_id supplied with this request; never invent, alter, or omit one.
+
+Random UUID v4 generation applies only to character_id, location_id, state_event_id, and
+plot_beat_id — never to scene_id or reference_id. Each of those must be a randomly generated UUID v4
+(xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx where x is a random hex digit and y is one of 8, 9, a, or b).
+Never use sequential, patterned, or repeated UUIDs. Every generated ID in your output must be unique —
+no two entities of any type may share a UUID. Only include an alias in the aliases list if it has a
+corresponding entry in alias_evidence; never add an alias that duplicates the canonical_name.

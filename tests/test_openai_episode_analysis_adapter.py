@@ -122,6 +122,43 @@ def test_analysis_prompts_forbid_aliases_that_repeat_the_canonical_name(filename
     assert "alias_evidence" in prompt
 
 
+@pytest.mark.parametrize("filename", ["episode_scene_v1.txt", "episode_reduce_v1.txt"])
+def test_analysis_prompts_require_upstream_ids_to_be_copied(filename: str) -> None:
+    """Regression guard for SCENE_SET_MISMATCH and UNKNOWN_SOURCE_REFERENCE.
+
+    The model read the "randomly generated UUID v4" rule as covering scene_id
+    and reference_id too, and minted fresh ones instead of copying the values it
+    was handed, so validation rejected the output. The prompts must scope
+    generation to the IDs the step actually introduces.
+    """
+    prompt = _prompt_text(filename)
+    assert "Copy IDs that already exist in the input; never generate them." in prompt
+    assert "never to scene_id or reference_id" in prompt
+    assert "Random UUID v4 generation applies only to" in prompt
+
+
+def test_the_reduce_prompt_names_the_ids_it_may_generate() -> None:
+    prompt = _prompt_text("episode_reduce_v1.txt")
+    generated = prompt.split("Random UUID v4 generation applies only to", 1)[1]
+    generated = generated.split("Each of those", 1)[0]
+    for field in (
+        "character_id",
+        "location_id",
+        "state_event_id",
+        "relationship_id",
+        "plot_beat_id",
+        "ambiguity_id",
+    ):
+        assert field in generated
+    assert "scene_id," not in generated
+    assert "reference_id," not in generated
+    assert "must be copied character for character from the scene_id" in prompt
+    assert (
+        "Every reference_id in every source_references list must be copied character for "
+        "character from a reference_id that appears in the input scene results" in prompt
+    )
+
+
 def test_the_reduce_prompt_requires_uniqueness_across_input_chunks() -> None:
     prompt = _prompt_text("episode_reduce_v1.txt")
     assert "even if they come from different input chunks" in prompt

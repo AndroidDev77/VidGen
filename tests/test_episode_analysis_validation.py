@@ -55,6 +55,82 @@ def test_reference_timestamps_need_not_match_the_selected_evidence_exactly() -> 
     assert report.valid, report.errors
 
 
+def test_scene_and_reference_ids_copied_from_the_input_are_accepted() -> None:
+    """The reduce step must reuse upstream IDs rather than mint new ones.
+
+    Every scene_id and reference_id in the analysis belongs to the selected
+    evidence, so an output that copies them through is valid.
+    """
+    analysis = _golden().model_copy(deep=True)
+    scene = analysis.scenes[0]
+    reference = analysis.source_references[0]
+    report = validate_episode_analysis(
+        analysis,
+        valid_scene_ids={scene.scene_id},
+        valid_reference_ids={reference.reference_id},
+    )
+    assert report.valid, report.errors
+
+
+def test_an_invented_scene_id_is_reported_as_scene_set_mismatch() -> None:
+    """A freshly generated scene_id is the SCENE_SET_MISMATCH finding.
+
+    Whether that finding fails the run is the deployment's choice — the code
+    is tolerated by default — so the gate is asserted with nothing tolerated.
+    """
+    analysis = _golden().model_copy(deep=True)
+    analysis.scenes[0].scene_id = uuid4()
+    report = validate_episode_analysis(
+        analysis,
+        valid_scene_ids={_golden().scenes[0].scene_id},
+        valid_reference_ids={analysis.source_references[0].reference_id},
+        warn_only_codes=set(),
+    )
+    assert not report.valid
+    assert "SCENE_SET_MISMATCH" in {item.code for item in report.errors}
+
+
+def test_an_invented_scene_id_on_a_state_event_or_plot_beat_is_rejected() -> None:
+    analysis = _golden().model_copy(deep=True)
+    scene = analysis.scenes[0]
+    reference = analysis.source_references[0]
+    analysis.plot_beats = [
+        PlotBeat(
+            plot_beat_id=uuid4(),
+            sequence=1,
+            scene_ids=[uuid4()],
+            summary="Beat citing a scene that does not exist",
+            importance=1,
+            payoff_score=1,
+            mandatory=False,
+            source_references=[reference],
+        )
+    ]
+    report = validate_episode_analysis(
+        analysis,
+        valid_scene_ids={scene.scene_id},
+        valid_reference_ids={reference.reference_id},
+    )
+    assert "UNKNOWN_SCENE" in {item.code for item in report.errors}
+
+
+def test_an_invented_reference_id_is_rejected_everywhere_it_appears() -> None:
+    """A generated reference_id is the UNKNOWN_SOURCE_REFERENCE failure."""
+    analysis = _golden().model_copy(deep=True)
+    scene = analysis.scenes[0]
+    valid_reference_ids = {analysis.source_references[0].reference_id}
+    analysis.scenes[0].source_references[0].reference_id = uuid4()
+    report = validate_episode_analysis(
+        analysis,
+        valid_scene_ids={scene.scene_id},
+        valid_reference_ids=valid_reference_ids,
+    )
+    codes = {item.code for item in report.errors}
+    paths = {item.entity_path for item in report.errors}
+    assert "UNKNOWN_SOURCE_REFERENCE" in codes
+    assert "scenes.0.source_references.0.reference_id" in paths
+
+
 def test_a_warn_only_code_is_demoted_to_a_warning_and_the_report_stays_valid() -> None:
     """A tolerated code is reported, not failed.
 

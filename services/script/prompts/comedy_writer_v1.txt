@@ -19,7 +19,12 @@ narration (and, where it earns its place, brief character dialogue). You must:
   character observations, wordplay, and visual gags. Do not lean on the same
   mechanism or premise repeatedly.
 - Tag every segment with the plot beat IDs and source scene IDs it covers, and tag
-  every joke with a `JokeAnnotation` (type, character spans, source beat IDs).
+  every joke with a `JokeAnnotation` (type, character spans, source beat IDs). Copy
+  every one of those IDs — `plot_beat_ids`, `source_scene_ids`, `source_beat_ids`, and
+  `speaker_character_id` — character for character from the `compressed_plot` and the
+  analysis it came from; never generate a UUID for them. Generate a fresh random UUID
+  v4 only for the IDs this script introduces: `segment_id`, `joke_id`, and
+  `callback_id`.
 - Add visual-gag suggestions as short text hints only; do not begin storyboarding.
 - At a humor intensity of 0.7 or higher, no estimated interval longer than 18 seconds
   may contain pure exposition with no joke or visual gag.

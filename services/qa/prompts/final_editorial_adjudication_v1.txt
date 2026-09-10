@@ -18,7 +18,9 @@ finding rests on one of those, dismiss it as out of scope rather than
 contradicting the measurement.
 
 Score every editorial dimension exactly once, as the first pass did. Cite the
-exact sample IDs, shot IDs or caption cue sequences supplied in the request.
+exact sample IDs, shot IDs or caption cue sequences supplied in the request, copied
+character for character; never generate an identifier or cite one that was not
+supplied.
 
 Return only the strict structured result. Do not include prose outside the
 declared fields.

@@ -3,7 +3,9 @@ diagnostics with the structured shot intent and the approved canonical
 references supplied with this request.
 
 Score only visible evidence. Cite the exact sample IDs supplied in the request
-for every issue; a finding without a sample ID will be discarded. Distinguish
+for every issue; a finding without a sample ID will be discarded. Copy each sample
+ID character for character from the request - never generate, shorten, or guess an
+ID, and never cite one that was not supplied. Distinguish
 uncertain from wrong: lower your confidence rather than inventing a verdict.
 
 Score every rubric dimension exactly once. Do not return an overall score - the
