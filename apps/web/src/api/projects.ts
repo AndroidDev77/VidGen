@@ -69,6 +69,32 @@ export interface GenerationEstimateInput {
   shot_pacing: ShotPacing;
 }
 
+/** The phases an episode-analysis run moves through, in order. */
+export type EpisodeAnalysisPhase =
+  | "queued"
+  | "scene_analysis"
+  | "building_model"
+  | "validating"
+  | "completed"
+  | "failed";
+
+/**
+ * Where the project's episode analysis is (`EpisodeAnalysisProgressResponse`).
+ *
+ * The backend derives this from the durable scene checkpoints, so the figures
+ * survive a worker restart and never run ahead of what has been persisted.
+ */
+export interface EpisodeAnalysisProgress {
+  phase: EpisodeAnalysisPhase;
+  completed_scene_count: number;
+  total_scene_count: number;
+  /** 0 to 100. */
+  percentage: number;
+  message: string;
+  error_code: string | null;
+  updated_at: string | null;
+}
+
 export interface ProjectStatus {
   project_id: string;
   status: string;
@@ -76,6 +102,8 @@ export interface ProjectStatus {
   source_asset_id: string | null;
   upload_status: string | null;
   error_code: string | null;
+  /** `null` until the workflow has opened an episode-analysis run. */
+  episode_analysis: EpisodeAnalysisProgress | null;
 }
 
 export interface CreateProjectInput {
