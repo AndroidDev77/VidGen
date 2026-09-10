@@ -13,6 +13,22 @@ Version = Literal["1.0"]
 Confidence = float
 
 
+#: Deterministic validation codes a deployment or project may choose to treat
+#: as warnings instead of hard failures. A code outside this set is always an
+#: error: it names output the downstream stages cannot consume at all.
+WARN_ONLY_ELIGIBLE_VALIDATION_CODES: tuple[str, ...] = (
+    "SCENE_SET_MISMATCH",
+    "UNSUPPORTED_ALIAS_MERGE",
+    "DUPLICATE_ID",
+    "UNKNOWN_SOURCE_REFERENCE",
+    "INVALID_CHRONOLOGY",
+)
+#: SCENE_SET_MISMATCH by default: a reduce model that renames a scene ID it was
+#: told to copy describes its own output badly, which is worth surfacing but is
+#: not worth discarding an otherwise sound analysis and paying to regenerate it.
+DEFAULT_WARN_ONLY_VALIDATION_CODES: tuple[str, ...] = ("SCENE_SET_MISMATCH",)
+
+
 class StructuredNote(StrictContract):
     code: str = Field(min_length=1)
     message: str = Field(min_length=1)

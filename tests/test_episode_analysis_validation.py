@@ -72,16 +72,21 @@ def test_scene_and_reference_ids_copied_from_the_input_are_accepted() -> None:
     assert report.valid, report.errors
 
 
-def test_an_invented_scene_id_is_rejected() -> None:
-    """A freshly generated scene_id is the SCENE_SET_MISMATCH failure."""
+def test_an_invented_scene_id_is_reported_as_scene_set_mismatch() -> None:
+    """A freshly generated scene_id is the SCENE_SET_MISMATCH finding.
+
+    Whether that finding fails the run is the deployment's choice — the code
+    is tolerated by default — so the gate is asserted with nothing tolerated.
+    """
     analysis = _golden().model_copy(deep=True)
-    invented = uuid4()
-    analysis.scenes[0].scene_id = invented
+    analysis.scenes[0].scene_id = uuid4()
     report = validate_episode_analysis(
         analysis,
         valid_scene_ids={_golden().scenes[0].scene_id},
         valid_reference_ids={analysis.source_references[0].reference_id},
+        warn_only_codes=set(),
     )
+    assert not report.valid
     assert "SCENE_SET_MISMATCH" in {item.code for item in report.errors}
 
 
@@ -124,6 +129,54 @@ def test_an_invented_reference_id_is_rejected_everywhere_it_appears() -> None:
     paths = {item.entity_path for item in report.errors}
     assert "UNKNOWN_SOURCE_REFERENCE" in codes
     assert "scenes.0.source_references.0.reference_id" in paths
+
+
+def test_a_warn_only_code_is_demoted_to_a_warning_and_the_report_stays_valid() -> None:
+    """A tolerated code is reported, not failed.
+
+    A reduce model that renames a scene ID it was told to copy produces a
+    SCENE_SET_MISMATCH. With the code tolerated the finding stays visible in
+    the report as a warning instead of failing the run and paying to generate
+    the analysis again.
+    """
+    analysis = _golden().model_copy(deep=True)
+    scene = analysis.scenes[0]
+    report = validate_episode_analysis(
+        analysis,
+        valid_scene_ids={uuid4()},
+        valid_reference_ids={scene.scene_id},
+        warn_only_codes={"SCENE_SET_MISMATCH"},
+    )
+    assert report.valid, report.errors
+    assert "SCENE_SET_MISMATCH" not in {item.code for item in report.errors}
+    assert "SCENE_SET_MISMATCH" in {item.code for item in report.warnings}
+
+
+def test_a_code_outside_warn_only_codes_still_fails_validation() -> None:
+    analysis = _golden().model_copy(deep=True)
+    scene = analysis.scenes[0]
+    report = validate_episode_analysis(
+        analysis,
+        valid_scene_ids={uuid4()},
+        valid_reference_ids={scene.scene_id},
+        warn_only_codes={"UNSUPPORTED_ALIAS_MERGE"},
+    )
+    assert not report.valid
+    assert "SCENE_SET_MISMATCH" in {item.code for item in report.errors}
+
+
+def test_an_empty_warn_only_set_tolerates_nothing() -> None:
+    """``None`` means the default; an empty set explicitly means "tolerate nothing"."""
+    analysis = _golden().model_copy(deep=True)
+    scene = analysis.scenes[0]
+    report = validate_episode_analysis(
+        analysis,
+        valid_scene_ids={uuid4()},
+        valid_reference_ids={scene.scene_id},
+        warn_only_codes=set(),
+    )
+    assert not report.valid
+    assert "SCENE_SET_MISMATCH" in {item.code for item in report.errors}
 
 
 def test_unknown_character_and_overlapping_chronology_are_rejected() -> None:

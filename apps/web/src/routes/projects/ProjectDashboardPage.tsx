@@ -15,16 +15,18 @@ import {
   PlayRegular,
 } from "@fluentui/react-icons";
 import type { JSX } from "react";
+import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
+import type { PipelineStage } from "@vidgen/contracts";
 
 import { newIdempotencyKey } from "../../api/client";
 import { listFailures, listProviderAttempts } from "../../api/costs";
 import { deleteProject, getCosts, getProjectStatus } from "../../api/projects";
 import { queryKeys } from "../../api/queryKeys";
 import { getProjectVisualQa } from "../../api/visualQa";
-import { continueWorkflow } from "../../api/commands";
 import { cancelWorkflow, startWorkflow } from "../../api/workflows";
 import { useApiClient } from "../../app/apiContext";
+import { useAppToast } from "../../app/toast";
 import { CommandsPanel } from "../../components/CommandsPanel";
 import { CostSummary } from "../../components/CostSummary";
 import { GenerationSettingsCard } from "../../components/GenerationSettingsCard";
@@ -36,6 +38,7 @@ import { SectionCard, StatTile, StatTiles } from "../../components/Surface";
 import { TechnicalDetails } from "../../components/TechnicalDetails";
 import { ErrorState, LoadingState } from "../../components/states";
 import { formatDurationSeconds, formatMoney, formatStage } from "../../state/format";
+import { retryStage, retryableStages } from "../../state/retryStage";
 import { stageProgressPollInterval } from "../../state/stageProgress";
 import { useProjectContext } from "./useProjectContext";
 
@@ -114,6 +117,7 @@ export function ProjectDashboardPage(): JSX.Element {
   const client = useApiClient();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const toast = useAppToast();
   const { projectId, project, workflow, connectionLabel } = useProjectContext();
 
   const status = useQuery({
@@ -165,12 +169,32 @@ export function ProjectDashboardPage(): JSX.Element {
     },
     onError: () => {},
   });
+  // The stage a retry is running for, so every Retry button on the page shows
+  // the same in-flight state rather than each tracking its own.
+  const [retryingStage, setRetryingStage] = useState<PipelineStage | null>(null);
   const retry = useMutation({
-    mutationFn: () =>
-      continueWorkflow(projectId, { entry_stage: "shot_generation", reason: "operator_request" }, undefined, client),
-    onSuccess: () => {
+    mutationFn: (stage: PipelineStage) =>
+      retryStage({ projectId, stage, workflow: workflow.data, client }),
+    onMutate: (stage: PipelineStage) => {
+      setRetryingStage(stage);
+    },
+    onSuccess: (result) => {
+      toast.success(
+        `Retrying ${formatStage(result.entryStage)}`,
+        result.cancelled
+          ? "The running workflow was cancelled and a new run was queued."
+          : "A new run was queued from that stage.",
+      );
       void queryClient.invalidateQueries({ queryKey: queryKeys.workflow(projectId) });
       void queryClient.invalidateQueries({ queryKey: queryKeys.providerAttempts(projectId) });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.failures(projectId) });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.commands(projectId) });
+    },
+    onError: (error: Error) => {
+      toast.error("The retry could not be started", error.message);
+    },
+    onSettled: () => {
+      setRetryingStage(null);
     },
   });
   const removeErrorMessage =
@@ -190,6 +214,10 @@ export function ProjectDashboardPage(): JSX.Element {
 
   // Every projection is read defensively: a dashboard must not be taken down by
   // one unexpected response shape from a single panel's query.
+  // The panel-level Retry re-enters the earliest stage that stopped: a later
+  // one cannot run until that stage produced its output.
+  const stalledStage = retryableStages(workflowData)[0];
+
   const visualQaRuns = visualQa.data?.items ?? [];
   const visualQaSummary = {
     total: visualQaRuns.length,
@@ -331,7 +359,11 @@ export function ProjectDashboardPage(): JSX.Element {
             <LoadingState label="Loading workflow status" rows={2} />
           </SectionCard>
         ) : (
-          <StageTimeline workflow={workflowData} />
+          <StageTimeline
+            workflow={workflowData}
+            onRetryStage={(stage) => retry.mutate(stage)}
+            retryingStage={retryingStage}
+          />
         )}
 
         <SectionCard title="Visual QA" icon={<EyeRegular />}>
@@ -398,7 +430,12 @@ export function ProjectDashboardPage(): JSX.Element {
           <FailurePanel
             failures={failures.data.items}
             attempts={attempts.data.items}
-            onRetry={() => retry.mutate()}
+            {...(stalledStage === undefined
+              ? {}
+              : {
+                  onRetry: () => retry.mutate(stalledStage.stage),
+                  retryStageLabel: formatStage(stalledStage.stage),
+                })}
             isRetrying={retry.isPending}
           />
         )}

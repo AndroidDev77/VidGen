@@ -15,6 +15,10 @@ from services.analysis.fake_provider import FakeEpisodeAnalysisProvider
 from services.analysis.openai_adapter import OpenAIAnalysisConfig, OpenAIEpisodeAnalysisProvider
 from services.analysis.pipeline import EpisodeAnalysisPipeline
 from services.analysis.provider import EpisodeAnalysisProvider
+from services.generation.settings import (
+    effective_warn_only_validation_codes,
+    project_generation_settings,
+)
 from vidgen.db.episode_analysis_models import EpisodeAnalysisRecord
 from vidgen.db.models import Project
 from vidgen.db.session import build_engine
@@ -48,18 +52,23 @@ async def main() -> None:
             provider = OpenAIEpisodeAnalysisProvider(
                 OpenAIAnalysisConfig(api_key=key, model=settings.analysis_model)
             )
+        project = session.get(Project, args.project_id)
+        if project is None:
+            parser.error("project does not exist")
         result = await EpisodeAnalysisPipeline(
             session,
             FilesystemBlobStore(settings.blob_root, settings.signing_secret.encode()),
             provider,
+            warn_only_codes=effective_warn_only_validation_codes(
+                project_generation_settings(project), settings.warn_only_validation_codes
+            ),
         ).process(
             project_id=args.project_id,
             evidence_package_id=evidence.id,
             idempotency_key=args.idempotency_key or f"episode-analysis:{uuid4()}",
         )
         record = session.get(EpisodeAnalysisRecord, result.episode_analysis_id)
-        project = session.get(Project, args.project_id)
-        if record is None or project is None:
+        if record is None:
             raise RuntimeError("analysis persistence failed")
         print(
             f"analysis_run_id={result.analysis_run_id} "

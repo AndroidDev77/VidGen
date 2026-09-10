@@ -23,7 +23,7 @@ projects default to ``balanced``. Both mappings are deterministic, recorded in
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from typing import Any
 
 from services.animation.providers import capability_registry_hash
@@ -92,6 +92,17 @@ def effective_scene_detection_threshold(
     return (
         generation.scene_detection_threshold
         if generation.scene_detection_threshold is not None
+        else global_default
+    )
+
+
+def effective_warn_only_validation_codes(
+    generation: ProjectGenerationSettings, global_default: Sequence[str]
+) -> frozenset[str]:
+    """The episode-analysis codes to demote to warnings for this project."""
+    return frozenset(
+        generation.warn_only_validation_codes
+        if generation.warn_only_validation_codes is not None
         else global_default
     )
 

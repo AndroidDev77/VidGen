@@ -3,6 +3,7 @@ import {
   Body1,
   Button,
   Caption1,
+  Spinner,
   Table,
   TableBody,
   TableCell,
@@ -45,13 +46,25 @@ const useStyles = makeStyles({
 export interface FailurePanelProps {
   readonly failures: readonly PipelineFailureListItem[];
   readonly attempts: readonly ProviderAttemptListItem[];
+  /**
+   * Re-enter the pipeline at the stalled stage. The dashboard passes this only
+   * when a stage is actually in a state a retry can re-enter, so the panel
+   * never offers a button that would be rejected.
+   */
   readonly onRetry?: () => void;
   readonly isRetrying?: boolean;
+  /** The stage the retry would re-enter, named on the button. */
+  readonly retryStageLabel?: string;
 }
 
-export function FailurePanel({ failures, attempts, onRetry, isRetrying }: FailurePanelProps): JSX.Element {
+export function FailurePanel({
+  failures,
+  attempts,
+  onRetry,
+  isRetrying,
+  retryStageLabel,
+}: FailurePanelProps): JSX.Element {
   const styles = useStyles();
-  const hasFailedAttempts = attempts.some((a) => a.status === "FAILED" && a.errorMessage);
   return (
     <SectionCard
       title="Failures and provider attempts"
@@ -62,15 +75,20 @@ export function FailurePanel({ failures, attempts, onRetry, isRetrying }: Failur
           : `${failures.length} recorded failure${failures.length === 1 ? "" : "s"}.`
       }
     >
-      {onRetry && hasFailedAttempts && (
+      {onRetry && (
         <div className={styles.retryRow}>
           <Button
             appearance="primary"
-            icon={<ArrowCounterclockwiseRegular />}
+            icon={isRetrying ? <Spinner size="tiny" /> : <ArrowCounterclockwiseRegular />}
             disabled={isRetrying}
             onClick={onRetry}
+            data-testid="failure-panel-retry"
           >
-            {isRetrying ? "Retrying…" : "Retry"}
+            {isRetrying
+              ? "Retrying…"
+              : retryStageLabel === undefined
+                ? "Retry"
+                : `Retry ${retryStageLabel}`}
           </Button>
         </div>
       )}

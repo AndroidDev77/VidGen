@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+from collections.abc import Iterable
 from typing import Never
 from uuid import UUID
 
@@ -16,6 +17,7 @@ from services.analysis.instrumentation import InstrumentedEpisodeAnalysisProvide
 from services.analysis.provider import EpisodeAnalysisProvider, GenerationContext
 from services.analysis.validator import validate_episode_analysis, validate_scene_analysis
 from vidgen.contracts.episode_analysis import (
+    DEFAULT_WARN_ONLY_VALIDATION_CODES,
     AnalysisValidationReport,
     EpisodeAnalysisResult,
     EpisodeSynthesisRequest,
@@ -68,6 +70,7 @@ class EpisodeAnalysisPipeline:
         concurrency: int = 4,
         max_attempts: int = 2,
         metrics: Metrics | None = None,
+        warn_only_codes: Iterable[str] | None = None,
     ) -> None:
         self.session, self.blob_store = session, blob_store
         # Every scene call and the global reduce call are billable, so the raw
@@ -77,6 +80,12 @@ class EpisodeAnalysisPipeline:
         self.concurrency, self.max_attempts = concurrency, max_attempts
         self.repository = EpisodeAnalysisRepository(session)
         self.configuration_version = getattr(provider, "configuration_version", CONFIG_VERSION)
+        # Which deterministic findings are reported rather than failed. The
+        # caller resolves the project's override against the deployment
+        # default; unset, the deployment-wide default applies.
+        self.warn_only_codes = frozenset(
+            DEFAULT_WARN_ONLY_VALIDATION_CODES if warn_only_codes is None else warn_only_codes
+        )
 
     async def process(
         self, *, project_id: UUID, evidence_package_id: UUID, idempotency_key: str
@@ -345,6 +354,7 @@ class EpisodeAnalysisPipeline:
                 required_anonymous_labels={
                     label for scene in scenes for label in scene.anonymous_speaker_references
                 },
+                warn_only_codes=self.warn_only_codes,
             )
             if not report.valid:
                 # The call itself succeeded (and was billed) but failed
