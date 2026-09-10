@@ -30,8 +30,9 @@ from vidgen.contracts.episode_analysis import (
     ProviderSceneAnalysisResult,
     SceneAnalysisRequest,
 )
+from vidgen.contracts.telemetry import FailureClass
 from vidgen.costs import openai_rates
-from vidgen.db.cost_models import CostReservation, ProjectBudget, ProviderPriceRate
+from vidgen.db.cost_models import CostReservation, ProjectBudget, ProviderAttempt, ProviderPriceRate
 from vidgen.db.cost_repository import BudgetExceededError, CostRepository
 from vidgen.telemetry.metrics import Metrics
 from vidgen.telemetry.provider import ProviderAttemptContext, instrument_provider_attempt
@@ -113,6 +114,42 @@ class InstrumentedEpisodeAnalysisProvider:
         )
         assert isinstance(result, ProviderEpisodeAnalysisResult)
         return result
+
+    def mark_attempt_invalid(
+        self,
+        request: AnalysisRequest,
+        context: GenerationContext,
+        *,
+        error_code: str,
+        retryable: bool,
+    ) -> None:
+        """Flag an already-recorded, already-billed attempt as failed.
+
+        The provider call itself succeeded — tokens were spent and reconciled
+        into the cost ledger by `_call` — but the caller's deterministic
+        validation rejected the result afterward. Nothing about billing
+        changes; this only corrects the attempt's status so the dashboard's
+        Provider Attempts panel shows a failure instead of a success.
+        """
+        operation = (
+            SCENE_OPERATION if isinstance(request, SceneAnalysisRequest) else REDUCE_OPERATION
+        )
+        identity = f"{request.idempotency_key}:attempt:{context.attempt_number}"
+        row = self.session.scalar(
+            select(ProviderAttempt).where(
+                ProviderAttempt.project_id == request.project_id,
+                ProviderAttempt.provider == self.provider,
+                ProviderAttempt.operation == operation,
+                ProviderAttempt.idempotency_key == identity,
+            )
+        )
+        if row is None:
+            return
+        row.status = "FAILED"
+        row.failure_class = str(FailureClass.CONTRACT_VALIDATION)
+        row.error_code = error_code
+        row.retryable = retryable
+        self.session.flush()
 
     def _rate(self, operation: str, usage_unit: str) -> ProviderPriceRate | None:
         return self.session.scalar(

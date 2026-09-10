@@ -537,3 +537,36 @@ async def test_a_catalogued_model_never_uses_the_fallback(tmp_path: Path) -> Non
         row.redacted_metadata["pricing_status"] == "catalog" for row in attempts
     )
     assert all(row.pricing_version_id is not None for row in attempts)
+
+
+# -- Provider Attempts / Failures panel visibility -----------------------------
+
+
+@pytest.mark.asyncio
+async def test_first_attempt_failure_is_recorded_before_retry_succeeds(tmp_path: Path) -> None:
+    """Regression coverage for the dashboard's Provider Attempts panel: a scene
+    that fails validation on attempt 1 and succeeds on attempt 2, within the
+    same run, must leave both attempts visible rather than only the final
+    checkpoint state."""
+    session, blobs, project, evidence = _database(tmp_path)
+
+    class FlakyFirstAttempt(FakeEpisodeAnalysisProvider):
+        async def analyze_scene(self, request, context):  # type: ignore[no-untyped-def]
+            result = await super().analyze_scene(request, context)
+            if request.sequence == 1 and context.attempt_number == 1:
+                result.output.source_end_ms += 1
+            return result
+
+    result = await EpisodeAnalysisPipeline(session, blobs, FlakyFirstAttempt()).process(
+        project_id=project.id,
+        evidence_package_id=evidence.id,
+        idempotency_key="flaky-first",
+    )
+    assert result.validation_report.valid
+
+    session.expire_all()
+    attempts = session.scalars(
+        select(ProviderAttempt).where(ProviderAttempt.operation == SCENE_OPERATION)
+    ).all()
+    assert any(a.status == "FAILED" and a.failure_class == "CONTRACT_VALIDATION" for a in attempts)
+    assert any(a.status == "SUCCEEDED" for a in attempts)

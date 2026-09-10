@@ -9,6 +9,7 @@ from vidgen.contracts.episode_analysis import (
     CanonicalScene,
     EpisodeAnalysis,
     EpisodeSynthesisRequest,
+    PlotBeat,
     ProviderEpisodeAnalysisResult,
     ProviderMetadata,
     ProviderSceneAnalysisResult,
@@ -82,12 +83,27 @@ class FakeEpisodeAnalysisProvider:
         self, request: EpisodeSynthesisRequest, context: GenerationContext
     ) -> ProviderEpisodeAnalysisResult:
         scenes = request.scene_results
+        n = len(scenes)
+        plot_beats = [
+            PlotBeat(
+                plot_beat_id=uuid5(FAKE_NAMESPACE, f"beat:{item.scene_id}:{request.input_hash}"),
+                sequence=item.sequence,
+                scene_ids=[item.scene_id],
+                summary=item.summary,
+                importance=round(0.5 + 0.5 * (i == 0 or i == n - 1), 1),
+                payoff_score=round(0.5 + 0.5 * (i == n - 1), 1),
+                mandatory=(i == 0 or i == n - 1),
+                source_references=item.source_references,
+            )
+            for i, item in enumerate(scenes)
+        ]
         output = EpisodeAnalysis(
             episode_id=uuid5(FAKE_NAMESPACE, f"episode:{request.input_hash}"),
             project_id=request.project_id,
             source_video_id=request.source_video_id,
             evidence_package_id=request.evidence_package_id,
             duration_ms=request.duration_ms,
+            logline=f"{scenes[0].summary} ... {scenes[-1].summary}" if scenes else "",
             scenes=[
                 CanonicalScene(
                     scene_id=item.scene_id,
@@ -101,6 +117,7 @@ class FakeEpisodeAnalysisProvider:
                 )
                 for item in scenes
             ],
+            plot_beats=plot_beats,
             source_references=[ref for item in scenes for ref in item.source_references],
             unresolved_ambiguities=[
                 UnresolvedAmbiguity(

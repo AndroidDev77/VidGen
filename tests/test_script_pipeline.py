@@ -17,6 +17,7 @@ from vidgen.contracts.episode_analysis import (
     SourceReference,
 )
 from vidgen.db.base import Base
+from vidgen.db.cost_models import PipelineFailureEvent, ProviderAttempt
 from vidgen.db.episode_analysis_models import EpisodeAnalysisRecord, EpisodeAnalysisRun
 from vidgen.db.models import Project
 from vidgen.db.script_models import Script, ScriptGenerationRun, ScriptSegment
@@ -365,6 +366,53 @@ async def test_revision_exhaustion_sets_script_review_required(tmp_path: Path) -
     # draft (v1) plus one revised candidate per evaluation (3 evaluations total)
     assert len(script_versions) == 4
     assert session.get(Project, project.id).status == "script_review_required"
+
+
+class _UnknownBeatDraftProvider(FakeScriptGenerationProvider):
+    """Always writes a draft that references a plot beat outside the plan.
+
+    Regression coverage for the dashboard's Failures/Provider Attempts
+    panels: exhausting the draft repair loop on a real (non-provider-outage)
+    validation error must still leave a FAILED ProviderAttempt per attempt
+    and a PipelineFailureEvent for the run.
+    """
+
+    async def write_script(self, request, context):  # type: ignore[override]
+        result = await super().write_script(request, context)
+        segments = list(result.output.segments)
+        segments[0] = segments[0].model_copy(
+            update={"plot_beat_ids": [*segments[0].plot_beat_ids, uuid4()]}
+        )
+        corrupted = result.output.model_copy(update={"segments": segments})
+        return result.model_copy(update={"output": corrupted})
+
+
+@pytest.mark.asyncio
+async def test_draft_validation_exhaustion_records_failures(tmp_path: Path) -> None:
+    session, blobs, project, _record = _database(tmp_path)
+    provider = _UnknownBeatDraftProvider()
+    with pytest.raises(RuntimeError, match="DRAFT_VALIDATION_FAILED"):
+        await ScriptGenerationPipeline(session, blobs, provider, max_repair_attempts=1).process(
+            project_id=project.id, idempotency_key="run-1"
+        )
+    session.expire_all()
+    run = session.scalars(select(ScriptGenerationRun)).one()
+    assert run.error_code == "DRAFT_VALIDATION_FAILED"
+    assert session.get(Project, project.id).status == "script_generation_failed"
+
+    attempts = session.scalars(
+        select(ProviderAttempt).where(ProviderAttempt.operation == "script.write_script")
+    ).all()
+    assert len(attempts) == 1
+    assert attempts[0].status == "FAILED"
+    assert attempts[0].failure_class == "CONTRACT_VALIDATION"
+    assert attempts[0].error_code == "UNKNOWN_PLOT_BEAT_REFERENCE"
+
+    failures = session.scalars(select(PipelineFailureEvent)).all()
+    assert len(failures) == 1
+    assert failures[0].stage == "script_generation"
+    assert failures[0].error_code == "UNKNOWN_PLOT_BEAT_REFERENCE"
+    assert failures[0].projected_status == "script_generation_failed"
 
 
 @pytest.mark.asyncio
