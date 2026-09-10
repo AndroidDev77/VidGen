@@ -126,6 +126,7 @@ export function NewProjectPage(): JSX.Element {
     shot_pacing: "normal",
     premium_fallback_allowed: false,
     scene_detection_threshold: 0.3,
+    warn_only_validation_codes: ["SCENE_SET_MISMATCH"],
   });
   const [nameError, setNameError] = useState<string | null>(null);
   // Tracked per field so an invalid warning cap is flagged on the warning cap.
@@ -156,6 +157,7 @@ export function NewProjectPage(): JSX.Element {
           shot_pacing: generation.shot_pacing,
           premium_fallback_allowed: generation.premium_fallback_allowed,
           scene_detection_threshold: generation.scene_detection_threshold,
+          warn_only_validation_codes: generation.warn_only_validation_codes,
         },
         client,
       ).then((response) => response.data),

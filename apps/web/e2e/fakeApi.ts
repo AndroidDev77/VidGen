@@ -849,12 +849,21 @@ function generationSettings() {
       generation_quality: "balanced",
       shot_pacing: "normal",
       premium_fallback_allowed: false,
+      warn_only_validation_codes: null,
       origin: "explicit",
     },
     generation_policy_identity:
       "gq=balanced;sp=normal;pf=0;rp=runway-routing-v2;qr=quality-repair/1;cp=runway-gen4-turbo@0123456789abcdef;rg=0123456789abcdef",
     workflow_started: true,
     estimate: generationEstimate(),
+    effective_warn_only_validation_codes: ["SCENE_SET_MISMATCH"],
+    available_warn_only_validation_codes: [
+      "SCENE_SET_MISMATCH",
+      "UNSUPPORTED_ALIAS_MERGE",
+      "DUPLICATE_ID",
+      "UNKNOWN_SOURCE_REFERENCE",
+      "INVALID_CHRONOLOGY",
+    ],
   };
 }
 

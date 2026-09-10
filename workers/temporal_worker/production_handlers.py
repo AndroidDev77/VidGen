@@ -42,6 +42,7 @@ from services.control_plane.references import (
 from services.control_plane.shot_commands import SEQUENCE_KEY, next_regeneration_sequence
 from services.generation.settings import (
     effective_scene_detection_threshold,
+    effective_warn_only_validation_codes,
     generation_policy_identity,
     project_generation_settings,
 )
@@ -1024,8 +1025,16 @@ def _analyze_episode(
     )
     if not settings.openai_api_key and not settings.temporal_allow_fake_providers:
         raise ValueError("episode analysis provider is not configured")
+    project = session.get(Project, request.project_id)
+    if project is None:
+        raise ValueError("project does not exist")
+    warn_only_codes = effective_warn_only_validation_codes(
+        project_generation_settings(project), settings.warn_only_validation_codes
+    )
     result = asyncio.run(
-        EpisodeAnalysisPipeline(session, blob_store, provider).process(
+        EpisodeAnalysisPipeline(
+            session, blob_store, provider, warn_only_codes=warn_only_codes
+        ).process(
             project_id=request.project_id,
             evidence_package_id=evidence.id,
             idempotency_key=request.idempotency_key,

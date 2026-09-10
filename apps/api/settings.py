@@ -8,6 +8,10 @@ from typing import Annotated
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
+from vidgen.contracts.episode_analysis import (
+    DEFAULT_WARN_ONLY_VALIDATION_CODES,
+    WARN_ONLY_ELIGIBLE_VALIDATION_CODES,
+)
 from vidgen.storage.factory import SUPPORTED_BACKENDS
 
 
@@ -38,6 +42,13 @@ class APISettings(BaseSettings):
     #: fewer scenes and risk missing a real cut. A project may override this via
     #: its generation settings; unset, every project uses this default.
     scene_detection_threshold: float = Field(default=0.30, gt=0, lt=1)
+    #: Episode-analysis validation codes reported as warnings instead of
+    #: failing the run. A project may override this via its generation
+    #: settings; unset, every project uses this default. Only codes in
+    #: ``WARN_ONLY_ELIGIBLE_VALIDATION_CODES`` may be listed.
+    warn_only_validation_codes: Annotated[list[str], NoDecode] = Field(
+        default_factory=lambda: list(DEFAULT_WARN_ONLY_VALIDATION_CODES)
+    )
     openai_api_key: str | None = None
     transcription_model: str = "whisper-1"
     diarization_model: str = "gpt-4o-transcribe-diarize"
@@ -183,6 +194,24 @@ class APISettings(BaseSettings):
         # Rounded to a legal 256 KiB multiple here rather than rejected, so a
         # misconfigured value never fails at byte zero of a large upload.
         return normalize_chunk_bytes(value)
+
+    @field_validator("warn_only_validation_codes", mode="before")
+    @classmethod
+    def parse_warn_only_validation_codes(cls, value: object) -> object:
+        if isinstance(value, str):
+            return [item.strip().upper() for item in value.split(",") if item.strip()]
+        return value
+
+    @field_validator("warn_only_validation_codes")
+    @classmethod
+    def validate_warn_only_validation_codes(cls, value: list[str]) -> list[str]:
+        unknown = sorted(set(value) - set(WARN_ONLY_ELIGIBLE_VALIDATION_CODES))
+        if unknown:
+            raise ValueError(
+                "warn_only_validation_codes must name known validation codes; "
+                f"unknown: {', '.join(unknown)}"
+            )
+        return sorted(set(value))
 
     @field_validator("subtitle_languages", mode="before")
     @classmethod

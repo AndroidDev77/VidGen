@@ -74,6 +74,22 @@
     "shot_pacing": {
       "$ref": "#/$defs/ShotPacing",
       "default": "normal"
+    },
+    "warn_only_validation_codes": {
+      "anyOf": [
+        {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 16,
+          "type": "array"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Warn Only Validation Codes"
     }
   },
   "title": "ProjectGenerationSettings",
