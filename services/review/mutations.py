@@ -46,7 +46,7 @@ from vidgen.contracts.shot_workflow import ShotWorkflowCommand, ShotWorkflowComm
 from vidgen.db.animation_models import AnimationGeneratedVideo
 from vidgen.db.models import Project, RenderJob
 from vidgen.db.review_models import RenderApproval
-from vidgen.db.script_models import Script, ScriptSegment
+from vidgen.db.script_models import Script, ScriptGenerationRun, ScriptSegment
 from vidgen.db.storyboard_models import StoryboardRun, StoryboardShotRecord
 from vidgen.db.transcription_models import Transcript, TranscriptSegmentRecord
 from vidgen.review.errors import ReviewError, conflict, not_found, validation_failed
@@ -297,6 +297,15 @@ class ReviewMutationService:
         return revision, copied
 
     def select_script(self, project: Project, script: Script) -> Script:
+        """Select a version, which is what approving a script means here.
+
+        The pipeline's own successful path marks the version it accepts as
+        ``approved`` and moves the project on; a run that exhausted its
+        revisions stops without either, leaving the choice to the owner. This is
+        that choice, so it records the same approval: without it the selected
+        version would still read as a draft, and an edit to it would be applied
+        in place rather than preserved as a new immutable revision.
+        """
         if script.project_id != project.id:
             raise not_found("script")
         for row in self._session.scalars(
@@ -305,12 +314,24 @@ class ReviewMutationService:
             row.selected = False
         self._session.flush()
         script.selected = True
+        if script.status not in {"approved", "final"}:
+            script.status = "approved"
+        # Only a project actually waiting on this decision is moved on. A
+        # version switch made later in the run must not drag the project back to
+        # a stage it has long since passed; the rebuild the caller submits is
+        # what drives the status from there.
+        if project.status == "script_review_required":
+            project.status = "script_approved"
+            run = self._session.get(ScriptGenerationRun, script.generation_run_id)
+            if run is not None and run.status == "script_review_required":
+                run.status = "script_approved"
+                run.error_code = None
         self._session.flush()
         self._versions.bump(project.id, "script", script.id)
         self._events.append(
             project.id,
             event_type="script_selected",
-            status="selected",
+            status="approved",
             stage=PipelineStage.SCRIPT_GENERATION,
         )
         return script

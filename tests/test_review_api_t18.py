@@ -24,7 +24,7 @@ from vidgen.db.animation_models import AnimationGeneratedVideo, AnimationItem
 from vidgen.db.control_command_models import ControlCommandRecord
 from vidgen.db.models import Project, RenderJob
 from vidgen.db.review_models import ApiIdempotencyRecord, ProjectUIEvent, RenderApproval
-from vidgen.db.script_models import Script, ScriptSegment
+from vidgen.db.script_models import Script, ScriptGenerationRun, ScriptSegment
 from vidgen.db.storyboard_models import StoryboardShotRecord
 from vidgen.db.upload_models import UploadSession
 from vidgen.review.workflow_control import FakeWorkflowController
@@ -573,6 +573,78 @@ def test_script_versions_are_listed_and_selectable(client: TestClient, graph: Pr
     )
     assert selected.status_code == 200
     assert selected.json()["script"]["selected"] is True
+
+
+def test_selecting_a_script_approves_it_and_resolves_the_review(
+    client: TestClient,
+    graph: ProjectGraph,
+    review_client: tuple[TestClient, sessionmaker[Session], FakeWorkflowController],
+) -> None:
+    """Selecting a version is the approval a stalled run stopped short of making."""
+    _, factory, _ = review_client
+    with factory() as session:
+        # The state a run that exhausted its revisions leaves behind: candidate
+        # scripts, none of them selected, and a project waiting on the owner.
+        script = session.scalars(
+            select(Script).where(Script.project_id == graph.project_id)
+        ).one()
+        script.selected = False
+        script.status = "draft"
+        run = session.get(ScriptGenerationRun, script.generation_run_id)
+        assert run is not None
+        run.status = "script_review_required"
+        run.error_code = "REVISION_EXHAUSTED"
+        project = session.get(Project, graph.project_id)
+        assert project is not None
+        project.status = "script_review_required"
+        session.commit()
+        script_id = script.id
+
+    assert client.get(api(graph.project_id, "/script"), headers=OWNER).status_code == 404
+    candidate = next(
+        item
+        for item in client.get(api(graph.project_id, "/scripts"), headers=OWNER).json()["items"]
+        if item["script_id"] == str(script_id)
+    )
+    response = client.post(
+        api(graph.project_id, f"/scripts/{script_id}:select"),
+        headers=headers(if_match=candidate["row_version"], key="approve-1"),
+    )
+    assert response.status_code == 200
+
+    body = client.get(api(graph.project_id, "/script"), headers=OWNER).json()
+    assert body["approved"] is True
+    assert body["script"]["status"] == "approved"
+    with factory() as session:
+        project = session.get(Project, graph.project_id)
+        assert project is not None
+        assert project.status == "script_approved"
+        run = session.get(ScriptGenerationRun, session.get(Script, script_id).generation_run_id)
+        assert run is not None
+        assert run.status == "script_approved"
+        assert run.error_code is None
+
+
+def test_selecting_a_version_later_does_not_rewind_the_project_status(
+    client: TestClient,
+    graph: ProjectGraph,
+    review_client: tuple[TestClient, sessionmaker[Session], FakeWorkflowController],
+) -> None:
+    """A version switch mid-run approves the script without moving the project."""
+    _, factory, _ = review_client
+    scripts = client.get(api(graph.project_id, "/scripts"), headers=OWNER).json()["items"]
+    target = scripts[0]
+    assert (
+        client.post(
+            api(graph.project_id, f"/scripts/{target['script_id']}:select"),
+            headers=headers(if_match=target["row_version"], key="select-late"),
+        ).status_code
+        == 200
+    )
+    with factory() as session:
+        project = session.get(Project, graph.project_id)
+        assert project is not None
+        assert project.status == "review"
 
 
 def test_script_edit_without_confirmation_is_a_structured_conflict(

@@ -51,11 +51,11 @@ export interface ScriptCandidateListProps {
 }
 
 /**
- * The scripts a stalled generation run left behind, offered for selection.
+ * The scripts a stalled generation run left behind, offered for approval.
  *
- * When the pipeline exhausts its revision attempts it stops without selecting
+ * When the pipeline exhausts its revision attempts it stops without approving
  * a version, so `GET /script` has nothing to answer with. The candidates are
- * still there, and picking one is what unblocks the run — this list is that
+ * still there, and approving one is what unblocks the run — this list is that
  * choice, with each version readable in place first.
  */
 export function ScriptCandidateList({
@@ -68,7 +68,7 @@ export function ScriptCandidateList({
   return (
     <SectionCard
       title="Available scripts"
-      description="Read a version, then pick the one the rest of the pipeline should build on."
+      description="Read a version, then approve the one the rest of the pipeline should build on."
     >
       {candidates.length === 0 ? (
         <Body1>
@@ -98,7 +98,7 @@ export function ScriptCandidateList({
                   disabled={selectingScriptId !== null}
                   onClick={() => onSelect(candidate.script_id)}
                 >
-                  {selectingScriptId === candidate.script_id ? "Selecting…" : "Select this script"}
+                  {selectingScriptId === candidate.script_id ? "Approving…" : "Approve this script"}
                 </Button>
               </div>
             </li>
