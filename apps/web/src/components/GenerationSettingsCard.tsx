@@ -44,9 +44,12 @@ export function GenerationSettingsCard({ projectId }: GenerationSettingsCardProp
         scene_detection_threshold:
           settings.data.settings.scene_detection_threshold ??
           settings.data.effective_scene_detection_threshold,
+        // Defaulted to empty rather than assumed present: an older API build
+        // that predates these fields must still render the card.
         warn_only_validation_codes:
           settings.data.settings.warn_only_validation_codes ??
-          settings.data.effective_warn_only_validation_codes,
+          settings.data.effective_warn_only_validation_codes ??
+          [],
       });
     }
   }, [settings.data]);
@@ -73,7 +76,8 @@ export function GenerationSettingsCard({ projectId }: GenerationSettingsCardProp
       [...draft.warn_only_validation_codes].sort().join(",") !==
         [
           ...(settings.data.settings.warn_only_validation_codes ??
-            settings.data.effective_warn_only_validation_codes),
+            settings.data.effective_warn_only_validation_codes ??
+            []),
         ]
           .sort()
           .join(","));
