@@ -8,6 +8,7 @@ from collections.abc import Mapping
 from typing import Never
 from uuid import UUID, uuid4
 
+from opentelemetry import trace
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -36,6 +37,7 @@ from vidgen.contracts.script import (
     ScriptGenerationResult,
     ScriptValidationReport,
 )
+from vidgen.contracts.telemetry import FailureClass
 from vidgen.db.episode_analysis_models import EpisodeAnalysisRecord, EpisodeAnalysisRun
 from vidgen.db.models import Asset, Project
 from vidgen.db.script_models import (
@@ -49,6 +51,8 @@ from vidgen.db.script_models import ScriptSegment as ScriptSegmentRow
 from vidgen.db.script_repository import ScriptRepository
 from vidgen.storage.asset_service import AssetService
 from vidgen.storage.blob import BlobStore
+from vidgen.telemetry.metrics import Metrics
+from vidgen.telemetry.provider import instrument_provider_attempt, record_pipeline_failure
 
 CONTRACT_VERSION = "1.0"
 PROMPT_VERSION = "comedy-script-v1"
@@ -64,6 +68,7 @@ class ScriptGenerationPipeline:
         *,
         max_repair_attempts: int = 2,
         max_revision_passes: int = 2,
+        metrics: Metrics | None = None,
     ) -> None:
         self.session = session
         self.blob_store = blob_store
@@ -74,6 +79,10 @@ class ScriptGenerationPipeline:
         self.assets = AssetService(session, blob_store)
         self.configuration_version = getattr(provider, "configuration_version", CONFIG_VERSION)
         self.rubric = default_rubric()
+        self.metrics = metrics or Metrics()
+        self.tracer = trace.NoOpTracerProvider().get_tracer("vidgen.script")
+        self.provider_name = getattr(provider, "provider", type(provider).__name__)
+        self.provider_model = getattr(provider, "model", "configured")
 
     async def process(
         self,
@@ -167,12 +176,30 @@ class ScriptGenerationPipeline:
         if plan_record is None:
             project.status = run.status = "compressing_plot"
             self.session.commit()
-            plan_record = await self._compress(
+            plan_record, compression_report = await self._compress(
                 run, analysis, settings, analysis_asset, idempotency_key
             )
             if plan_record is None:
                 run.status = project.status = "script_generation_failed"
                 run.error_code = "COMPRESSION_VALIDATION_FAILED"
+                self.session.commit()
+                record_pipeline_failure(
+                    self.session,
+                    project_id=project_id,
+                    workflow_id=str(run.id),
+                    stage="script_generation",
+                    failure_class=FailureClass.CONTRACT_VALIDATION,
+                    error_code=(
+                        compression_report.errors[0].code
+                        if compression_report and compression_report.errors
+                        else "COMPRESSION_VALIDATION_FAILED"
+                    ),
+                    retryable=False,
+                    projected_status="script_generation_failed",
+                    idempotency_key=_derived_key(idempotency_key, "compress:exhausted"),
+                    related_entity_type="script_generation_run",
+                    related_entity_id=run.id,
+                )
                 self.session.commit()
                 raise RuntimeError(
                     "COMPRESSION_VALIDATION_FAILED: all compression attempts exhausted validation"
@@ -185,12 +212,30 @@ class ScriptGenerationPipeline:
         if not scripts:
             project.status = run.status = "comedy_writing"
             self.session.commit()
-            draft_record = await self._write_draft(
+            draft_record, draft_report = await self._write_draft(
                 run, plan_record, plan, analysis, settings, idempotency_key
             )
             if draft_record is None:
                 run.status = project.status = "script_generation_failed"
                 run.error_code = "DRAFT_VALIDATION_FAILED"
+                self.session.commit()
+                record_pipeline_failure(
+                    self.session,
+                    project_id=project_id,
+                    workflow_id=str(run.id),
+                    stage="script_generation",
+                    failure_class=FailureClass.CONTRACT_VALIDATION,
+                    error_code=(
+                        draft_report.errors[0].code
+                        if draft_report and draft_report.errors
+                        else "DRAFT_VALIDATION_FAILED"
+                    ),
+                    retryable=False,
+                    projected_status="script_generation_failed",
+                    idempotency_key=_derived_key(idempotency_key, "write:exhausted"),
+                    related_entity_type="script_generation_run",
+                    related_entity_id=run.id,
+                )
                 self.session.commit()
                 raise RuntimeError(
                     "DRAFT_VALIDATION_FAILED: all draft attempts exhausted validation"
@@ -234,7 +279,7 @@ class ScriptGenerationPipeline:
         settings: ScriptGenerationSettings,
         analysis_asset: Asset,
         idempotency_key: str,
-    ) -> CompressedPlotPlanRecord | None:
+    ) -> tuple[CompressedPlotPlanRecord | None, ScriptValidationReport | None]:
         plan_id = uuid4()
         request = PlotCompressionRequest(
             project_id=run.project_id,
@@ -264,74 +309,97 @@ class ScriptGenerationPipeline:
                     else f"{request.idempotency_key}:repair:{attempt}"
                 }
             )
-            result = await self.provider.compress_plot(
-                attempted,
-                GenerationContext(attempt_number=attempt, validation_errors_json=feedback),
-            )
-            raw_plan = result.output.model_copy(update={"plan_id": plan_id})
-            # Overwrite model-generated summaries with verbatim source summaries so
-            # UNSUPPORTED_BEAT_SUMMARY validation never fires due to paraphrasing.
-            source_by_id = {beat.plot_beat_id: beat for beat in analysis.plot_beats}
-            source_summaries = {bid: b.summary for bid, b in source_by_id.items()}
-            selected_ids = {beat.plot_beat_id for beat in raw_plan.selected_beats}
-            fixed_beats = [
-                beat.model_copy(update={"summary": source_summaries[beat.plot_beat_id]})
-                if beat.plot_beat_id in source_summaries
-                else beat
-                for beat in raw_plan.selected_beats
-            ]
-            # Auto-rescue structural beats the model omitted; move them from
-            # omitted_beats back into selected_beats so STRUCTURAL_BEAT_OMITTED
-            # never fires regardless of what the model decides to include.
-            structural_ids = _structural_roles(analysis.plot_beats)
-            from vidgen.contracts.script import CompressedPlotBeat
+            async with instrument_provider_attempt(
+                session=self.session,
+                tracer=self.tracer,
+                metrics=self.metrics,
+                project_id=run.project_id,
+                provider=self.provider_name,
+                model=self.provider_model,
+                operation="script.compress_plot",
+                input_hash=run.input_hash,
+                idempotency_key=attempted.idempotency_key,
+                related_entity_id=run.id,
+                attempt_number=attempt,
+            ) as provider_attempt:
+                result = await self.provider.compress_plot(
+                    attempted,
+                    GenerationContext(attempt_number=attempt, validation_errors_json=feedback),
+                )
+                raw_plan = result.output.model_copy(update={"plan_id": plan_id})
+                # Overwrite model-generated summaries with verbatim source summaries so
+                # UNSUPPORTED_BEAT_SUMMARY validation never fires due to paraphrasing.
+                source_by_id = {beat.plot_beat_id: beat for beat in analysis.plot_beats}
+                source_summaries = {bid: b.summary for bid, b in source_by_id.items()}
+                selected_ids = {beat.plot_beat_id for beat in raw_plan.selected_beats}
+                fixed_beats = [
+                    beat.model_copy(update={"summary": source_summaries[beat.plot_beat_id]})
+                    if beat.plot_beat_id in source_summaries
+                    else beat
+                    for beat in raw_plan.selected_beats
+                ]
+                # Auto-rescue structural beats the model omitted; move them from
+                # omitted_beats back into selected_beats so STRUCTURAL_BEAT_OMITTED
+                # never fires regardless of what the model decides to include.
+                structural_ids = _structural_roles(analysis.plot_beats)
+                from vidgen.contracts.script import CompressedPlotBeat
 
-            for beat_id, role in structural_ids.items():
-                if beat_id not in selected_ids:
-                    source = source_by_id.get(beat_id)
-                    if source is None:
-                        continue
-                    rescued = CompressedPlotBeat(
-                        plot_beat_id=beat_id,
-                        sequence=source.sequence,
-                        summary=source.summary,
-                        structural_role=role,
-                        mandatory=source.mandatory,
-                        payoff_score=source.payoff_score,
-                        character_ids=list(source.character_ids),
-                        scene_ids=list(source.scene_ids),
-                        source_references=list(source.source_references),
+                for beat_id, role in structural_ids.items():
+                    if beat_id not in selected_ids:
+                        source = source_by_id.get(beat_id)
+                        if source is None:
+                            continue
+                        rescued = CompressedPlotBeat(
+                            plot_beat_id=beat_id,
+                            sequence=source.sequence,
+                            summary=source.summary,
+                            structural_role=role,
+                            mandatory=source.mandatory,
+                            payoff_score=source.payoff_score,
+                            character_ids=list(source.character_ids),
+                            scene_ids=list(source.scene_ids),
+                            source_references=list(source.source_references),
+                        )
+                        fixed_beats.append(rescued)
+                omitted_without_structural = [
+                    b for b in raw_plan.omitted_beats if b.plot_beat_id not in structural_ids
+                ]
+                plan = canonicalize_plan(
+                    raw_plan.model_copy(
+                        update={
+                            "selected_beats": fixed_beats,
+                            "omitted_beats": omitted_without_structural,
+                        }
                     )
-                    fixed_beats.append(rescued)
-            omitted_without_structural = [
-                b for b in raw_plan.omitted_beats if b.plot_beat_id not in structural_ids
-            ]
-            plan = canonicalize_plan(
-                raw_plan.model_copy(
-                    update={
-                        "selected_beats": fixed_beats,
-                        "omitted_beats": omitted_without_structural,
-                    }
                 )
-            )
-            report = validate_compressed_plot_plan(plan, analysis=analysis, request=request)
-            run.attempt_count = max(run.attempt_count, attempt)
-            result_metadata_request_id = result.metadata.provider_request_id
-            if not report.valid:
-                import logging as _logging
+                report = validate_compressed_plot_plan(plan, analysis=analysis, request=request)
+                run.attempt_count = max(run.attempt_count, attempt)
+                result_metadata_request_id = result.metadata.provider_request_id
+                if not report.valid:
+                    import logging as _logging
 
-                _err_summary = "; ".join(
-                    f"{e.code}@{e.entity_path}={e.invalid_value}" for e in report.errors
-                )
-                _logging.getLogger("vidgen.script").warning(
-                    f"compression validation failed attempt={attempt}: {_err_summary}"
-                )
+                    _err_summary = "; ".join(
+                        f"{e.code}@{e.entity_path}={e.invalid_value}" for e in report.errors
+                    )
+                    _logging.getLogger("vidgen.script").warning(
+                        f"compression validation failed attempt={attempt}: {_err_summary}"
+                    )
+                    provider_attempt.mark_failed(
+                        failure_class=FailureClass.CONTRACT_VALIDATION,
+                        error_code=report.errors[0].code,
+                        retryable=attempt < self.max_repair_attempts,
+                    )
+                else:
+                    provider_attempt.set_result(
+                        provider_request_id=result.metadata.provider_request_id,
+                        usage=_usage_from_metadata(result.metadata),
+                    )
             if report.valid:
                 break
             feedback = report.model_dump_json()
         self.session.commit()
         if plan is None or report is None or not report.valid:
-            return None
+            return None, report
         asset = self.assets.store(
             content=plan.model_dump_json().encode(),
             kind="json",
@@ -365,7 +433,7 @@ class ScriptGenerationPipeline:
         )
         self.session.add(record)
         self.session.commit()
-        return record
+        return record, report
 
     async def _write_draft(
         self,
@@ -375,7 +443,7 @@ class ScriptGenerationPipeline:
         analysis: EpisodeAnalysis,
         settings: ScriptGenerationSettings,
         idempotency_key: str,
-    ) -> Script | None:
+    ) -> tuple[Script | None, ScriptValidationReport | None]:
         script_id = uuid4()
         request = ComedyWritingRequest(
             project_id=run.project_id,
@@ -405,44 +473,67 @@ class ScriptGenerationPipeline:
                     else f"{request.idempotency_key}:repair:{attempt}"
                 }
             )
-            result = await self.provider.write_script(
-                attempted,
-                GenerationContext(attempt_number=attempt, validation_errors_json=feedback),
-            )
-            candidate = result.output.model_copy(update={"script_id": script_id, "version": 1})
-            # Auto-correct word count so WORD_COUNT_MISMATCH never fires.
-            from services.script.validator import canonical_word_count as _wcnt
-
-            actual_words = sum(_wcnt(seg.text) for seg in candidate.segments)
-            candidate = candidate.model_copy(update={"actual_word_count": actual_words})
-            coverage = build_beat_coverage(candidate, plan)
-            candidate = canonicalize_script(
-                candidate.model_copy(update={"beat_coverage": coverage})
-            )
-            report = validate_recap_script(
-                candidate,
-                analysis=analysis,
-                plan=plan,
-                prohibited_patterns=settings.prohibited_patterns,
-            )
-            run.attempt_count = max(run.attempt_count, attempt)
-            provider_request_id = result.metadata.provider_request_id
-            script = candidate
-            if not report.valid:
-                import logging as _logging
-
-                _err_summary = "; ".join(
-                    f"{e.code}@{e.entity_path}={e.invalid_value}" for e in report.errors
+            async with instrument_provider_attempt(
+                session=self.session,
+                tracer=self.tracer,
+                metrics=self.metrics,
+                project_id=run.project_id,
+                provider=self.provider_name,
+                model=self.provider_model,
+                operation="script.write_script",
+                input_hash=run.input_hash,
+                idempotency_key=attempted.idempotency_key,
+                related_entity_id=run.id,
+                attempt_number=attempt,
+            ) as provider_attempt:
+                result = await self.provider.write_script(
+                    attempted,
+                    GenerationContext(attempt_number=attempt, validation_errors_json=feedback),
                 )
-                _logging.getLogger("vidgen.script").warning(
-                    f"draft validation failed attempt={attempt}: {_err_summary}"
+                candidate = result.output.model_copy(update={"script_id": script_id, "version": 1})
+                # Auto-correct word count so WORD_COUNT_MISMATCH never fires.
+                from services.script.validator import canonical_word_count as _wcnt
+
+                actual_words = sum(_wcnt(seg.text) for seg in candidate.segments)
+                candidate = candidate.model_copy(update={"actual_word_count": actual_words})
+                coverage = build_beat_coverage(candidate, plan)
+                candidate = canonicalize_script(
+                    candidate.model_copy(update={"beat_coverage": coverage})
                 )
+                report = validate_recap_script(
+                    candidate,
+                    analysis=analysis,
+                    plan=plan,
+                    prohibited_patterns=settings.prohibited_patterns,
+                )
+                run.attempt_count = max(run.attempt_count, attempt)
+                provider_request_id = result.metadata.provider_request_id
+                script = candidate
+                if not report.valid:
+                    import logging as _logging
+
+                    _err_summary = "; ".join(
+                        f"{e.code}@{e.entity_path}={e.invalid_value}" for e in report.errors
+                    )
+                    _logging.getLogger("vidgen.script").warning(
+                        f"draft validation failed attempt={attempt}: {_err_summary}"
+                    )
+                    provider_attempt.mark_failed(
+                        failure_class=FailureClass.CONTRACT_VALIDATION,
+                        error_code=report.errors[0].code,
+                        retryable=attempt < self.max_repair_attempts,
+                    )
+                else:
+                    provider_attempt.set_result(
+                        provider_request_id=result.metadata.provider_request_id,
+                        usage=_usage_from_metadata(result.metadata),
+                    )
             if report.valid:
                 break
             feedback = report.model_dump_json()
         self.session.commit()
         if script is None or report is None or not report.valid:
-            return None
+            return None, report
         draft_record = self._persist_script_version(
             run,
             plan_record,
@@ -454,7 +545,7 @@ class ScriptGenerationPipeline:
             idempotency_key=idempotency_key,
         )
         self.session.commit()
-        return draft_record
+        return draft_record, report
 
     async def _run_editorial_loop(
         self,
@@ -502,9 +593,26 @@ class ScriptGenerationPipeline:
                     rubric_version=self.rubric.rubric_version,
                     provider_configuration_version=self.configuration_version,
                 )
-                result = await self.provider.edit_script(
-                    request, GenerationContext(attempt_number=evaluation)
-                )
+                async with instrument_provider_attempt(
+                    session=self.session,
+                    tracer=self.tracer,
+                    metrics=self.metrics,
+                    project_id=run.project_id,
+                    provider=self.provider_name,
+                    model=self.provider_model,
+                    operation="script.edit_script",
+                    input_hash=run.input_hash,
+                    idempotency_key=request.idempotency_key,
+                    related_entity_id=candidate_record.id,
+                    attempt_number=evaluation,
+                ) as provider_attempt:
+                    result = await self.provider.edit_script(
+                        request, GenerationContext(attempt_number=evaluation)
+                    )
+                    provider_attempt.set_result(
+                        provider_request_id=result.metadata.provider_request_id,
+                        usage=_usage_from_metadata(result.metadata),
+                    )
                 revised = result.output.revised_script.model_copy(
                     update={
                         "script_id": uuid4(),
@@ -716,6 +824,17 @@ class ScriptGenerationPipeline:
             review_scores=review_scores,
             revision_count=run.revision_count,
         )
+
+
+def _usage_from_metadata(metadata: object) -> list[dict[str, object]]:
+    usage: list[dict[str, object]] = []
+    input_tokens = getattr(metadata, "input_tokens", None)
+    output_tokens = getattr(metadata, "output_tokens", None)
+    if input_tokens is not None:
+        usage.append({"unit": "INPUT_TOKEN", "quantity": input_tokens})
+    if output_tokens is not None:
+        usage.append({"unit": "OUTPUT_TOKEN", "quantity": output_tokens})
+    return usage
 
 
 def _hash(value: object) -> str:

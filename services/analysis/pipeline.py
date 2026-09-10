@@ -24,6 +24,7 @@ from vidgen.contracts.episode_analysis import (
     SceneEvidenceExcerpt,
     SourceReference,
 )
+from vidgen.contracts.telemetry import FailureClass
 from vidgen.db.cost_repository import BudgetExceededError
 from vidgen.db.episode_analysis_models import (
     AnalysisBeatDependency,
@@ -48,7 +49,9 @@ from vidgen.db.models import (
 from vidgen.db.workflow_models import EvidencePackageRecord, SceneEvidenceRecord
 from vidgen.storage.asset_service import AssetService
 from vidgen.storage.blob import BlobStore
+from vidgen.telemetry.failures import classify_failure
 from vidgen.telemetry.metrics import Metrics
+from vidgen.telemetry.provider import record_pipeline_failure
 
 CONTRACT_VERSION = "1.0"
 PROMPT_VERSION = "episode-analysis-v1"
@@ -192,14 +195,10 @@ class EpisodeAnalysisPipeline:
                         else f"{request.idempotency_key}:repair:{attempt}"
                     }
                 )
+                context = GenerationContext(attempt_number=attempt, validation_errors_json=feedback)
                 try:
                     async with semaphore:
-                        result = await self.provider.analyze_scene(
-                            attempted_request,
-                            GenerationContext(
-                                attempt_number=attempt, validation_errors_json=feedback
-                            ),
-                        )
+                        result = await self.provider.analyze_scene(attempted_request, context)
                 except BudgetExceededError:
                     # A budget denial is terminal: retrying it can only spend
                     # money the project has already been refused.
@@ -225,6 +224,16 @@ class EpisodeAnalysisPipeline:
                     valid_reference_ids={item.reference_id for item in references},
                     valid_references=references,
                 )
+                if not report.valid:
+                    # The call itself succeeded (and was billed) but failed
+                    # deterministic validation; flag the attempt the wrapper
+                    # already recorded so it shows as a failure, not a success.
+                    self.provider.mark_attempt_invalid(
+                        attempted_request,
+                        context,
+                        error_code=report.errors[0].code,
+                        retryable=attempt < self.max_attempts,
+                    )
                 attempts.append(
                     {
                         "attempt": attempt,
@@ -249,9 +258,24 @@ class EpisodeAnalysisPipeline:
 
         try:
             scenes = list(await asyncio.gather(*(map_scene(row) for row in rows)))
-        except Exception:
+        except Exception as error:
             run.status = project.status = "episode_analysis_failed"
             run.error_code = "SCENE_ANALYSIS_FAILED"
+            self.session.commit()
+            failure = classify_failure(error)
+            record_pipeline_failure(
+                self.session,
+                project_id=project_id,
+                workflow_id=str(run.id),
+                stage="episode_analysis",
+                failure_class=failure.failure_class,
+                error_code="SCENE_ANALYSIS_FAILED",
+                retryable=False,
+                projected_status="episode_analysis_failed",
+                idempotency_key=_derived_key(idempotency_key, "scene:exhausted"),
+                related_entity_type="episode_analysis_run",
+                related_entity_id=run.id,
+            )
             self.session.commit()
             raise
         project.status = run.status = "episode_global_reduction"
@@ -280,21 +304,34 @@ class EpisodeAnalysisPipeline:
                     else f"{request.idempotency_key}:repair:{attempt}"
                 }
             )
+            context = GenerationContext(attempt_number=attempt, validation_errors_json=feedback)
             try:
-                reduced = await self.provider.synthesize_episode(
-                    attempted_request,
-                    GenerationContext(attempt_number=attempt, validation_errors_json=feedback),
-                )
+                reduced = await self.provider.synthesize_episode(attempted_request, context)
             except BudgetExceededError:
                 run.status = project.status = "episode_analysis_failed"
                 run.error_code = "EPISODE_BUDGET_EXCEEDED"
                 self.session.commit()
                 raise
-            except Exception:
+            except Exception as error:
                 if attempt < self.max_attempts:
                     continue
                 run.status = project.status = "episode_analysis_failed"
                 run.error_code = "EPISODE_REDUCTION_FAILED"
+                self.session.commit()
+                failure = classify_failure(error)
+                record_pipeline_failure(
+                    self.session,
+                    project_id=project_id,
+                    workflow_id=str(run.id),
+                    stage="episode_analysis",
+                    failure_class=failure.failure_class,
+                    error_code=failure.error_code,
+                    retryable=False,
+                    projected_status="episode_analysis_failed",
+                    idempotency_key=_derived_key(idempotency_key, "reduce:exhausted"),
+                    related_entity_type="episode_analysis_run",
+                    related_entity_id=run.id,
+                )
                 self.session.commit()
                 raise
             analysis = canonicalize(reduced.output)
@@ -309,6 +346,16 @@ class EpisodeAnalysisPipeline:
                     label for scene in scenes for label in scene.anonymous_speaker_references
                 },
             )
+            if not report.valid:
+                # The call itself succeeded (and was billed) but failed
+                # deterministic validation; flag the attempt the wrapper
+                # already recorded so it shows as a failure, not a success.
+                self.provider.mark_attempt_invalid(
+                    attempted_request,
+                    context,
+                    error_code=report.errors[0].code,
+                    retryable=attempt < self.max_attempts,
+                )
             if report.valid:
                 break
             feedback = report.model_dump_json()
@@ -316,6 +363,20 @@ class EpisodeAnalysisPipeline:
         if not report.valid:
             run.status = project.status = "episode_analysis_failed"
             run.error_code = "EPISODE_VALIDATION_FAILED"
+            self.session.commit()
+            record_pipeline_failure(
+                self.session,
+                project_id=project_id,
+                workflow_id=str(run.id),
+                stage="episode_analysis",
+                failure_class=FailureClass.CONTRACT_VALIDATION,
+                error_code=report.errors[0].code if report.errors else "EPISODE_VALIDATION_FAILED",
+                retryable=False,
+                projected_status="episode_analysis_failed",
+                idempotency_key=_derived_key(idempotency_key, "validate:exhausted"),
+                related_entity_type="episode_analysis_run",
+                related_entity_id=run.id,
+            )
             self.session.commit()
             raise ValueError("episode analysis failed deterministic validation")
         if reduced is None:

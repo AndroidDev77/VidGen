@@ -11,7 +11,8 @@ from opentelemetry.trace import Tracer
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from vidgen.db.cost_models import ProviderAttempt
+from vidgen.contracts.telemetry import FailureClass
+from vidgen.db.cost_models import PipelineFailureEvent, ProviderAttempt
 from vidgen.telemetry.failures import classify_failure
 from vidgen.telemetry.metrics import Metrics
 from vidgen.telemetry.redaction import redact
@@ -35,6 +36,26 @@ class ProviderAttemptContext:
         self.usage = usage or []
         self.actual_cost = actual_cost
         self.row.redacted_metadata = redact(metadata or {})
+
+    def mark_failed(
+        self,
+        *,
+        failure_class: FailureClass | str,
+        error_code: str,
+        retryable: bool,
+    ) -> None:
+        """Record a failure that a provider call itself did not raise.
+
+        Some attempts fail deterministic post-call validation rather than the
+        provider request (e.g. a script draft that references an unknown plot
+        beat). The call still completes normally, so nothing would otherwise
+        mark the attempt row as failed before `instrument_provider_attempt`
+        defaults it to SUCCEEDED on a clean exit.
+        """
+        self.row.status = "FAILED"
+        self.row.failure_class = str(failure_class)
+        self.row.error_code = error_code
+        self.row.retryable = retryable
 
 
 @asynccontextmanager
@@ -98,18 +119,26 @@ async def instrument_provider_attempt(
         ctx = ProviderAttemptContext(row)
         try:
             yield ctx
-            row.status = "SUCCEEDED"
-            row.usage = ctx.usage
-            row.actual_cost = ctx.actual_cost
-            if row.provider_request_id:
-                span.set_attribute("provider.request_id", row.provider_request_id)
-            metrics.provider_requests.labels(*labels, "success").inc()
-            metrics.cost.labels(*labels).inc(float(ctx.actual_cost))
-            # Bounded, non-sensitive span attributes: an outcome and a number.
-            # They let the deployed dashboard report provider success rates and
-            # spend from traces without any prompt or response text.
-            span.set_attribute("provider.status", "success")
-            span.set_attribute("provider.cost_usd", float(ctx.actual_cost))
+            if row.status == "FAILED":
+                # A caller used ctx.mark_failed() to flag a post-call validation
+                # failure; respect it instead of stomping it back to SUCCEEDED.
+                metrics.provider_requests.labels(*labels, "failure").inc()
+                span.set_attribute("provider.status", "failure")
+                if row.failure_class:
+                    span.set_attribute("provider.failure_class", row.failure_class)
+            else:
+                row.status = "SUCCEEDED"
+                row.usage = ctx.usage
+                row.actual_cost = ctx.actual_cost
+                if row.provider_request_id:
+                    span.set_attribute("provider.request_id", row.provider_request_id)
+                metrics.provider_requests.labels(*labels, "success").inc()
+                metrics.cost.labels(*labels).inc(float(ctx.actual_cost))
+                # Bounded, non-sensitive span attributes: an outcome and a number.
+                # They let the deployed dashboard report provider success rates and
+                # spend from traces without any prompt or response text.
+                span.set_attribute("provider.status", "success")
+                span.set_attribute("provider.cost_usd", float(ctx.actual_cost))
         except BaseException as exc:
             failure = classify_failure(exc)
             row.status = "FAILED"
@@ -131,3 +160,49 @@ async def instrument_provider_attempt(
             metrics.provider_latency.labels(*labels).observe(elapsed)
             metrics.provider_active.labels(provider, model).dec()
             session.flush()
+
+
+def record_pipeline_failure(
+    session: Session,
+    *,
+    project_id: UUID,
+    workflow_id: str,
+    stage: str,
+    failure_class: FailureClass | str,
+    error_code: str,
+    retryable: bool,
+    projected_status: str,
+    idempotency_key: str,
+    attempt_id: UUID | None = None,
+    related_entity_type: str | None = None,
+    related_entity_id: UUID | None = None,
+    trace_id: str | None = None,
+) -> PipelineFailureEvent:
+    """Record a stage-level pipeline failure so it surfaces on the dashboard.
+
+    Idempotent on `idempotency_key`: a restarted stage that fails the same
+    way again (e.g. a resumed workflow re-hitting exhausted validation
+    repairs) must not pile up duplicate rows.
+    """
+    existing = session.scalar(
+        select(PipelineFailureEvent).where(PipelineFailureEvent.idempotency_key == idempotency_key)
+    )
+    if existing is not None:
+        return existing
+    event = PipelineFailureEvent(
+        project_id=project_id,
+        workflow_id=workflow_id,
+        stage=stage,
+        related_entity_type=related_entity_type,
+        related_entity_id=related_entity_id,
+        failure_class=str(failure_class),
+        error_code=error_code,
+        retryable=retryable,
+        attempt_id=attempt_id,
+        trace_id=trace_id,
+        projected_status=projected_status,
+        idempotency_key=idempotency_key,
+    )
+    session.add(event)
+    session.flush()
+    return event
