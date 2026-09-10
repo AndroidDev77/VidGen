@@ -68,3 +68,22 @@ export function updateScriptSegment(
     { body: update, ifMatch: rowVersion, idempotencyKey },
   );
 }
+
+/**
+ * Fetch one script version by ID.
+ *
+ * Used before a version is selected: `GET /script` only ever answers with the
+ * selected version, so reading a candidate's content has to go through its own
+ * resource.
+ */
+export function getScriptVersion(
+  projectId: string,
+  scriptId: string,
+  client: VidGenClient = apiClient,
+  signal?: AbortSignal,
+): Promise<ApiResponse<ScriptProjection>> {
+  return client.get<ScriptProjection>(
+    `/api/v1/projects/${projectId}/scripts/${scriptId}`,
+    signal ? { signal } : {},
+  );
+}

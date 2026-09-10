@@ -495,6 +495,106 @@ describe("ScriptPage", () => {
   });
 });
 
+/**
+ * The review fallback: the pipeline ran out of revision attempts, so it left
+ * candidate scripts behind without selecting one and `GET /script` answers 404.
+ */
+describe("ScriptPage under script_review_required", () => {
+  const candidate = (version: number) => ({
+    ...fixtures.script.script,
+    script_id: `00000000-0000-4000-8000-00000000000${version}`,
+    version,
+    status: "draft",
+    selected: false,
+    actual_word_count: 600 + version,
+  });
+
+  function useReviewRequired(options: { readonly status?: string } = {}) {
+    server.use(
+      http.get(`${BASE}/api/v1/projects/:projectId/workflow`, () =>
+        HttpResponse.json({
+          ...fixtures.workflowStatus,
+          status: options.status ?? "script_review_required",
+        }),
+      ),
+      http.get(`${BASE}/api/v1/projects/:projectId/script`, () =>
+        HttpResponse.json(apiError("not_found", "The requested script was not found."), {
+          status: 404,
+        }),
+      ),
+      http.get(`${BASE}/api/v1/projects/:projectId/scripts`, () =>
+        HttpResponse.json({ items: [candidate(1), candidate(2)] }),
+      ),
+      http.get(`${BASE}/api/v1/projects/:projectId/scripts/:scriptId`, ({ params }) => {
+        const version = Number(String(params.scriptId).slice(-1));
+        return HttpResponse.json({
+          ...fixtures.script,
+          script: candidate(version),
+          approved: false,
+          segments: [
+            { ...fixtures.script.segments[0]!, text: `Version ${version} opens on a wide shot.` },
+          ],
+        });
+      }),
+    );
+  }
+
+  it("lists the available scripts instead of a not-found error", async () => {
+    useReviewRequired();
+    renderProjectRoute(<ScriptPage />, `/projects/${PROJECT_ID}/script`);
+    expect(await screen.findByText("Pick the script to build on")).toBeVisible();
+    expect(screen.getByRole("heading", { name: "Version 1" })).toBeVisible();
+    expect(screen.getByRole("heading", { name: "Version 2" })).toBeVisible();
+    expect(screen.getByText("602 words of a 700-word target")).toBeVisible();
+    expect(screen.getAllByText("draft")).toHaveLength(2);
+    expect(screen.getAllByRole("button", { name: "Select this script" })).toHaveLength(2);
+    expect(screen.queryByText("No approved script yet")).not.toBeInTheDocument();
+  });
+
+  it("falls back on a 404 even when the workflow reports another status", async () => {
+    useReviewRequired({ status: "review" });
+    renderProjectRoute(<ScriptPage />, `/projects/${PROJECT_ID}/script`);
+    expect(await screen.findByRole("heading", { name: "Version 1" })).toBeVisible();
+  });
+
+  it("previews a candidate's content before it is selected", async () => {
+    useReviewRequired();
+    const { queryClient } = renderProjectRoute(<ScriptPage />, `/projects/${PROJECT_ID}/script`);
+    expect(await screen.findByRole("heading", { name: "Version 2" })).toBeVisible();
+    await settle(queryClient);
+    fireEvent.click(screen.getAllByRole("button", { name: "Preview the script" })[1]!);
+    expect(await screen.findByText("Version 2 opens on a wide shot.")).toBeVisible();
+  });
+
+  it("selects a script and then shows the editor for it", async () => {
+    useReviewRequired();
+    const selected: string[] = [];
+    server.use(
+      http.post(/\/scripts\/[^/]+:select$/, ({ request }) => {
+        selected.push(new URL(request.url).pathname.split("/").at(-1)!.split(":")[0]!);
+        // Once a version is selected the pipeline moves on, so both the
+        // workflow status and the singular script resource answer normally.
+        server.use(
+          http.get(`${BASE}/api/v1/projects/:projectId/workflow`, () =>
+            HttpResponse.json(fixtures.workflowStatus),
+          ),
+          http.get(`${BASE}/api/v1/projects/:projectId/script`, () =>
+            HttpResponse.json(fixtures.script),
+          ),
+        );
+        return HttpResponse.json({ script: { ...candidate(2), selected: true } });
+      }),
+    );
+    const { queryClient } = renderProjectRoute(<ScriptPage />, `/projects/${PROJECT_ID}/script`);
+    expect(await screen.findByRole("heading", { name: "Version 2" })).toBeVisible();
+    await settle(queryClient);
+    fireEvent.click(screen.getAllByRole("button", { name: "Select this script" })[1]!);
+    expect(await screen.findByRole("heading", { name: "Beat 1" })).toBeVisible();
+    expect(selected).toEqual([candidate(2).script_id]);
+    expect(screen.queryByText("Pick the script to build on")).not.toBeInTheDocument();
+  });
+});
+
 describe("StoryboardPage", () => {
   it("renders shots in canonical sequence with T13 timing", async () => {
     renderProjectRoute(<StoryboardPage />, `/projects/${PROJECT_ID}/storyboard`);

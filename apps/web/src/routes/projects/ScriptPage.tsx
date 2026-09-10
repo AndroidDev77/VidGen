@@ -17,6 +17,7 @@ import { getScript, listScripts, selectScript, updateScriptSegment } from "../..
 import { useApiClient } from "../../app/apiContext";
 import { ConfirmInvalidationDialog } from "../../components/ConfirmInvalidationDialog";
 import { ProjectStatusHeader } from "../../components/ProjectStatusHeader";
+import { ScriptCandidateList } from "../../components/ScriptCandidateList";
 import { ScriptEditor, type ScriptDraft } from "../../components/ScriptEditor";
 import { TechnicalDetails } from "../../components/TechnicalDetails";
 import { PageStack } from "../../components/Surface";
@@ -103,6 +104,9 @@ export function ScriptPage(): JSX.Element {
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: queryKeys.script(projectId) });
       void queryClient.invalidateQueries({ queryKey: queryKeys.scripts(projectId) });
+      // Selecting a version is what clears `script_review_required`, so the
+      // workflow header and this page's fallback both have to re-read it.
+      void queryClient.invalidateQueries({ queryKey: queryKeys.workflow(projectId) });
     },
   });
 
@@ -120,7 +124,15 @@ export function ScriptPage(): JSX.Element {
   });
 
   const status = workflow.data?.status ?? "";
-  const scriptReviewRequired = status === "script_review_required" && script.isError;
+  // The pipeline stops without selecting a version when it runs out of revision
+  // attempts, so `GET /script` has nothing to answer with. That is a choice to
+  // make, not a failure to report: fall back to the candidates from `/scripts`.
+  const scriptMissing =
+    script.isError && script.error instanceof VidGenApiError && script.error.status === 404;
+  const scriptReviewRequired =
+    !script.isSuccess &&
+    !script.isPending &&
+    (status === "script_review_required" || scriptMissing);
 
   return (
     <PageStack>
@@ -136,9 +148,9 @@ export function ScriptPage(): JSX.Element {
       {scriptReviewRequired && (
         <MessageBar intent="warning">
           <MessageBarBody>
-            <MessageBarTitle>Script generation needs a retry</MessageBarTitle>
-            The automatic script generation did not produce a valid result this time. You can retry
-            it — the pipeline will attempt a fresh compression and writing pass.
+            <MessageBarTitle>Pick the script to build on</MessageBarTitle>
+            The automatic script generation stopped without approving a version. Choose one of the
+            scripts below, or retry generation for a fresh compression and writing pass.
           </MessageBarBody>
           <MessageBarActions>
             <Button
@@ -150,6 +162,24 @@ export function ScriptPage(): JSX.Element {
             </Button>
           </MessageBarActions>
         </MessageBar>
+      )}
+      {scriptReviewRequired && versions.isPending && (
+        <LoadingState label="Loading the available scripts" rows={3} />
+      )}
+      {scriptReviewRequired && versions.isError && (
+        <ErrorState
+          error={versions.error}
+          title="The available scripts could not be loaded"
+          onRetry={() => void versions.refetch()}
+        />
+      )}
+      {scriptReviewRequired && versions.isSuccess && (
+        <ScriptCandidateList
+          projectId={projectId}
+          candidates={versions.data.items}
+          selectingScriptId={select.isPending ? (select.variables ?? null) : null}
+          onSelect={(scriptId) => select.mutate(scriptId)}
+        />
       )}
       {script.isError && !scriptReviewRequired && (
         <ErrorState
