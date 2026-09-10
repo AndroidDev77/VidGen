@@ -12,7 +12,11 @@ from opentelemetry import trace
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from services.script.canonicalize import canonicalize_plan, canonicalize_script
+from services.script.canonicalize import (
+    canonicalize_plan,
+    canonicalize_script,
+    drop_empty_segments,
+)
 from services.script.compressor import structural_roles as _structural_roles
 from services.script.provider import GenerationContext, ScriptGenerationProvider
 from services.script.rubric import approval_recommendation, default_rubric
@@ -502,7 +506,9 @@ class ScriptGenerationPipeline:
                     attempted,
                     GenerationContext(attempt_number=attempt, validation_errors_json=feedback),
                 )
-                candidate = result.output.model_copy(update={"script_id": script_id, "version": 1})
+                candidate = drop_empty_segments(
+                    result.output.model_copy(update={"script_id": script_id, "version": 1})
+                )
                 # Auto-correct word count so WORD_COUNT_MISMATCH never fires.
                 from services.script.validator import canonical_word_count as _wcnt
 
@@ -625,12 +631,14 @@ class ScriptGenerationPipeline:
                         provider_request_id=result.metadata.provider_request_id,
                         usage=_usage_from_metadata(result.metadata),
                     )
-                revised = result.output.revised_script.model_copy(
-                    update={
-                        "script_id": uuid4(),
-                        "version": candidate_record.version,
-                        "parent_script_id": candidate_record.id,
-                    }
+                revised = drop_empty_segments(
+                    result.output.revised_script.model_copy(
+                        update={
+                            "script_id": uuid4(),
+                            "version": candidate_record.version,
+                            "parent_script_id": candidate_record.id,
+                        }
+                    )
                 )
                 coverage = build_beat_coverage(revised, plan)
                 revised = canonicalize_script(

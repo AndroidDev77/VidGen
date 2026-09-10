@@ -14,6 +14,7 @@ from typing import Any, cast
 
 import httpx
 
+from services.script.canonicalize import EMPTY_SEGMENT_DROPPED
 from services.script.provider import GenerationContext
 from vidgen.contracts.script import (
     ComedyEditRequest,
@@ -93,6 +94,10 @@ class OpenAIScriptGenerationProvider:
         raw = json.loads(_response_text(payload))
         if schema is RecapScript:
             _patch_anonymous_segments(raw)
+            _drop_empty_segments(raw)
+        elif schema is ComedyEditResult and isinstance(raw.get("revised_script"), dict):
+            _patch_anonymous_segments(raw["revised_script"])
+            _drop_empty_segments(raw["revised_script"])
         parsed = schema.model_validate(raw)
         return parsed, payload
 
@@ -190,6 +195,41 @@ def _patch_anonymous_segments(raw: Any) -> None:
     for seg in raw.get("segments", []):
         if seg.get("speaker_kind") == "anonymous" and not seg.get("anonymous_speaker_label"):
             seg["anonymous_speaker_label"] = "Unknown Speaker"
+
+
+def _drop_empty_segments(raw: Any) -> None:
+    """Clear out empty beats before the contract sees them.
+
+    A model sometimes emits a segment with no text. As NARRATION or DIALOGUE it
+    would fail RecapScript validation here, before the pipeline's own
+    ``drop_empty_segments`` could remove it; as PAUSE it would pass and reach
+    stages that cannot use it. Either way the segment is removed in-place and
+    the removal is recorded on the script's warnings so the pipeline's pass
+    and the reviewer can see it. Callbacks, coverage and the word count are
+    reconciled by the pipeline once the script has parsed.
+    """
+    segments = raw.get("segments")
+    if not isinstance(segments, list):
+        return
+    kept = [
+        seg for seg in segments if not isinstance(seg, dict) or str(seg.get("text") or "").strip()
+    ]
+    if len(kept) == len(segments) or not kept:
+        return
+    warnings = raw.setdefault("warnings", [])
+    if isinstance(warnings, list):
+        warnings.extend(
+            {
+                "code": EMPTY_SEGMENT_DROPPED,
+                "message": (
+                    f"{seg.get('type', 'segment')} segment {seg.get('segment_id')} at "
+                    f"sequence {seg.get('sequence')} had no text and was removed"
+                ),
+            }
+            for seg in segments
+            if isinstance(seg, dict) and not str(seg.get("text") or "").strip()
+        )
+    raw["segments"] = kept
 
 
 def _prompt(filename: str) -> str:

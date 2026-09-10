@@ -4,11 +4,21 @@ from uuid import uuid4
 import httpx
 import pytest
 
+from services.script.canonicalize import EMPTY_SEGMENT_DROPPED
 from services.script.compressor import compress_plot
-from services.script.openai_adapter import OpenAIScriptConfig, OpenAIScriptGenerationProvider
+from services.script.openai_adapter import (
+    OpenAIScriptConfig,
+    OpenAIScriptGenerationProvider,
+    _drop_empty_segments,
+)
 from services.script.provider import GenerationContext
+from services.script.writer import write_script
 from tests.test_script_pipeline import _make_analysis
-from vidgen.contracts.script import PlotCompressionRequest
+from vidgen.contracts.script import (
+    ChannelVoiceConfig,
+    ComedyWritingRequest,
+    PlotCompressionRequest,
+)
 
 
 def _compression_request(analysis) -> PlotCompressionRequest:
@@ -241,3 +251,101 @@ def test_the_compressor_prompt_requires_reference_ids_to_be_copied() -> None:
         "Every reference_id in every source_references list must also be copied exactly "
         "from the input — never invent a reference_id." in prompt
     )
+
+
+def _writing_request(analysis, plan) -> ComedyWritingRequest:
+    return ComedyWritingRequest(
+        project_id=analysis.project_id,
+        episode_analysis_id=analysis.episode_id,
+        compressed_plot_plan_id=plan.plan_id,
+        input_hash="a" * 64,
+        idempotency_key="write-key",
+        contract_version="1.0",
+        prompt_version="comedy-script-v1",
+        provider_configuration_version="openai-script-responses-v1",
+        compressed_plot=plan,
+        channel_voice=ChannelVoiceConfig(narrator_persona="wry narrator"),
+        humor_intensity=0.6,
+        target_words=600,
+        recap_mode="full_recap",
+    )
+
+
+@pytest.mark.asyncio
+async def test_openai_write_script_clears_empty_beats_from_the_response() -> None:
+    """A blank NARRATION segment would fail the contract; a blank PAUSE would pass it.
+
+    Both are removed before validation and recorded on the script's warnings,
+    so the pipeline receives a script it can persist and narrate.
+    """
+    analysis = _make_analysis(uuid4())
+    plan = compress_plot(analysis=analysis, request=_compression_request(analysis), plan_id=uuid4())
+    request = _writing_request(analysis, plan)
+    sound = write_script(plan=plan, request=request, script_id=uuid4())
+    raw = json.loads(sound.model_dump_json())
+    last = raw["segments"][-1]
+    raw["segments"].extend(
+        [
+            {**last, "segment_id": str(uuid4()), "sequence": last["sequence"] + 1, "text": ""},
+            {
+                **last,
+                "segment_id": str(uuid4()),
+                "sequence": last["sequence"] + 2,
+                "type": "PAUSE",
+                "text": "  ",
+                "joke_annotations": [],
+            },
+        ]
+    )
+
+    async def handler(_http_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "id": "resp_fake",
+                "status": "completed",
+                "output": [
+                    {
+                        "type": "message",
+                        "content": [{"type": "output_text", "text": json.dumps(raw)}],
+                    }
+                ],
+                "usage": {"input_tokens": 4, "output_tokens": 8},
+            },
+        )
+
+    client = httpx.AsyncClient(
+        transport=httpx.MockTransport(handler), base_url="https://example.test"
+    )
+    provider = OpenAIScriptGenerationProvider(
+        OpenAIScriptConfig(
+            api_key="not-real",
+            compressor_model="configured-compressor",
+            writer_model="configured-writer",
+            editor_model="configured-editor",
+            base_url="https://example.test",
+        ),
+        client,
+    )
+    result = await provider.write_script(request, GenerationContext())
+    await client.aclose()
+    assert [segment.segment_id for segment in result.output.segments] == [
+        segment.segment_id for segment in sound.segments
+    ]
+    assert all(segment.text.strip() for segment in result.output.segments)
+    assert [note.code for note in result.output.warnings] == [
+        EMPTY_SEGMENT_DROPPED,
+        EMPTY_SEGMENT_DROPPED,
+    ]
+    assert result.output.warnings[0].message.startswith("NARRATION segment ")
+    assert result.output.warnings[1].message.startswith("PAUSE segment ")
+
+
+def test_the_raw_patch_leaves_a_script_without_empty_beats_alone() -> None:
+    raw = {"segments": [{"type": "NARRATION", "text": "words"}], "warnings": []}
+    _drop_empty_segments(raw)
+    assert raw == {"segments": [{"type": "NARRATION", "text": "words"}], "warnings": []}
+    # A response that is empty throughout is left for the contract to refuse.
+    all_blank = {"segments": [{"type": "PAUSE", "text": ""}]}
+    _drop_empty_segments(all_blank)
+    assert all_blank == {"segments": [{"type": "PAUSE", "text": ""}]}

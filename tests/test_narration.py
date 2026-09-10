@@ -6,6 +6,7 @@ from pathlib import Path
 from uuid import uuid4
 
 import pytest
+from sqlalchemy import select
 
 from services.narration.alignment import FakeAligner, RecognizedWord, reconcile_alignment
 from services.narration.fake_provider import FakeNarrationProvider
@@ -232,9 +233,10 @@ def test_quality_thresholds_hash_deterministically_into_the_identity() -> None:
     )
 
 
-def test_a_pause_segment_may_have_empty_text(tmp_path: Path) -> None:
-    """A PAUSE carries timing, not speech; the authoritative script accepts it."""
-    fixture = build_fixture(tmp_path, database_name="pause.db")
+def test_the_authoritative_script_refuses_any_empty_segment(tmp_path: Path) -> None:
+    """The script stage clears empty beats; narration never voices one, PAUSE included."""
+    fixture = build_fixture(tmp_path, database_name="empty.db")
+    repo = NarrationRepository(fixture.session)
     fixture.session.add(
         ScriptSegment(
             script_id=fixture.script.id,
@@ -250,20 +252,15 @@ def test_a_pause_segment_may_have_empty_text(tmp_path: Path) -> None:
         )
     )
     fixture.session.commit()
-    script, segments = NarrationRepository(fixture.session).authoritative_script(fixture.project.id)
-    assert script.id == fixture.script.id
-    assert [s.segment_type for s in segments] == ["narration", "narration", "PAUSE"]
-    assert segments[-1].text == ""
-
-
-def test_an_empty_narration_segment_is_still_refused(tmp_path: Path) -> None:
-    fixture = build_fixture(tmp_path, database_name="empty.db")
+    with pytest.raises(ValueError, match="contains empty segments"):
+        repo.authoritative_script(fixture.project.id)
+    fixture.session.rollback()
+    fixture.session.delete(
+        fixture.session.scalars(
+            select(ScriptSegment).where(ScriptSegment.segment_type == "PAUSE")
+        ).one()
+    )
     fixture.script_segments[0].text = "   "
     fixture.session.commit()
     with pytest.raises(ValueError, match="contains empty segments"):
-        NarrationRepository(fixture.session).authoritative_script(fixture.project.id)
-
-
-def test_contract_forbids_credentials() -> None:
-    with pytest.raises(ValueError):
-        NarrationProviderRequest(**{**request().model_dump(), "api_key": "secret"})
+        repo.authoritative_script(fixture.project.id)

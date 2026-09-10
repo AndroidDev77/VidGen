@@ -16,6 +16,7 @@ from vidgen.contracts.episode_analysis import (
     PlotBeat,
     SourceReference,
 )
+from vidgen.contracts.script import RecapScript
 from vidgen.db.base import Base
 from vidgen.db.cost_models import PipelineFailureEvent, ProviderAttempt
 from vidgen.db.episode_analysis_models import EpisodeAnalysisRecord, EpisodeAnalysisRun
@@ -480,3 +481,79 @@ async def test_revised_script_and_its_review_commit_atomically(
         project_id=project.id, idempotency_key="run-1"
     )
     assert result.status == "script_review_required"
+
+
+class _EmptyBeatDraftProvider(FakeScriptGenerationProvider):
+    """Writes a sound draft and then appends two empty beats to it.
+
+    One is the shape a model actually emits - a PAUSE with no text, the only
+    type the contract lets be empty - and one is a narration segment whose text
+    is blank (built with ``model_copy`` to bypass the contract, as a raw model
+    response would). Both must be cleared before the script is persisted.
+    """
+
+    async def write_script(self, request, context):  # type: ignore[override]
+        result = await super().write_script(request, context)
+        segments = list(result.output.segments)
+        last = segments[-1]
+        pause = last.model_copy(
+            update={
+                "segment_id": uuid4(),
+                "sequence": last.sequence + 1,
+                "type": "PAUSE",
+                "text": "",
+                "joke_annotations": [],
+                "visual_gag": None,
+                "content_hash": "0" * 64,
+            }
+        )
+        blank = last.model_copy(
+            update={
+                "segment_id": uuid4(),
+                "sequence": last.sequence + 2,
+                "text": "   ",
+                "joke_annotations": [],
+                "visual_gag": None,
+                "content_hash": "1" * 64,
+            }
+        )
+        padded = result.output.model_copy(update={"segments": [*segments, pause, blank]})
+        return result.model_copy(update={"output": padded})
+
+
+@pytest.mark.asyncio
+async def test_empty_beats_are_cleared_before_the_script_is_persisted(tmp_path: Path) -> None:
+    from services.script.canonicalize import EMPTY_SEGMENT_DROPPED
+    from vidgen.db.models import Asset
+    from vidgen.db.narration_repository import NarrationRepository
+
+    session, blobs, project, _record = _database(tmp_path)
+    provider = _EmptyBeatDraftProvider()
+    result = await ScriptGenerationPipeline(session, blobs, provider).process(
+        project_id=project.id, idempotency_key="run-1"
+    )
+    assert result.status == "script_approved"
+
+    session.expire_all()
+    script_record = session.get(Script, result.script_id)
+    assert script_record is not None
+    rows = session.scalars(
+        select(ScriptSegment)
+        .where(ScriptSegment.script_id == script_record.id)
+        .order_by(ScriptSegment.sequence)
+    ).all()
+    assert rows and all(row.text.strip() for row in rows)
+    assert [row.sequence for row in rows] == list(range(len(rows)))
+    assert all(row.segment_type == "NARRATION" for row in rows)
+    assert script_record.actual_word_count == sum(len(row.text.split()) for row in rows)
+
+    asset = session.get(Asset, script_record.canonical_script_asset_id)
+    assert asset is not None
+    persisted = RecapScript.model_validate_json(blobs.read(asset.storage_key))
+    dropped = [note for note in persisted.warnings if note.code == EMPTY_SEGMENT_DROPPED]
+    assert len(dropped) == 2
+    assert {note.message.split(" ")[0] for note in dropped} == {"PAUSE", "NARRATION"}
+
+    # What narration reads is exactly the cleared script.
+    _script, segments = NarrationRepository(session).authoritative_script(project.id)
+    assert [segment.id for segment in segments] == [row.id for row in rows]

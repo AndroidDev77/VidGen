@@ -38,8 +38,9 @@ class NarrationRepository:
         seqs = [s.sequence for s in segments]
         if not segments or seqs != list(range(seqs[0], seqs[0] + len(seqs))):
             raise ValueError("selected T11 script is incomplete")
-        # A PAUSE carries timing, not speech: empty text is its normal shape.
-        if any(not s.text.strip() for s in segments if s.segment_type != "PAUSE"):
+        # Nothing here can voice an empty segment, whatever its type; the script
+        # stage clears empty beats out before a script can be approved.
+        if any(not s.text.strip() for s in segments):
             raise ValueError("selected T11 script contains empty segments")
         return script, segments
 
