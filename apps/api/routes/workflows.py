@@ -41,6 +41,7 @@ from services.narration.voice_profiles import current_selection
 from vidgen.contracts.control_commands import (
     ControlCommandTargetType,
     ControlCommandType,
+    ProjectGenerationRunStatus,
 )
 from vidgen.contracts.review import ApiErrorCode, PipelineStage
 from vidgen.contracts.workflow import PROJECT_STAGE_ORDER, ProjectWorkflowInput
@@ -219,6 +220,15 @@ def cancel_workflow(
         if "already completed" not in str(exc):
             raise
     run.status = "cancelled"
+    # The generation run is the project's lineage, and nothing else closes it
+    # out: the run opened by ``workflow:start`` has no originating command, so
+    # the dispatcher never settles it. Leaving it active made every later
+    # ``workflow:continue`` fail with ``project_generation_run_active`` until
+    # somebody edited the row by hand.
+    generation_runs = GenerationRunService(session)
+    active_run = generation_runs.active(project.id)
+    if active_run is not None:
+        generation_runs.settle(active_run, ProjectGenerationRunStatus.CANCELLED)
     session.flush()
     events_for(session).append(
         project.id,

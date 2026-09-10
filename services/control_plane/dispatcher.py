@@ -194,6 +194,13 @@ class ControlCommandDispatcher:
                         continue
                 if repository.cancel(record):
                     cancelled += 1
+                    # A cancelled continuation owns the project's generation
+                    # run. Left active it blocks every later continuation with
+                    # ``project_generation_run_active``.
+                    runs = GenerationRunService(session)
+                    run = runs.active(record.project_id)
+                    if run is not None and run.origin_command_id == record.id:
+                        runs.settle(run, ProjectGenerationRunStatus.CANCELLED)
             session.commit()
         return cancelled
 

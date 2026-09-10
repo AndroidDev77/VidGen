@@ -51,6 +51,7 @@ from vidgen.db.models import Project
 from vidgen.db.repair_models import RepairRun
 from vidgen.db.storyboard_models import StoryboardShotRecord
 from vidgen.db.visual_qa_models import VisualQARun
+from vidgen.db.workflow_models import ProjectWorkflowRun
 from vidgen.review.workflow_control import FakeWorkflowController
 
 OWNER = {"X-VidGen-User": "owner-a"}
@@ -1571,6 +1572,121 @@ def test_a_continuation_refuses_while_a_generation_run_is_still_executing(
         assert record is not None
         assert record.status == ControlCommandStatus.FAILED.value
         assert record.error_code == "project_generation_run_active"
+
+
+def test_cancelling_a_workflow_closes_out_its_generation_run(
+    client: TestClient,
+    graph: ProjectGraph,
+    controller: FakeWorkflowController,
+    review_client: tuple[TestClient, sessionmaker[Session], FakeWorkflowController],
+) -> None:
+    """A cancelled project must not keep an active lineage.
+
+    The run opened by ``workflow:start`` has no originating command, so nothing
+    in the dispatcher ever settles it. Left active it refused every subsequent
+    continuation with ``project_generation_run_active``, and the only way out
+    was editing the row by hand.
+    """
+    _, factory, _ = review_client
+    client.post(api(graph.project_id, "/workflow:start"), json={}, headers=headers(key="start-1"))
+    with factory() as session:
+        assert GenerationRunService(session).active(graph.project_id) is not None
+
+    cancelled = client.post(
+        api(graph.project_id, "/workflow:cancel"), headers=headers(key="cancel-1")
+    )
+    assert cancelled.status_code == 200
+    assert controller.cancelled
+
+    with factory() as session:
+        runs = GenerationRunService(session)
+        assert runs.active(graph.project_id) is None
+        history = runs.history(graph.project_id)
+    assert history[-1].status == ProjectGenerationRunStatus.CANCELLED.value
+    assert history[-1].active is False
+
+
+def test_a_continuation_after_a_cancel_is_accepted_and_dispatched(
+    client: TestClient,
+    graph: ProjectGraph,
+    dispatcher: ControlCommandDispatcher,
+    review_client: tuple[TestClient, sessionmaker[Session], FakeWorkflowController],
+) -> None:
+    """The end-to-end path the owner's Retry button walks: cancel, then continue."""
+    _, factory, _ = review_client
+    client.post(api(graph.project_id, "/workflow:start"), json={}, headers=headers(key="start-1"))
+    client.post(api(graph.project_id, "/workflow:cancel"), headers=headers(key="cancel-1"))
+
+    accepted = client.post(
+        api(graph.project_id, "/workflow:continue"),
+        json={"entry_stage": "shot_generation", "reason": "remediation"},
+        headers=headers(key="continue-after-cancel"),
+    )
+    assert accepted.status_code == 202
+    command_id = accepted.json()["command"]["command_id"]
+    dispatcher.run_once()
+
+    with factory() as session:
+        record = session.get(ControlCommandRecord, UUID(command_id))
+        assert record is not None
+        assert record.error_code is None, record.error_summary
+        assert record.status == ControlCommandStatus.RUNNING.value
+
+
+def test_continuing_rebinds_the_projects_workflow_run_to_the_new_execution(
+    client: TestClient,
+    graph: ProjectGraph,
+    dispatcher: ControlCommandDispatcher,
+    controller: FakeWorkflowController,
+    review_client: tuple[TestClient, sessionmaker[Session], FakeWorkflowController],
+) -> None:
+    """``GET /workflow`` must describe the run that is executing now.
+
+    A continuation reuses the project's stable workflow ID but starts a new
+    execution. Without rebinding ``project_workflow_runs`` the endpoint kept
+    reporting the cancelled run - every stage cancelled - while the new run was
+    already working.
+    """
+    _, factory, _ = review_client
+    client.post(api(graph.project_id, "/workflow:start"), json={}, headers=headers(key="start-1"))
+    workflow_id = f"vidgen-project-{graph.project_id}"
+    with factory() as session:
+        first = session.scalar(
+            select(ProjectWorkflowRun).where(ProjectWorkflowRun.workflow_id == workflow_id)
+        )
+        assert first is not None
+        first_run_id = first.run_id
+
+    client.post(api(graph.project_id, "/workflow:cancel"), headers=headers(key="cancel-1"))
+    cancelled_status = client.get(api(graph.project_id, "/workflow"), headers=OWNER).json()
+    assert cancelled_status["cancelled"] is True
+    assert {stage["state"] for stage in cancelled_status["stages"]} == {"cancelled"}
+
+    client.post(
+        api(graph.project_id, "/workflow:continue"),
+        json={"entry_stage": "shot_generation", "reason": "remediation"},
+        headers=headers(key="continue-1"),
+    )
+    dispatcher.run_once()
+
+    new_run_id = controller.project_run_ids[workflow_id]
+    assert new_run_id != first_run_id, "the fake must model a second execution"
+    with factory() as session:
+        rows = list(
+            session.scalars(
+                select(ProjectWorkflowRun).where(
+                    ProjectWorkflowRun.project_id == graph.project_id
+                )
+            )
+        )
+    assert len(rows) == 1, "the project's workflow ID is stable, so the row is rebound"
+    assert rows[0].run_id == new_run_id
+    assert rows[0].status == "running"
+
+    status = client.get(api(graph.project_id, "/workflow"), headers=OWNER).json()
+    assert status["cancelled"] is False
+    assert status["run_id"] == new_run_id
+    assert {stage["state"] for stage in status["stages"]} != {"cancelled"}
 
 
 def test_a_project_that_stops_without_waiting_settles_its_command(
