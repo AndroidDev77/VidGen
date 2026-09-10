@@ -13,7 +13,6 @@ from apps.api.auth import Principal, get_current_user
 from apps.api.dependencies import get_blob_store, get_session, get_workflow_controller
 from apps.api.schemas.projects import (
     CreateProjectRequest,
-    EpisodeAnalysisProgressResponse,
     GenerationEstimateRequest,
     GenerationSettingsResponse,
     ProjectBudgetResponse,
@@ -22,10 +21,10 @@ from apps.api.schemas.projects import (
     ProjectStatusResponse,
     SetGenerationSettingsRequest,
     SetProjectBudgetRequest,
+    StageProgressResponse,
 )
 from apps.api.schemas.uploads import InitializeUploadRequest, UploadResponse
 from apps.api.settings import APISettings, get_settings
-from services.analysis.progress import EpisodeAnalysisProgress, load_progress
 from services.costs.project_budget import (
     BudgetDeployment,
     BudgetError,
@@ -48,6 +47,8 @@ from services.narration.voice_profiles import (
     current_selection,
     select_profile,
 )
+from services.progress.engine import StageProgress
+from services.progress.loaders import load_stage_progress
 from services.storyboard.providers import load_capability_profile
 from vidgen.contracts.generation import GenerationCostEstimate
 from vidgen.contracts.review import ApiErrorField
@@ -57,7 +58,7 @@ from vidgen.db.repositories import ProjectRepository
 from vidgen.db.upload_models import UploadSession
 from vidgen.db.workflow_models import ProjectWorkflowRun
 from vidgen.review.errors import ReviewError, validation_failed
-from vidgen.review.projections import project_summary, utc
+from vidgen.review.projections import project_summary
 from vidgen.review.versions import RowVersionService
 from vidgen.review.workflow_control import WorkflowController
 from vidgen.storage.asset_service import AssetService
@@ -382,7 +383,7 @@ def get_project_status(
         .where(UploadSession.project_id == project.id)
         .order_by(UploadSession.created_at.desc())
     )
-    progress = load_progress(session, project.id)
+    progress = load_stage_progress(session, project)
     return ProjectStatusResponse(
         project_id=project.id,
         status=project.status,
@@ -390,22 +391,24 @@ def get_project_status(
         source_asset_id=source.asset_id if source else None,
         upload_status=upload.status if upload else None,
         error_code=upload.error_code if upload else None,
-        episode_analysis=_analysis_progress_response(progress) if progress else None,
+        stage_progress=_stage_progress_response(progress) if progress else None,
     )
 
 
-def _analysis_progress_response(
-    progress: EpisodeAnalysisProgress,
-) -> EpisodeAnalysisProgressResponse:
-    return EpisodeAnalysisProgressResponse(
+def _stage_progress_response(progress: StageProgress) -> StageProgressResponse:
+    return StageProgressResponse(
+        stage=progress.stage,
+        label=progress.label,
+        state=progress.state,
         phase=progress.phase,
-        completed_scene_count=progress.completed_scene_count,
-        total_scene_count=progress.total_scene_count,
+        completed_count=progress.completed_count,
+        total_count=progress.total_count,
+        unit=progress.unit,
+        count_label=progress.count_label,
         percentage=progress.percentage,
         message=progress.message,
         error_code=progress.error_code,
-        # SQLite hands back naive timestamps; the browser needs the zone.
-        updated_at=utc(progress.updated_at),
+        updated_at=progress.updated_at,
     )
 
 

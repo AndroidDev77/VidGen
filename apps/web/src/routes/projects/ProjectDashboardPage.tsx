@@ -27,16 +27,16 @@ import { cancelWorkflow, startWorkflow } from "../../api/workflows";
 import { useApiClient } from "../../app/apiContext";
 import { CommandsPanel } from "../../components/CommandsPanel";
 import { CostSummary } from "../../components/CostSummary";
-import { EpisodeAnalysisProgressPanel } from "../../components/EpisodeAnalysisProgressPanel";
 import { GenerationSettingsCard } from "../../components/GenerationSettingsCard";
 import { FailurePanel } from "../../components/FailurePanel";
 import { ProjectStatusHeader } from "../../components/ProjectStatusHeader";
+import { StageProgressPanel } from "../../components/StageProgressPanel";
 import { StageTimeline } from "../../components/StageTimeline";
 import { SectionCard, StatTile, StatTiles } from "../../components/Surface";
 import { TechnicalDetails } from "../../components/TechnicalDetails";
 import { ErrorState, LoadingState } from "../../components/states";
-import { episodeAnalysisPollInterval } from "../../state/episodeAnalysis";
 import { formatDurationSeconds, formatMoney, formatStage } from "../../state/format";
+import { stageProgressPollInterval } from "../../state/stageProgress";
 import { useProjectContext } from "./useProjectContext";
 
 const useStyles = makeStyles({
@@ -120,12 +120,12 @@ export function ProjectDashboardPage(): JSX.Element {
     queryKey: queryKeys.projectStatus(projectId),
     queryFn: ({ signal }) => getProjectStatus(projectId, client, signal).then((r) => r.data),
     enabled: projectId !== "",
-    // Episode analysis is the one stage whose progress lives only in this
-    // response, so the dashboard polls it while a run is in flight and stops
-    // when the run finishes. An interval refetch keeps the last response in
-    // `status.data`, so the bar updates in place rather than flickering
-    // through a loading state, and it only fires while the tab is visible.
-    refetchInterval: ({ state }) => episodeAnalysisPollInterval(state.data, workflow.data),
+    // Stage progress lives only in this response, so the dashboard polls it
+    // while a stage is in flight and stops once the pipeline settles. An
+    // interval refetch keeps the last response in `status.data`, so the bar
+    // updates in place rather than flickering through a loading state, and it
+    // only fires while the tab is visible.
+    refetchInterval: ({ state }) => stageProgressPollInterval(state.data, workflow.data),
     refetchIntervalInBackground: false,
   });
   const costs = useQuery({
@@ -320,9 +320,9 @@ export function ProjectDashboardPage(): JSX.Element {
       </div>
 
       <div className={styles.grid}>
-        {status.data?.episode_analysis && (
+        {status.data?.stage_progress && (
           <div className={styles.wide}>
-            <EpisodeAnalysisProgressPanel progress={status.data.episode_analysis} />
+            <StageProgressPanel progress={status.data.stage_progress} />
           </div>
         )}
 

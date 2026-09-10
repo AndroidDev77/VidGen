@@ -73,25 +73,30 @@ export interface GenerationEstimateInput {
   shot_pacing: ShotPacing;
 }
 
-/** The phases an episode-analysis run moves through, in order. */
-export type EpisodeAnalysisPhase =
-  | "queued"
-  | "scene_analysis"
-  | "building_model"
-  | "validating"
-  | "completed"
-  | "failed";
+/** The generic lifecycle every stage's progress moves through. */
+export type StageProgressState = "queued" | "running" | "waiting" | "completed" | "failed";
 
 /**
- * Where the project's episode analysis is (`EpisodeAnalysisProgressResponse`).
+ * Where the project's current stage is (`StageProgressResponse`).
  *
- * The backend derives this from the durable scene checkpoints, so the figures
- * survive a worker restart and never run ahead of what has been persisted.
+ * The backend derives this from each stage's durable checkpoints, so the
+ * figures survive a worker restart and never run ahead of what has been
+ * persisted. `waiting` means a human gate: nothing moves until the owner acts.
  */
-export interface EpisodeAnalysisProgress {
-  phase: EpisodeAnalysisPhase;
-  completed_scene_count: number;
-  total_scene_count: number;
+export interface StageProgress {
+  /** A stable stage id; the timeline's `PipelineStage` value where one exists. */
+  stage: string;
+  /** The heading to show, e.g. "Episode analysis" or "Quality review". */
+  label: string;
+  state: StageProgressState;
+  /** The stage-specific phase, e.g. "scene_analysis" or "animating". */
+  phase: string;
+  completed_count: number;
+  total_count: number;
+  /** Singular noun for one counted unit, e.g. "scene". */
+  unit: string;
+  /** What the counts count, e.g. "scenes analyzed". */
+  count_label: string;
   /** 0 to 100. */
   percentage: number;
   message: string;
@@ -106,8 +111,8 @@ export interface ProjectStatus {
   source_asset_id: string | null;
   upload_status: string | null;
   error_code: string | null;
-  /** `null` until the workflow has opened an episode-analysis run. */
-  episode_analysis: EpisodeAnalysisProgress | null;
+  /** The stage that moved most recently; `null` until any stage has started. */
+  stage_progress: StageProgress | null;
 }
 
 export interface CreateProjectInput {

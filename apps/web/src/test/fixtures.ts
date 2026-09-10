@@ -24,7 +24,7 @@ import type {
 } from "@vidgen/contracts";
 import { PIPELINE_STAGE_ORDER } from "@vidgen/contracts";
 
-import type { EpisodeAnalysisProgress, ProjectListItem, ProjectStatus } from "../api/projects";
+import type { ProjectListItem, ProjectStatus, StageProgress } from "../api/projects";
 
 export const PROJECT_ID = "11111111-1111-4111-8111-111111111111";
 export const SHOT_COUNT = 10;
@@ -275,17 +275,20 @@ export const projectStatus: ProjectStatus = {
   source_asset_id: uuid(2, 3),
   upload_status: "completed",
   error_code: null,
-  episode_analysis: null,
+  stage_progress: null,
 };
 
 /** A scene-analysis run part-way through, as the status endpoint reports it. */
-export function episodeAnalysisProgress(
-  overrides: Partial<EpisodeAnalysisProgress> = {},
-): EpisodeAnalysisProgress {
+export function stageProgress(overrides: Partial<StageProgress> = {}): StageProgress {
   return {
+    stage: "episode_analysis",
+    label: "Episode analysis",
+    state: "running",
     phase: "scene_analysis",
-    completed_scene_count: 17,
-    total_scene_count: 32,
+    completed_count: 17,
+    total_count: 32,
+    unit: "scene",
+    count_label: "scenes analyzed",
     percentage: 42.5,
     message: "Analyzing scene 18 of 32",
     error_code: null,
