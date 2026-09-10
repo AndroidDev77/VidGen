@@ -6,6 +6,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from services.analysis.progress import EpisodeAnalysisPhase
 from vidgen.contracts.generation import (
     GenerationCostEstimate,
     GenerationQuality,
@@ -192,6 +193,24 @@ class ProjectListItemResponse(ProjectResponse):
     row_version: int = Field(ge=1)
 
 
+class EpisodeAnalysisProgressResponse(BaseModel):
+    """Where the project's episode analysis is, read from its checkpoints.
+
+    The dashboard polls this while the analysis runs, so every field is
+    something it can show directly: the phase drives the bar's tone, the
+    counts and message sit beside it, and ``updated_at`` tells the owner the
+    figures are current.
+    """
+
+    phase: EpisodeAnalysisPhase
+    completed_scene_count: int = Field(ge=0)
+    total_scene_count: int = Field(ge=0)
+    percentage: float = Field(ge=0, le=100)
+    message: str = Field(min_length=1)
+    error_code: str | None = None
+    updated_at: datetime | None = None
+
+
 class ProjectStatusResponse(BaseModel):
     project_id: UUID
     status: str
@@ -199,3 +218,5 @@ class ProjectStatusResponse(BaseModel):
     source_asset_id: UUID | None
     upload_status: str | None
     error_code: str | None
+    #: ``None`` until the workflow has started an episode-analysis run.
+    episode_analysis: EpisodeAnalysisProgressResponse | None = None
