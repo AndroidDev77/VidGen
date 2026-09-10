@@ -41,6 +41,7 @@ from services.control_plane.references import (
 )
 from services.control_plane.shot_commands import SEQUENCE_KEY, next_regeneration_sequence
 from services.generation.settings import (
+    effective_scene_detection_threshold,
     generation_policy_identity,
     project_generation_settings,
 )
@@ -746,13 +747,20 @@ def _validate_upload(
 def _process_media(
     session: Session,
     blob_store: BlobStore,
-    _settings: APISettings,
+    settings: APISettings,
     request: StageActivityInput,
 ) -> StageActivityResult:
+    project = session.get(Project, request.project_id)
+    if project is None:
+        raise ValueError("project does not exist")
+    scene_threshold = effective_scene_detection_threshold(
+        project_generation_settings(project), settings.scene_detection_threshold
+    )
     result = MediaPipeline(session, blob_store).process(
         project_id=request.project_id,
         source_video_id=request.source_video_id,
         idempotency_key=request.idempotency_key,
+        scene_threshold=scene_threshold,
     )
     return StageActivityResult(
         stage=request.stage, entity_id=result.source_video_id, asset_id=result.audio.asset_id

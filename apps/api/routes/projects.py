@@ -35,6 +35,7 @@ from services.costs.project_budget import (
 )
 from services.generation.estimate import estimate_generation_costs
 from services.generation.settings import (
+    effective_scene_detection_threshold,
     generation_policy_identity,
     project_generation_settings,
     with_generation_settings,
@@ -291,7 +292,9 @@ def set_budget(
     return _budget_response(budget)
 
 
-def _generation_settings_response(session: Session, project: Project) -> GenerationSettingsResponse:
+def _generation_settings_response(
+    session: Session, project: Project, settings: APISettings
+) -> GenerationSettingsResponse:
     generation = project_generation_settings(project)
     storyboard_profile = None
     settings_block = (
@@ -321,15 +324,23 @@ def _generation_settings_response(session: Session, project: Project) -> Generat
             target_duration_seconds=project.target_duration_seconds,
             shot_pacing=generation.shot_pacing,
         ),
+        effective_scene_detection_threshold=effective_scene_detection_threshold(
+            generation, settings.scene_detection_threshold
+        ),
     )
 
 
 @router.get("/{project_id}/generation-settings", response_model=GenerationSettingsResponse)
 def get_generation_settings(
-    project_id: UUID, session: SessionDependency, principal: PrincipalDependency
+    project_id: UUID,
+    session: SessionDependency,
+    principal: PrincipalDependency,
+    settings: SettingsDependency,
 ) -> GenerationSettingsResponse:
     """The project's resolved quality mode, pacing preset and cost estimate."""
-    return _generation_settings_response(session, owned_project(session, project_id, principal))
+    return _generation_settings_response(
+        session, owned_project(session, project_id, principal), settings
+    )
 
 
 @router.put("/{project_id}/generation-settings", response_model=GenerationSettingsResponse)
@@ -338,6 +349,7 @@ def set_generation_settings(
     request: SetGenerationSettingsRequest,
     session: SessionDependency,
     principal: PrincipalDependency,
+    settings: SettingsDependency,
 ) -> GenerationSettingsResponse:
     """Replace the project's generation settings.
 
@@ -350,7 +362,7 @@ def set_generation_settings(
     project.settings = with_generation_settings(project.settings, request.generation_settings())
     session.flush()
     session.commit()
-    return _generation_settings_response(session, project)
+    return _generation_settings_response(session, project, settings)
 
 
 @router.get("/{project_id}/status", response_model=ProjectStatusResponse)

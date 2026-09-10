@@ -36,11 +36,14 @@ export function GenerationSettingsCard({ projectId }: GenerationSettingsCardProp
   });
   const [draft, setDraft] = useState<GenerationSettingsInput | null>(null);
   useEffect(() => {
-    if (settings.data?.settings !== undefined) {
+    if (settings.data !== undefined) {
       setDraft({
         generation_quality: settings.data.settings.generation_quality,
         shot_pacing: settings.data.settings.shot_pacing,
         premium_fallback_allowed: settings.data.settings.premium_fallback_allowed,
+        scene_detection_threshold:
+          settings.data.settings.scene_detection_threshold ??
+          settings.data.effective_scene_detection_threshold,
       });
     }
   }, [settings.data]);
@@ -58,7 +61,10 @@ export function GenerationSettingsCard({ projectId }: GenerationSettingsCardProp
     draft !== null &&
     (draft.generation_quality !== settings.data.settings.generation_quality ||
       draft.shot_pacing !== settings.data.settings.shot_pacing ||
-      draft.premium_fallback_allowed !== settings.data.settings.premium_fallback_allowed);
+      draft.premium_fallback_allowed !== settings.data.settings.premium_fallback_allowed ||
+      draft.scene_detection_threshold !==
+        (settings.data.settings.scene_detection_threshold ??
+          settings.data.effective_scene_detection_threshold));
 
   return (
     <SectionCard

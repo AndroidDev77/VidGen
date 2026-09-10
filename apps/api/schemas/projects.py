@@ -65,6 +65,9 @@ class CreateProjectRequest(BaseModel):
     #: Premium only: animate with Gen-4 Turbo instead of refusing when Gen-4.5
     #: cannot generate or the budget cannot afford a shot.
     premium_fallback_allowed: bool = False
+    #: Per-project override of the scene-cut sensitivity used during media
+    #: processing. Leave unset to use the deployment's global default.
+    scene_detection_threshold: float | None = Field(default=None, gt=0, lt=1)
 
     _exact_caps = field_validator("budget_warning_cap", "budget_hard_cap", mode="before")(
         exact_decimal_text
@@ -75,6 +78,7 @@ class CreateProjectRequest(BaseModel):
             generation_quality=self.generation_quality,
             shot_pacing=self.shot_pacing,
             premium_fallback_allowed=self.premium_fallback_allowed,
+            scene_detection_threshold=self.scene_detection_threshold,
             origin=GenerationSettingsOrigin.EXPLICIT,
         )
 
@@ -84,18 +88,22 @@ class SetGenerationSettingsRequest(BaseModel):
 
     Every field is required so a settings write is always the whole, explicit
     choice: there is no partial update that silently keeps a legacy default.
+    ``scene_detection_threshold`` is the one exception - it is an optional
+    override, and ``None`` explicitly means "use the deployment default".
     """
 
     model_config = ConfigDict(extra="forbid")
     generation_quality: GenerationQuality
     shot_pacing: ShotPacing
     premium_fallback_allowed: bool
+    scene_detection_threshold: float | None = Field(default=None, gt=0, lt=1)
 
     def generation_settings(self) -> ProjectGenerationSettings:
         return ProjectGenerationSettings(
             generation_quality=self.generation_quality,
             shot_pacing=self.shot_pacing,
             premium_fallback_allowed=self.premium_fallback_allowed,
+            scene_detection_threshold=self.scene_detection_threshold,
             origin=GenerationSettingsOrigin.EXPLICIT,
         )
 
@@ -113,6 +121,10 @@ class GenerationSettingsResponse(BaseModel):
     #: that point applies to the next generation run, never to the running one.
     workflow_started: bool
     estimate: GenerationCostEstimate
+    #: The scene-cut sensitivity actually used for media processing: the
+    #: project's override from ``settings``, or the deployment default when
+    #: ``settings.scene_detection_threshold`` is unset.
+    effective_scene_detection_threshold: float = Field(gt=0, lt=1)
 
 
 class GenerationEstimateRequest(BaseModel):

@@ -125,6 +125,7 @@ export function NewProjectPage(): JSX.Element {
     generation_quality: "balanced",
     shot_pacing: "normal",
     premium_fallback_allowed: false,
+    scene_detection_threshold: 0.3,
   });
   const [nameError, setNameError] = useState<string | null>(null);
   // Tracked per field so an invalid warning cap is flagged on the warning cap.
@@ -154,6 +155,7 @@ export function NewProjectPage(): JSX.Element {
           generation_quality: generation.generation_quality,
           shot_pacing: generation.shot_pacing,
           premium_fallback_allowed: generation.premium_fallback_allowed,
+          scene_detection_threshold: generation.scene_detection_threshold,
         },
         client,
       ).then((response) => response.data),

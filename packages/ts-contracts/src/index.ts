@@ -1609,6 +1609,8 @@ export interface ProjectGenerationSettings {
   generation_quality: GenerationQuality;
   shot_pacing: ShotPacing;
   premium_fallback_allowed: boolean;
+  /** Per-project override of the scene-cut sensitivity; `null` uses the deployment default. */
+  scene_detection_threshold: number | null;
   origin: GenerationSettingsOrigin;
 }
 export type RoutingReasonCode =

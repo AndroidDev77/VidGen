@@ -45,6 +45,20 @@
       "title": "Premium Fallback Allowed",
       "type": "boolean"
     },
+    "scene_detection_threshold": {
+      "anyOf": [
+        {
+          "exclusiveMaximum": 1,
+          "exclusiveMinimum": 0,
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Scene Detection Threshold"
+    },
     "schema_version": {
       "const": "1.0",
       "default": "1.0",

@@ -2,6 +2,7 @@ import {
   Body1,
   Caption1,
   Field,
+  Input,
   Radio,
   RadioGroup,
   Switch,
@@ -80,6 +81,17 @@ export const PACING_OPTIONS: ReadonlyArray<{
     description: "More, shorter shots: about 2.5 to 4 seconds each.",
   },
 ];
+
+const SCENE_THRESHOLD_MIN = 0.1;
+const SCENE_THRESHOLD_MAX = 0.9;
+const SCENE_THRESHOLD_STEP = 0.05;
+
+function clampSceneThreshold(value: number): number {
+  if (Number.isNaN(value)) {
+    return SCENE_THRESHOLD_MIN;
+  }
+  return Math.min(SCENE_THRESHOLD_MAX, Math.max(SCENE_THRESHOLD_MIN, value));
+}
 
 export interface GenerationSettingsPanelProps {
   readonly value: GenerationSettingsInput;
@@ -170,6 +182,29 @@ export function GenerationSettingsPanel({
             />
           ))}
         </RadioGroup>
+      </Field>
+      <Field
+        label="Scene detection threshold"
+        hint={
+          "Lower = more scenes detected (higher API cost); higher = fewer scenes " +
+          "(may miss cuts)."
+        }
+      >
+        <Input
+          type="number"
+          min={SCENE_THRESHOLD_MIN}
+          max={SCENE_THRESHOLD_MAX}
+          step={SCENE_THRESHOLD_STEP}
+          value={String(value.scene_detection_threshold)}
+          disabled={disabled}
+          onChange={(_, data) => {
+            const parsed = Number.parseFloat(data.value);
+            if (Number.isNaN(parsed)) {
+              return;
+            }
+            onChange({ ...value, scene_detection_threshold: clampSceneThreshold(parsed) });
+          }}
+        />
       </Field>
       {fetched.isError && estimate === undefined && (
         <Caption1 className={styles.muted} role="status">
