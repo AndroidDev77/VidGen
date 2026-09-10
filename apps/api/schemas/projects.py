@@ -6,7 +6,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from services.analysis.progress import EpisodeAnalysisPhase
+from services.progress.engine import ProgressState
 from vidgen.contracts.generation import (
     GenerationCostEstimate,
     GenerationQuality,
@@ -205,18 +205,27 @@ class ProjectListItemResponse(ProjectResponse):
     row_version: int = Field(ge=1)
 
 
-class EpisodeAnalysisProgressResponse(BaseModel):
-    """Where the project's episode analysis is, read from its checkpoints.
+class StageProgressResponse(BaseModel):
+    """Where the project's current stage is, read from its durable checkpoints.
 
-    The dashboard polls this while the analysis runs, so every field is
-    something it can show directly: the phase drives the bar's tone, the
-    counts and message sit beside it, and ``updated_at`` tells the owner the
-    figures are current.
+    The dashboard polls this while a stage runs, so every field is something
+    it can show directly: ``state`` drives the bar's tone and whether to keep
+    polling, ``label`` is the heading, the counts and message sit beside the
+    bar, and ``updated_at`` tells the owner the figures are current.
     """
 
-    phase: EpisodeAnalysisPhase
-    completed_scene_count: int = Field(ge=0)
-    total_scene_count: int = Field(ge=0)
+    #: A stable stage id, the timeline's ``PipelineStage`` value where one exists.
+    stage: str = Field(min_length=1)
+    label: str = Field(min_length=1)
+    state: ProgressState
+    #: The stage-specific phase, e.g. ``"scene_analysis"`` or ``"animating"``.
+    phase: str = Field(min_length=1)
+    completed_count: int = Field(ge=0)
+    total_count: int = Field(ge=0)
+    #: Singular noun for one counted unit, e.g. ``"scene"``.
+    unit: str = Field(min_length=1)
+    #: What the counts count, e.g. ``"scenes analyzed"``.
+    count_label: str
     percentage: float = Field(ge=0, le=100)
     message: str = Field(min_length=1)
     error_code: str | None = None
@@ -230,5 +239,6 @@ class ProjectStatusResponse(BaseModel):
     source_asset_id: UUID | None
     upload_status: str | None
     error_code: str | None
-    #: ``None`` until the workflow has started an episode-analysis run.
-    episode_analysis: EpisodeAnalysisProgressResponse | None = None
+    #: The stage that moved most recently; ``None`` until the workflow has
+    #: started any stage that reports progress.
+    stage_progress: StageProgressResponse | None = None

@@ -93,6 +93,10 @@ const STAGE_LABELS: Record<string, string> = {
   render_failed: "Render failed",
   render_cancelled: "Render cancelled",
   review: "Review",
+  // Stages the progress panel reports that the timeline does not list.
+  references: "Reference sheets",
+  shot_generation: "Shot generation",
+  final_qa: "Final quality check",
 };
 
 export function formatStage(stage: string | null | undefined): string {

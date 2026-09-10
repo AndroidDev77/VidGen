@@ -489,7 +489,7 @@ export async function installFakeApi(page: Page, state: FakeApiState): Promise<v
         source_asset_id: "44444444-4444-4444-8444-444444444444",
         upload_status: "completed",
         error_code: null,
-        episode_analysis: null,
+        stage_progress: null,
       });
     }
     if (path.endsWith("/transcript")) {
