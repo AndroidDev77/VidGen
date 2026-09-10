@@ -220,3 +220,24 @@ async def test_openai_adapter_propagates_transport_timeout() -> None:
     with pytest.raises(httpx.ConnectTimeout):
         await provider.compress_plot(request, GenerationContext())
     await client.aclose()
+
+
+def _script_prompt_text(filename: str) -> str:
+    """The prompt with its hard line wraps collapsed so phrases match verbatim."""
+    from services.script.openai_adapter import _prompt
+
+    return " ".join(_prompt(filename).split())
+
+
+def test_the_compressor_prompt_requires_reference_ids_to_be_copied() -> None:
+    """Regression guard for UNKNOWN_SOURCE_REFERENCE at compression time.
+
+    The ID-copy rule named plot beat, scene, character and relationship IDs but
+    not reference_id, so the model minted fresh ones for source_references and
+    the plan failed validation.
+    """
+    prompt = _script_prompt_text("plot_compressor_v1.txt")
+    assert (
+        "Every reference_id in every source_references list must also be copied exactly "
+        "from the input — never invent a reference_id." in prompt
+    )

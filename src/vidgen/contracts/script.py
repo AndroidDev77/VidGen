@@ -36,6 +36,21 @@ SegmentType = Literal["NARRATION", "DIALOGUE", "PAUSE"]
 SpeakerKind = Literal["narrator", "character", "anonymous"]
 ApprovalRecommendation = Literal["approve", "revise", "reject"]
 
+#: Compression-validation codes a deployment or project may choose to treat as
+#: warnings instead of hard failures. A code outside this set is always an
+#: error: it names a plan the script writer cannot be built from at all.
+SCRIPT_WARN_ONLY_ELIGIBLE_VALIDATION_CODES: tuple[str, ...] = (
+    "UNKNOWN_SOURCE_REFERENCE",
+    "UNKNOWN_BEAT",
+    "DUPLICATE_ID",
+    "REQUIRED_BEAT_OMITTED",
+)
+#: UNKNOWN_SOURCE_REFERENCE by default: a compressor that mints a reference_id
+#: instead of copying the one it was handed is citing its evidence badly, which
+#: is worth surfacing but is not worth discarding an otherwise sound plan and
+#: paying to compress the episode again.
+DEFAULT_SCRIPT_WARN_ONLY_VALIDATION_CODES: tuple[str, ...] = ("UNKNOWN_SOURCE_REFERENCE",)
+
 
 class ChannelVoiceConfig(StrictContract):
     schema_version: Version = "1.0"

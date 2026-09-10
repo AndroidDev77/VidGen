@@ -37,6 +37,7 @@ from services.costs.project_budget import (
 from services.generation.estimate import estimate_generation_costs
 from services.generation.settings import (
     effective_scene_detection_threshold,
+    effective_script_warn_only_validation_codes,
     effective_warn_only_validation_codes,
     generation_policy_identity,
     project_generation_settings,
@@ -54,6 +55,7 @@ from services.storyboard.providers import load_capability_profile
 from vidgen.contracts.episode_analysis import WARN_ONLY_ELIGIBLE_VALIDATION_CODES
 from vidgen.contracts.generation import GenerationCostEstimate
 from vidgen.contracts.review import ApiErrorField
+from vidgen.contracts.script import SCRIPT_WARN_ONLY_ELIGIBLE_VALIDATION_CODES
 from vidgen.db.cost_models import ProjectBudget
 from vidgen.db.models import Asset, Project, SourceVideo, asset_dependencies
 from vidgen.db.repositories import ProjectRepository
@@ -336,6 +338,14 @@ def _generation_settings_response(
             effective_warn_only_validation_codes(generation, settings.warn_only_validation_codes)
         ),
         available_warn_only_validation_codes=list(WARN_ONLY_ELIGIBLE_VALIDATION_CODES),
+        effective_script_warn_only_validation_codes=sorted(
+            effective_script_warn_only_validation_codes(
+                generation, settings.script_warn_only_validation_codes
+            )
+        ),
+        available_script_warn_only_validation_codes=list(
+            SCRIPT_WARN_ONLY_ELIGIBLE_VALIDATION_CODES
+        ),
     )
 
 

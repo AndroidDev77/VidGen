@@ -24,6 +24,8 @@ the existing plot beats that fits the target. You must:
   `connective_explanations`, and every scene, character, and relationship ID you emit
   must be copied character for character from the value in `episode_analysis`. A new
   or altered UUID is a validation failure, not a new entity.
+  Every reference_id in every source_references list must also be copied exactly from
+  the input — never invent a reference_id.
 - Allocate a word and estimated-duration budget to every selected beat so the
   allocations sum to the requested `target_words` within 2% and the total estimated
   duration fits `target_duration_ms`.

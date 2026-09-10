@@ -12,8 +12,9 @@ from collections.abc import Mapping
 from uuid import UUID
 
 from services.script.compressor import structural_roles
-from vidgen.contracts.episode_analysis import EpisodeAnalysis
+from vidgen.contracts.episode_analysis import EpisodeAnalysis, StructuredNote
 from vidgen.contracts.script import (
+    DEFAULT_SCRIPT_WARN_ONLY_VALIDATION_CODES,
     BeatCoverage,
     CompressedPlotPlan,
     PlotCompressionRequest,
@@ -78,8 +79,22 @@ def _all_reference_ids(analysis: EpisodeAnalysis) -> set[UUID]:
 
 
 def validate_compressed_plot_plan(
-    plan: CompressedPlotPlan, *, analysis: EpisodeAnalysis, request: PlotCompressionRequest
+    plan: CompressedPlotPlan,
+    *,
+    analysis: EpisodeAnalysis,
+    request: PlotCompressionRequest,
+    warn_only_codes: set[str] | None = None,
 ) -> ScriptValidationReport:
+    """Validate a compressed plot plan deterministically.
+
+    ``warn_only_codes`` names the codes this deployment or project tolerates.
+    A finding carrying one of them is reported as a warning instead of an
+    error, so it stays visible in the report without failing the run and
+    paying to compress the episode again. Every other code still fails.
+    """
+    tolerated = frozenset(
+        DEFAULT_SCRIPT_WARN_ONLY_VALIDATION_CODES if warn_only_codes is None else warn_only_codes
+    )
     errors: list[ScriptValidationError] = []
     beats_by_id = {beat.plot_beat_id: beat for beat in analysis.plot_beats}
     selected_ids = [beat.plot_beat_id for beat in plan.selected_beats]
@@ -252,7 +267,16 @@ def validate_compressed_plot_plan(
             f"Total estimated duration must fit the target within {DURATION_TOLERANCE:.0%}",
         )
 
-    return ScriptValidationReport(valid=not errors, errors=errors)
+    demoted = [
+        StructuredNote(
+            code=item.code,
+            message=f"{item.entity_path}: {item.explanation} (value: {item.invalid_value})",
+        )
+        for item in errors
+        if item.code in tolerated
+    ]
+    blocking = [item for item in errors if item.code not in tolerated]
+    return ScriptValidationReport(valid=not blocking, errors=blocking, warnings=demoted)
 
 
 def validate_recap_script(

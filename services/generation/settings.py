@@ -107,6 +107,17 @@ def effective_warn_only_validation_codes(
     )
 
 
+def effective_script_warn_only_validation_codes(
+    generation: ProjectGenerationSettings, global_default: Sequence[str]
+) -> frozenset[str]:
+    """The compression-validation codes to demote to warnings for this project."""
+    return frozenset(
+        generation.script_warn_only_validation_codes
+        if generation.script_warn_only_validation_codes is not None
+        else global_default
+    )
+
+
 def generation_policy_identity(
     generation: ProjectGenerationSettings,
     *,

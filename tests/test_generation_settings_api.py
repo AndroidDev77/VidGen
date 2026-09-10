@@ -10,7 +10,10 @@ import pytest
 from sqlalchemy import select
 
 from services.generation.estimate import estimate_generation_costs
-from services.generation.settings import effective_warn_only_validation_codes
+from services.generation.settings import (
+    effective_script_warn_only_validation_codes,
+    effective_warn_only_validation_codes,
+)
 from tests.client_fixtures import review_client_context
 from vidgen.contracts.generation import (
     GenerationCostEstimate,
@@ -309,6 +312,62 @@ def test_the_resolver_prefers_the_project_override_over_the_deployment_default()
     assert (
         effective_warn_only_validation_codes(
             ProjectGenerationSettings(warn_only_validation_codes=[]), default
+        )
+        == frozenset()
+    )
+
+
+def test_script_warn_only_validation_codes_default_to_the_deployment_setting(
+    tmp_path: Path,
+) -> None:
+    with review_client_context(tmp_path) as (client, _, _):
+        project_id = _create(client).json()["id"]
+        body = client.get(
+            f"/api/v1/projects/{project_id}/generation-settings", headers=OWNER
+        ).json()
+        assert body["settings"]["script_warn_only_validation_codes"] is None
+        assert body["effective_script_warn_only_validation_codes"] == ["UNKNOWN_SOURCE_REFERENCE"]
+        assert "REQUIRED_BEAT_OMITTED" in body["available_script_warn_only_validation_codes"]
+
+
+def test_script_warn_only_validation_codes_can_be_overridden_per_project(tmp_path: Path) -> None:
+    with review_client_context(tmp_path) as (client, _, _):
+        project_id = _create(client).json()["id"]
+        updated = client.put(
+            f"/api/v1/projects/{project_id}/generation-settings",
+            json={
+                "generation_quality": "balanced",
+                "shot_pacing": "normal",
+                "premium_fallback_allowed": False,
+                "script_warn_only_validation_codes": ["UNKNOWN_BEAT"],
+            },
+            headers=OWNER,
+        )
+        assert updated.status_code == 200, updated.text
+        body = updated.json()
+        assert body["settings"]["script_warn_only_validation_codes"] == ["UNKNOWN_BEAT"]
+        assert body["effective_script_warn_only_validation_codes"] == ["UNKNOWN_BEAT"]
+        # The two vocabularies stay independent: the analysis codes are untouched.
+        assert body["effective_warn_only_validation_codes"] == ["SCENE_SET_MISMATCH"]
+
+
+def test_a_script_code_from_the_wrong_vocabulary_is_refused(tmp_path: Path) -> None:
+    with review_client_context(tmp_path) as (client, _, _):
+        response = _create(client, script_warn_only_validation_codes=["SCENE_SET_MISMATCH"])
+        assert response.status_code == 422, response.text
+
+
+def test_the_script_resolver_prefers_the_project_override() -> None:
+    default = ["UNKNOWN_SOURCE_REFERENCE"]
+    assert effective_script_warn_only_validation_codes(
+        ProjectGenerationSettings(), default
+    ) == frozenset({"UNKNOWN_SOURCE_REFERENCE"})
+    assert effective_script_warn_only_validation_codes(
+        ProjectGenerationSettings(script_warn_only_validation_codes=["DUPLICATE_ID"]), default
+    ) == frozenset({"DUPLICATE_ID"})
+    assert (
+        effective_script_warn_only_validation_codes(
+            ProjectGenerationSettings(script_warn_only_validation_codes=[]), default
         )
         == frozenset()
     )
