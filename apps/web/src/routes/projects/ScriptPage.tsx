@@ -203,6 +203,35 @@ export function ScriptPage(): JSX.Element {
 
       {script.isSuccess && (
         <>
+          {/*
+            An edit is preserved as a new draft revision, and a version picked
+            out of a stalled run starts as a draft too. Either way the draft is
+            what the reviewer is reading, and approving it is what lets the paid
+            stages downstream build on it.
+          */}
+          <MessageBar intent={script.data.approved ? "success" : "warning"}>
+            <MessageBarBody>
+              <MessageBarTitle>
+                {script.data.approved ? "Approved" : "This version is not approved yet"}
+              </MessageBarTitle>
+              {script.data.approved
+                ? `Version ${script.data.script.version} is the approved script the rest of the ` +
+                  "pipeline builds on."
+                : `Version ${script.data.script.version} is a draft. Approving it rebuilds the ` +
+                  "narration and everything downstream from it."}
+            </MessageBarBody>
+            {!script.data.approved && (
+              <MessageBarActions>
+                <Button
+                  appearance="primary"
+                  disabled={select.isPending}
+                  onClick={() => select.mutate(script.data.script.script_id)}
+                >
+                  {select.isPending ? "Approving…" : "Approve this script"}
+                </Button>
+              </MessageBarActions>
+            )}
+          </MessageBar>
           <ScriptEditor
             script={script.data}
             versions={versions.data?.items ?? [script.data.script]}

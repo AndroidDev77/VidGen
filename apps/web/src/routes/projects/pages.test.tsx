@@ -449,7 +449,7 @@ describe("ScriptPage", () => {
   it("shows the selected version, approval state and beats", async () => {
     renderProjectRoute(<ScriptPage />, `/projects/${PROJECT_ID}/script`);
     expect(await screen.findByRole("heading", { name: "Beat 1" })).toBeVisible();
-    expect(screen.getByText("Approved")).toBeVisible();
+    expect(screen.getAllByText("Approved").length).toBeGreaterThan(0);
     expect(screen.getByText("80 words of a 700-word target")).toBeVisible();
   });
 
@@ -485,6 +485,40 @@ describe("ScriptPage", () => {
     fireEvent.click(dialogButton(dialog, "Save the beat"));
     expect(await screen.findByText("Downstream work is now stale")).toBeVisible();
     expect(screen.getByText(/Verified render attempt 1/)).toBeVisible();
+  });
+
+  it("offers an approval for a selected version that is still a draft", async () => {
+    const approved: string[] = [];
+    server.use(
+      http.get(`${BASE}/api/v1/projects/:projectId/script`, () =>
+        HttpResponse.json({
+          ...fixtures.script,
+          approved: false,
+          script: { ...fixtures.script.script, version: 2, status: "draft" },
+        }),
+      ),
+      http.post(/\/scripts\/[^/]+:select$/, ({ request }) => {
+        approved.push(new URL(request.url).pathname.split("/").at(-1)!.split(":")[0]!);
+        server.use(
+          http.get(`${BASE}/api/v1/projects/:projectId/script`, () =>
+            HttpResponse.json(fixtures.script),
+          ),
+        );
+        return HttpResponse.json({ script: { ...fixtures.script.script, selected: true } });
+      }),
+    );
+    const { queryClient } = renderProjectRoute(<ScriptPage />, `/projects/${PROJECT_ID}/script`);
+    expect(await screen.findByText("This version is not approved yet")).toBeVisible();
+    await settle(queryClient);
+    fireEvent.click(screen.getByRole("button", { name: "Approve this script" }));
+    await waitFor(() => expect(approved).toEqual([fixtures.script.script.script_id]));
+    expect(await screen.findByText(/is the approved script/)).toBeVisible();
+  });
+
+  it("does not offer an approval for an already approved script", async () => {
+    renderProjectRoute(<ScriptPage />, `/projects/${PROJECT_ID}/script`);
+    expect(await screen.findByRole("heading", { name: "Beat 1" })).toBeVisible();
+    expect(screen.queryByRole("button", { name: "Approve this script" })).not.toBeInTheDocument();
   });
 
   it("marks a beat as unsaved while it is dirty", async () => {
@@ -547,7 +581,7 @@ describe("ScriptPage under script_review_required", () => {
     expect(screen.getByRole("heading", { name: "Version 2" })).toBeVisible();
     expect(screen.getByText("602 words of a 700-word target")).toBeVisible();
     expect(screen.getAllByText("draft")).toHaveLength(2);
-    expect(screen.getAllByRole("button", { name: "Select this script" })).toHaveLength(2);
+    expect(screen.getAllByRole("button", { name: "Approve this script" })).toHaveLength(2);
     expect(screen.queryByText("No approved script yet")).not.toBeInTheDocument();
   });
 
@@ -566,7 +600,7 @@ describe("ScriptPage under script_review_required", () => {
     expect(await screen.findByText("Version 2 opens on a wide shot.")).toBeVisible();
   });
 
-  it("selects a script and then shows the editor for it", async () => {
+  it("approves a script and then shows the editor for it", async () => {
     useReviewRequired();
     const selected: string[] = [];
     server.use(
@@ -588,7 +622,7 @@ describe("ScriptPage under script_review_required", () => {
     const { queryClient } = renderProjectRoute(<ScriptPage />, `/projects/${PROJECT_ID}/script`);
     expect(await screen.findByRole("heading", { name: "Version 2" })).toBeVisible();
     await settle(queryClient);
-    fireEvent.click(screen.getAllByRole("button", { name: "Select this script" })[1]!);
+    fireEvent.click(screen.getAllByRole("button", { name: "Approve this script" })[1]!);
     expect(await screen.findByRole("heading", { name: "Beat 1" })).toBeVisible();
     expect(selected).toEqual([candidate(2).script_id]);
     expect(screen.queryByText("Pick the script to build on")).not.toBeInTheDocument();
