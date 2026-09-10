@@ -11,9 +11,10 @@ from __future__ import annotations
 from enum import StrEnum
 from typing import Literal
 
-from pydantic import Field
+from pydantic import Field, field_validator
 
 from vidgen.contracts.common import StrictContract
+from vidgen.contracts.episode_analysis import WARN_ONLY_ELIGIBLE_VALIDATION_CODES
 
 GENERATION_SETTINGS_VERSION = "generation-settings/1"
 
@@ -66,7 +67,32 @@ class ProjectGenerationSettings(StrictContract):
     #: processing. ``None`` means the project has no override and uses the
     #: deployment's global ``scene_detection_threshold`` setting.
     scene_detection_threshold: float | None = Field(default=None, gt=0, lt=1)
+    #: Per-project override of the episode-analysis validation codes that are
+    #: reported as warnings instead of failing the run. ``None`` means the
+    #: project has no override and uses the deployment's global
+    #: ``warn_only_validation_codes`` setting.
+    warn_only_validation_codes: list[str] | None = Field(default=None, max_length=16)
     origin: GenerationSettingsOrigin = GenerationSettingsOrigin.EXPLICIT
+
+    @field_validator("warn_only_validation_codes")
+    @classmethod
+    def validate_warn_only_codes(cls, value: list[str] | None) -> list[str] | None:
+        """Only a code the validator can actually demote may be listed.
+
+        An unknown code would be stored, shown in the UI and silently never
+        match anything, so it is refused at the boundary instead.
+        """
+        if value is None:
+            return None
+        unknown = sorted(set(value) - set(WARN_ONLY_ELIGIBLE_VALIDATION_CODES))
+        if unknown:
+            raise ValueError(
+                f"unknown validation codes: {', '.join(unknown)}; "
+                f"expected any of {', '.join(WARN_ONLY_ELIGIBLE_VALIDATION_CODES)}"
+            )
+        # Deterministic and duplicate-free: these values are bound into stored
+        # settings and compared to decide whether a settings write changed.
+        return sorted(set(value))
 
 
 class RoutingReasonCode(StrEnum):

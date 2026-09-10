@@ -7,6 +7,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from services.progress.engine import ProgressState
+from vidgen.contracts.episode_analysis import WARN_ONLY_ELIGIBLE_VALIDATION_CODES
 from vidgen.contracts.generation import (
     GenerationCostEstimate,
     GenerationQuality,
@@ -28,6 +29,24 @@ def exact_decimal_text(value: object) -> object:
         raise ValueError('provide the amount as an exact decimal string, for example "25.00"')
     if isinstance(value, int | Decimal):
         return str(value)
+    return value
+
+
+def known_warn_only_codes(value: object) -> object:
+    """Mirror the contract's bounded vocabulary at the request boundary.
+
+    ``ProjectGenerationSettings`` refuses an unknown code, so without this the
+    request would parse and then fail inside the route as a 500 instead of
+    telling the caller which code is wrong.
+    """
+    if not isinstance(value, list):
+        return value
+    unknown = sorted(item for item in value if item not in WARN_ONLY_ELIGIBLE_VALIDATION_CODES)
+    if unknown:
+        raise ValueError(
+            f"unknown validation codes: {', '.join(str(item) for item in unknown)}; "
+            f"expected any of {', '.join(WARN_ONLY_ELIGIBLE_VALIDATION_CODES)}"
+        )
     return value
 
 
@@ -69,6 +88,12 @@ class CreateProjectRequest(BaseModel):
     #: Per-project override of the scene-cut sensitivity used during media
     #: processing. Leave unset to use the deployment's global default.
     scene_detection_threshold: float | None = Field(default=None, gt=0, lt=1)
+    #: Per-project override of the episode-analysis validation codes reported
+    #: as warnings instead of failing the run. Leave unset to use the
+    #: deployment's global default.
+    warn_only_validation_codes: list[str] | None = Field(default=None, max_length=16)
+
+    _known_codes = field_validator("warn_only_validation_codes")(known_warn_only_codes)
 
     _exact_caps = field_validator("budget_warning_cap", "budget_hard_cap", mode="before")(
         exact_decimal_text
@@ -80,6 +105,7 @@ class CreateProjectRequest(BaseModel):
             shot_pacing=self.shot_pacing,
             premium_fallback_allowed=self.premium_fallback_allowed,
             scene_detection_threshold=self.scene_detection_threshold,
+            warn_only_validation_codes=self.warn_only_validation_codes,
             origin=GenerationSettingsOrigin.EXPLICIT,
         )
 
@@ -98,6 +124,11 @@ class SetGenerationSettingsRequest(BaseModel):
     shot_pacing: ShotPacing
     premium_fallback_allowed: bool
     scene_detection_threshold: float | None = Field(default=None, gt=0, lt=1)
+    #: The same kind of optional override: ``None`` means "use the deployment
+    #: default", an empty list means "tolerate nothing; every code fails".
+    warn_only_validation_codes: list[str] | None = Field(default=None, max_length=16)
+
+    _known_codes = field_validator("warn_only_validation_codes")(known_warn_only_codes)
 
     def generation_settings(self) -> ProjectGenerationSettings:
         return ProjectGenerationSettings(
@@ -105,6 +136,7 @@ class SetGenerationSettingsRequest(BaseModel):
             shot_pacing=self.shot_pacing,
             premium_fallback_allowed=self.premium_fallback_allowed,
             scene_detection_threshold=self.scene_detection_threshold,
+            warn_only_validation_codes=self.warn_only_validation_codes,
             origin=GenerationSettingsOrigin.EXPLICIT,
         )
 
@@ -126,6 +158,12 @@ class GenerationSettingsResponse(BaseModel):
     #: project's override from ``settings``, or the deployment default when
     #: ``settings.scene_detection_threshold`` is unset.
     effective_scene_detection_threshold: float = Field(gt=0, lt=1)
+    #: The episode-analysis validation codes actually demoted to warnings: the
+    #: project's override from ``settings``, or the deployment default when
+    #: ``settings.warn_only_validation_codes`` is unset.
+    effective_warn_only_validation_codes: list[str]
+    #: Every code a project may choose to treat as a warning, for the UI.
+    available_warn_only_validation_codes: list[str]
 
 
 class GenerationEstimateRequest(BaseModel):

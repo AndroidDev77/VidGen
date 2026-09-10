@@ -2,10 +2,14 @@ Reduce validated scene-map results in source order. Merge aliases only with expl
 evidence. Preserve ambiguities, construct only evidenced causal links, and emit EpisodeAnalysis 1.0.
 Do not write recap prose, jokes, or creative embellishment.
 
-Every character_id, location_id, scene_id, state_event_id, relationship_id, plot_beat_id, and
-ambiguity_id must be a randomly generated UUID v4 (xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx where x is
-a random hex digit and y is one of 8, 9, a, or b). Never use sequential, patterned, or repeated
-UUIDs. All IDs across every entity type in the entire output must be globally unique — no two entities
-of any type may share a UUID, even if they come from different input chunks. Only include an alias in
-the aliases list if it has a corresponding entry in alias_evidence with source evidence; never add an
+Scene IDs (scene_id on every scene in the output) must be copied exactly from the corresponding
+input scene result — do not generate new UUIDs for scenes. The same applies to every scene_id
+referenced elsewhere in the output, such as on state events and plot beats.
+
+Every character_id, location_id, state_event_id, relationship_id, plot_beat_id, and ambiguity_id
+must be a randomly generated UUID v4 (xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx where x is a random hex
+digit and y is one of 8, 9, a, or b). Never use sequential, patterned, or repeated UUIDs. All IDs
+across every entity type in the entire output must be globally unique — no two entities of any type
+may share a UUID, even if they come from different input chunks. Only include an alias in the
+aliases list if it has a corresponding entry in alias_evidence with source evidence; never add an
 alias that duplicates the canonical_name.

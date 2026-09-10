@@ -1,8 +1,10 @@
 import {
   Body1,
   Caption1,
+  Dropdown,
   Field,
   Input,
+  Option,
   Radio,
   RadioGroup,
   Switch,
@@ -80,6 +82,22 @@ export const PACING_OPTIONS: ReadonlyArray<{
     label: "Fast",
     description: "More, shorter shots: about 2.5 to 4 seconds each.",
   },
+];
+
+/**
+ * Every deterministic episode-analysis validation code an owner may choose to
+ * treat as a warning, with what tolerating it actually means. A code outside
+ * this list always fails the run.
+ */
+export const WARN_ONLY_VALIDATION_CODES: ReadonlyArray<{
+  readonly value: string;
+  readonly description: string;
+}> = [
+  { value: "SCENE_SET_MISMATCH", description: "the analysis scenes are not the evidence scenes" },
+  { value: "UNSUPPORTED_ALIAS_MERGE", description: "a merged alias has no explicit evidence" },
+  { value: "DUPLICATE_ID", description: "two entities share a stable ID" },
+  { value: "UNKNOWN_SOURCE_REFERENCE", description: "a reference is outside the evidence" },
+  { value: "INVALID_CHRONOLOGY", description: "scene sequences are not unique and monotonic" },
 ];
 
 const SCENE_THRESHOLD_MIN = 0.1;
@@ -205,6 +223,31 @@ export function GenerationSettingsPanel({
             onChange({ ...value, scene_detection_threshold: clampSceneThreshold(parsed) });
           }}
         />
+      </Field>
+      <Field
+        label="Treat as warnings (not errors)"
+        hint={
+          "Episode-analysis validation findings with these codes are reported and the run " +
+          "continues. Every other code fails the analysis and pays to generate it again."
+        }
+      >
+        <Dropdown
+          multiselect
+          aria-label="Treat as warnings (not errors)"
+          placeholder="Nothing tolerated; every code fails"
+          disabled={disabled}
+          value={value.warn_only_validation_codes.join(", ")}
+          selectedOptions={[...value.warn_only_validation_codes]}
+          onOptionSelect={(_, data) =>
+            onChange({ ...value, warn_only_validation_codes: [...data.selectedOptions] })
+          }
+        >
+          {WARN_ONLY_VALIDATION_CODES.map((code) => (
+            <Option key={code.value} value={code.value} text={code.value}>
+              {`${code.value} — ${code.description}`}
+            </Option>
+          ))}
+        </Dropdown>
       </Field>
       {fetched.isError && estimate === undefined && (
         <Caption1 className={styles.muted} role="status">

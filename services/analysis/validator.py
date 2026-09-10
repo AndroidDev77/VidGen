@@ -6,6 +6,7 @@ from collections.abc import Iterable
 from uuid import UUID
 
 from vidgen.contracts.episode_analysis import (
+    DEFAULT_WARN_ONLY_VALIDATION_CODES,
     AnalysisValidationError,
     AnalysisValidationReport,
     EpisodeAnalysis,
@@ -75,7 +76,18 @@ def validate_episode_analysis(
     valid_reference_ids: set[UUID],
     required_anonymous_labels: set[str] | None = None,
     valid_references: list[SourceReference] | None = None,
+    warn_only_codes: Iterable[str] | None = None,
 ) -> AnalysisValidationReport:
+    """Validate a reduced episode analysis deterministically.
+
+    ``warn_only_codes`` names the codes this deployment or project tolerates.
+    A finding carrying one of them is reported as a warning instead of an
+    error, so it stays visible in the report without failing the run and
+    paying to generate the analysis again. Every other code still fails.
+    """
+    tolerated = frozenset(
+        DEFAULT_WARN_ONLY_VALIDATION_CODES if warn_only_codes is None else warn_only_codes
+    )
     errors: list[AnalysisValidationError] = []
 
     def error(code: str, path: str, value: object, explanation: str) -> None:
@@ -300,4 +312,15 @@ def validate_episode_analysis(
         for label in sorted(required_anonymous_labels or set())
         if label.casefold() not in ambiguity_text
     ]
-    return AnalysisValidationReport(valid=not errors, errors=errors, warnings=warnings)
+    demoted = [
+        StructuredNote(
+            code=item.code,
+            message=f"{item.entity_path}: {item.explanation} (value: {item.invalid_value})",
+        )
+        for item in errors
+        if item.code in tolerated
+    ]
+    blocking = [item for item in errors if item.code not in tolerated]
+    return AnalysisValidationReport(
+        valid=not blocking, errors=blocking, warnings=[*demoted, *warnings]
+    )

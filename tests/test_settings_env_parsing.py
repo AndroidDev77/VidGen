@@ -11,6 +11,7 @@ without ``NoDecode`` a documented value aborted worker start-up with
 from __future__ import annotations
 
 import pytest
+from pydantic import ValidationError
 
 from apps.api.settings import APISettings
 
@@ -20,6 +21,9 @@ LIST_SETTINGS = (
     ("VIDGEN_SUBTITLE_LANGUAGES", "subtitle_languages"),
     ("VIDGEN_YOUTUBE_OAUTH_REDIRECT_TARGETS", "youtube_oauth_redirect_targets"),
 )
+#: Parsed the same way, but its values are a bounded vocabulary rather than
+#: free text, so it is exercised separately below.
+CODE_LIST_SETTING = "VIDGEN_WARN_ONLY_VALIDATION_CODES"
 
 
 @pytest.fixture(autouse=True)
@@ -28,6 +32,7 @@ def _isolated_environment(monkeypatch: pytest.MonkeyPatch) -> None:
     # every case below also constructs the settings with ``_env_file=None``.
     for variable, _ in LIST_SETTINGS:
         monkeypatch.delenv(variable, raising=False)
+    monkeypatch.delenv(CODE_LIST_SETTING, raising=False)
 
 
 @pytest.mark.parametrize(("variable", "field"), LIST_SETTINGS)
@@ -75,3 +80,28 @@ def test_the_defaults_survive_an_unset_environment() -> None:
     assert settings.cors_allowed_origins == ()
     assert settings.subtitle_languages == ("en",)
     assert settings.youtube_oauth_redirect_targets == ("/",)
+
+
+def test_warn_only_validation_codes_default_to_the_scene_set_mismatch_tolerance() -> None:
+    """The deployment default, which every project without an override uses."""
+    assert APISettings(_env_file=None).warn_only_validation_codes == ["SCENE_SET_MISMATCH"]
+
+
+def test_warn_only_validation_codes_load_as_a_comma_separated_list(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("VIDGEN_WARN_ONLY_VALIDATION_CODES", "scene_set_mismatch, duplicate_id")
+    assert APISettings(_env_file=None).warn_only_validation_codes == [
+        "DUPLICATE_ID",
+        "SCENE_SET_MISMATCH",
+    ]
+
+
+def test_an_unknown_warn_only_validation_code_is_refused(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # A code the validator never emits would be stored and silently match
+    # nothing, so start-up fails instead of tolerating a typo.
+    monkeypatch.setenv("VIDGEN_WARN_ONLY_VALIDATION_CODES", "SCENE_SET_MISMATCH,NOT_A_CODE")
+    with pytest.raises(ValidationError):
+        APISettings(_env_file=None)

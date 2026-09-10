@@ -55,6 +55,54 @@ def test_reference_timestamps_need_not_match_the_selected_evidence_exactly() -> 
     assert report.valid, report.errors
 
 
+def test_a_warn_only_code_is_demoted_to_a_warning_and_the_report_stays_valid() -> None:
+    """A tolerated code is reported, not failed.
+
+    A reduce model that renames a scene ID it was told to copy produces a
+    SCENE_SET_MISMATCH. With the code tolerated the finding stays visible in
+    the report as a warning instead of failing the run and paying to generate
+    the analysis again.
+    """
+    analysis = _golden().model_copy(deep=True)
+    scene = analysis.scenes[0]
+    report = validate_episode_analysis(
+        analysis,
+        valid_scene_ids={uuid4()},
+        valid_reference_ids={scene.scene_id},
+        warn_only_codes={"SCENE_SET_MISMATCH"},
+    )
+    assert report.valid, report.errors
+    assert "SCENE_SET_MISMATCH" not in {item.code for item in report.errors}
+    assert "SCENE_SET_MISMATCH" in {item.code for item in report.warnings}
+
+
+def test_a_code_outside_warn_only_codes_still_fails_validation() -> None:
+    analysis = _golden().model_copy(deep=True)
+    scene = analysis.scenes[0]
+    report = validate_episode_analysis(
+        analysis,
+        valid_scene_ids={uuid4()},
+        valid_reference_ids={scene.scene_id},
+        warn_only_codes={"UNSUPPORTED_ALIAS_MERGE"},
+    )
+    assert not report.valid
+    assert "SCENE_SET_MISMATCH" in {item.code for item in report.errors}
+
+
+def test_an_empty_warn_only_set_tolerates_nothing() -> None:
+    """``None`` means the default; an empty set explicitly means "tolerate nothing"."""
+    analysis = _golden().model_copy(deep=True)
+    scene = analysis.scenes[0]
+    report = validate_episode_analysis(
+        analysis,
+        valid_scene_ids={uuid4()},
+        valid_reference_ids={scene.scene_id},
+        warn_only_codes=set(),
+    )
+    assert not report.valid
+    assert "SCENE_SET_MISMATCH" in {item.code for item in report.errors}
+
+
 def test_unknown_character_and_overlapping_chronology_are_rejected() -> None:
     analysis = _golden().model_copy(deep=True)
     analysis.scenes[0].character_ids = [uuid4()]

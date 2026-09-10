@@ -44,6 +44,9 @@ export function GenerationSettingsCard({ projectId }: GenerationSettingsCardProp
         scene_detection_threshold:
           settings.data.settings.scene_detection_threshold ??
           settings.data.effective_scene_detection_threshold,
+        warn_only_validation_codes:
+          settings.data.settings.warn_only_validation_codes ??
+          settings.data.effective_warn_only_validation_codes,
       });
     }
   }, [settings.data]);
@@ -64,7 +67,16 @@ export function GenerationSettingsCard({ projectId }: GenerationSettingsCardProp
       draft.premium_fallback_allowed !== settings.data.settings.premium_fallback_allowed ||
       draft.scene_detection_threshold !==
         (settings.data.settings.scene_detection_threshold ??
-          settings.data.effective_scene_detection_threshold));
+          settings.data.effective_scene_detection_threshold) ||
+      // Order-insensitive: the API stores the codes sorted, the dropdown emits
+      // them in the order they were checked.
+      [...draft.warn_only_validation_codes].sort().join(",") !==
+        [
+          ...(settings.data.settings.warn_only_validation_codes ??
+            settings.data.effective_warn_only_validation_codes),
+        ]
+          .sort()
+          .join(","));
 
   return (
     <SectionCard

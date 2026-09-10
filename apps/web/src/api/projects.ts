@@ -56,6 +56,11 @@ export interface GenerationSettingsInput {
   premium_fallback_allowed: boolean;
   /** Scene-cut sensitivity for media processing (0.10-0.90, exclusive of 0 and 1). */
   scene_detection_threshold: number;
+  /**
+   * Episode-analysis validation codes reported as warnings instead of failing
+   * the run. An empty list means every code fails the run.
+   */
+  warn_only_validation_codes: string[];
 }
 
 export interface GenerationSettingsResponse {
@@ -66,6 +71,10 @@ export interface GenerationSettingsResponse {
   estimate: GenerationCostEstimate;
   /** The scene-cut sensitivity actually in effect: the override, or the deployment default. */
   effective_scene_detection_threshold: number;
+  /** The validation codes actually demoted to warnings for this project. */
+  effective_warn_only_validation_codes: string[];
+  /** Every code a project may choose to treat as a warning. */
+  available_warn_only_validation_codes: string[];
 }
 
 export interface GenerationEstimateInput {
@@ -135,6 +144,8 @@ export interface CreateProjectInput {
   premium_fallback_allowed: boolean;
   /** Scene-cut sensitivity for media processing (0.10-0.90, exclusive of 0 and 1). */
   scene_detection_threshold: number;
+  /** Episode-analysis validation codes reported as warnings instead of errors. */
+  warn_only_validation_codes: string[];
 }
 
 export function listProjects(

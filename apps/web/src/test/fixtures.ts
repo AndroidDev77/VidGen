@@ -140,6 +140,7 @@ export const generationSettings = {
     shot_pacing: "normal",
     premium_fallback_allowed: false,
     scene_detection_threshold: null,
+    warn_only_validation_codes: null,
     origin: "explicit",
   },
   generation_policy_identity:
@@ -147,6 +148,14 @@ export const generationSettings = {
   workflow_started: true,
   estimate: generationEstimate,
   effective_scene_detection_threshold: 0.3,
+  effective_warn_only_validation_codes: ["SCENE_SET_MISMATCH"],
+  available_warn_only_validation_codes: [
+    "SCENE_SET_MISMATCH",
+    "UNSUPPORTED_ALIAS_MERGE",
+    "DUPLICATE_ID",
+    "UNKNOWN_SOURCE_REFERENCE",
+    "INVALID_CHRONOLOGY",
+  ],
 };
 
 /** The voices a fake-provider deployment offers, and the one selected. */

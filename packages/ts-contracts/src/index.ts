@@ -1611,6 +1611,11 @@ export interface ProjectGenerationSettings {
   premium_fallback_allowed: boolean;
   /** Per-project override of the scene-cut sensitivity; `null` uses the deployment default. */
   scene_detection_threshold: number | null;
+  /**
+   * Per-project override of the episode-analysis validation codes reported as
+   * warnings instead of failing the run; `null` uses the deployment default.
+   */
+  warn_only_validation_codes: string[] | null;
   origin: GenerationSettingsOrigin;
 }
 export type RoutingReasonCode =
