@@ -277,6 +277,9 @@ class ProviderMetadata(StrictContract):
     input_hash: str = Field(pattern=r"^[a-f0-9]{64}$")
     redacted_response_metadata: dict[str, str | int | float | bool] = Field(default_factory=dict)
     input_tokens: int | None = Field(default=None, ge=0)
+    #: The cached portion of ``input_tokens``, which the provider bills at a
+    #: lower rate. None when the provider did not report a cache breakdown.
+    cached_input_tokens: int | None = Field(default=None, ge=0)
     output_tokens: int | None = Field(default=None, ge=0)
     warnings: list[StructuredNote] = Field(default_factory=list)
     validation_status: Literal["pending", "valid", "invalid"] = "pending"

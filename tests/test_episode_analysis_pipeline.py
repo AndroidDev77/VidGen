@@ -287,9 +287,20 @@ async def test_failed_scene_retry_does_not_rerun_successful_scene(tmp_path: Path
 class _MeteredProvider(FakeEpisodeAnalysisProvider):
     """Fake provider that reports token usage like the OpenAI Responses API does."""
 
+    #: A name the published rate table resolves, so the fallback path is real.
+    model = "gpt-5.6"
+    #: Cached share of ``input_tokens``, as OpenAI reports it.
+    cached_input_tokens: int | None = None
+
     def _metadata(self, request, context):  # type: ignore[no-untyped-def]
         metadata = super()._metadata(request, context)
-        return metadata.model_copy(update={"input_tokens": 1000, "output_tokens": 500})
+        return metadata.model_copy(
+            update={
+                "input_tokens": 1000,
+                "cached_input_tokens": self.cached_input_tokens,
+                "output_tokens": 500,
+            }
+        )
 
 
 def _price_episode_analysis(
@@ -445,11 +456,73 @@ async def test_an_uncatalogued_model_is_billed_at_the_fallback_rate(tmp_path: Pa
         project_id=project.id, evidence_package_id=evidence.id, idempotency_key="uncatalogued"
     )
     entries = list(session.scalars(select(CostLedgerEntry)))
-    # 1500 tokens a call at the $0.01 / 1000-token fallback is $0.015.
-    assert [entry.actual_amount for entry in entries] == [Decimal("0.015000")] * 3
+    # gpt-5.6 resolves to the Terra tier: 1000 input at $2/M is $0.002, and
+    # 500 output at $12/M is $0.006.
+    assert [entry.actual_amount for entry in entries] == [Decimal("0.008000")] * 3
     assert all(entry.pricing_version_id is None for entry in entries)
     attempts = list(session.scalars(select(ProviderAttempt)))
     assert all(row.redacted_metadata["pricing_status"] == "fallback" for row in attempts)
+
+
+@pytest.mark.asyncio
+async def test_cached_input_tokens_are_billed_at_the_cached_rate(tmp_path: Path) -> None:
+    session, blobs, project, evidence = _database(tmp_path)
+    session.add(
+        ProjectBudget(
+            project_id=project.id,
+            warning_cap=Decimal("5"),
+            hard_cap=Decimal("10"),
+            currency="USD",
+            policy_version="v1",
+        )
+    )
+    session.commit()
+    provider = _MeteredProvider()
+    provider.cached_input_tokens = 400
+    await EpisodeAnalysisPipeline(session, blobs, provider).process(
+        project_id=project.id, evidence_package_id=evidence.id, idempotency_key="cached"
+    )
+    entries = list(session.scalars(select(CostLedgerEntry)))
+    # 600 uncached input at $2/M, 400 cached at $0.20/M, 500 output at $12/M.
+    assert [entry.actual_amount for entry in entries] == [Decimal("0.007280")] * 3
+    # The units stay disjoint, so the recorded usage sums to the 1500 tokens
+    # the provider reported rather than double-counting the cache hits.
+    assert entries[0].usage == [
+        {"unit": "CACHED_INPUT_TOKEN", "quantity": 400},
+        {"unit": "INPUT_TOKEN", "quantity": 600},
+        {"unit": "OUTPUT_TOKEN", "quantity": 500},
+    ]
+
+
+@pytest.mark.asyncio
+async def test_a_model_with_no_published_price_records_its_tokens_at_zero(
+    tmp_path: Path,
+) -> None:
+    session, blobs, project, evidence = _database(tmp_path)
+    session.add(
+        ProjectBudget(
+            project_id=project.id,
+            warning_cap=Decimal("5"),
+            hard_cap=Decimal("10"),
+            currency="USD",
+            policy_version="v1",
+        )
+    )
+    session.commit()
+
+    class UnknownModel(_MeteredProvider):
+        model = "some-unreleased-model"
+
+    await EpisodeAnalysisPipeline(session, blobs, UnknownModel()).process(
+        project_id=project.id, evidence_package_id=evidence.id, idempotency_key="unknown"
+    )
+    entries = list(session.scalars(select(CostLedgerEntry)))
+    # Nothing is invented for a model nobody has published a price for.
+    assert [entry.actual_amount for entry in entries] == [Decimal("0")] * 3
+    attempts = list(session.scalars(select(ProviderAttempt)))
+    assert all(row.redacted_metadata["pricing_status"] == "unpriced" for row in attempts)
+    # The tokens are still recorded, so the spend can be priced retroactively.
+    assert all(row.usage for row in attempts)
 
 
 @pytest.mark.asyncio

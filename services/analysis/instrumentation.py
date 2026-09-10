@@ -30,6 +30,7 @@ from vidgen.contracts.episode_analysis import (
     ProviderSceneAnalysisResult,
     SceneAnalysisRequest,
 )
+from vidgen.costs import openai_rates
 from vidgen.db.cost_models import CostReservation, ProjectBudget, ProviderPriceRate
 from vidgen.db.cost_repository import BudgetExceededError, CostRepository
 from vidgen.telemetry.metrics import Metrics
@@ -44,15 +45,6 @@ ESTIMATED_CHARACTERS_PER_TOKEN = 4
 #: Rough output envelope per operation, again estimate-only.
 ESTIMATED_OUTPUT_TOKENS = {SCENE_OPERATION: 1_500, REDUCE_OPERATION: 6_000}
 
-#: Fallback token price used when the pricing catalog carries no rate for the
-#: configured analysis model: $0.01 per 1,000 tokens. ``provider_price_rates``
-#: stays authoritative wherever it has a rate; this only stops an unpriced
-#: deployment from reporting every analysis call at zero. It is a blended
-#: stand-in, not a quote: a call priced from it is marked ``fallback`` so the
-#: number is never mistaken for one the catalog stands behind.
-FALLBACK_UNIT_SIZE = Decimal(1_000)
-FALLBACK_UNIT_PRICE = Decimal("0.01")
-
 
 class PricedAmount(NamedTuple):
     """One priced quantity, and where its price came from."""
@@ -60,7 +52,8 @@ class PricedAmount(NamedTuple):
     amount: Decimal
     pricing_version_id: UUID | None
     #: "catalog" when every unit was priced from ``provider_price_rates``,
-    #: "fallback" when any unit fell back to :data:`FALLBACK_UNIT_PRICE`.
+    #: "fallback" when any unit fell back to the published list prices in
+    #: :mod:`vidgen.costs.openai_rates`.
     source: str
 
 
@@ -135,7 +128,7 @@ class InstrumentedEpisodeAnalysisProvider:
         )
 
     def _price(self, operation: str, quantities: dict[str, Decimal | None]) -> PricedAmount:
-        """Price token quantities from the catalog, falling back to a flat rate."""
+        """Price token quantities from the catalog, then from published list prices."""
         total = Decimal("0")
         pricing_version_id: UUID | None = None
         source = "catalog"
@@ -143,12 +136,19 @@ class InstrumentedEpisodeAnalysisProvider:
             if quantity is None:
                 continue
             rate = self._rate(operation, unit)
-            if rate is None:
-                total += quantity / FALLBACK_UNIT_SIZE * FALLBACK_UNIT_PRICE
-                source = "fallback"
+            if rate is not None:
+                pricing_version_id = rate.pricing_version_id
+                total += quantity / rate.unit_size * rate.unit_price
                 continue
-            pricing_version_id = rate.pricing_version_id
-            total += quantity / rate.unit_size * rate.unit_price
+            published = openai_rates.unit_price(self.model, unit)
+            if published is None:
+                # No catalog rate and no published price for this model: record
+                # the tokens and leave the money at zero rather than invent it.
+                source = "unpriced"
+                continue
+            total += quantity * published
+            if source != "unpriced":
+                source = "fallback"
         return PricedAmount(total, pricing_version_id, source)
 
     def _estimate(self, operation: str, request: AnalysisRequest) -> PricedAmount:
@@ -158,6 +158,7 @@ class InstrumentedEpisodeAnalysisProvider:
         return self._price(
             operation,
             {
+                "CACHED_INPUT_TOKEN": None,
                 "INPUT_TOKEN": input_tokens,
                 "OUTPUT_TOKEN": Decimal(ESTIMATED_OUTPUT_TOKENS[operation]),
             },
@@ -252,17 +253,10 @@ class InstrumentedEpisodeAnalysisProvider:
     def _record(
         self, attempt: ProviderAttemptContext, operation: str, metadata: ProviderMetadata
     ) -> Decimal:
-        quantities: dict[str, Decimal | None] = {
-            "INPUT_TOKEN": None
-            if metadata.input_tokens is None
-            else Decimal(metadata.input_tokens),
-            "OUTPUT_TOKEN": (
-                None if metadata.output_tokens is None else Decimal(metadata.output_tokens)
-            ),
-        }
+        quantities = _token_quantities(metadata)
         priced = self._price(operation, quantities)
         for unit, quantity in quantities.items():
-            direction = "input" if unit == "INPUT_TOKEN" else "output"
+            direction = "output" if unit == "OUTPUT_TOKEN" else "input"
             if quantity is not None:
                 self.metrics.tokens.labels(self.model, direction, "episode_analyst").inc(
                     float(quantity)
@@ -271,16 +265,38 @@ class InstrumentedEpisodeAnalysisProvider:
             provider_request_id=metadata.provider_request_id,
             usage=[
                 {"unit": unit, "quantity": int(quantity)}
-                for unit, quantity in sorted(quantities.items())
+                for unit, quantity in quantities.items()
                 if quantity is not None
             ],
             metadata={
                 **metadata.redacted_response_metadata,
-                # A call priced off the fallback rather than a catalog rate says
-                # so, so an amount that came from a default is never mistaken for
-                # one the pricing catalog stands behind.
+                # A call priced off the published list rather than a catalog
+                # rate says so, so an amount that came from a default is never
+                # mistaken for one the pricing catalog stands behind.
                 "pricing_status": priced.source,
             },
             actual_cost=priced.amount,
         )
+        # ``instrument_provider_attempt`` copies usage onto the row only when
+        # the block exits cleanly, and the ledger entry is written before that,
+        # from the row. Assign it now so the entry carries the usage it prices.
+        attempt.row.usage = attempt.usage
         return priced.amount
+
+
+def _token_quantities(metadata: ProviderMetadata) -> dict[str, Decimal | None]:
+    """Split the provider's reported usage into the units that are billed apart.
+
+    ``input_tokens`` is the total, cache hits included, and the cached share is
+    billed at a lower rate. Recording the uncached remainder under
+    ``INPUT_TOKEN`` keeps the three units disjoint, so summing a ledger entry's
+    usage returns the tokens the call actually spent.
+    """
+    cached = metadata.cached_input_tokens
+    total_input = metadata.input_tokens
+    uncached = None if total_input is None else Decimal(total_input - (cached or 0))
+    return {
+        "CACHED_INPUT_TOKEN": None if not cached else Decimal(cached),
+        "INPUT_TOKEN": uncached,
+        "OUTPUT_TOKEN": None if metadata.output_tokens is None else Decimal(metadata.output_tokens),
+    }

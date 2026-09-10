@@ -348,6 +348,19 @@
           "title": "Attempt Number",
           "type": "integer"
         },
+        "cached_input_tokens": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Cached Input Tokens"
+        },
         "contract_version": {
           "title": "Contract Version",
           "type": "string"

@@ -231,11 +231,19 @@ Each call records a T23 provider attempt under the operations `episode_analysis.
 `episode_analysis.reduce`, reserves against the project budget, records the token usage the
 provider reports, and reconciles into the cost ledger the project dashboard reads. A budget denial
 is terminal rather than retried, and a failed call releases its reservation instead of holding the
-project's budget. Reconciled amounts come from `provider_price_rates` where the catalog has a rate
-for the configured analysis model. Where it does not - which is every deployment today, since
-nothing seeds that table - the call is billed at a blended fallback of $0.01 per 1,000 tokens and
-the attempt is marked `pricing_status: fallback`, so a defaulted amount is never mistaken for one
-the catalog stands behind. Seeding real dated rates makes the fallback inert.
+project's budget. Input, cached input and output tokens are recorded as three disjoint units, so a
+cache hit is billed at its own lower rate and the recorded usage still sums to what the provider
+reported.
+
+Reconciled amounts come from `provider_price_rates` where the catalog has a rate for the configured
+analysis model. Where it does not - which is every deployment today, since nothing seeds that table
+- the call falls back to the published list prices in `src/vidgen/costs/openai_rates.py` and the
+attempt is marked `pricing_status: fallback`, so a defaulted amount is never mistaken for one the
+catalog stands behind. A model nobody has published a price for records its tokens at zero and is
+marked `unpriced` rather than being assigned an invented rate. Every model setting in this
+repository is the bare `gpt-5.6`, which spans three tiers a factor of twenty apart; it resolves to
+the middle (Terra) tier, and a deployment on another tier should name it in its model setting.
+Seeding real dated rates makes the fallback inert.
 
 ## T11 compression and comedy script pipeline
 
