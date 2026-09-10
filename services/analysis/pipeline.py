@@ -12,6 +12,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from services.analysis.canonicalize import canonicalize
+from services.analysis.instrumentation import InstrumentedEpisodeAnalysisProvider
 from services.analysis.provider import EpisodeAnalysisProvider, GenerationContext
 from services.analysis.validator import validate_episode_analysis, validate_scene_analysis
 from vidgen.contracts.episode_analysis import (
@@ -23,6 +24,7 @@ from vidgen.contracts.episode_analysis import (
     SceneEvidenceExcerpt,
     SourceReference,
 )
+from vidgen.db.cost_repository import BudgetExceededError
 from vidgen.db.episode_analysis_models import (
     AnalysisBeatDependency,
     AnalysisRelationship,
@@ -46,6 +48,7 @@ from vidgen.db.models import (
 from vidgen.db.workflow_models import EvidencePackageRecord, SceneEvidenceRecord
 from vidgen.storage.asset_service import AssetService
 from vidgen.storage.blob import BlobStore
+from vidgen.telemetry.metrics import Metrics
 
 CONTRACT_VERSION = "1.0"
 PROMPT_VERSION = "episode-analysis-v1"
@@ -61,8 +64,13 @@ class EpisodeAnalysisPipeline:
         *,
         concurrency: int = 4,
         max_attempts: int = 2,
+        metrics: Metrics | None = None,
     ) -> None:
-        self.session, self.blob_store, self.provider = session, blob_store, provider
+        self.session, self.blob_store = session, blob_store
+        # Every scene call and the global reduce call are billable, so the raw
+        # port is wrapped once here: no call site can reach the provider without
+        # recording a provider attempt and settling it against the cost ledger.
+        self.provider = InstrumentedEpisodeAnalysisProvider(session, provider, metrics=metrics)
         self.concurrency, self.max_attempts = concurrency, max_attempts
         self.repository = EpisodeAnalysisRepository(session)
         self.configuration_version = getattr(provider, "configuration_version", CONFIG_VERSION)
@@ -192,6 +200,13 @@ class EpisodeAnalysisPipeline:
                                 attempt_number=attempt, validation_errors_json=feedback
                             ),
                         )
+                except BudgetExceededError:
+                    # A budget denial is terminal: retrying it can only spend
+                    # money the project has already been refused.
+                    checkpoint.attempt_count = attempt
+                    checkpoint.status = "failed"
+                    self.session.commit()
+                    raise
                 except Exception as error:
                     attempts.append(
                         {"attempt": attempt, "error": type(error).__name__, "message": str(error)}
@@ -270,6 +285,11 @@ class EpisodeAnalysisPipeline:
                     attempted_request,
                     GenerationContext(attempt_number=attempt, validation_errors_json=feedback),
                 )
+            except BudgetExceededError:
+                run.status = project.status = "episode_analysis_failed"
+                run.error_code = "EPISODE_BUDGET_EXCEEDED"
+                self.session.commit()
+                raise
             except Exception:
                 if attempt < self.max_attempts:
                     continue

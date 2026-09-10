@@ -52,6 +52,14 @@ class OpenAIEpisodeAnalysisProvider:
         )
 
     @property
+    def provider(self) -> str:
+        return "openai"
+
+    @property
+    def model(self) -> str:
+        return self.config.model
+
+    @property
     def configuration_version(self) -> str:
         return self.config.configuration_version
 

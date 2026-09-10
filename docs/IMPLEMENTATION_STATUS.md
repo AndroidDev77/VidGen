@@ -225,6 +225,16 @@ deterministic fake), is exercised by `tests/test_episode_analysis_pipeline.py` a
 `tests/test_episode_analysis_validation.py`, and is specified in
 [`docs/TECHNICAL_DESIGN.md`](TECHNICAL_DESIGN.md).
 
+Every analysis call is a paid one - one per scene, plus the global reduce - so the pipeline wraps
+its provider port in `services/analysis/instrumentation.py` before any call site can reach it.
+Each call records a T23 provider attempt under the operations `episode_analysis.scene` and
+`episode_analysis.reduce`, reserves against the project budget, records the token usage the
+provider reports, and reconciles into the cost ledger the project dashboard reads. A budget denial
+is terminal rather than retried, and a failed call releases its reservation instead of holding the
+project's budget. Reconciled amounts come from `provider_price_rates`: with no catalog rate for the
+configured analysis model the tokens are still recorded, the ledger entry is zero, and the attempt
+is marked `pricing_status: unpriced`.
+
 ## T11 compression and comedy script pipeline
 
 T11 consumes the selected, validated T10 `EpisodeAnalysis` and produces a causally complete
