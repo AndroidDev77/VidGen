@@ -1,17 +1,20 @@
 import {
   Body1,
+  Button,
   Caption1,
   ProgressBar,
+  Spinner,
   makeStyles,
   mergeClasses,
   shorthands,
   tokens,
 } from "@fluentui/react-components";
-import { FlowRegular } from "@fluentui/react-icons";
+import { ArrowCounterclockwiseRegular, FlowRegular } from "@fluentui/react-icons";
 import type { JSX } from "react";
-import type { StageTimelineEntry, WorkflowStatusProjection } from "@vidgen/contracts";
+import type { PipelineStage, StageTimelineEntry, WorkflowStatusProjection } from "@vidgen/contracts";
 
 import { formatStage, humanize } from "../state/format";
+import { isRetryableStage } from "../state/retryStage";
 import { StatusBadge } from "./StatusBadge";
 import { SectionCard } from "./Surface";
 
@@ -89,10 +92,15 @@ const useStyles = makeStyles({
   namePending: { color: tokens.colorNeutralForeground3 },
   nameActive: { fontWeight: tokens.fontWeightSemibold },
   detail: { display: "block", color: tokens.colorNeutralForeground3 },
+  retry: { flexShrink: 0 },
 });
 
 export interface StageTimelineProps {
   readonly workflow: WorkflowStatusProjection;
+  /** Re-enter the pipeline at a stage that stopped. Omitted when not offered. */
+  readonly onRetryStage?: (stage: PipelineStage) => void;
+  /** The stage a retry is currently in flight for, if any. */
+  readonly retryingStage?: PipelineStage | null;
 }
 
 type DotState = "done" | "active" | "failed" | "pending";
@@ -117,7 +125,11 @@ function dotState(state: string): DotState {
  * The percentage is shown only when the backend computed one from real shot
  * counts; it is never guessed from a status name.
  */
-export function StageTimeline({ workflow }: StageTimelineProps): JSX.Element {
+export function StageTimeline({
+  workflow,
+  onRetryStage,
+  retryingStage = null,
+}: StageTimelineProps): JSX.Element {
   const styles = useStyles();
   const percentage = workflow.progress_percentage;
   const stages = workflow.stages;
@@ -182,6 +194,28 @@ export function StageTimeline({ workflow }: StageTimelineProps): JSX.Element {
                 )}
               </span>
               <StatusBadge status={stage.state} />
+              {onRetryStage !== undefined && isRetryableStage(stage) && (
+                <Button
+                  className={styles.retry}
+                  appearance="secondary"
+                  size="small"
+                  icon={
+                    retryingStage === stage.stage ? (
+                      <Spinner size="tiny" />
+                    ) : (
+                      <ArrowCounterclockwiseRegular />
+                    )
+                  }
+                  // One retry at a time: two continuations racing each other
+                  // would each start a generation run.
+                  disabled={retryingStage !== null}
+                  onClick={() => onRetryStage(stage.stage)}
+                  aria-label={`Retry ${formatStage(stage.stage)}`}
+                  data-testid={`retry-stage-${stage.stage}`}
+                >
+                  {retryingStage === stage.stage ? "Retrying…" : "Retry"}
+                </Button>
+              )}
             </li>
           );
         })}

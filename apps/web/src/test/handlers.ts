@@ -49,14 +49,22 @@ export const handlers: HttpHandler[] = [
   http.get(project, () => HttpResponse.json(fixtures.projectDetail)),
   http.get(`${project}/status`, () => HttpResponse.json(fixtures.projectStatus)),
   http.get(`${project}/workflow`, () => HttpResponse.json(fixtures.workflowStatus)),
-  http.post(`${project}/workflow:start`, () =>
+  // The `:action` suffixes have to be matched with a regular expression: msw
+  // reads a `:` in a path pattern as the start of a path parameter, so
+  // `workflow:cancel` as a string would also swallow `workflow:continue`.
+  http.post(/\/workflow:start$/, () =>
     HttpResponse.json({
       workflow_id: fixtures.workflowStatus.workflow_id,
       run_id: fixtures.workflowStatus.run_id,
       status: fixtures.workflowStatus,
     }),
   ),
-  http.post(`${project}/workflow:cancel`, () => HttpResponse.json(fixtures.workflowStatus)),
+  http.post(/\/workflow:cancel$/, () =>
+    HttpResponse.json({ ...fixtures.workflowStatus, cancelled: true, status: "cancelled" }),
+  ),
+  http.post(/\/workflow:continue$/, () =>
+    HttpResponse.json({ command: fixtures.commands.items[0] }, { status: 202 }),
+  ),
   http.get(`${project}/events`, ({ request }) => {
     const url = new URL(request.url);
     if (url.searchParams.get("poll") === "true") {
