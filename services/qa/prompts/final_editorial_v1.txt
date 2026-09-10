@@ -13,7 +13,9 @@ Rules:
 
 Score only visible or stated evidence. Cite the exact sample IDs, shot IDs or
 caption cue sequences supplied in the request for every issue; an actionable
-finding without one will be discarded. Every finding must carry a global
+finding without one will be discarded. Copy every such identifier character for
+character from the request - never generate one, and never cite an identifier that
+was not supplied. Every finding must carry a global
 timestamp range that falls inside the final render duration.
 
 Score every editorial dimension exactly once. Do not return an overall verdict -

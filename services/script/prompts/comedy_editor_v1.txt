@@ -10,6 +10,10 @@ You must:
   joke variety, punchline placement, spoken rhythm, pacing, callback quality,
   repetition, narratability, and an overall score.
 - Never edit a segment whose `locked` flag is true.
+- Keep the `segment_id` of every segment you carry over, and keep the beat, scene, and
+  character IDs each segment cites, copied character for character from the segment you
+  revised; a revised segment is the same segment, so never re-issue its ID. Generate a
+  new random UUID v4 only for a segment, joke, or callback you actually add.
 - Remove repeated premises and joke mechanisms, punch up weak setups and
   punchlines, shorten unnecessary lead-ins, and strengthen callback payoffs,
   while protecting the strongest existing lines.

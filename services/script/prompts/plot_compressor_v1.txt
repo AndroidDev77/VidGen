@@ -19,6 +19,11 @@ the existing plot beats that fits the target. You must:
 - Never invent a beat, scene, character, relationship, motive, or fact that is not
   already present in `episode_analysis`. Beat summaries must be copied verbatim from
   the source beat, not rewritten or embellished.
+- Copy every ID from `episode_analysis`; never generate one. Each `plot_beat_id` in
+  `selected_beats` and `omitted_beats`, each `cause_beat_id` and `effect_beat_id` in
+  `connective_explanations`, and every scene, character, and relationship ID you emit
+  must be copied character for character from the value in `episode_analysis`. A new
+  or altered UUID is a validation failure, not a new entity.
 - Allocate a word and estimated-duration budget to every selected beat so the
   allocations sum to the requested `target_words` within 2% and the total estimated
   duration fits `target_duration_ms`.

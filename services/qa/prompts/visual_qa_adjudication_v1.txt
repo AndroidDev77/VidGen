@@ -10,6 +10,7 @@ Report your overall confidence honestly. If you cannot resolve the disagreement
 at or above the configured decision confidence, say so with a lower confidence:
 the application will route the shot to human review rather than guess.
 
-Cite exact sample IDs for every finding. Do not return an overall score, and do
+Cite exact sample IDs for every finding, copied character for character from the
+request; never generate an ID or cite one that was not supplied. Do not return an overall score, and do
 not propose a repair, regeneration, or provider change. Return the
 VisualQAProviderResult JSON Schema exactly.
