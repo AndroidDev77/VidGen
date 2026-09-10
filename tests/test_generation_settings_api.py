@@ -371,3 +371,204 @@ def test_the_script_resolver_prefers_the_project_override() -> None:
         )
         == frozenset()
     )
+
+
+def test_narration_quality_defaults_to_the_deployment_gate(tmp_path: Path) -> None:
+    """No override stored: the response reports the deployment gate in effect."""
+    with review_client_context(tmp_path) as (client, _, _):
+        project_id = _create(client).json()["id"]
+        body = client.get(
+            f"/api/v1/projects/{project_id}/generation-settings", headers=OWNER
+        ).json()
+        assert body["settings"]["narration_warn_only_quality_codes"] is None
+        assert body["settings"]["narration_quality_thresholds"] is None
+        assert body["effective_narration_quality_thresholds"] == {
+            "schema_version": "1.0",
+            "min_wpm": 80,
+            "max_wpm": 220,
+            "min_alignment_coverage": 0.75,
+            "max_clipping_ratio": 0.001,
+            "max_leading_silence": 0.5,
+            "max_trailing_silence": 0.7,
+            "max_internal_silence": 1.5,
+            "warn_only_codes": ["alignment_coverage"],
+        }
+        assert body["effective_narration_warn_only_quality_codes"] == ["alignment_coverage"]
+        assert body["available_narration_warn_only_quality_codes"] == [
+            "clipping",
+            "leading_silence",
+            "trailing_silence",
+            "internal_silence",
+            "speaking_rate",
+            "alignment_coverage",
+        ]
+
+
+def test_narration_quality_can_be_overridden_per_project(tmp_path: Path) -> None:
+    with review_client_context(tmp_path) as (client, factory, _):
+        project_id = _create(client).json()["id"]
+        updated = client.put(
+            f"/api/v1/projects/{project_id}/generation-settings",
+            json={
+                "generation_quality": "balanced",
+                "shot_pacing": "normal",
+                "premium_fallback_allowed": False,
+                "narration_warn_only_quality_codes": ["speaking_rate", "alignment_coverage"],
+                "narration_quality_thresholds": {"min_alignment_coverage": 0.75},
+            },
+            headers=OWNER,
+        )
+        assert updated.status_code == 200, updated.text
+        body = updated.json()
+        assert body["settings"]["narration_warn_only_quality_codes"] == [
+            "alignment_coverage",
+            "speaking_rate",
+        ]
+        assert body["settings"]["narration_quality_thresholds"]["min_alignment_coverage"] == 0.75
+        assert body["settings"]["narration_quality_thresholds"]["max_wpm"] is None
+        effective = body["effective_narration_quality_thresholds"]
+        assert effective["min_alignment_coverage"] == 0.75
+        assert effective["max_wpm"] == 220
+        assert effective["warn_only_codes"] == ["alignment_coverage", "speaking_rate"]
+        assert body["effective_narration_warn_only_quality_codes"] == [
+            "alignment_coverage",
+            "speaking_rate",
+        ]
+        with factory() as session:
+            project = session.get(Project, UUID(project_id))
+            assert project is not None
+            stored = project.settings["generation"]
+            assert stored["narration_quality_thresholds"]["min_alignment_coverage"] == 0.75
+        # An empty list is a real choice - every quality code fails - not "use the default".
+        emptied = client.put(
+            f"/api/v1/projects/{project_id}/generation-settings",
+            json={
+                "generation_quality": "balanced",
+                "shot_pacing": "normal",
+                "premium_fallback_allowed": False,
+                "narration_warn_only_quality_codes": [],
+            },
+            headers=OWNER,
+        )
+        assert emptied.status_code == 200, emptied.text
+        assert emptied.json()["effective_narration_warn_only_quality_codes"] == []
+        assert emptied.json()["effective_narration_quality_thresholds"]["warn_only_codes"] == []
+
+
+def test_narration_quality_overrides_are_accepted_at_creation(tmp_path: Path) -> None:
+    with review_client_context(tmp_path) as (client, _, _):
+        created = _create(
+            client,
+            narration_warn_only_quality_codes=["alignment_coverage", "leading_silence"],
+            narration_quality_thresholds={"max_leading_silence": 1.0},
+        )
+        assert created.status_code == 201, created.text
+        body = client.get(
+            f"/api/v1/projects/{created.json()['id']}/generation-settings", headers=OWNER
+        ).json()
+        assert body["effective_narration_quality_thresholds"]["max_leading_silence"] == 1.0
+        assert body["effective_narration_warn_only_quality_codes"] == [
+            "alignment_coverage",
+            "leading_silence",
+        ]
+
+
+def test_an_unknown_narration_quality_code_is_refused(tmp_path: Path) -> None:
+    with review_client_context(tmp_path) as (client, _, _):
+        response = _create(client, narration_warn_only_quality_codes=["NOT_A_CODE"])
+        assert response.status_code == 422, response.text
+        project_id = _create(client).json()["id"]
+        updated = client.put(
+            f"/api/v1/projects/{project_id}/generation-settings",
+            json={
+                "generation_quality": "balanced",
+                "shot_pacing": "normal",
+                "premium_fallback_allowed": False,
+                "narration_warn_only_quality_codes": ["SCENE_SET_MISMATCH"],
+            },
+            headers=OWNER,
+        )
+        assert updated.status_code == 422, updated.text
+
+
+def test_a_narration_gate_that_cannot_resolve_is_refused_before_it_is_stored(
+    tmp_path: Path,
+) -> None:
+    """A project floor above the deployment ceiling is a 422, not a stored 500."""
+    with review_client_context(tmp_path) as (client, _, _):
+        project_id = _create(client).json()["id"]
+        refused = client.put(
+            f"/api/v1/projects/{project_id}/generation-settings",
+            json={
+                "generation_quality": "premium",
+                "shot_pacing": "fast",
+                "premium_fallback_allowed": True,
+                "narration_quality_thresholds": {"min_wpm": 300},
+            },
+            headers=OWNER,
+        )
+        assert refused.status_code == 422, refused.text
+        assert "min_wpm must be below max_wpm" in refused.text
+        body = client.get(
+            f"/api/v1/projects/{project_id}/generation-settings", headers=OWNER
+        ).json()
+        assert body["settings"]["generation_quality"] == "balanced"
+        assert body["settings"]["narration_quality_thresholds"] is None
+        assert _create(client, narration_quality_thresholds={"min_wpm": 300}).status_code == 422
+
+
+def test_storyboard_warn_only_validation_codes_default_to_the_deployment_setting(
+    tmp_path: Path,
+) -> None:
+    with review_client_context(tmp_path) as (client, _, _):
+        project_id = _create(client).json()["id"]
+        body = client.get(
+            f"/api/v1/projects/{project_id}/generation-settings", headers=OWNER
+        ).json()
+        assert body["settings"]["storyboard_warn_only_validation_codes"] is None
+        assert body["effective_storyboard_warn_only_validation_codes"] == [
+            "continuity_contradiction"
+        ]
+        assert body["available_storyboard_warn_only_validation_codes"] == [
+            "continuity_contradiction",
+            "missing_continuity_state",
+            "missing_evidence_reference",
+        ]
+
+
+def test_storyboard_warn_only_validation_codes_can_be_overridden_per_project(
+    tmp_path: Path,
+) -> None:
+    with review_client_context(tmp_path) as (client, _, _):
+        project_id = _create(
+            client, storyboard_warn_only_validation_codes=["missing_evidence_reference"]
+        ).json()["id"]
+        body = client.get(
+            f"/api/v1/projects/{project_id}/generation-settings", headers=OWNER
+        ).json()
+        assert body["effective_storyboard_warn_only_validation_codes"] == [
+            "missing_evidence_reference"
+        ]
+        updated = client.put(
+            f"/api/v1/projects/{project_id}/generation-settings",
+            json={
+                "generation_quality": "balanced",
+                "shot_pacing": "normal",
+                "premium_fallback_allowed": False,
+                "storyboard_warn_only_validation_codes": [],
+            },
+            headers=OWNER,
+        )
+        assert updated.status_code == 200, updated.text
+        assert updated.json()["effective_storyboard_warn_only_validation_codes"] == []
+        refused = client.put(
+            f"/api/v1/projects/{project_id}/generation-settings",
+            json={
+                "generation_quality": "balanced",
+                "shot_pacing": "normal",
+                "premium_fallback_allowed": False,
+                "storyboard_warn_only_validation_codes": ["SCENE_SET_MISMATCH"],
+            },
+            headers=OWNER,
+        )
+        assert refused.status_code == 422, refused.text

@@ -1,6 +1,7 @@
 import type {
   GenerationCostEstimate,
   GenerationQuality,
+  NarrationQualityThresholds,
   ProjectCostSummaryResponse,
   ProjectGenerationSettings,
   ShotPacing,
@@ -80,6 +81,14 @@ export interface GenerationSettingsResponse {
   /** The same two lists for the T11 compression validator. */
   effective_script_warn_only_validation_codes: string[];
   available_script_warn_only_validation_codes: string[];
+  /** The T12 narration quality gate in effect after the project's overrides. */
+  effective_narration_quality_thresholds: NarrationQualityThresholds;
+  /** The narration quality codes demoted to warnings, and every code that may be. */
+  effective_narration_warn_only_quality_codes: string[];
+  available_narration_warn_only_quality_codes: string[];
+  /** The same two lists for the T13 storyboard validator. */
+  effective_storyboard_warn_only_validation_codes: string[];
+  available_storyboard_warn_only_validation_codes: string[];
 }
 
 export interface GenerationEstimateInput {

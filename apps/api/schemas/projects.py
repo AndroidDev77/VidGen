@@ -15,7 +15,13 @@ from vidgen.contracts.generation import (
     ProjectGenerationSettings,
     ShotPacing,
 )
+from vidgen.contracts.narration import (
+    NARRATION_WARN_ONLY_ELIGIBLE_QUALITY_CODES,
+    NarrationQualityThresholdOverrides,
+    NarrationQualityThresholds,
+)
 from vidgen.contracts.script import SCRIPT_WARN_ONLY_ELIGIBLE_VALIDATION_CODES
+from vidgen.contracts.storyboard import STORYBOARD_WARN_ONLY_ELIGIBLE_VALIDATION_CODES
 
 
 def exact_decimal_text(value: object) -> object:
@@ -44,6 +50,36 @@ def known_script_warn_only_codes(value: object) -> object:
         raise ValueError(
             f"unknown validation codes: {', '.join(str(item) for item in unknown)}; "
             f"expected any of {', '.join(SCRIPT_WARN_ONLY_ELIGIBLE_VALIDATION_CODES)}"
+        )
+    return value
+
+
+def known_storyboard_warn_only_codes(value: object) -> object:
+    """The same check against the T13 storyboard validator's vocabulary."""
+    if not isinstance(value, list):
+        return value
+    unknown = sorted(
+        item for item in value if item not in STORYBOARD_WARN_ONLY_ELIGIBLE_VALIDATION_CODES
+    )
+    if unknown:
+        raise ValueError(
+            f"unknown validation codes: {', '.join(str(item) for item in unknown)}; "
+            f"expected any of {', '.join(STORYBOARD_WARN_ONLY_ELIGIBLE_VALIDATION_CODES)}"
+        )
+    return value
+
+
+def known_narration_quality_codes(value: object) -> object:
+    """The same check against the T12 narration quality gate's vocabulary."""
+    if not isinstance(value, list):
+        return value
+    unknown = sorted(
+        item for item in value if item not in NARRATION_WARN_ONLY_ELIGIBLE_QUALITY_CODES
+    )
+    if unknown:
+        raise ValueError(
+            f"unknown narration quality codes: {', '.join(str(item) for item in unknown)}; "
+            f"expected any of {', '.join(NARRATION_WARN_ONLY_ELIGIBLE_QUALITY_CODES)}"
         )
     return value
 
@@ -110,10 +146,25 @@ class CreateProjectRequest(BaseModel):
     warn_only_validation_codes: list[str] | None = Field(default=None, max_length=16)
     #: The same, for T11 plot compression.
     script_warn_only_validation_codes: list[str] | None = Field(default=None, max_length=16)
+    #: Per-project override of the T12 narration quality codes recorded as
+    #: warnings instead of failing the attempt. Leave unset to use the
+    #: deployment's global default.
+    narration_warn_only_quality_codes: list[str] | None = Field(default=None, max_length=16)
+    #: Per-project override of the T12 narration quality limits; every unset
+    #: limit keeps the deployment default. Leave unset for no override at all.
+    narration_quality_thresholds: NarrationQualityThresholdOverrides | None = None
+    #: The same, for the T13 storyboard validator.
+    storyboard_warn_only_validation_codes: list[str] | None = Field(default=None, max_length=16)
 
     _known_codes = field_validator("warn_only_validation_codes")(known_warn_only_codes)
     _known_script_codes = field_validator("script_warn_only_validation_codes")(
         known_script_warn_only_codes
+    )
+    _known_quality_codes = field_validator("narration_warn_only_quality_codes")(
+        known_narration_quality_codes
+    )
+    _known_storyboard_codes = field_validator("storyboard_warn_only_validation_codes")(
+        known_storyboard_warn_only_codes
     )
 
     _exact_caps = field_validator("budget_warning_cap", "budget_hard_cap", mode="before")(
@@ -128,6 +179,9 @@ class CreateProjectRequest(BaseModel):
             scene_detection_threshold=self.scene_detection_threshold,
             warn_only_validation_codes=self.warn_only_validation_codes,
             script_warn_only_validation_codes=self.script_warn_only_validation_codes,
+            narration_warn_only_quality_codes=self.narration_warn_only_quality_codes,
+            narration_quality_thresholds=self.narration_quality_thresholds,
+            storyboard_warn_only_validation_codes=self.storyboard_warn_only_validation_codes,
             origin=GenerationSettingsOrigin.EXPLICIT,
         )
 
@@ -151,10 +205,23 @@ class SetGenerationSettingsRequest(BaseModel):
     warn_only_validation_codes: list[str] | None = Field(default=None, max_length=16)
     #: The same, for T11 plot compression.
     script_warn_only_validation_codes: list[str] | None = Field(default=None, max_length=16)
+    #: The same, for the T12 narration quality gate.
+    narration_warn_only_quality_codes: list[str] | None = Field(default=None, max_length=16)
+    #: Optional T12 quality-limit overrides; ``None`` (or an unset limit inside)
+    #: means "use the deployment default".
+    narration_quality_thresholds: NarrationQualityThresholdOverrides | None = None
+    #: The same, for the T13 storyboard validator.
+    storyboard_warn_only_validation_codes: list[str] | None = Field(default=None, max_length=16)
 
     _known_codes = field_validator("warn_only_validation_codes")(known_warn_only_codes)
     _known_script_codes = field_validator("script_warn_only_validation_codes")(
         known_script_warn_only_codes
+    )
+    _known_quality_codes = field_validator("narration_warn_only_quality_codes")(
+        known_narration_quality_codes
+    )
+    _known_storyboard_codes = field_validator("storyboard_warn_only_validation_codes")(
+        known_storyboard_warn_only_codes
     )
 
     def generation_settings(self) -> ProjectGenerationSettings:
@@ -165,6 +232,9 @@ class SetGenerationSettingsRequest(BaseModel):
             scene_detection_threshold=self.scene_detection_threshold,
             warn_only_validation_codes=self.warn_only_validation_codes,
             script_warn_only_validation_codes=self.script_warn_only_validation_codes,
+            narration_warn_only_quality_codes=self.narration_warn_only_quality_codes,
+            narration_quality_thresholds=self.narration_quality_thresholds,
+            storyboard_warn_only_validation_codes=self.storyboard_warn_only_validation_codes,
             origin=GenerationSettingsOrigin.EXPLICIT,
         )
 
@@ -195,6 +265,17 @@ class GenerationSettingsResponse(BaseModel):
     #: The same three fields for the T11 compression validator.
     effective_script_warn_only_validation_codes: list[str]
     available_script_warn_only_validation_codes: list[str]
+    #: The T12 narration quality gate actually in effect: every limit and the
+    #: warn-only set, after the project's overrides are applied to the
+    #: deployment defaults.
+    effective_narration_quality_thresholds: NarrationQualityThresholds
+    #: The narration quality codes actually demoted to warnings, and every
+    #: code a project may choose to demote, for the UI.
+    effective_narration_warn_only_quality_codes: list[str]
+    available_narration_warn_only_quality_codes: list[str]
+    #: The same two lists for the T13 storyboard validator.
+    effective_storyboard_warn_only_validation_codes: list[str]
+    available_storyboard_warn_only_validation_codes: list[str]
 
 
 class GenerationEstimateRequest(BaseModel):

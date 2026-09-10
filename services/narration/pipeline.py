@@ -120,7 +120,7 @@ class NarrationPipeline:
             "voice_hash": profile.configuration_hash,
             "provider": self.provider.name,
             "model": profile.model,
-            "quality": self.thresholds.__dict__,
+            "quality": self.thresholds.model_dump(mode="json"),
             "pipeline": PIPELINE_VERSION,
         }
         input_hash = canonical_hash(material)
@@ -152,6 +152,10 @@ class NarrationPipeline:
             for source in source_segments:
                 if self.cancellation_check():
                     raise RuntimeError("narration activity cancelled")
+                if source.segment_type == "PAUSE":
+                    # A pause has no speech to synthesize; the script stage
+                    # removes them, and one that slipped through is skipped.
+                    continue
                 text_hash = hashlib.sha256(" ".join(source.text.split()).encode()).hexdigest()
                 identity = canonical_hash(
                     {
@@ -266,13 +270,36 @@ class NarrationPipeline:
         text = str(source.text)
         if self.cancellation_check():
             raise RuntimeError("narration activity cancelled")
-        previous_attempts = self.repo.attempts(row.id)
+        # Attempt history is keyed by the generation identity, not by this run's
+        # segment row. The identity is a content hash of every provider-material
+        # input, so a retried workflow (a new NarrationRun, hence a fresh row for
+        # the same identity) must continue the earlier run's attempt sequence:
+        # resume an interrupted attempt, count a completed quality failure toward
+        # the budget of three, and never mint a provider idempotency key an
+        # earlier run already used.
+        previous_attempts = self.repo.attempts_for_identity(row.generation_identity)
         interrupted = next((item for item in previous_attempts if item.completed_at is None), None)
-        attempt_no = interrupted.attempt_number if interrupted else len(previous_attempts) + 1
+        attempt_no = (
+            interrupted.attempt_number
+            if interrupted
+            else max((item.attempt_number for item in previous_attempts), default=0) + 1
+        )
+        attempt = interrupted
+        if attempt is None:
+            # Belt and braces on the unique key itself: a row that holds the key
+            # but did not surface through the identity history (for instance a
+            # segment row whose identity was rewritten) is resumed if it was
+            # interrupted and stepped past if it completed.
+            existing = self.repo.attempt_by_provider_key(f"{row.generation_identity}:{attempt_no}")
+            while existing is not None and existing.completed_at is not None:
+                attempt_no += 1
+                existing = self.repo.attempt_by_provider_key(
+                    f"{row.generation_identity}:{attempt_no}"
+                )
+            attempt = existing
         if attempt_no > 3:
             raise RuntimeError("narration segment exhausted three attempts")
         key = f"{row.generation_identity}:{attempt_no}"
-        attempt = interrupted
         if attempt is None:
             retry_instructions = self._retry_instructions(previous_attempts)
             attempt = NarrationAttemptRecord(

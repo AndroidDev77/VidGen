@@ -851,6 +851,9 @@ function generationSettings() {
       premium_fallback_allowed: false,
       warn_only_validation_codes: null,
       script_warn_only_validation_codes: null,
+      narration_warn_only_quality_codes: null,
+      narration_quality_thresholds: null,
+      storyboard_warn_only_validation_codes: null,
       origin: "explicit",
     },
     generation_policy_identity:
@@ -871,6 +874,32 @@ function generationSettings() {
       "UNKNOWN_BEAT",
       "DUPLICATE_ID",
       "REQUIRED_BEAT_OMITTED",
+    ],
+    effective_narration_quality_thresholds: {
+      schema_version: "1.0",
+      min_wpm: 80,
+      max_wpm: 220,
+      min_alignment_coverage: 0.75,
+      max_clipping_ratio: 0.001,
+      max_leading_silence: 0.5,
+      max_trailing_silence: 0.7,
+      max_internal_silence: 1.5,
+      warn_only_codes: ["alignment_coverage"],
+    },
+    effective_narration_warn_only_quality_codes: ["alignment_coverage"],
+    available_narration_warn_only_quality_codes: [
+      "clipping",
+      "leading_silence",
+      "trailing_silence",
+      "internal_silence",
+      "speaking_rate",
+      "alignment_coverage",
+    ],
+    effective_storyboard_warn_only_validation_codes: ["continuity_contradiction"],
+    available_storyboard_warn_only_validation_codes: [
+      "continuity_contradiction",
+      "missing_continuity_state",
+      "missing_evidence_reference",
     ],
   };
 }

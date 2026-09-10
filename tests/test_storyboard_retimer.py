@@ -407,3 +407,30 @@ def test_interior_split_pieces_do_not_inherit_the_proposal_edges() -> None:
     assert result.shots[0].transition_handle_us == 200_000
     assert result.shots[-1].transition_handle_us == 200_000
     assert all(shot.transition_handle_us == 0 for shot in result.shots[1:-1])
+
+
+def test_a_final_shot_overrun_is_snapped_rather_than_rejected() -> None:
+    """The Director claims one more word slot than the narration has.
+
+    The last shot is snapped to the measured duration whatever its word range
+    says, so the overrun is harmless: it is clamped and noted, not repaired.
+    """
+    result = solve([proposal(0, 0, 3, SECOND), proposal(1, 3, 9, 3 * SECOND)], 8, 4 * SECOND)
+    assert sum(shot.usable_duration_us for shot in result.shots) == 4 * SECOND
+    assert result.shots[-1].end_us == 4 * SECOND
+    assert max(shot.word_end_index for shot in result.shots) == 8
+    assert any("snapped to the measured narration duration" in item for item in result.warnings)
+
+
+def test_an_interior_shot_overrun_is_still_a_word_range_gap() -> None:
+    with pytest.raises(RetimerError) as error:
+        solve([proposal(0, 0, 9, 3 * SECOND), proposal(1, 9, 10, SECOND)], 8, 4 * SECOND)
+    assert error.value.diagnostic.code == "word_range_gap"
+    assert error.value.diagnostic.shot_sequence == 0
+
+
+def test_undercoverage_is_still_a_word_range_gap() -> None:
+    with pytest.raises(RetimerError) as error:
+        solve([proposal(0, 0, 3, SECOND), proposal(1, 3, 7, 3 * SECOND)], 8, 4 * SECOND)
+    assert error.value.diagnostic.code == "word_range_gap"
+    assert (error.value.diagnostic.measured_us, error.value.diagnostic.expected_us) == (7, 8)

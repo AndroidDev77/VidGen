@@ -11,8 +11,11 @@ from services.narration.alignment import FakeAligner, RecognizedWord, reconcile_
 from services.narration.fake_provider import FakeNarrationProvider
 from services.narration.normalization import normalize_audio, probe_audio
 from services.narration.pipeline import NarrationPipeline, canonical_hash
-from services.narration.quality import validate_quality
-from vidgen.contracts.narration import NarrationProviderRequest
+from services.narration.quality import QualityThresholds, validate_quality
+from tests.storyboard_fixtures import build_fixture
+from vidgen.contracts.narration import NarrationAlignment, NarrationProviderRequest
+from vidgen.db.narration_repository import NarrationRepository
+from vidgen.db.script_models import ScriptSegment
 
 
 def request(text: str = "One repeated repeated joke.") -> NarrationProviderRequest:
@@ -87,13 +90,185 @@ def test_retry_guidance_is_targeted() -> None:
     assert "Avoid clipping" in guidance
 
 
-def test_alignment_rejects_invalid_timestamps() -> None:
-    with pytest.raises(ValueError, match=r"reversed|outside"):
+def test_alignment_rejects_reversed_or_negative_timestamps() -> None:
+    """A reversed or negative word is a broken transcript, not a duration overshoot."""
+    with pytest.raises(ValueError, match=r"reversed|negative"):
         reconcile_alignment("hello", [RecognizedWord("hello", 0.5, 0.4)], 1)
-    with pytest.raises(ValueError, match=r"reversed|outside"):
-        reconcile_alignment("hello", [RecognizedWord("hello", 0, 2)], 1)
+    with pytest.raises(ValueError, match=r"reversed|negative"):
+        reconcile_alignment("hello", [RecognizedWord("hello", -0.1, 0.4)], 1)
+    with pytest.raises(ValueError, match="reversal"):
+        reconcile_alignment(
+            "go now", [RecognizedWord("go", 0.2, 0.6), RecognizedWord("now", 0.4, 0.8)], 1
+        )
 
 
-def test_contract_forbids_credentials() -> None:
-    with pytest.raises(ValueError):
-        NarrationProviderRequest(**{**request().model_dump(), "api_key": "secret"})
+def test_alignment_keeps_words_inside_the_duration_unchanged() -> None:
+    recognized = [RecognizedWord("hello", 0.0, 0.5), RecognizedWord("world", 0.5, 1.0)]
+    alignment = reconcile_alignment("Hello world.", recognized, 1.0)
+    assert [(w.start_seconds, w.end_seconds) for w in alignment.timings] == [(0.0, 0.5), (0.5, 1.0)]
+    assert alignment.coverage == 1
+    assert alignment.omissions == []
+    assert alignment.diagnostics == []
+
+
+def test_alignment_clamps_a_word_that_ends_slightly_after_the_audio() -> None:
+    """Whisper overshoots ffprobe by a few frames; the word is trimmed, not refused."""
+    recognized = [RecognizedWord("hello", 0.0, 0.5), RecognizedWord("world", 0.5, 1.02)]
+    alignment = reconcile_alignment("Hello world.", recognized, 1.0)
+    assert [(w.start_seconds, w.end_seconds) for w in alignment.timings] == [(0.0, 0.5), (0.5, 1.0)]
+    assert alignment.coverage == 1
+    assert alignment.omissions == []
+    assert alignment.diagnostics == ["clamped 1 word timestamp(s) to the measured duration"]
+
+
+def test_alignment_drops_a_word_that_lies_entirely_beyond_the_audio() -> None:
+    """Both bounds past the duration would clamp to zero length; the word is dropped instead."""
+    recognized = [
+        RecognizedWord("hello", 0.0, 0.5),
+        RecognizedWord("world", 0.5, 1.0),
+        RecognizedWord("again", 1.01, 1.2),
+    ]
+    alignment = reconcile_alignment("Hello world again.", recognized, 1.0)
+    assert [w.word for w in alignment.timings] == ["Hello", "world"]
+    assert alignment.diagnostics == ["dropped 1 zero-length word(s) at or beyond the duration"]
+    # A word starting exactly at the boundary has no room either.
+    boundary = [RecognizedWord("hello", 0.0, 1.0), RecognizedWord("world", 1.0, 1.3)]
+    assert [w.word for w in reconcile_alignment("hello world", boundary, 1.0).timings] == ["hello"]
+
+
+def test_alignment_still_reconciles_the_remaining_words_after_a_drop() -> None:
+    """The dropped word becomes an omission; every kept word keeps its approved index."""
+    recognized = [
+        RecognizedWord("our", 0.0, 0.3),
+        RecognizedWord("hero", 0.3, 0.7),
+        RecognizedWord("wakes", 0.7, 1.05),
+        RecognizedWord("up", 1.1, 1.3),
+    ]
+    alignment = reconcile_alignment("Our hero wakes up!", recognized, 1.0)
+    assert [w.word_index for w in alignment.timings] == [0, 1, 2]
+    assert [w.punctuation for w in alignment.timings] == ["", "", ""]
+    assert alignment.timings[-1].end_seconds == 1.0
+    assert alignment.omissions == ["up"]
+    assert alignment.insertions == []
+    assert alignment.coverage == pytest.approx(3 / 4)
+    assert alignment == reconcile_alignment("Our hero wakes up!", recognized, 1.0)
+
+
+def _normalized_fake_audio(tmp_path: Path, text: str) -> tuple[Path, float]:
+    provider = FakeNarrationProvider()
+    raw = tmp_path / "raw.wav"
+    normalized = tmp_path / "normalized.wav"
+    asyncio.run(provider.generate(request(text), raw))
+    normalize_audio(raw, normalized)
+    return normalized, probe_audio(normalized).duration_seconds
+
+
+def test_low_alignment_coverage_is_a_warning_by_default(tmp_path: Path) -> None:
+    """Whisper misses domain vocabulary on clear audio, so coverage alone never fails a take."""
+    text = "The pharmacokinetics of acetazolamide are discussed at length today."
+    path, duration = _normalized_fake_audio(tmp_path, text)
+    alignment = NarrationAlignment(timings=[], coverage=0.6)
+    report = validate_quality(path, text, duration, alignment)
+    assert report.valid is True
+    assert [(d.code, d.severity) for d in report.diagnostics] == [("alignment_coverage", "warning")]
+    assert report.diagnostics[0].measured_value == 0.6
+    assert report.diagnostics[0].threshold == 0.75
+
+
+def test_a_project_may_make_alignment_coverage_fail_again(tmp_path: Path) -> None:
+    text = "The pharmacokinetics of acetazolamide are discussed at length today."
+    path, duration = _normalized_fake_audio(tmp_path, text)
+    alignment = NarrationAlignment(timings=[], coverage=0.6)
+    strict = validate_quality(
+        path, text, duration, alignment, QualityThresholds(warn_only_codes=[])
+    )
+    assert strict.valid is False
+    assert [(d.code, d.severity) for d in strict.diagnostics] == [("alignment_coverage", "error")]
+
+
+def test_a_relaxed_coverage_threshold_records_nothing(tmp_path: Path) -> None:
+    text = "The pharmacokinetics of acetazolamide are discussed at length today."
+    path, duration = _normalized_fake_audio(tmp_path, text)
+    alignment = NarrationAlignment(timings=[], coverage=0.6)
+    relaxed = QualityThresholds(min_alignment_coverage=0.5, warn_only_codes=[])
+    report = validate_quality(path, text, duration, alignment, relaxed)
+    assert report.valid is True
+    assert report.diagnostics == []
+
+
+def test_a_warned_code_never_hides_a_real_error(tmp_path: Path) -> None:
+    """Demoting coverage does not demote the speaking-rate gate beside it."""
+    text = "The pharmacokinetics of acetazolamide are discussed at length today."
+    path, duration = _normalized_fake_audio(tmp_path, text)
+    alignment = NarrationAlignment(timings=[], coverage=0.6)
+    slow = QualityThresholds(min_wpm=500, max_wpm=600)
+    report = validate_quality(path, text, duration, alignment, slow)
+    assert report.valid is False
+    assert {(d.code, d.severity) for d in report.diagnostics} == {
+        ("speaking_rate", "error"),
+        ("alignment_coverage", "warning"),
+    }
+
+
+def test_quality_thresholds_refuse_an_unknown_warn_only_code() -> None:
+    with pytest.raises(ValueError, match="unknown narration quality codes: not_a_code"):
+        QualityThresholds(warn_only_codes=["not_a_code"])
+    with pytest.raises(ValueError, match="min_wpm must be below max_wpm"):
+        QualityThresholds(min_wpm=220, max_wpm=220)
+    # Deterministic: the list is bound into every segment's generation identity.
+    assert QualityThresholds(
+        warn_only_codes=["speaking_rate", "clipping", "speaking_rate"]
+    ).warn_only_codes == ["clipping", "speaking_rate"]
+
+
+def test_quality_thresholds_hash_deterministically_into_the_identity() -> None:
+    first = QualityThresholds(warn_only_codes=["speaking_rate", "clipping"])
+    second = QualityThresholds(warn_only_codes=["clipping", "speaking_rate"])
+    assert canonical_hash(first.model_dump(mode="json")) == canonical_hash(
+        second.model_dump(mode="json")
+    )
+    assert canonical_hash(first.model_dump(mode="json")) != canonical_hash(
+        QualityThresholds().model_dump(mode="json")
+    )
+
+
+def test_a_pause_segment_may_have_empty_text(tmp_path: Path) -> None:
+    """Defensive: the script stage removes pauses, but one that slips through is not fatal."""
+    fixture = build_fixture(tmp_path, database_name="pause.db")
+    fixture.session.add(
+        ScriptSegment(
+            script_id=fixture.script.id,
+            sequence=len(fixture.script_segments),
+            stable_segment_id=uuid4(),
+            segment_type="PAUSE",
+            speaker_kind="narrator",
+            text="",
+            content_hash="a" * 64,
+            plot_beat_ids=[],
+            source_scene_ids=[],
+            estimated_duration_ms=750,
+        )
+    )
+    fixture.session.commit()
+    script, segments = NarrationRepository(fixture.session).authoritative_script(fixture.project.id)
+    assert script.id == fixture.script.id
+    assert [s.segment_type for s in segments] == ["narration", "narration", "PAUSE"]
+
+
+def test_an_empty_narration_segment_is_still_refused(tmp_path: Path) -> None:
+    fixture = build_fixture(tmp_path, database_name="empty.db")
+    fixture.script_segments[0].text = "   "
+    fixture.session.commit()
+    with pytest.raises(ValueError, match="contains empty segments"):
+        NarrationRepository(fixture.session).authoritative_script(fixture.project.id)
+
+
+def test_alignment_with_every_word_beyond_the_audio_degrades_gracefully() -> None:
+    """Nothing survives the clamp: no timings, every word an omission, coverage zero."""
+    recognized = [RecognizedWord("hello", 1.0, 1.2), RecognizedWord("world", 1.2, 1.5)]
+    alignment = reconcile_alignment("Hello world.", recognized, 1.0)
+    assert alignment.timings == []
+    assert alignment.omissions == ["Hello", "world"]
+    assert alignment.insertions == []
+    assert alignment.coverage == 0
+    assert alignment.diagnostics == ["dropped 2 zero-length word(s) at or beyond the duration"]

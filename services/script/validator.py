@@ -8,7 +8,7 @@ and the ``CompressedPlotPlan`` the script was written from; no LLM call is invol
 from __future__ import annotations
 
 import re
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from uuid import UUID
 
 from services.script.compressor import structural_roles
@@ -36,6 +36,13 @@ NGRAM_SIZE = 6
 
 def canonical_word_count(text: str) -> int:
     return len(text.split())
+
+
+def spoken_word_count(segments: Iterable[ScriptSegment]) -> int:
+    """The words a narrator will actually say: PAUSE segments carry none."""
+    return sum(
+        canonical_word_count(segment.text) for segment in segments if segment.type != "PAUSE"
+    )
 
 
 def _normalize(text: str) -> list[str]:
@@ -299,7 +306,7 @@ def validate_recap_script(
     valid_reference_ids = _all_reference_ids(analysis)
     segments_by_id = {segment.segment_id: segment for segment in script.segments}
 
-    actual_words = sum(canonical_word_count(segment.text) for segment in script.segments)
+    actual_words = spoken_word_count(script.segments)
     if actual_words != script.actual_word_count:
         _error(
             errors,

@@ -1618,7 +1618,45 @@ export interface ProjectGenerationSettings {
   warn_only_validation_codes: string[] | null;
   /** The same, for the T11 compression validator; `null` uses the deployment default. */
   script_warn_only_validation_codes: string[] | null;
+  /**
+   * Per-project override of the T12 narration quality codes recorded as
+   * warnings instead of failing the attempt; `null` uses the deployment default.
+   */
+  narration_warn_only_quality_codes: string[] | null;
+  /**
+   * Per-project override of the T12 narration quality limits; `null` means no
+   * override, and every unset limit inside keeps the deployment default.
+   */
+  narration_quality_thresholds: NarrationQualityThresholdOverrides | null;
+  /** The same, for the T13 storyboard validator; `null` uses the deployment default. */
+  storyboard_warn_only_validation_codes: string[] | null;
   origin: GenerationSettingsOrigin;
+}
+
+/** The T12 narration quality gate: every limit and the codes demoted to warnings. */
+export interface NarrationQualityThresholds {
+  schema_version: "1.0";
+  min_wpm: number;
+  max_wpm: number;
+  min_alignment_coverage: number;
+  max_clipping_ratio: number;
+  max_leading_silence: number;
+  max_trailing_silence: number;
+  max_internal_silence: number;
+  /** Quality codes recorded as warnings instead of failing the attempt. */
+  warn_only_codes: string[];
+}
+
+/** A project's partial override of the deployment's narration quality limits. */
+export interface NarrationQualityThresholdOverrides {
+  schema_version: "1.0";
+  min_wpm: number | null;
+  max_wpm: number | null;
+  min_alignment_coverage: number | null;
+  max_clipping_ratio: number | null;
+  max_leading_silence: number | null;
+  max_trailing_silence: number | null;
+  max_internal_silence: number | null;
 }
 export type RoutingReasonCode =
   | "economy_turbo"

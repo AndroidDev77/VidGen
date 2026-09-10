@@ -246,10 +246,10 @@ def retime_segment(
     word_count = len(word_ends)
     kinds = _boundary_kinds(approved_boundaries, word_timings)
     ordered = sorted(proposals, key=lambda item: item.proposal_sequence)
-    _require_contiguous_word_ranges(ordered, word_count, segment_sequence)
+    warnings: list[str] = []
+    ordered = _require_contiguous_word_ranges(ordered, word_count, segment_sequence, warnings)
 
     adjustments: list[TimingAdjustment] = []
-    warnings: list[str] = []
     intervals = _initial_intervals(
         ordered, word_ends, narration_duration_us, segment_sequence, adjustments
     )
@@ -280,10 +280,21 @@ def retime_segment(
 
 
 def _require_contiguous_word_ranges(
-    proposals: list[StoryboardShotProposal], word_count: int, segment_sequence: int
-) -> None:
+    proposals: list[StoryboardShotProposal],
+    word_count: int,
+    segment_sequence: int,
+    warnings: list[str],
+) -> list[StoryboardShotProposal]:
+    """Every narration word must be covered exactly once, in order.
+
+    A gap or an interior overrun is a repairable ``word_range_gap``. The final
+    shot may run past the last word: it is snapped to the measured narration
+    duration whatever its word range says, so an overrun there is harmless and
+    is clamped, with a warning, rather than sent back to the Director.
+    """
     cursor = 0
-    for proposal in proposals:
+    last_index = len(proposals) - 1
+    for index, proposal in enumerate(proposals):
         if proposal.word_start_index != cursor:
             raise RetimerError(
                 _diagnostic(
@@ -295,8 +306,21 @@ def _require_contiguous_word_ranges(
                     entity_path=f"proposals[{proposal.proposal_sequence}].word_start_index",
                 )
             )
+        if index != last_index and proposal.word_end_index > word_count:
+            raise RetimerError(
+                _diagnostic(
+                    "word_range_gap",
+                    f"proposal {proposal.proposal_sequence} ends at word "
+                    f"{proposal.word_end_index} but the narration has {word_count} words",
+                    segment_sequence=segment_sequence,
+                    shot_sequence=proposal.proposal_sequence,
+                    entity_path=f"proposals[{proposal.proposal_sequence}].word_end_index",
+                    measured_us=proposal.word_end_index,
+                    expected_us=word_count,
+                )
+            )
         cursor = proposal.word_end_index
-    if cursor != word_count:
+    if cursor < word_count:
         raise RetimerError(
             _diagnostic(
                 "word_range_gap",
@@ -307,6 +331,14 @@ def _require_contiguous_word_ranges(
                 expected_us=word_count,
             )
         )
+    if cursor > word_count:
+        final = proposals[last_index]
+        warnings.append(
+            f"final proposal {final.proposal_sequence} claimed words up to {cursor} of "
+            f"{word_count}; its end is snapped to the measured narration duration"
+        )
+        return [*proposals[:last_index], final.model_copy(update={"word_end_index": word_count})]
+    return proposals
 
 
 def _initial_intervals(

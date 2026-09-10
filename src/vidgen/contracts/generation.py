@@ -15,7 +15,12 @@ from pydantic import Field, field_validator
 
 from vidgen.contracts.common import StrictContract
 from vidgen.contracts.episode_analysis import WARN_ONLY_ELIGIBLE_VALIDATION_CODES
+from vidgen.contracts.narration import (
+    NARRATION_WARN_ONLY_ELIGIBLE_QUALITY_CODES,
+    NarrationQualityThresholdOverrides,
+)
 from vidgen.contracts.script import SCRIPT_WARN_ONLY_ELIGIBLE_VALIDATION_CODES
+from vidgen.contracts.storyboard import STORYBOARD_WARN_ONLY_ELIGIBLE_VALIDATION_CODES
 
 GENERATION_SETTINGS_VERSION = "generation-settings/1"
 
@@ -77,6 +82,19 @@ class ProjectGenerationSettings(StrictContract):
     #: has no override and uses the deployment's global
     #: ``script_warn_only_validation_codes`` setting.
     script_warn_only_validation_codes: list[str] | None = Field(default=None, max_length=16)
+    #: Per-project override of the T12 narration quality codes recorded as
+    #: warnings instead of failing the attempt. ``None`` means the project has
+    #: no override and uses the deployment's global
+    #: ``narration_warn_only_quality_codes`` setting.
+    narration_warn_only_quality_codes: list[str] | None = Field(default=None, max_length=16)
+    #: Per-project override of the T12 narration quality limits. ``None``
+    #: means the project has no override; inside it, every unset limit keeps
+    #: the deployment default.
+    narration_quality_thresholds: NarrationQualityThresholdOverrides | None = None
+    #: The same, for the T13 storyboard validator. ``None`` means the project
+    #: has no override and uses the deployment's global
+    #: ``storyboard_warn_only_validation_codes`` setting.
+    storyboard_warn_only_validation_codes: list[str] | None = Field(default=None, max_length=16)
     origin: GenerationSettingsOrigin = GenerationSettingsOrigin.EXPLICIT
 
     @field_validator("warn_only_validation_codes")
@@ -110,6 +128,36 @@ class ProjectGenerationSettings(StrictContract):
             raise ValueError(
                 f"unknown validation codes: {', '.join(unknown)}; "
                 f"expected any of {', '.join(SCRIPT_WARN_ONLY_ELIGIBLE_VALIDATION_CODES)}"
+            )
+        return sorted(set(value))
+
+    @field_validator("storyboard_warn_only_validation_codes")
+    @classmethod
+    def validate_storyboard_warn_only_codes(cls, value: list[str] | None) -> list[str] | None:
+        """The storyboard validator's own vocabulary; see the check above."""
+        if value is None:
+            return None
+        unknown = sorted(set(value) - set(STORYBOARD_WARN_ONLY_ELIGIBLE_VALIDATION_CODES))
+        if unknown:
+            raise ValueError(
+                f"unknown validation codes: {', '.join(unknown)}; "
+                f"expected any of {', '.join(STORYBOARD_WARN_ONLY_ELIGIBLE_VALIDATION_CODES)}"
+            )
+        return sorted(set(value))
+
+    @field_validator("narration_warn_only_quality_codes")
+    @classmethod
+    def validate_narration_warn_only_quality_codes(
+        cls, value: list[str] | None
+    ) -> list[str] | None:
+        """The narration quality gate's own vocabulary; see the check above."""
+        if value is None:
+            return None
+        unknown = sorted(set(value) - set(NARRATION_WARN_ONLY_ELIGIBLE_QUALITY_CODES))
+        if unknown:
+            raise ValueError(
+                f"unknown narration quality codes: {', '.join(unknown)}; "
+                f"expected any of {', '.join(NARRATION_WARN_ONLY_ELIGIBLE_QUALITY_CODES)}"
             )
         return sorted(set(value))
 
