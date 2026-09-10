@@ -1616,6 +1616,8 @@ export interface ProjectGenerationSettings {
    * warnings instead of failing the run; `null` uses the deployment default.
    */
   warn_only_validation_codes: string[] | null;
+  /** The same, for the T11 compression validator; `null` uses the deployment default. */
+  script_warn_only_validation_codes: string[] | null;
   origin: GenerationSettingsOrigin;
 }
 export type RoutingReasonCode =

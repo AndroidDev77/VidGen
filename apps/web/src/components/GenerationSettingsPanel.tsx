@@ -100,6 +100,20 @@ export const WARN_ONLY_VALIDATION_CODES: ReadonlyArray<{
   { value: "INVALID_CHRONOLOGY", description: "scene sequences are not unique and monotonic" },
 ];
 
+/**
+ * The same, for the T11 plot-compression validator. Its vocabulary is its own:
+ * a code here is one the compression validator actually emits.
+ */
+export const SCRIPT_WARN_ONLY_VALIDATION_CODES: ReadonlyArray<{
+  readonly value: string;
+  readonly description: string;
+}> = [
+  { value: "UNKNOWN_SOURCE_REFERENCE", description: "a reference is outside the analysis" },
+  { value: "UNKNOWN_BEAT", description: "a selected or omitted beat is not in the analysis" },
+  { value: "DUPLICATE_ID", description: "a beat is listed twice" },
+  { value: "REQUIRED_BEAT_OMITTED", description: "a beat the request required was dropped" },
+];
+
 const SCENE_THRESHOLD_MIN = 0.1;
 const SCENE_THRESHOLD_MAX = 0.9;
 const SCENE_THRESHOLD_STEP = 0.05;
@@ -243,6 +257,31 @@ export function GenerationSettingsPanel({
           }
         >
           {WARN_ONLY_VALIDATION_CODES.map((code) => (
+            <Option key={code.value} value={code.value} text={code.value}>
+              {`${code.value} — ${code.description}`}
+            </Option>
+          ))}
+        </Dropdown>
+      </Field>
+      <Field
+        label="Script: Treat as warnings (not errors)"
+        hint={
+          "The same, for the plot-compression step that turns the analysis into a script " +
+          "plan. Every other code fails the compression and pays to run it again."
+        }
+      >
+        <Dropdown
+          multiselect
+          aria-label="Script: Treat as warnings (not errors)"
+          placeholder="Nothing tolerated; every code fails"
+          disabled={disabled}
+          value={value.script_warn_only_validation_codes.join(", ")}
+          selectedOptions={[...value.script_warn_only_validation_codes]}
+          onOptionSelect={(_, data) =>
+            onChange({ ...value, script_warn_only_validation_codes: [...data.selectedOptions] })
+          }
+        >
+          {SCRIPT_WARN_ONLY_VALIDATION_CODES.map((code) => (
             <Option key={code.value} value={code.value} text={code.value}>
               {`${code.value} — ${code.description}`}
             </Option>

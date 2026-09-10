@@ -15,6 +15,7 @@ from pydantic import Field, field_validator
 
 from vidgen.contracts.common import StrictContract
 from vidgen.contracts.episode_analysis import WARN_ONLY_ELIGIBLE_VALIDATION_CODES
+from vidgen.contracts.script import SCRIPT_WARN_ONLY_ELIGIBLE_VALIDATION_CODES
 
 GENERATION_SETTINGS_VERSION = "generation-settings/1"
 
@@ -72,6 +73,10 @@ class ProjectGenerationSettings(StrictContract):
     #: project has no override and uses the deployment's global
     #: ``warn_only_validation_codes`` setting.
     warn_only_validation_codes: list[str] | None = Field(default=None, max_length=16)
+    #: The same, for the T11 compression validator. ``None`` means the project
+    #: has no override and uses the deployment's global
+    #: ``script_warn_only_validation_codes`` setting.
+    script_warn_only_validation_codes: list[str] | None = Field(default=None, max_length=16)
     origin: GenerationSettingsOrigin = GenerationSettingsOrigin.EXPLICIT
 
     @field_validator("warn_only_validation_codes")
@@ -92,6 +97,20 @@ class ProjectGenerationSettings(StrictContract):
             )
         # Deterministic and duplicate-free: these values are bound into stored
         # settings and compared to decide whether a settings write changed.
+        return sorted(set(value))
+
+    @field_validator("script_warn_only_validation_codes")
+    @classmethod
+    def validate_script_warn_only_codes(cls, value: list[str] | None) -> list[str] | None:
+        """The compression validator's own vocabulary; see the check above."""
+        if value is None:
+            return None
+        unknown = sorted(set(value) - set(SCRIPT_WARN_ONLY_ELIGIBLE_VALIDATION_CODES))
+        if unknown:
+            raise ValueError(
+                f"unknown validation codes: {', '.join(unknown)}; "
+                f"expected any of {', '.join(SCRIPT_WARN_ONLY_ELIGIBLE_VALIDATION_CODES)}"
+            )
         return sorted(set(value))
 
 

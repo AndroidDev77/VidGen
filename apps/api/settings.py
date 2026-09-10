@@ -12,6 +12,10 @@ from vidgen.contracts.episode_analysis import (
     DEFAULT_WARN_ONLY_VALIDATION_CODES,
     WARN_ONLY_ELIGIBLE_VALIDATION_CODES,
 )
+from vidgen.contracts.script import (
+    DEFAULT_SCRIPT_WARN_ONLY_VALIDATION_CODES,
+    SCRIPT_WARN_ONLY_ELIGIBLE_VALIDATION_CODES,
+)
 from vidgen.storage.factory import SUPPORTED_BACKENDS
 
 
@@ -48,6 +52,12 @@ class APISettings(BaseSettings):
     #: ``WARN_ONLY_ELIGIBLE_VALIDATION_CODES`` may be listed.
     warn_only_validation_codes: Annotated[list[str], NoDecode] = Field(
         default_factory=lambda: list(DEFAULT_WARN_ONLY_VALIDATION_CODES)
+    )
+    #: The same, for T11 plot compression. A project may override this via its
+    #: generation settings; unset, every project uses this default. Only codes
+    #: in ``SCRIPT_WARN_ONLY_ELIGIBLE_VALIDATION_CODES`` may be listed.
+    script_warn_only_validation_codes: Annotated[list[str], NoDecode] = Field(
+        default_factory=lambda: list(DEFAULT_SCRIPT_WARN_ONLY_VALIDATION_CODES)
     )
     openai_api_key: str | None = None
     transcription_model: str = "whisper-1"
@@ -209,6 +219,24 @@ class APISettings(BaseSettings):
         if unknown:
             raise ValueError(
                 "warn_only_validation_codes must name known validation codes; "
+                f"unknown: {', '.join(unknown)}"
+            )
+        return sorted(set(value))
+
+    @field_validator("script_warn_only_validation_codes", mode="before")
+    @classmethod
+    def parse_script_warn_only_validation_codes(cls, value: object) -> object:
+        if isinstance(value, str):
+            return [item.strip().upper() for item in value.split(",") if item.strip()]
+        return value
+
+    @field_validator("script_warn_only_validation_codes")
+    @classmethod
+    def validate_script_warn_only_validation_codes(cls, value: list[str]) -> list[str]:
+        unknown = sorted(set(value) - set(SCRIPT_WARN_ONLY_ELIGIBLE_VALIDATION_CODES))
+        if unknown:
+            raise ValueError(
+                "script_warn_only_validation_codes must name known validation codes; "
                 f"unknown: {', '.join(unknown)}"
             )
         return sorted(set(value))

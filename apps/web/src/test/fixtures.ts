@@ -141,6 +141,7 @@ export const generationSettings = {
     premium_fallback_allowed: false,
     scene_detection_threshold: null,
     warn_only_validation_codes: null,
+    script_warn_only_validation_codes: null,
     origin: "explicit",
   },
   generation_policy_identity:
@@ -155,6 +156,13 @@ export const generationSettings = {
     "DUPLICATE_ID",
     "UNKNOWN_SOURCE_REFERENCE",
     "INVALID_CHRONOLOGY",
+  ],
+  effective_script_warn_only_validation_codes: ["UNKNOWN_SOURCE_REFERENCE"],
+  available_script_warn_only_validation_codes: [
+    "UNKNOWN_SOURCE_REFERENCE",
+    "UNKNOWN_BEAT",
+    "DUPLICATE_ID",
+    "REQUIRED_BEAT_OMITTED",
   ],
 };
 

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from typing import Never
 from uuid import UUID, uuid4
 
@@ -28,6 +28,7 @@ from services.script.validator import (
 )
 from vidgen.contracts.episode_analysis import EpisodeAnalysis
 from vidgen.contracts.script import (
+    DEFAULT_SCRIPT_WARN_ONLY_VALIDATION_CODES,
     ComedyEditRequest,
     ComedyRubricScores,
     ComedyWritingRequest,
@@ -69,6 +70,7 @@ class ScriptGenerationPipeline:
         max_repair_attempts: int = 2,
         max_revision_passes: int = 2,
         metrics: Metrics | None = None,
+        warn_only_codes: Iterable[str] | None = None,
     ) -> None:
         self.session = session
         self.blob_store = blob_store
@@ -81,6 +83,14 @@ class ScriptGenerationPipeline:
         self.rubric = default_rubric()
         self.metrics = metrics or Metrics()
         self.tracer = trace.NoOpTracerProvider().get_tracer("vidgen.script")
+        # Which deterministic compression findings are reported rather than
+        # failed. The caller resolves the project's override against the
+        # deployment default; unset, the deployment-wide default applies.
+        self.warn_only_codes = set(
+            DEFAULT_SCRIPT_WARN_ONLY_VALIDATION_CODES
+            if warn_only_codes is None
+            else warn_only_codes
+        )
         self.provider_name = getattr(provider, "provider", type(provider).__name__)
         self.provider_model = getattr(provider, "model", "configured")
 
@@ -372,7 +382,9 @@ class ScriptGenerationPipeline:
                         }
                     )
                 )
-                report = validate_compressed_plot_plan(plan, analysis=analysis, request=request)
+                report = validate_compressed_plot_plan(
+                    plan, analysis=analysis, request=request, warn_only_codes=self.warn_only_codes
+                )
                 run.attempt_count = max(run.attempt_count, attempt)
                 result_metadata_request_id = result.metadata.provider_request_id
                 if not report.valid:

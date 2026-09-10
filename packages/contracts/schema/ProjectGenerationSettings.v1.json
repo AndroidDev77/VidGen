@@ -65,6 +65,22 @@
       "title": "Schema Version",
       "type": "string"
     },
+    "script_warn_only_validation_codes": {
+      "anyOf": [
+        {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 16,
+          "type": "array"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Script Warn Only Validation Codes"
+    },
     "settings_version": {
       "const": "generation-settings/1",
       "default": "generation-settings/1",

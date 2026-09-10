@@ -23,7 +23,10 @@ LIST_SETTINGS = (
 )
 #: Parsed the same way, but its values are a bounded vocabulary rather than
 #: free text, so it is exercised separately below.
-CODE_LIST_SETTING = "VIDGEN_WARN_ONLY_VALIDATION_CODES"
+CODE_LIST_SETTINGS = (
+    "VIDGEN_WARN_ONLY_VALIDATION_CODES",
+    "VIDGEN_SCRIPT_WARN_ONLY_VALIDATION_CODES",
+)
 
 
 @pytest.fixture(autouse=True)
@@ -32,7 +35,8 @@ def _isolated_environment(monkeypatch: pytest.MonkeyPatch) -> None:
     # every case below also constructs the settings with ``_env_file=None``.
     for variable, _ in LIST_SETTINGS:
         monkeypatch.delenv(variable, raising=False)
-    monkeypatch.delenv(CODE_LIST_SETTING, raising=False)
+    for variable in CODE_LIST_SETTINGS:
+        monkeypatch.delenv(variable, raising=False)
 
 
 @pytest.mark.parametrize(("variable", "field"), LIST_SETTINGS)
@@ -103,5 +107,34 @@ def test_an_unknown_warn_only_validation_code_is_refused(
     # A code the validator never emits would be stored and silently match
     # nothing, so start-up fails instead of tolerating a typo.
     monkeypatch.setenv("VIDGEN_WARN_ONLY_VALIDATION_CODES", "SCENE_SET_MISMATCH,NOT_A_CODE")
+    with pytest.raises(ValidationError):
+        APISettings(_env_file=None)
+
+
+def test_script_warn_only_validation_codes_default_to_the_reference_tolerance() -> None:
+    """The T11 compression default, which every project without an override uses."""
+    assert APISettings(_env_file=None).script_warn_only_validation_codes == [
+        "UNKNOWN_SOURCE_REFERENCE"
+    ]
+
+
+def test_script_warn_only_validation_codes_load_as_a_comma_separated_list(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv(
+        "VIDGEN_SCRIPT_WARN_ONLY_VALIDATION_CODES", "unknown_beat, unknown_source_reference"
+    )
+    assert APISettings(_env_file=None).script_warn_only_validation_codes == [
+        "UNKNOWN_BEAT",
+        "UNKNOWN_SOURCE_REFERENCE",
+    ]
+
+
+def test_an_unknown_script_warn_only_validation_code_is_refused(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # SCENE_SET_MISMATCH is a real code, but of the analysis validator: the
+    # compression validator never emits it, so it would silently match nothing.
+    monkeypatch.setenv("VIDGEN_SCRIPT_WARN_ONLY_VALIDATION_CODES", "SCENE_SET_MISMATCH")
     with pytest.raises(ValidationError):
         APISettings(_env_file=None)

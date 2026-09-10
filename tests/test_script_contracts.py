@@ -305,3 +305,64 @@ def test_stable_plan_hash_is_deterministic_across_reruns() -> None:
     plan_a = compress_plot(analysis=analysis, request=request, plan_id=plan_id)
     plan_b = compress_plot(analysis=analysis, request=request, plan_id=plan_id)
     assert canonical_plan_hash(plan_a) == canonical_plan_hash(plan_b)
+
+
+def _plan_with_an_invented_reference(analysis, request):
+    """A compressed plan whose first beat cites a reference_id nothing issued."""
+    plan = compress_plot(analysis=analysis, request=request, plan_id=uuid4())
+    beat = plan.selected_beats[0]
+    invented = beat.source_references[0].model_copy(update={"reference_id": uuid4()})
+    tampered_beat = beat.model_copy(update={"source_references": [invented]})
+    return plan.model_copy(update={"selected_beats": [tampered_beat, *plan.selected_beats[1:]]})
+
+
+def test_a_warn_only_code_is_demoted_to_a_warning_and_the_plan_stays_valid() -> None:
+    """A compressor that invents a reference_id is reported, not failed.
+
+    The citation is wrong, but the plan it describes is otherwise sound, and
+    failing it pays to compress the whole episode again.
+    """
+    analysis = _make_analysis(uuid4())
+    request = _request(analysis)
+    plan = _plan_with_an_invented_reference(analysis, request)
+    report = validate_compressed_plot_plan(
+        plan, analysis=analysis, request=request, warn_only_codes={"UNKNOWN_SOURCE_REFERENCE"}
+    )
+    assert report.valid, report.errors
+    assert "UNKNOWN_SOURCE_REFERENCE" not in {error.code for error in report.errors}
+    assert "UNKNOWN_SOURCE_REFERENCE" in {note.code for note in report.warnings}
+
+
+def test_a_code_outside_warn_only_codes_still_fails_compression_validation() -> None:
+    analysis = _make_analysis(uuid4())
+    request = _request(analysis)
+    plan = _plan_with_an_invented_reference(analysis, request)
+    report = validate_compressed_plot_plan(
+        plan, analysis=analysis, request=request, warn_only_codes={"UNKNOWN_BEAT"}
+    )
+    assert not report.valid
+    assert "UNKNOWN_SOURCE_REFERENCE" in {error.code for error in report.errors}
+
+
+def test_an_empty_warn_only_set_tolerates_nothing_in_compression() -> None:
+    """``None`` means the default; an empty set explicitly means "tolerate nothing"."""
+    analysis = _make_analysis(uuid4())
+    request = _request(analysis)
+    plan = _plan_with_an_invented_reference(analysis, request)
+    report = validate_compressed_plot_plan(
+        plan, analysis=analysis, request=request, warn_only_codes=set()
+    )
+    assert not report.valid
+    assert "UNKNOWN_SOURCE_REFERENCE" in {error.code for error in report.errors}
+
+
+def test_the_default_tolerates_an_invented_reference_but_not_an_unknown_beat() -> None:
+    analysis = _make_analysis(uuid4())
+    request = _request(analysis)
+    assert validate_compressed_plot_plan(
+        _plan_with_an_invented_reference(analysis, request), analysis=analysis, request=request
+    ).valid
+    plan = compress_plot(analysis=analysis, request=request, plan_id=uuid4())
+    bogus = plan.selected_beats[0].model_copy(update={"plot_beat_id": uuid4()})
+    tampered = plan.model_copy(update={"selected_beats": [bogus, *plan.selected_beats[1:]]})
+    assert not validate_compressed_plot_plan(tampered, analysis=analysis, request=request).valid

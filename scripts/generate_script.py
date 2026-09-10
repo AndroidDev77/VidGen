@@ -5,14 +5,19 @@ from __future__ import annotations
 import argparse
 import asyncio
 import os
+from dataclasses import replace
 from uuid import UUID
 
 from sqlalchemy.orm import Session
 
 from apps.api.settings import get_settings
+from services.generation.settings import (
+    effective_script_warn_only_validation_codes,
+    project_generation_settings,
+)
 from services.script.commands import ScriptCommandOptions, generate_script
 from vidgen.contracts.script import RecapScript
-from vidgen.db.models import Asset
+from vidgen.db.models import Asset, Project
 from vidgen.db.script_models import Script
 from vidgen.db.session import build_engine
 from vidgen.storage.blob import FilesystemBlobStore
@@ -47,6 +52,15 @@ async def main() -> None:
 
     with Session(build_engine(settings.database_url), expire_on_commit=False) as session:
         blob_store = FilesystemBlobStore(settings.blob_root, settings.signing_secret.encode())
+        project = session.get(Project, args.project_id)
+        if project is None:
+            parser.error("project does not exist")
+        options = replace(
+            options,
+            warn_only_codes=effective_script_warn_only_validation_codes(
+                project_generation_settings(project), settings.script_warn_only_validation_codes
+            ),
+        )
         result = await generate_script(
             session, blob_store, project_id=args.project_id, options=options
         )

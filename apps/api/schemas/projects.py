@@ -15,6 +15,7 @@ from vidgen.contracts.generation import (
     ProjectGenerationSettings,
     ShotPacing,
 )
+from vidgen.contracts.script import SCRIPT_WARN_ONLY_ELIGIBLE_VALIDATION_CODES
 
 
 def exact_decimal_text(value: object) -> object:
@@ -29,6 +30,21 @@ def exact_decimal_text(value: object) -> object:
         raise ValueError('provide the amount as an exact decimal string, for example "25.00"')
     if isinstance(value, int | Decimal):
         return str(value)
+    return value
+
+
+def known_script_warn_only_codes(value: object) -> object:
+    """The same check against the compression validator's own vocabulary."""
+    if not isinstance(value, list):
+        return value
+    unknown = sorted(
+        item for item in value if item not in SCRIPT_WARN_ONLY_ELIGIBLE_VALIDATION_CODES
+    )
+    if unknown:
+        raise ValueError(
+            f"unknown validation codes: {', '.join(str(item) for item in unknown)}; "
+            f"expected any of {', '.join(SCRIPT_WARN_ONLY_ELIGIBLE_VALIDATION_CODES)}"
+        )
     return value
 
 
@@ -92,8 +108,13 @@ class CreateProjectRequest(BaseModel):
     #: as warnings instead of failing the run. Leave unset to use the
     #: deployment's global default.
     warn_only_validation_codes: list[str] | None = Field(default=None, max_length=16)
+    #: The same, for T11 plot compression.
+    script_warn_only_validation_codes: list[str] | None = Field(default=None, max_length=16)
 
     _known_codes = field_validator("warn_only_validation_codes")(known_warn_only_codes)
+    _known_script_codes = field_validator("script_warn_only_validation_codes")(
+        known_script_warn_only_codes
+    )
 
     _exact_caps = field_validator("budget_warning_cap", "budget_hard_cap", mode="before")(
         exact_decimal_text
@@ -106,6 +127,7 @@ class CreateProjectRequest(BaseModel):
             premium_fallback_allowed=self.premium_fallback_allowed,
             scene_detection_threshold=self.scene_detection_threshold,
             warn_only_validation_codes=self.warn_only_validation_codes,
+            script_warn_only_validation_codes=self.script_warn_only_validation_codes,
             origin=GenerationSettingsOrigin.EXPLICIT,
         )
 
@@ -127,8 +149,13 @@ class SetGenerationSettingsRequest(BaseModel):
     #: The same kind of optional override: ``None`` means "use the deployment
     #: default", an empty list means "tolerate nothing; every code fails".
     warn_only_validation_codes: list[str] | None = Field(default=None, max_length=16)
+    #: The same, for T11 plot compression.
+    script_warn_only_validation_codes: list[str] | None = Field(default=None, max_length=16)
 
     _known_codes = field_validator("warn_only_validation_codes")(known_warn_only_codes)
+    _known_script_codes = field_validator("script_warn_only_validation_codes")(
+        known_script_warn_only_codes
+    )
 
     def generation_settings(self) -> ProjectGenerationSettings:
         return ProjectGenerationSettings(
@@ -137,6 +164,7 @@ class SetGenerationSettingsRequest(BaseModel):
             premium_fallback_allowed=self.premium_fallback_allowed,
             scene_detection_threshold=self.scene_detection_threshold,
             warn_only_validation_codes=self.warn_only_validation_codes,
+            script_warn_only_validation_codes=self.script_warn_only_validation_codes,
             origin=GenerationSettingsOrigin.EXPLICIT,
         )
 
@@ -164,6 +192,9 @@ class GenerationSettingsResponse(BaseModel):
     effective_warn_only_validation_codes: list[str]
     #: Every code a project may choose to treat as a warning, for the UI.
     available_warn_only_validation_codes: list[str]
+    #: The same three fields for the T11 compression validator.
+    effective_script_warn_only_validation_codes: list[str]
+    available_script_warn_only_validation_codes: list[str]
 
 
 class GenerationEstimateRequest(BaseModel):

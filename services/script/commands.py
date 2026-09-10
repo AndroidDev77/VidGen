@@ -27,6 +27,9 @@ class ScriptCommandOptions:
     compressor_model: str = "gpt-5.6"
     writer_model: str = "gpt-5.6"
     editor_model: str = "gpt-5.6"
+    #: Compression-validation codes reported as warnings instead of failing the
+    #: run. ``None`` leaves the pipeline on its own default.
+    warn_only_codes: frozenset[str] | None = None
 
 
 def build_provider(options: ScriptCommandOptions) -> ScriptGenerationProvider:
@@ -62,6 +65,8 @@ async def generate_script(
         "recap_mode": options.recap_mode,
     }
     idempotency_key = options.idempotency_key or f"script-generation:{uuid4()}"
-    return await ScriptGenerationPipeline(session, blob_store, resolved_provider).process(
+    return await ScriptGenerationPipeline(
+        session, blob_store, resolved_provider, warn_only_codes=options.warn_only_codes
+    ).process(
         project_id=project_id, idempotency_key=idempotency_key, setting_overrides=overrides
     )
