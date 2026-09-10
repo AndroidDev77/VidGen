@@ -171,10 +171,12 @@ class ScriptGenerationPipeline:
                 run, analysis, settings, analysis_asset, idempotency_key
             )
             if plan_record is None:
-                run.status = project.status = "script_review_required"
+                run.status = project.status = "script_generation_failed"
                 run.error_code = "COMPRESSION_VALIDATION_FAILED"
                 self.session.commit()
-                return self._result(run, None)
+                raise RuntimeError(
+                    "COMPRESSION_VALIDATION_FAILED: all compression attempts exhausted validation"
+                )
         plan = self._load_plan(plan_record)
         project.status = run.status = "plot_compressed"
         self.session.commit()
@@ -187,10 +189,12 @@ class ScriptGenerationPipeline:
                 run, plan_record, plan, analysis, settings, idempotency_key
             )
             if draft_record is None:
-                run.status = project.status = "script_review_required"
+                run.status = project.status = "script_generation_failed"
                 run.error_code = "DRAFT_VALIDATION_FAILED"
                 self.session.commit()
-                return self._result(run, None)
+                raise RuntimeError(
+                    "DRAFT_VALIDATION_FAILED: all draft attempts exhausted validation"
+                )
             scripts = [draft_record]
         candidate_record = scripts[-1]
         candidate = self._load_script(candidate_record)
