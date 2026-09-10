@@ -65,6 +65,7 @@ from vidgen.db.continuity_models import character_reference_sets, location_refer
 from vidgen.db.control_command_models import ControlCommandRecord
 from vidgen.db.models import Project, SourceVideo
 from vidgen.db.storyboard_models import StoryboardRun, StoryboardShotRecord
+from vidgen.db.workflow_models import ProjectWorkflowRun
 from vidgen.review.workflow_control import WorkflowController, reference_workflow_id
 
 #: Namespace for deterministic approval IDs, so a replayed apply command carries
@@ -540,6 +541,48 @@ def dispatch_render_rerender(
     )
 
 
+def _record_project_workflow_run(
+    session: Session,
+    *,
+    project_id: UUID,
+    workflow_id: str,
+    run_id: str,
+    idempotency_key: str,
+) -> None:
+    """Point ``project_workflow_runs`` at the execution now driving the project.
+
+    ``GET /projects/{id}/workflow`` reads this row for the run it should
+    describe, and treats ``status == "cancelled"`` as "this project was
+    cancelled". A continuation reuses the project's stable workflow ID but
+    starts a *new* execution, so leaving the previous row untouched made the
+    endpoint report the cancelled run - every stage cancelled - while the new
+    run was already working. The row is updated rather than inserted because
+    ``workflow_id`` is unique per project by design.
+    """
+    record = session.scalar(
+        select(ProjectWorkflowRun).where(ProjectWorkflowRun.workflow_id == workflow_id)
+    )
+    if record is None:
+        session.add(
+            ProjectWorkflowRun(
+                project_id=project_id,
+                workflow_id=workflow_id[:255],
+                # ``run_id`` is unique and not nullable; a controller that could
+                # not report one must not collide with another project's row.
+                run_id=(run_id or workflow_id)[:255],
+                status="running",
+                idempotency_key=idempotency_key,
+            )
+        )
+        session.flush()
+        return
+    if run_id:
+        record.run_id = run_id[:255]
+    record.status = "running"
+    record.failure = None
+    session.flush()
+
+
 # -- revisions and continuation -------------------------------------------
 def dispatch_generation_run(
     context: DispatchContext, record: ControlCommandRecord
@@ -599,6 +642,13 @@ def dispatch_generation_run(
         )
     )
     runs.bind_workflow(run, workflow_id=workflow_id, run_id=run_id)
+    _record_project_workflow_run(
+        context.session,
+        project_id=project.id,
+        workflow_id=workflow_id,
+        run_id=run_id,
+        idempotency_key=f"t18b:{run.id}"[:255],
+    )
     return DispatchOutcome(
         workflow_id=workflow_id,
         run_id=run_id,

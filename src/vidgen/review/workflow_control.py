@@ -122,6 +122,10 @@ class WorkflowController(Protocol):
         """Cancel any dispatched workflow by ID. ``False`` if it is already gone."""
 
 
+#: Project workflow statuses after which no execution is still running.
+_CLOSED_PROJECT = {"completed", "final_qa_passed", "cancelled"}
+
+
 class FakeWorkflowController:
     """Deterministic in-memory controller used by tests and local development."""
 
@@ -147,18 +151,35 @@ class FakeWorkflowController:
         self.renders: dict[str, RenderActivityInput] = {}
         self.render_states: dict[str, RenderActivityResult] = {}
         self.cancelled_workflows: list[str] = []
+        #: How many executions each project workflow ID has had, and the run ID
+        #: of the latest one. A continuation starts a new execution.
+        self.project_executions: dict[str, int] = {}
+        self.project_run_ids: dict[str, str] = {}
         #: Workflow IDs the fake cluster reports as already gone.
         self.missing_workflows: set[str] = set()
 
     def start_project(self, request: ProjectWorkflowInput) -> tuple[str, str]:
+        """Adopt a live execution, or start a new one under the same ID.
+
+        This mirrors ``ALLOW_DUPLICATE``: a project workflow that has stopped -
+        cancelled, completed, or paused for a human - is continued by starting a
+        *new* execution with a new run ID, not by signalling the closed one.
+        """
         workflow_id = project_workflow_id(request.project_id)
         self.start_calls += 1
-        if workflow_id not in self.started:
-            self.started[workflow_id] = request
-            self.states[workflow_id] = ProjectWorkflowState(
-                project_id=request.project_id, status="ingesting"
-            )
-        return workflow_id, f"{workflow_id}-run"
+        state = self.states.get(workflow_id)
+        live = state is not None and not state.cancelled and state.status not in _CLOSED_PROJECT
+        if workflow_id in self.started and live:
+            return workflow_id, self.project_run_ids[workflow_id]
+        executions = self.project_executions.get(workflow_id, 0) + 1
+        self.project_executions[workflow_id] = executions
+        run_id = f"{workflow_id}-run" if executions == 1 else f"{workflow_id}-run-{executions}"
+        self.project_run_ids[workflow_id] = run_id
+        self.started[workflow_id] = request
+        self.states[workflow_id] = ProjectWorkflowState(
+            project_id=request.project_id, status="ingesting"
+        )
+        return workflow_id, run_id
 
     def cancel_project(self, workflow_id: str) -> None:
         self.cancelled.append(workflow_id)
