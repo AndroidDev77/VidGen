@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import math
 import wave
+from collections.abc import Iterable
 from pathlib import Path
 
 from vidgen.contracts.narration import (
@@ -26,7 +27,15 @@ def validate_quality(
     duration: float,
     alignment: NarrationAlignment,
     t: QualityThresholds = DEFAULT_THRESHOLDS,
+    *,
+    warn_only_codes: Iterable[str] | None = None,
 ) -> NarrationQualityReport:
+    """Measure one normalized take against the gate.
+
+    ``warn_only_codes`` names the codes this deployment or project tolerates:
+    they are still measured and recorded, at ``warning`` severity, but do not
+    make the report invalid. Unset, the thresholds' own set applies.
+    """
     if not math.isfinite(duration) or duration <= 0:
         raise ValueError("duration must be finite and positive")
     with wave.open(str(path), "rb") as wav:
@@ -55,7 +64,7 @@ def validate_quality(
     internal_silence = longest_silence / rate
     wpm = len(text.split()) / duration * 60
     diagnostics = []
-    warn_only = frozenset(t.warn_only_codes)
+    warn_only = frozenset(t.warn_only_codes if warn_only_codes is None else warn_only_codes)
 
     def check(code: str, bad: bool, value: float, limit: float) -> None:
         if bad:

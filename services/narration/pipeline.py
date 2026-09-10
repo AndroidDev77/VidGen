@@ -152,6 +152,10 @@ class NarrationPipeline:
             for source in source_segments:
                 if self.cancellation_check():
                     raise RuntimeError("narration activity cancelled")
+                if source.segment_type == "PAUSE":
+                    # A pause has no speech to synthesize; the script stage
+                    # removes them, and one that slipped through is skipped.
+                    continue
                 text_hash = hashlib.sha256(" ".join(source.text.split()).encode()).hexdigest()
                 identity = canonical_hash(
                     {
@@ -280,10 +284,22 @@ class NarrationPipeline:
             if interrupted
             else max((item.attempt_number for item in previous_attempts), default=0) + 1
         )
+        attempt = interrupted
+        if attempt is None:
+            # Belt and braces on the unique key itself: a row that holds the key
+            # but did not surface through the identity history (for instance a
+            # segment row whose identity was rewritten) is resumed if it was
+            # interrupted and stepped past if it completed.
+            existing = self.repo.attempt_by_provider_key(f"{row.generation_identity}:{attempt_no}")
+            while existing is not None and existing.completed_at is not None:
+                attempt_no += 1
+                existing = self.repo.attempt_by_provider_key(
+                    f"{row.generation_identity}:{attempt_no}"
+                )
+            attempt = existing
         if attempt_no > 3:
             raise RuntimeError("narration segment exhausted three attempts")
         key = f"{row.generation_identity}:{attempt_no}"
-        attempt = interrupted
         if attempt is None:
             retry_instructions = self._retry_instructions(previous_attempts)
             attempt = NarrationAttemptRecord(

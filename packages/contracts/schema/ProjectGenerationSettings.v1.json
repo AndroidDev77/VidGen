@@ -225,6 +225,22 @@
       "$ref": "#/$defs/ShotPacing",
       "default": "normal"
     },
+    "storyboard_warn_only_validation_codes": {
+      "anyOf": [
+        {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 16,
+          "type": "array"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Storyboard Warn Only Validation Codes"
+    },
     "warn_only_validation_codes": {
       "anyOf": [
         {

@@ -119,6 +119,17 @@ def effective_script_warn_only_validation_codes(
     )
 
 
+def effective_storyboard_warn_only_validation_codes(
+    generation: ProjectGenerationSettings, global_default: Sequence[str]
+) -> frozenset[str]:
+    """The storyboard-validation codes to record as warnings for this project."""
+    return frozenset(
+        generation.storyboard_warn_only_validation_codes
+        if generation.storyboard_warn_only_validation_codes is not None
+        else global_default
+    )
+
+
 def effective_narration_warn_only_quality_codes(
     generation: ProjectGenerationSettings, global_default: Sequence[str]
 ) -> frozenset[str]:

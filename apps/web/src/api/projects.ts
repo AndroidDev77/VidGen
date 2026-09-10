@@ -86,6 +86,9 @@ export interface GenerationSettingsResponse {
   /** The narration quality codes demoted to warnings, and every code that may be. */
   effective_narration_warn_only_quality_codes: string[];
   available_narration_warn_only_quality_codes: string[];
+  /** The same two lists for the T13 storyboard validator. */
+  effective_storyboard_warn_only_validation_codes: string[];
+  available_storyboard_warn_only_validation_codes: string[];
 }
 
 export interface GenerationEstimateInput {

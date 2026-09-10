@@ -13,7 +13,7 @@ import asyncio
 import wave
 from collections.abc import Callable
 from pathlib import Path
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import pytest
 from sqlalchemy import select
@@ -22,9 +22,15 @@ from services.narration.fake_provider import FakeNarrationProvider
 from services.narration.pipeline import NarrationPipeline
 from services.narration.quality import QualityThresholds
 from tests.storyboard_fixtures import StoryboardFixture, build_fixture
-from vidgen.contracts.narration import NarrationProviderRequest, NarrationProviderResult
+from vidgen.contracts.narration import (
+    NarrationPreviewManifest,
+    NarrationProviderRequest,
+    NarrationProviderResult,
+)
+from vidgen.db.models import Asset
 from vidgen.db.narration_models import NarrationAttemptRecord, NarrationRun, NarrationSegment
 from vidgen.db.narration_repository import NarrationRepository
+from vidgen.db.script_models import ScriptSegment
 
 ONE_SEGMENT = ("Our hero wakes up late, again, and the toaster is already on fire.",)
 
@@ -230,3 +236,35 @@ def test_attempts_for_identity_spans_runs_and_ignores_other_identities(tmp_path:
         a.id for a in repo.attempts_for_identity(fixture.narration_segments[0].generation_identity)
     ]
     assert unrelated == []
+
+
+def test_pause_segments_are_skipped_by_the_generation_loop(tmp_path: Path) -> None:
+    """Defensive: a pause that reached narration is neither voiced nor previewed."""
+    fixture = _fixture(tmp_path)
+    fixture.session.add(
+        ScriptSegment(
+            script_id=fixture.script.id,
+            sequence=len(fixture.script_segments),
+            stable_segment_id=uuid4(),
+            segment_type="PAUSE",
+            speaker_kind="narrator",
+            text="",
+            content_hash="b" * 64,
+            plot_beat_ids=[],
+            source_scene_ids=[],
+            estimated_duration_ms=750,
+        )
+    )
+    fixture.session.commit()
+    provider = ScriptedFakeProvider(["ok"])
+    _run(fixture, provider, "run-1")
+    run, row = _run_row(fixture, "run-1")
+    assert run.status == "narration_complete"
+    assert provider.calls == 1
+    assert row.script_segment_id == fixture.script_segments[0].id
+    manifest_asset = fixture.session.get(Asset, UUID(run.parameters["manifest_asset_id"]))
+    assert manifest_asset is not None
+    manifest = NarrationPreviewManifest.model_validate_json(
+        fixture.blobs.read(manifest_asset.storage_key)
+    )
+    assert manifest.segment_ids == [fixture.script_segments[0].id]

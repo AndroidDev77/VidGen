@@ -6,7 +6,6 @@ from pathlib import Path
 from uuid import uuid4
 
 import pytest
-from sqlalchemy import select
 
 from services.narration.alignment import FakeAligner, RecognizedWord, reconcile_alignment
 from services.narration.fake_provider import FakeNarrationProvider
@@ -173,7 +172,7 @@ def test_low_alignment_coverage_is_a_warning_by_default(tmp_path: Path) -> None:
     assert report.valid is True
     assert [(d.code, d.severity) for d in report.diagnostics] == [("alignment_coverage", "warning")]
     assert report.diagnostics[0].measured_value == 0.6
-    assert report.diagnostics[0].threshold == 0.9
+    assert report.diagnostics[0].threshold == 0.75
 
 
 def test_a_project_may_make_alignment_coverage_fail_again(tmp_path: Path) -> None:
@@ -233,10 +232,9 @@ def test_quality_thresholds_hash_deterministically_into_the_identity() -> None:
     )
 
 
-def test_the_authoritative_script_refuses_any_empty_segment(tmp_path: Path) -> None:
-    """The script stage clears empty beats; narration never voices one, PAUSE included."""
-    fixture = build_fixture(tmp_path, database_name="empty.db")
-    repo = NarrationRepository(fixture.session)
+def test_a_pause_segment_may_have_empty_text(tmp_path: Path) -> None:
+    """Defensive: the script stage removes pauses, but one that slips through is not fatal."""
+    fixture = build_fixture(tmp_path, database_name="pause.db")
     fixture.session.add(
         ScriptSegment(
             script_id=fixture.script.id,
@@ -252,15 +250,25 @@ def test_the_authoritative_script_refuses_any_empty_segment(tmp_path: Path) -> N
         )
     )
     fixture.session.commit()
-    with pytest.raises(ValueError, match="contains empty segments"):
-        repo.authoritative_script(fixture.project.id)
-    fixture.session.rollback()
-    fixture.session.delete(
-        fixture.session.scalars(
-            select(ScriptSegment).where(ScriptSegment.segment_type == "PAUSE")
-        ).one()
-    )
+    script, segments = NarrationRepository(fixture.session).authoritative_script(fixture.project.id)
+    assert script.id == fixture.script.id
+    assert [s.segment_type for s in segments] == ["narration", "narration", "PAUSE"]
+
+
+def test_an_empty_narration_segment_is_still_refused(tmp_path: Path) -> None:
+    fixture = build_fixture(tmp_path, database_name="empty.db")
     fixture.script_segments[0].text = "   "
     fixture.session.commit()
     with pytest.raises(ValueError, match="contains empty segments"):
-        repo.authoritative_script(fixture.project.id)
+        NarrationRepository(fixture.session).authoritative_script(fixture.project.id)
+
+
+def test_alignment_with_every_word_beyond_the_audio_degrades_gracefully() -> None:
+    """Nothing survives the clamp: no timings, every word an omission, coverage zero."""
+    recognized = [RecognizedWord("hello", 1.0, 1.2), RecognizedWord("world", 1.2, 1.5)]
+    alignment = reconcile_alignment("Hello world.", recognized, 1.0)
+    assert alignment.timings == []
+    assert alignment.omissions == ["Hello", "world"]
+    assert alignment.insertions == []
+    assert alignment.coverage == 0
+    assert alignment.diagnostics == ["dropped 2 zero-length word(s) at or beyond the duration"]

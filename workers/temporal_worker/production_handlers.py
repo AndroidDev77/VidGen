@@ -44,6 +44,7 @@ from services.generation.settings import (
     effective_narration_quality_thresholds,
     effective_scene_detection_threshold,
     effective_script_warn_only_validation_codes,
+    effective_storyboard_warn_only_validation_codes,
     effective_warn_only_validation_codes,
     generation_policy_identity,
     project_generation_settings,
@@ -1224,6 +1225,12 @@ def _generate_storyboard(
         director = FakeStoryboardDirector()
     else:
         raise ValueError("storyboard director is not configured")
+    project = session.get(Project, request.project_id)
+    if project is None:
+        raise ValueError("project does not exist")
+    warn_only_codes = effective_storyboard_warn_only_validation_codes(
+        project_generation_settings(project), settings.storyboard_warn_only_validation_codes
+    )
     result = asyncio.run(
         StoryboardPipeline(
             session,
@@ -1231,6 +1238,7 @@ def _generate_storyboard(
             director,
             capability_profile_id=settings.visual_capability_profile,
             cancellation_check=activity.is_cancelled,
+            warn_only_codes=warn_only_codes,
         ).process(
             project_id=request.project_id,
             idempotency_key=request.idempotency_key,

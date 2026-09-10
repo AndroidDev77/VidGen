@@ -11,7 +11,7 @@ from __future__ import annotations
 from uuid import UUID, uuid5
 
 from services.script.canonicalize import compute_segment_content_hash
-from services.script.validator import build_beat_coverage, canonical_word_count
+from services.script.validator import build_beat_coverage, spoken_word_count
 from vidgen.contracts.script import (
     Callback,
     ComedyWritingRequest,
@@ -212,7 +212,7 @@ def write_script(
             )
         )
 
-    actual_word_count = sum(canonical_word_count(segment.text) for segment in segments)
+    actual_word_count = spoken_word_count(segments)
     cold_open_text = (
         "Previously, on a show that definitely had consequences: chaos."
         if request.recap_mode == "full_recap"

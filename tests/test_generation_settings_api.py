@@ -386,7 +386,7 @@ def test_narration_quality_defaults_to_the_deployment_gate(tmp_path: Path) -> No
             "schema_version": "1.0",
             "min_wpm": 80,
             "max_wpm": 220,
-            "min_alignment_coverage": 0.9,
+            "min_alignment_coverage": 0.75,
             "max_clipping_ratio": 0.001,
             "max_leading_silence": 0.5,
             "max_trailing_silence": 0.7,
@@ -515,3 +515,60 @@ def test_a_narration_gate_that_cannot_resolve_is_refused_before_it_is_stored(
         assert body["settings"]["generation_quality"] == "balanced"
         assert body["settings"]["narration_quality_thresholds"] is None
         assert _create(client, narration_quality_thresholds={"min_wpm": 300}).status_code == 422
+
+
+def test_storyboard_warn_only_validation_codes_default_to_the_deployment_setting(
+    tmp_path: Path,
+) -> None:
+    with review_client_context(tmp_path) as (client, _, _):
+        project_id = _create(client).json()["id"]
+        body = client.get(
+            f"/api/v1/projects/{project_id}/generation-settings", headers=OWNER
+        ).json()
+        assert body["settings"]["storyboard_warn_only_validation_codes"] is None
+        assert body["effective_storyboard_warn_only_validation_codes"] == [
+            "continuity_contradiction"
+        ]
+        assert body["available_storyboard_warn_only_validation_codes"] == [
+            "continuity_contradiction",
+            "missing_continuity_state",
+            "missing_evidence_reference",
+        ]
+
+
+def test_storyboard_warn_only_validation_codes_can_be_overridden_per_project(
+    tmp_path: Path,
+) -> None:
+    with review_client_context(tmp_path) as (client, _, _):
+        project_id = _create(
+            client, storyboard_warn_only_validation_codes=["missing_evidence_reference"]
+        ).json()["id"]
+        body = client.get(
+            f"/api/v1/projects/{project_id}/generation-settings", headers=OWNER
+        ).json()
+        assert body["effective_storyboard_warn_only_validation_codes"] == [
+            "missing_evidence_reference"
+        ]
+        updated = client.put(
+            f"/api/v1/projects/{project_id}/generation-settings",
+            json={
+                "generation_quality": "balanced",
+                "shot_pacing": "normal",
+                "premium_fallback_allowed": False,
+                "storyboard_warn_only_validation_codes": [],
+            },
+            headers=OWNER,
+        )
+        assert updated.status_code == 200, updated.text
+        assert updated.json()["effective_storyboard_warn_only_validation_codes"] == []
+        refused = client.put(
+            f"/api/v1/projects/{project_id}/generation-settings",
+            json={
+                "generation_quality": "balanced",
+                "shot_pacing": "normal",
+                "premium_fallback_allowed": False,
+                "storyboard_warn_only_validation_codes": ["SCENE_SET_MISMATCH"],
+            },
+            headers=OWNER,
+        )
+        assert refused.status_code == 422, refused.text

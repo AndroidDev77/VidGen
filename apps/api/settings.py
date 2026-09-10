@@ -21,6 +21,10 @@ from vidgen.contracts.script import (
     DEFAULT_SCRIPT_WARN_ONLY_VALIDATION_CODES,
     SCRIPT_WARN_ONLY_ELIGIBLE_VALIDATION_CODES,
 )
+from vidgen.contracts.storyboard import (
+    DEFAULT_STORYBOARD_WARN_ONLY_VALIDATION_CODES,
+    STORYBOARD_WARN_ONLY_ELIGIBLE_VALIDATION_CODES,
+)
 from vidgen.storage.factory import SUPPORTED_BACKENDS
 
 
@@ -64,6 +68,13 @@ class APISettings(BaseSettings):
     script_warn_only_validation_codes: Annotated[list[str], NoDecode] = Field(
         default_factory=lambda: list(DEFAULT_SCRIPT_WARN_ONLY_VALIDATION_CODES)
     )
+    #: The same, for the T13 storyboard validator. A project may override this
+    #: via its generation settings; unset, every project uses this default.
+    #: Only codes in ``STORYBOARD_WARN_ONLY_ELIGIBLE_VALIDATION_CODES`` may be
+    #: listed.
+    storyboard_warn_only_validation_codes: Annotated[list[str], NoDecode] = Field(
+        default_factory=lambda: list(DEFAULT_STORYBOARD_WARN_ONLY_VALIDATION_CODES)
+    )
     #: T12 narration quality codes recorded as warnings instead of failing the
     #: attempt. A project may override this via its generation settings;
     #: unset, every project uses this default. Only codes in
@@ -76,7 +87,7 @@ class APISettings(BaseSettings):
     #: ``NarrationQualityThresholds`` for what each one measures.
     narration_min_wpm: float = Field(default=80, gt=0)
     narration_max_wpm: float = Field(default=220, gt=0)
-    narration_min_alignment_coverage: float = Field(default=0.90, ge=0, le=1)
+    narration_min_alignment_coverage: float = Field(default=0.75, ge=0, le=1)
     narration_max_clipping_ratio: float = Field(default=0.001, ge=0, le=1)
     narration_max_leading_silence: float = Field(default=0.5, ge=0)
     narration_max_trailing_silence: float = Field(default=0.7, ge=0)
@@ -259,6 +270,24 @@ class APISettings(BaseSettings):
         if unknown:
             raise ValueError(
                 "script_warn_only_validation_codes must name known validation codes; "
+                f"unknown: {', '.join(unknown)}"
+            )
+        return sorted(set(value))
+
+    @field_validator("storyboard_warn_only_validation_codes", mode="before")
+    @classmethod
+    def parse_storyboard_warn_only_validation_codes(cls, value: object) -> object:
+        if isinstance(value, str):
+            return [item.strip().lower() for item in value.split(",") if item.strip()]
+        return value
+
+    @field_validator("storyboard_warn_only_validation_codes")
+    @classmethod
+    def validate_storyboard_warn_only_validation_codes(cls, value: list[str]) -> list[str]:
+        unknown = sorted(set(value) - set(STORYBOARD_WARN_ONLY_ELIGIBLE_VALIDATION_CODES))
+        if unknown:
+            raise ValueError(
+                "storyboard_warn_only_validation_codes must name known validation codes; "
                 f"unknown: {', '.join(unknown)}"
             )
         return sorted(set(value))

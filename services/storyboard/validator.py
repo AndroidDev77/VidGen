@@ -11,6 +11,7 @@ from dataclasses import dataclass, field
 from uuid import UUID
 
 from services.storyboard.retimer import ShotTiming
+from vidgen.contracts.episode_analysis import StructuredNote
 from vidgen.contracts.storyboard import (
     ContinuityState,
     StoryboardShot,
@@ -82,6 +83,53 @@ def _diagnostic(
         measured_us=measured_us,
         expected_us=expected_us,
     )
+
+
+REFERENCE_TRIMMED = "reference_trimmed"
+
+
+def trim_reference_images(
+    proposals: list[StoryboardShotProposal], capability: VisualProviderCapability
+) -> list[StoryboardShotProposal]:
+    """Fit each proposal's reference images inside the capability's limit.
+
+    A Director reliably asks for every character plus the location when the
+    provider accepts one fewer image. That is a deterministic constraint, not a
+    creative judgement, so it is applied here instead of spending a repair on
+    it: the location reference is kept and the character list is cut to what
+    remains, in the order the proposal lists them (canonical order, once the
+    result has been canonicalized). The trim is recorded on the proposal's
+    warnings so the persisted shot says what was left out.
+    """
+    limit = capability.max_reference_images
+    trimmed: list[StoryboardShotProposal] = []
+    for proposal in proposals:
+        location_slots = 1 if proposal.location_reference_id is not None else 0
+        allowed = max(0, limit - location_slots)
+        characters = proposal.character_reference_ids
+        if len(characters) <= allowed:
+            trimmed.append(proposal)
+            continue
+        dropped = characters[allowed:]
+        trimmed.append(
+            proposal.model_copy(
+                update={
+                    "character_reference_ids": list(characters[:allowed]),
+                    "warnings": [
+                        *proposal.warnings,
+                        StructuredNote(
+                            code=REFERENCE_TRIMMED,
+                            message=(
+                                f"dropped character reference(s) "
+                                f"{', '.join(str(item) for item in dropped)} so the shot "
+                                f"carries at most {limit} reference image(s)"
+                            ),
+                        ),
+                    ],
+                }
+            )
+        )
+    return trimmed
 
 
 def validate_proposals(

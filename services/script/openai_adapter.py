@@ -200,10 +200,11 @@ def _patch_anonymous_segments(raw: Any) -> None:
 def _drop_empty_segments(raw: Any) -> None:
     """Clear out empty beats before the contract sees them.
 
-    A model sometimes emits a segment with no text. As NARRATION or DIALOGUE it
-    would fail RecapScript validation here, before the pipeline's own
-    ``drop_empty_segments`` could remove it; as PAUSE it would pass and reach
-    stages that cannot use it. Either way the segment is removed in-place and
+    A model sometimes emits a segment with no text, or a trailing PAUSE. As
+    NARRATION or DIALOGUE a blank segment would fail RecapScript validation
+    here, before the pipeline's own ``drop_empty_segments`` could remove it; a
+    PAUSE would pass and reach stages that cannot use it. Either way the
+    segment is removed in-place and
     the removal is recorded on the script's warnings so the pipeline's pass
     and the reviewer can see it. Callbacks, coverage and the word count are
     reconciled by the pipeline once the script has parsed.
@@ -211,9 +212,13 @@ def _drop_empty_segments(raw: Any) -> None:
     segments = raw.get("segments")
     if not isinstance(segments, list):
         return
-    kept = [
-        seg for seg in segments if not isinstance(seg, dict) or str(seg.get("text") or "").strip()
-    ]
+
+    def empty(seg: Any) -> bool:
+        return isinstance(seg, dict) and (
+            seg.get("type") == "PAUSE" or not str(seg.get("text") or "").strip()
+        )
+
+    kept = [seg for seg in segments if not empty(seg)]
     if len(kept) == len(segments) or not kept:
         return
     warnings = raw.setdefault("warnings", [])
@@ -223,11 +228,13 @@ def _drop_empty_segments(raw: Any) -> None:
                 "code": EMPTY_SEGMENT_DROPPED,
                 "message": (
                     f"{seg.get('type', 'segment')} segment {seg.get('segment_id')} at "
-                    f"sequence {seg.get('sequence')} had no text and was removed"
+                    f"sequence {seg.get('sequence')} "
+                    + ("is a pause" if seg.get("type") == "PAUSE" else "had no text")
+                    + " and was removed"
                 ),
             }
             for seg in segments
-            if isinstance(seg, dict) and not str(seg.get("text") or "").strip()
+            if empty(seg)
         )
     raw["segments"] = kept
 

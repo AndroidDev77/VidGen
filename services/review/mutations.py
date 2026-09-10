@@ -206,6 +206,7 @@ class ReviewMutationService:
             for row in self._session.scalars(
                 select(ScriptSegment).where(ScriptSegment.script_id == target_script.id)
             ).all()
+            if row.segment_type != "PAUSE"
         )
         self._session.flush()
         self._versions.bump(project.id, "script_segment", target_segment.id)

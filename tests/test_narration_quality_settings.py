@@ -14,6 +14,7 @@ from services.generation.settings import (
     GenerationSettingsError,
     effective_narration_quality_thresholds,
     effective_narration_warn_only_quality_codes,
+    effective_storyboard_warn_only_validation_codes,
     with_generation_settings,
 )
 from tests.storyboard_fixtures import build_fixture
@@ -142,3 +143,59 @@ def test_the_narration_handler_hands_the_pipeline_the_projects_gate(
         "voice_profile_id": fixture.narration_run.voice_profile_id,
         "idempotency_key": "narration:handler",
     }
+
+
+def test_the_storyboard_resolver_prefers_the_project_override() -> None:
+    default = ["continuity_contradiction"]
+    assert effective_storyboard_warn_only_validation_codes(
+        ProjectGenerationSettings(), default
+    ) == frozenset(default)
+    assert effective_storyboard_warn_only_validation_codes(
+        ProjectGenerationSettings(
+            storyboard_warn_only_validation_codes=["missing_evidence_reference"]
+        ),
+        default,
+    ) == frozenset({"missing_evidence_reference"})
+    assert (
+        effective_storyboard_warn_only_validation_codes(
+            ProjectGenerationSettings(storyboard_warn_only_validation_codes=[]), default
+        )
+        == frozenset()
+    )
+    with pytest.raises(ValueError, match="unknown validation codes: too_many_references"):
+        ProjectGenerationSettings(storyboard_warn_only_validation_codes=["too_many_references"])
+
+
+def test_the_storyboard_handler_hands_the_pipeline_the_projects_warn_only_codes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    fixture = build_fixture(tmp_path, database_name="storyboard-handler.db")
+    fixture.project.settings = with_generation_settings(
+        fixture.project.settings,
+        ProjectGenerationSettings(storyboard_warn_only_validation_codes=[]),
+    )
+    fixture.session.commit()
+    captured: dict[str, Any] = {}
+
+    class RecordingPipeline:
+        def __init__(self, session: object, blob_store: object, director: object, **kwargs: Any):
+            captured.update(kwargs)
+
+        async def process(self, **kwargs: Any) -> SimpleNamespace:
+            captured["process"] = kwargs
+            return SimpleNamespace(storyboard_run_id=uuid4(), storyboard_asset_id=uuid4())
+
+    monkeypatch.setattr(production_handlers, "StoryboardPipeline", RecordingPipeline)
+    settings = APISettings(_env_file=None, temporal_allow_fake_providers=True)
+    request = StageActivityInput(
+        project_id=fixture.project.id,
+        source_video_id=uuid4(),
+        stage="storyboard",
+        idempotency_key="storyboard:handler",
+    )
+    result = production_handlers._generate_storyboard(
+        fixture.session, fixture.blobs, settings, request
+    )
+    assert result.stage == "storyboard"
+    assert captured["warn_only_codes"] == frozenset()
+    assert captured["capability_profile_id"] == settings.visual_capability_profile

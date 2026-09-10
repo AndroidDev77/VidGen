@@ -144,7 +144,15 @@ class StoryboardRepository:
             raise StoryboardLineageError(
                 "script_incomplete", "selected T11 script has a non-dense segment sequence"
             )
-        return segments
+        # A PAUSE has no narration to storyboard against; the script stage
+        # clears them, and one that slipped through is left out here so the
+        # script and narration segment lists still pair one to one.
+        spoken = tuple(segment for segment in segments if segment.segment_type != "PAUSE")
+        if not spoken:
+            raise StoryboardLineageError(
+                "script_incomplete", "selected T11 script has no spoken segments"
+            )
+        return spoken
 
     def _narration_run(self, project_id: UUID, script: Script) -> NarrationRun:
         run = self.session.scalar(
@@ -180,6 +188,8 @@ class StoryboardRepository:
         by_script_segment = {row.script_segment_id: row for row in rows}
         selected: list[NarrationSegment] = []
         for segment in script_segments:
+            if segment.segment_type == "PAUSE":
+                continue
             row = by_script_segment.get(segment.id)
             if row is None:
                 raise StoryboardLineageError(

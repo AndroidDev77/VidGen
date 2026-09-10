@@ -24,6 +24,20 @@ from vidgen.contracts.episode_analysis import StructuredNote
 
 CONTRACT_VERSION = "storyboard/1.0"
 MICROSECONDS_PER_SECOND = 1_000_000
+#: Deterministic storyboard validation codes a deployment or project may choose
+#: to record as warnings instead of repairing. Every other code names a plan
+#: the animator cannot execute at all - a reference it cannot load, a duration
+#: the provider cannot generate - and is always an error.
+STORYBOARD_WARN_ONLY_ELIGIBLE_VALIDATION_CODES: tuple[str, ...] = (
+    "continuity_contradiction",
+    "missing_continuity_state",
+    "missing_evidence_reference",
+)
+#: continuity_contradiction by default: a Director that lets the time of day
+#: drift between consecutive shots describes the story's continuity badly, but
+#: the shot still renders, and the repair loop rarely talks it out of the
+#: drift - it only spends the bounded attempts and fails the run.
+DEFAULT_STORYBOARD_WARN_ONLY_VALIDATION_CODES: tuple[str, ...] = ("continuity_contradiction",)
 #: A Director importance at or above this designates a hero shot. Routing may
 #: animate hero shots with the premium model; QA holds them to a higher bar.
 HERO_IMPORTANCE_FLOOR = 0.8

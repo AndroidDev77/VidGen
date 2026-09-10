@@ -8,7 +8,7 @@ from typing import Any
 from uuid import UUID, uuid5
 
 from vidgen.contracts.episode_analysis import StructuredNote
-from vidgen.contracts.script import CompressedPlotPlan, RecapScript
+from vidgen.contracts.script import CompressedPlotPlan, RecapScript, ScriptSegment
 
 SCRIPT_NAMESPACE = UUID("2f6f9e5f-8a2b-4a34-9a2a-3d6a2f0a9d41")
 #: Warning code recorded on a script whose provider output carried a segment
@@ -87,23 +87,27 @@ def canonical_script_hash(script: RecapScript) -> str:
     return hashlib.sha256(payload.encode()).hexdigest()
 
 
-def drop_empty_segments(script: RecapScript) -> RecapScript:
-    """Remove every segment with no text and keep the script consistent without it.
+def _is_empty_beat(segment: ScriptSegment) -> bool:
+    return segment.type == "PAUSE" or not segment.text.strip()
 
-    A writer or editor occasionally emits an empty beat: a segment whose text is
-    blank, usually typed ``PAUSE`` because that is the only type the contract
-    lets be empty. Nothing downstream can use it - narration has no words to
-    voice and the storyboard has no words to time - so it is cleared here, at
-    the stage that produced it. Surviving segments are re-sequenced
+
+def drop_empty_segments(script: RecapScript) -> RecapScript:
+    """Remove every empty beat and keep the script consistent without it.
+
+    A writer or editor occasionally emits an empty beat: a segment with blank
+    text, or one typed ``PAUSE`` - the only type the contract lets be empty and
+    a type nothing downstream handles. Narration has no words to voice and the
+    storyboard has no words to time, so both are cleared here, at the stage
+    that produced them. Surviving segments are re-sequenced
     contiguously, a callback whose setup or payoff was removed goes with it
     (and the joke annotation that pointed at it is unlinked), beat coverage and
     the word count are recomputed, and one ``EMPTY_SEGMENT_DROPPED`` warning is
     recorded per removed segment. A script with no text at all is refused.
     """
-    dropped = [segment for segment in script.segments if not segment.text.strip()]
+    dropped = [segment for segment in script.segments if _is_empty_beat(segment)]
     if not dropped:
         return script
-    survivors = [segment for segment in script.segments if segment.text.strip()]
+    survivors = [segment for segment in script.segments if not _is_empty_beat(segment)]
     if not survivors:
         raise ValueError("script has no segment with text")
     surviving_ids = {segment.segment_id for segment in survivors}
@@ -147,7 +151,9 @@ def drop_empty_segments(script: RecapScript) -> RecapScript:
                 code=EMPTY_SEGMENT_DROPPED,
                 message=(
                     f"{segment.type} segment {segment.segment_id} at sequence "
-                    f"{segment.sequence} had no text and was removed"
+                    f"{segment.sequence} "
+                    + ("is a pause" if segment.type == "PAUSE" else "had no text")
+                    + " and was removed"
                 ),
             )
             for segment in dropped

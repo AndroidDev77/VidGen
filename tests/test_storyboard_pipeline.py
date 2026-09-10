@@ -418,7 +418,10 @@ def test_excessive_character_count_is_repaired_for_one_segment_only(tmp_path: Pa
     assert repairs[0].status == "valid"
     assert repairs[0].attempt_number == 1
     codes = {item["code"] for item in repairs[0].input_diagnostics}
-    assert "excessive_character_count" in codes or "too_many_references" in codes
+    # The reference list is trimmed to the capability before validation, so the
+    # count itself never needs a repair; the ghosts that survive the trim do.
+    assert "invalid_character_reference" in codes
+    assert not codes & {"excessive_character_count", "too_many_references"}
 
 
 class _AlwaysInvalidDirector(FakeStoryboardDirector):
@@ -627,35 +630,36 @@ TWO_BEAT_TEXTS = (
 )
 
 
+class _ContradictingDirector(FakeStoryboardDirector):
+    """Changes time of day between consecutive shots with no explanation."""
+
+    async def propose(self, request):
+        result = await super().propose(request)
+        proposals = list(result.proposals)
+        if len(proposals) > 1:
+            proposals[0] = proposals[0].model_copy(
+                update={
+                    "expected_outgoing_continuity": (
+                        proposals[0].expected_outgoing_continuity.model_copy(
+                            update={"time_of_day": "morning"}
+                        )
+                    )
+                }
+            )
+            proposals[1] = proposals[1].model_copy(
+                update={
+                    "incoming_continuity": proposals[1].incoming_continuity.model_copy(
+                        update={"time_of_day": "night"}
+                    )
+                }
+            )
+        return result.model_copy(update={"proposals": proposals})
+
+
 def test_continuity_contradiction_is_diagnosed_and_repaired(tmp_path: Path) -> None:
     fixture = build_fixture(tmp_path, texts=TWO_BEAT_TEXTS)
-
-    class _ContradictingDirector(FakeStoryboardDirector):
-        """Changes time of day between consecutive shots with no explanation."""
-
-        async def propose(self, request):
-            result = await super().propose(request)
-            proposals = list(result.proposals)
-            if len(proposals) > 1:
-                proposals[0] = proposals[0].model_copy(
-                    update={
-                        "expected_outgoing_continuity": (
-                            proposals[0].expected_outgoing_continuity.model_copy(
-                                update={"time_of_day": "morning"}
-                            )
-                        )
-                    }
-                )
-                proposals[1] = proposals[1].model_copy(
-                    update={
-                        "incoming_continuity": proposals[1].incoming_continuity.model_copy(
-                            update={"time_of_day": "night"}
-                        )
-                    }
-                )
-            return result.model_copy(update={"proposals": proposals})
-
-    result = run_pipeline(fixture, director=_ContradictingDirector())
+    # A project that tolerates nothing: the contradiction must be repaired.
+    result = run_pipeline(fixture, director=_ContradictingDirector(), warn_only_codes=())
     # The contradiction is caught, and the targeted repair resolves it.
     assert result.status == "storyboard_complete"
     repairs = list(fixture.session.scalars(select(StoryboardRepairAttempt)))
@@ -663,6 +667,48 @@ def test_continuity_contradiction_is_diagnosed_and_repaired(tmp_path: Path) -> N
     codes = {diagnostic["code"] for repair in repairs for diagnostic in repair.input_diagnostics}
     assert "continuity_contradiction" in codes
     assert all(repair.status == "valid" for repair in repairs)
+
+
+def test_continuity_contradiction_is_recorded_as_a_warning_by_default(tmp_path: Path) -> None:
+    """The deployment default tolerates it: the finding is kept, no repair is bought."""
+    fixture = build_fixture(tmp_path, texts=TWO_BEAT_TEXTS)
+    director = _CountingContradictingDirector()
+    result = run_pipeline(fixture, director=director)
+    assert result.status == "storyboard_complete"
+    assert list(fixture.session.scalars(select(StoryboardRepairAttempt))) == []
+    assert all(attempt == 1 for _sequence, attempt in director.requests)
+    checkpoint = fixture.session.scalar(
+        select(StoryboardSegmentCheckpoint).where(StoryboardSegmentCheckpoint.sequence == 0)
+    )
+    assert checkpoint is not None and checkpoint.validation_report["valid"] is True
+    findings = [
+        item
+        for item in checkpoint.validation_report["diagnostics"]
+        if item["code"] == "continuity_contradiction"
+    ]
+    assert findings and all(item["severity"] == "warning" for item in findings)
+
+
+class _CountingContradictingDirector(_ContradictingDirector):
+    def __init__(self) -> None:
+        super().__init__()
+        self.requests: list[tuple[int, int]] = []
+
+    async def propose(self, request):
+        self.requests.append((request.segment_sequence, request.attempt_number))
+        return await super().propose(request)
+
+
+def test_only_eligible_codes_can_be_demoted(tmp_path: Path) -> None:
+    """A code outside the tolerated set still fails the segment however it is configured."""
+    fixture = build_fixture(tmp_path)
+    with pytest.raises(StoryboardValidationFailed) as error:
+        run_pipeline(
+            fixture,
+            director=_AlwaysInvalidDirector(),
+            warn_only_codes={"continuity_contradiction", "missing_continuity_state"},
+        )
+    assert "invalid_character_reference" in str(error.value)
 
 
 def test_an_explained_continuity_change_is_not_a_contradiction(tmp_path: Path) -> None:
@@ -779,7 +825,9 @@ def test_contradictory_result_level_outgoing_continuity_is_caught(tmp_path: Path
             )
 
     with pytest.raises(StoryboardValidationFailed) as error:
-        run_pipeline(fixture := build_fixture(tmp_path), director=_DriftingDirector())
+        run_pipeline(
+            fixture := build_fixture(tmp_path), director=_DriftingDirector(), warn_only_codes=()
+        )
     assert "continuity_contradiction" in str(error.value)
     assert fixture.project.status == "storyboard_failed"
 
@@ -1007,3 +1055,155 @@ def test_retrying_a_completed_run_creates_no_duplicate_charges(tmp_path: Path) -
     assert fixture.session.query(CostReservation).count() == reservations
     assert fixture.session.query(CostLedgerEntry).count() == ledger
     assert fixture.session.scalar(select(ProjectBudget)).committed_amount == committed
+
+
+# -- empty beats, exhausted repairs, reference trimming ----------------------
+
+
+def test_a_pause_segment_is_left_out_of_the_storyboard_inputs(tmp_path: Path) -> None:
+    """Defensive: a pause has no narration, so it must not unpair the segment lists."""
+    from vidgen.db.script_models import ScriptSegment
+
+    fixture = build_fixture(tmp_path)
+    fixture.session.add(
+        ScriptSegment(
+            script_id=fixture.script.id,
+            sequence=len(fixture.script_segments),
+            stable_segment_id=uuid4(),
+            segment_type="PAUSE",
+            speaker_kind="narrator",
+            text="",
+            content_hash="c" * 64,
+            plot_beat_ids=[],
+            source_scene_ids=[],
+            estimated_duration_ms=750,
+        )
+    )
+    fixture.session.commit()
+    inputs = StoryboardRepository(fixture.session).authoritative_inputs(fixture.project.id)
+    assert [segment.id for segment in inputs.script_segments] == [
+        segment.id for segment in fixture.script_segments
+    ]
+    assert len(inputs.narration_segments) == len(inputs.script_segments)
+    result = run_pipeline(fixture)
+    assert result.status == "storyboard_complete"
+    checkpoints = list(fixture.session.scalars(select(StoryboardSegmentCheckpoint)))
+    assert {item.script_segment_id for item in checkpoints} == {
+        segment.id for segment in fixture.script_segments
+    }
+
+
+class _CountingInvalidDirector(_AlwaysInvalidDirector):
+    def __init__(self) -> None:
+        super().__init__()
+        self.calls = 0
+
+    async def propose(self, request: StoryboardProviderRequest) -> StoryboardProviderResult:
+        self.calls += 1
+        return await super().propose(request)
+
+
+def test_a_retry_after_exhausted_repairs_fails_with_the_stored_report(tmp_path: Path) -> None:
+    """Regression: the resume point lay past the repair budget and an assert fired.
+
+    The earlier activity attempt spent every repair on the segment. A Temporal
+    retry must fail with that segment's last verdict, without paying for
+    another attempt, rather than crash on a report that was never produced.
+    """
+    fixture = build_fixture(tmp_path)
+    with pytest.raises(StoryboardValidationFailed):
+        run_pipeline(fixture, director=_AlwaysInvalidDirector(), key="run-1")
+    checkpoint = fixture.session.scalar(
+        select(StoryboardSegmentCheckpoint).where(StoryboardSegmentCheckpoint.sequence == 0)
+    )
+    assert checkpoint is not None and checkpoint.attempt_count == 3
+    stored = checkpoint.validation_report
+
+    director = _CountingInvalidDirector()
+    with pytest.raises(StoryboardValidationFailed) as error:
+        run_pipeline(fixture, director=director, key="run-1")
+    assert director.calls == 0
+    assert error.value.report.model_dump(mode="json") == stored
+    assert "invalid_character_reference" in str(error.value)
+    assert fixture.project.status == "storyboard_failed"
+
+
+class _GreedyReferenceDirector(FakeStoryboardDirector):
+    """Asks for every character plus the location: one image over the limit."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.requests: list[tuple[int, int]] = []
+        self.everyone: dict[int, list] = {}
+
+    async def propose(self, request: StoryboardProviderRequest) -> StoryboardProviderResult:
+        self.requests.append((request.segment_sequence, request.attempt_number))
+        result = await super().propose(request)
+        everyone = list(request.available_character_ids[:3])
+        self.everyone[request.segment_sequence] = everyone
+
+        def present(state):
+            return state.model_copy(
+                update={
+                    "present_character_ids": everyone,
+                    "character_appearance_states": [],
+                    "subject_positions": [],
+                }
+            )
+
+        proposals = [
+            item.model_copy(
+                update={
+                    "character_reference_ids": everyone,
+                    "incoming_continuity": present(item.incoming_continuity),
+                    "expected_outgoing_continuity": present(item.expected_outgoing_continuity),
+                }
+            )
+            for item in result.proposals
+        ]
+        return result.model_copy(
+            update={
+                "proposals": proposals,
+                "expected_incoming_continuity": present(result.expected_incoming_continuity),
+                "expected_outgoing_continuity": present(result.expected_outgoing_continuity),
+            }
+        )
+
+
+def test_too_many_reference_images_are_trimmed_instead_of_repaired(tmp_path: Path) -> None:
+    fixture = build_fixture(tmp_path, character_count=3)
+    director = _GreedyReferenceDirector()
+    result = run_pipeline(fixture, director=director)
+    assert result.status == "storyboard_complete"
+    assert list(fixture.session.scalars(select(StoryboardRepairAttempt))) == []
+    assert all(attempt == 1 for _sequence, attempt in director.requests)
+    storyboard = load_storyboard(fixture, result)
+    limit = RUNWAY_GEN4_TURBO_PROFILE.max_reference_images
+    sequence_of = {segment.id: segment.sequence for segment in fixture.script_segments}
+    for shot in storyboard.shots:
+        assert shot.location_reference_id is not None
+        assert len(shot.character_reference_ids) + 1 == limit
+        # The result is canonicalized before it is judged, so the references
+        # are cut in canonical order: deterministic whatever the Director sent.
+        requested = sorted(director.everyone[sequence_of[shot.script_segment_id]], key=str)
+        assert shot.character_reference_ids == requested[: limit - 1]
+        trims = [note for note in shot.warnings if note.code == "reference_trimmed"]
+        assert len(trims) == 1
+        assert str(requested[limit - 1]) in trims[0].message
+
+
+def test_trimming_keeps_a_proposal_within_the_limit_unchanged() -> None:
+    from services.storyboard.validator import trim_reference_images
+    from tests.test_storyboard_retimer import proposal
+
+    within = proposal(0, 0, 3, 1_000_000).model_copy(
+        update={"character_reference_ids": [uuid4(), uuid4()], "location_reference_id": uuid4()}
+    )
+    assert trim_reference_images([within], RUNWAY_GEN4_TURBO_PROFILE) == [within]
+    over = within.model_copy(
+        update={"character_reference_ids": [*within.character_reference_ids, uuid4()]}
+    )
+    (trimmed,) = trim_reference_images([over], RUNWAY_GEN4_TURBO_PROFILE)
+    assert trimmed.character_reference_ids == within.character_reference_ids
+    assert trimmed.location_reference_id == within.location_reference_id
+    assert [note.code for note in trimmed.warnings] == ["reference_trimmed"]

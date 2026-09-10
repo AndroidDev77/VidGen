@@ -40,6 +40,7 @@ from services.generation.settings import (
     effective_narration_quality_thresholds,
     effective_scene_detection_threshold,
     effective_script_warn_only_validation_codes,
+    effective_storyboard_warn_only_validation_codes,
     effective_warn_only_validation_codes,
     generation_policy_identity,
     project_generation_settings,
@@ -62,6 +63,7 @@ from vidgen.contracts.narration import (
 )
 from vidgen.contracts.review import ApiErrorField
 from vidgen.contracts.script import SCRIPT_WARN_ONLY_ELIGIBLE_VALIDATION_CODES
+from vidgen.contracts.storyboard import STORYBOARD_WARN_ONLY_ELIGIBLE_VALIDATION_CODES
 from vidgen.db.cost_models import ProjectBudget
 from vidgen.db.models import Asset, Project, SourceVideo, asset_dependencies
 from vidgen.db.repositories import ProjectRepository
@@ -359,6 +361,14 @@ def _generation_settings_response(
         effective_narration_warn_only_quality_codes=list(narration_quality.warn_only_codes),
         available_narration_warn_only_quality_codes=list(
             NARRATION_WARN_ONLY_ELIGIBLE_QUALITY_CODES
+        ),
+        effective_storyboard_warn_only_validation_codes=sorted(
+            effective_storyboard_warn_only_validation_codes(
+                generation, settings.storyboard_warn_only_validation_codes
+            )
+        ),
+        available_storyboard_warn_only_validation_codes=list(
+            STORYBOARD_WARN_ONLY_ELIGIBLE_VALIDATION_CODES
         ),
     )
 

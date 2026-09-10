@@ -54,7 +54,12 @@ class NarrationQualityThresholds(StrictContract):
     schema_version: Literal["1.0"] = "1.0"
     min_wpm: float = Field(default=80, gt=0)
     max_wpm: float = Field(default=220, gt=0)
-    min_alignment_coverage: float = Field(default=0.90, ge=0, le=1)
+    #: 0.75 rather than the original 0.90: the figure is how much of the
+    #: approved text Whisper transcribed back verbatim, and clear audio over
+    #: domain vocabulary routinely scores 75-85%. Coverage is warn-only by
+    #: default as well; the lower floor is the safety net for a project that
+    #: makes it fail again.
+    min_alignment_coverage: float = Field(default=0.75, ge=0, le=1)
     max_clipping_ratio: float = Field(default=0.001, ge=0, le=1)
     max_leading_silence: float = Field(default=0.5, ge=0)
     max_trailing_silence: float = Field(default=0.7, ge=0)

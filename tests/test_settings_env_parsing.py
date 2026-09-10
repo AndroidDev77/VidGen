@@ -184,3 +184,32 @@ def test_a_narration_speaking_rate_window_out_of_order_is_refused(
     monkeypatch.setenv("VIDGEN_NARRATION_MIN_WPM", "300")
     with pytest.raises(ValidationError, match="narration_min_wpm must be below narration_max_wpm"):
         APISettings(_env_file=None)
+
+
+def test_storyboard_warn_only_validation_codes_default_to_continuity_tolerance() -> None:
+    assert APISettings(_env_file=None).storyboard_warn_only_validation_codes == [
+        "continuity_contradiction"
+    ]
+
+
+def test_storyboard_warn_only_validation_codes_load_as_a_comma_separated_list(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv(
+        "VIDGEN_STORYBOARD_WARN_ONLY_VALIDATION_CODES",
+        "Missing_Evidence_Reference, continuity_contradiction",
+    )
+    assert APISettings(_env_file=None).storyboard_warn_only_validation_codes == [
+        "continuity_contradiction",
+        "missing_evidence_reference",
+    ]
+
+
+def test_an_unknown_storyboard_warn_only_validation_code_is_refused(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # too_many_references is a real storyboard code, but demoting it would hand
+    # the animator a shot it cannot generate, so it is not eligible.
+    monkeypatch.setenv("VIDGEN_STORYBOARD_WARN_ONLY_VALIDATION_CODES", "too_many_references")
+    with pytest.raises(ValidationError):
+        APISettings(_env_file=None)

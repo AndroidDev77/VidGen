@@ -1628,6 +1628,8 @@ export interface ProjectGenerationSettings {
    * override, and every unset limit inside keeps the deployment default.
    */
   narration_quality_thresholds: NarrationQualityThresholdOverrides | null;
+  /** The same, for the T13 storyboard validator; `null` uses the deployment default. */
+  storyboard_warn_only_validation_codes: string[] | null;
   origin: GenerationSettingsOrigin;
 }
 

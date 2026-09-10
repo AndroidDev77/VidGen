@@ -853,6 +853,7 @@ function generationSettings() {
       script_warn_only_validation_codes: null,
       narration_warn_only_quality_codes: null,
       narration_quality_thresholds: null,
+      storyboard_warn_only_validation_codes: null,
       origin: "explicit",
     },
     generation_policy_identity:
@@ -878,7 +879,7 @@ function generationSettings() {
       schema_version: "1.0",
       min_wpm: 80,
       max_wpm: 220,
-      min_alignment_coverage: 0.9,
+      min_alignment_coverage: 0.75,
       max_clipping_ratio: 0.001,
       max_leading_silence: 0.5,
       max_trailing_silence: 0.7,
@@ -893,6 +894,12 @@ function generationSettings() {
       "internal_silence",
       "speaking_rate",
       "alignment_coverage",
+    ],
+    effective_storyboard_warn_only_validation_codes: ["continuity_contradiction"],
+    available_storyboard_warn_only_validation_codes: [
+      "continuity_contradiction",
+      "missing_continuity_state",
+      "missing_evidence_reference",
     ],
   };
 }

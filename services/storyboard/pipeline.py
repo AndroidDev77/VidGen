@@ -8,7 +8,7 @@ orchestrates, and Temporal only ever carries IDs.
 from __future__ import annotations
 
 import json
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from dataclasses import replace
 from datetime import UTC, datetime
 from decimal import Decimal
@@ -50,6 +50,7 @@ from services.storyboard.validator import (
     VALIDATOR_VERSION,
     SegmentValidationContext,
     build_report,
+    trim_reference_images,
     validate_outgoing_handoff,
     validate_proposals,
     validate_segment_timing,
@@ -58,6 +59,7 @@ from services.storyboard.validator import (
 from vidgen.contracts.episode_analysis import StructuredNote
 from vidgen.contracts.storyboard import (
     CONTRACT_VERSION,
+    DEFAULT_STORYBOARD_WARN_ONLY_VALIDATION_CODES,
     HERO_IMPORTANCE_FLOOR,
     ContinuityState,
     NarrationBoundary,
@@ -126,11 +128,20 @@ class StoryboardPipeline:
         metrics: Metrics | None = None,
         cancellation_check: Callable[[], bool] | None = None,
         max_repair_attempts: int = DEFAULT_MAX_REPAIR_ATTEMPTS,
+        warn_only_codes: Iterable[str] | None = None,
     ) -> None:
         self.session = session
         self.blob_store = blob_store
         self.provider = provider
         self.capability_profile_id = capability_profile_id
+        # Which deterministic findings are recorded rather than repaired. The
+        # caller resolves the project's override against the deployment
+        # default; unset, the deployment-wide default applies.
+        self.warn_only_codes = frozenset(
+            DEFAULT_STORYBOARD_WARN_ONLY_VALIDATION_CODES
+            if warn_only_codes is None
+            else warn_only_codes
+        )
         self.capability_override = capability_override
         #: An explicit configuration keeps its bounds; otherwise the project's
         #: pacing preset supplies them when the run resolves its settings.
@@ -452,7 +463,7 @@ class StoryboardPipeline:
                 repair=repair,
             )
             project.status = "storyboard_retiming"
-            timing, diagnostics = self._retime_and_validate(
+            result, timing, diagnostics = self._retime_and_validate(
                 result=result,
                 context=context,
                 capability=capability,
@@ -498,7 +509,18 @@ class StoryboardPipeline:
             self.session.commit()
             if not all(item.repairable for item in diagnostics if item.severity == "error"):
                 break
-        assert report is not None
+        if report is None:
+            # The loop never ran: an earlier activity attempt already spent every
+            # repair on this segment, so the resume point lies past the budget.
+            # The last verdict is durable on the checkpoint; fail with it rather
+            # than pay for another attempt or trip over a missing report.
+            stored = checkpoint.validation_report
+            if not isinstance(stored, dict):
+                raise RuntimeError(
+                    "storyboard segment exhausted its repair attempts without a stored "
+                    "validation report"
+                )
+            report = StoryboardValidationReport.model_validate(stored)
         raise StoryboardValidationFailed(report)
 
     @staticmethod
@@ -739,29 +761,52 @@ class StoryboardPipeline:
         capability: VisualProviderCapability,
         timings: list[NarrationBoundary],
         approved: list[NarrationBoundary],
-    ) -> tuple[SegmentTiming, list[StoryboardValidationDiagnostic]]:
-        diagnostics = validate_proposals(list(result.proposals), context)
-        diagnostics.extend(
-            validate_outgoing_handoff(
-                list(result.proposals), result.expected_outgoing_continuity, context
-            )
+    ) -> tuple[StoryboardProviderResult, SegmentTiming, list[StoryboardValidationDiagnostic]]:
+        """Normalize, validate and retime one provider result.
+
+        Returns the result actually judged - reference lists over the
+        capability's limit are trimmed deterministically first, so that
+        constraint never spends a repair - with its timing and diagnostics.
+        Codes in ``warn_only_codes`` are recorded at warning severity.
+        """
+        proposals = trim_reference_images(list(result.proposals), capability)
+        if proposals != list(result.proposals):
+            result = result.model_copy(update={"proposals": proposals})
+        diagnostics = self._demote(
+            [
+                *validate_proposals(proposals, context),
+                *validate_outgoing_handoff(proposals, result.expected_outgoing_continuity, context),
+            ]
         )
         if any(item.severity == "error" for item in diagnostics):
-            return SegmentTiming(shots=[]), diagnostics
+            return result, SegmentTiming(shots=[]), diagnostics
         try:
             timing = retime_segment(
                 segment_sequence=context.segment_sequence,
                 narration_duration_us=context.narration_duration_us,
                 word_timings=timings,
                 approved_boundaries=approved,
-                proposals=list(result.proposals),
+                proposals=proposals,
                 capability=capability,
                 config=self.retimer_config,
             )
         except RetimerError as error:
-            return SegmentTiming(shots=[]), [*diagnostics, error.diagnostic]
-        diagnostics.extend(validate_segment_timing(timing.shots, context))
-        return timing, diagnostics
+            # A retimer failure leaves no timing to persist, so it is never
+            # demoted: a warn-only code here would persist an empty segment.
+            return result, SegmentTiming(shots=[]), [*diagnostics, error.diagnostic]
+        diagnostics.extend(self._demote(validate_segment_timing(timing.shots, context)))
+        return result, timing, diagnostics
+
+    def _demote(
+        self, diagnostics: list[StoryboardValidationDiagnostic]
+    ) -> list[StoryboardValidationDiagnostic]:
+        """Record tolerated codes as warnings: kept on the report, never a failure."""
+        return [
+            item.model_copy(update={"severity": "warning"})
+            if item.severity == "error" and item.code in self.warn_only_codes
+            else item
+            for item in diagnostics
+        ]
 
     def _validation_context(
         self,
@@ -1105,7 +1150,7 @@ class StoryboardPipeline:
             boundaries.append(checkpoint.global_start_us + checkpoint.narration_duration_us)
         self.session.flush()
 
-        diagnostics = validate_storyboard(shots, total_duration_us)
+        diagnostics = self._demote(validate_storyboard(shots, total_duration_us))
         report = build_report(
             diagnostics,
             checked_segment_sequences=[segment.sequence for segment in segments],

@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from services.script.canonicalize import compute_segment_content_hash
 from services.script.rubric import LONG_SEGMENT_WORDS
-from services.script.validator import canonical_word_count
+from services.script.validator import canonical_word_count, spoken_word_count
 from services.script.writer import _FILLER_BANK
 from vidgen.contracts.script import JokeAnnotation, RecapScript, ScriptEdit, TextSpan
 
@@ -82,7 +82,7 @@ def propose_revision(script: RecapScript) -> tuple[list[ScriptEdit], RecapScript
         revised_segment if segment.segment_id == target.segment_id else segment
         for segment in script.segments
     ]
-    actual_word_count = sum(canonical_word_count(segment.text) for segment in new_segments)
+    actual_word_count = spoken_word_count(new_segments)
     edit = ScriptEdit(
         segment_id=target.segment_id,
         old_text=target.text,

@@ -34,7 +34,7 @@
       "type": "number"
     },
     "min_alignment_coverage": {
-      "default": 0.9,
+      "default": 0.75,
       "maximum": 1,
       "minimum": 0,
       "title": "Min Alignment Coverage",

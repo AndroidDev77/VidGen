@@ -27,6 +27,7 @@ from services.script.settings import (
 )
 from services.script.validator import (
     build_beat_coverage,
+    spoken_word_count,
     validate_compressed_plot_plan,
     validate_recap_script,
 )
@@ -510,10 +511,9 @@ class ScriptGenerationPipeline:
                     result.output.model_copy(update={"script_id": script_id, "version": 1})
                 )
                 # Auto-correct word count so WORD_COUNT_MISMATCH never fires.
-                from services.script.validator import canonical_word_count as _wcnt
-
-                actual_words = sum(_wcnt(seg.text) for seg in candidate.segments)
-                candidate = candidate.model_copy(update={"actual_word_count": actual_words})
+                candidate = candidate.model_copy(
+                    update={"actual_word_count": spoken_word_count(candidate.segments)}
+                )
                 coverage = build_beat_coverage(candidate, plan)
                 candidate = canonicalize_script(
                     candidate.model_copy(update={"beat_coverage": coverage})
