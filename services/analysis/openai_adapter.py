@@ -52,6 +52,14 @@ class OpenAIEpisodeAnalysisProvider:
         )
 
     @property
+    def provider(self) -> str:
+        return "openai"
+
+    @property
+    def model(self) -> str:
+        return self.config.model
+
+    @property
     def configuration_version(self) -> str:
         return self.config.configuration_version
 
@@ -94,6 +102,9 @@ class OpenAIEpisodeAnalysisProvider:
         payload = response.json()
         parsed = schema.model_validate(json.loads(_response_text(payload)))
         usage = payload.get("usage", {})
+        # OpenAI reports total input tokens plus, separately, how many of them
+        # were served from the prompt cache at a lower price.
+        cached = (usage.get("input_tokens_details") or {}).get("cached_tokens")
         metadata = ProviderMetadata(
             provider="openai",
             model=self.config.model,
@@ -104,6 +115,7 @@ class OpenAIEpisodeAnalysisProvider:
             input_hash=request.input_hash,
             redacted_response_metadata={"status": payload.get("status", "unknown")},
             input_tokens=usage.get("input_tokens"),
+            cached_input_tokens=cached,
             output_tokens=usage.get("output_tokens"),
         )
         return parsed, metadata
