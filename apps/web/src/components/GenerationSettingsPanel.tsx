@@ -101,17 +101,102 @@ export const WARN_ONLY_VALIDATION_CODES: ReadonlyArray<{
 ];
 
 /**
- * The same, for the T11 plot-compression validator. Its vocabulary is its own:
- * a code here is one the compression validator actually emits.
+ * The same, for the T11 script stage. One list covers both of its validators:
+ * the plot-compression validator and the recap-script validator (they share
+ * UNKNOWN_SOURCE_REFERENCE). Every code either validator emits is listed.
  */
 export const SCRIPT_WARN_ONLY_VALIDATION_CODES: ReadonlyArray<{
   readonly value: string;
   readonly description: string;
 }> = [
-  { value: "UNKNOWN_SOURCE_REFERENCE", description: "a reference is outside the analysis" },
-  { value: "UNKNOWN_BEAT", description: "a selected or omitted beat is not in the analysis" },
+  // Plot compression
   { value: "DUPLICATE_ID", description: "a beat is listed twice" },
+  { value: "UNKNOWN_BEAT", description: "a selected or omitted beat is not in the analysis" },
+  { value: "MANDATORY_BEAT_OMITTED", description: "a mandatory beat was dropped" },
   { value: "REQUIRED_BEAT_OMITTED", description: "a beat the request required was dropped" },
+  {
+    value: "STRUCTURAL_BEAT_OMITTED",
+    description: "a structural beat (setup, climax, resolution…) was dropped",
+  },
+  { value: "UNSUPPORTED_BEAT_SUMMARY", description: "a beat summary was altered" },
+  { value: "OMISSION_WITHOUT_REASON", description: "a beat was omitted without a reason" },
+  { value: "UNKNOWN_SOURCE_REFERENCE", description: "a reference is outside the analysis" },
+  { value: "CAUSE_AFTER_EFFECT", description: "a cause beat comes after its effect" },
+  { value: "MISSING_CAUSAL_BRIDGE", description: "an omitted cause has no connective explanation" },
+  { value: "CYCLIC_BEAT_DEPENDENCY", description: "the selected beats form a cycle" },
+  { value: "WORD_BUDGET_OFF_TARGET", description: "per-beat word allocations miss the target" },
+  { value: "PACING_OFF_TARGET", description: "the total duration misses the target" },
+  // Recap script
+  { value: "WORD_COUNT_MISMATCH", description: "the recorded word count is not the actual one" },
+  { value: "WORD_COUNT_OUT_OF_RANGE", description: "the word count misses the target" },
+  { value: "UNKNOWN_PLOT_BEAT_REFERENCE", description: "a segment cites a beat outside the plan" },
+  { value: "UNKNOWN_SCENE_REFERENCE", description: "a segment cites a scene outside the analysis" },
+  { value: "UNKNOWN_SPEAKER", description: "a speaker is not an analysis character" },
+  {
+    value: "ANONYMOUS_SPEAKER_NOT_PERMITTED",
+    description: "an anonymous speaker is used when not allowed",
+  },
+  { value: "INVALID_JOKE_SPAN", description: "a joke span runs past the segment text" },
+  { value: "PROHIBITED_PATTERN", description: "a segment matches a forbidden pattern" },
+  { value: "NEAR_VERBATIM_TRANSCRIPT", description: "a segment is too close to the transcript" },
+  { value: "MANDATORY_BEAT_NOT_COVERED", description: "a mandatory beat has no segment" },
+  { value: "BEAT_NOT_COVERED", description: "an optional beat has no segment" },
+  { value: "UNKNOWN_CALLBACK_SEGMENT", description: "a callback names a missing segment" },
+  { value: "CALLBACK_PAYOFF_BEFORE_SETUP", description: "a payoff comes before its setup" },
+  {
+    value: "TOO_MUCH_EXPOSITION",
+    description: "more than two exposition-only segments in a row at high humor",
+  },
+  {
+    value: "LONG_EXPOSITION_WITHOUT_JOKE",
+    description: "over 18 seconds of exposition without a joke at high humor",
+  },
+  { value: "LOCKED_SEGMENT_CHANGED", description: "a locked segment changed in revision" },
+  { value: "COVERAGE_REGRESSED", description: "a revision lost mandatory beat coverage" },
+];
+
+/**
+ * The same, for the T13 storyboard validator. A tolerated code is recorded on
+ * the report at warning severity and never spends a repair attempt.
+ */
+export const STORYBOARD_WARN_ONLY_VALIDATION_CODES: ReadonlyArray<{
+  readonly value: string;
+  readonly description: string;
+}> = [
+  { value: "narration_coverage_gap", description: "shots leave a gap in the narration" },
+  { value: "invalid_overlap", description: "shots overlap or share an identity" },
+  {
+    value: "impossible_duration_allocation",
+    description: "the shots cannot be timed to the narration",
+  },
+  {
+    value: "unsupported_provider_duration",
+    description: "a shot asks for a duration the provider cannot generate",
+  },
+  {
+    value: "excessive_character_count",
+    description: "a shot has more characters than the provider supports",
+  },
+  {
+    value: "too_many_references",
+    description: "a shot has more reference images than the provider supports",
+  },
+  { value: "missing_continuity_state", description: "a shot does not declare its continuity" },
+  { value: "invalid_character_reference", description: "a shot cites an unknown character" },
+  { value: "invalid_location_reference", description: "a shot cites an unknown location" },
+  { value: "missing_evidence_reference", description: "a shot cites evidence that is gone" },
+  { value: "provider_schema_failure", description: "the Director's output was malformed" },
+  {
+    value: "continuity_contradiction",
+    description: "continuity drifts between shots without explanation",
+  },
+  {
+    value: "unsupported_camera_movement",
+    description: "a camera movement the provider cannot generate",
+  },
+  { value: "unsupported_transition", description: "a transition the provider cannot generate" },
+  { value: "nonpositive_duration", description: "a shot solved to zero duration" },
+  { value: "word_range_gap", description: "shots leave a gap in the word ranges" },
 ];
 
 const SCENE_THRESHOLD_MIN = 0.1;
@@ -266,8 +351,8 @@ export function GenerationSettingsPanel({
       <Field
         label="Script: Treat as warnings (not errors)"
         hint={
-          "The same, for the plot-compression step that turns the analysis into a script " +
-          "plan. Every other code fails the compression and pays to run it again."
+          "The same, for the script stage: plot compression and the recap script it " +
+          "writes. Every other code fails the step and pays to run it again."
         }
       >
         <Dropdown
@@ -282,6 +367,35 @@ export function GenerationSettingsPanel({
           }
         >
           {SCRIPT_WARN_ONLY_VALIDATION_CODES.map((code) => (
+            <Option key={code.value} value={code.value} text={code.value}>
+              {`${code.value} — ${code.description}`}
+            </Option>
+          ))}
+        </Dropdown>
+      </Field>
+      <Field
+        label="Storyboard: Treat as warnings (not errors)"
+        hint={
+          "The same, for the storyboard validator. A tolerated finding is recorded on the " +
+          "report and the shot is kept as proposed; every other code sends the segment " +
+          "back for repair and fails the run once the attempts are spent."
+        }
+      >
+        <Dropdown
+          multiselect
+          aria-label="Storyboard: Treat as warnings (not errors)"
+          placeholder="Nothing tolerated; every code fails"
+          disabled={disabled}
+          value={value.storyboard_warn_only_validation_codes.join(", ")}
+          selectedOptions={[...value.storyboard_warn_only_validation_codes]}
+          onOptionSelect={(_, data) =>
+            onChange({
+              ...value,
+              storyboard_warn_only_validation_codes: [...data.selectedOptions],
+            })
+          }
+        >
+          {STORYBOARD_WARN_ONLY_VALIDATION_CODES.map((code) => (
             <Option key={code.value} value={code.value} text={code.value}>
               {`${code.value} — ${code.description}`}
             </Option>

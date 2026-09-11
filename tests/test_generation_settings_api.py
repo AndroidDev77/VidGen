@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from decimal import Decimal
 from pathlib import Path
+from typing import get_args
 from uuid import UUID
 
 import pytest
@@ -19,6 +20,11 @@ from vidgen.contracts.generation import (
     GenerationCostEstimate,
     ProjectGenerationSettings,
     ShotPacing,
+)
+from vidgen.contracts.script import PLOT_PLAN_VALIDATION_CODES, RECAP_SCRIPT_VALIDATION_CODES
+from vidgen.contracts.storyboard import (
+    STORYBOARD_WARN_ONLY_ELIGIBLE_VALIDATION_CODES,
+    StoryboardValidationCode,
 )
 from vidgen.db.models import Project
 
@@ -328,6 +334,12 @@ def test_script_warn_only_validation_codes_default_to_the_deployment_setting(
         assert body["settings"]["script_warn_only_validation_codes"] is None
         assert body["effective_script_warn_only_validation_codes"] == ["UNKNOWN_SOURCE_REFERENCE"]
         assert "REQUIRED_BEAT_OMITTED" in body["available_script_warn_only_validation_codes"]
+        # Both T11 validators' vocabularies are offered, once each.
+        available = body["available_script_warn_only_validation_codes"]
+        assert set(available) == set(PLOT_PLAN_VALIDATION_CODES) | set(
+            RECAP_SCRIPT_VALIDATION_CODES
+        )
+        assert len(available) == len(set(available))
 
 
 def test_script_warn_only_validation_codes_can_be_overridden_per_project(tmp_path: Path) -> None:
@@ -529,11 +541,13 @@ def test_storyboard_warn_only_validation_codes_default_to_the_deployment_setting
         assert body["effective_storyboard_warn_only_validation_codes"] == [
             "continuity_contradiction"
         ]
-        assert body["available_storyboard_warn_only_validation_codes"] == [
-            "continuity_contradiction",
-            "missing_continuity_state",
-            "missing_evidence_reference",
-        ]
+        assert body["available_storyboard_warn_only_validation_codes"] == list(
+            STORYBOARD_WARN_ONLY_ELIGIBLE_VALIDATION_CODES
+        )
+        # Every code the validator can emit may be tolerated.
+        assert set(body["available_storyboard_warn_only_validation_codes"]) == set(
+            get_args(StoryboardValidationCode)
+        )
 
 
 def test_storyboard_warn_only_validation_codes_can_be_overridden_per_project(

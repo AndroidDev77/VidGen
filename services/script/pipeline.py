@@ -88,8 +88,8 @@ class ScriptGenerationPipeline:
         self.rubric = default_rubric()
         self.metrics = metrics or Metrics()
         self.tracer = trace.NoOpTracerProvider().get_tracer("vidgen.script")
-        # Which deterministic compression findings are reported rather than
-        # failed. The caller resolves the project's override against the
+        # Which deterministic T11 findings (plot plan and recap script alike)
+        # are reported rather than failed. The caller resolves the project's override against the
         # deployment default; unset, the deployment-wide default applies.
         self.warn_only_codes = set(
             DEFAULT_SCRIPT_WARN_ONLY_VALIDATION_CODES
@@ -523,6 +523,7 @@ class ScriptGenerationPipeline:
                     analysis=analysis,
                     plan=plan,
                     prohibited_patterns=settings.prohibited_patterns,
+                    warn_only_codes=self.warn_only_codes,
                 )
                 run.attempt_count = max(run.attempt_count, attempt)
                 provider_request_id = result.metadata.provider_request_id
@@ -654,6 +655,7 @@ class ScriptGenerationPipeline:
                     prohibited_patterns=settings.prohibited_patterns,
                     previous_script=candidate,
                     previous_coverage=previous_coverage,
+                    warn_only_codes=self.warn_only_codes,
                 )
                 mandatory_total = sum(1 for item in coverage if item.mandatory)
                 mandatory_covered = sum(
