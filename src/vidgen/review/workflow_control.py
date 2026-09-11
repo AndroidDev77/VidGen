@@ -667,7 +667,21 @@ class TemporalWorkflowController:
         return result
 
     def describe_shot_by_id(self, workflow_id: str) -> ShotWorkflowProgress | None:
-        return self.describe_shot(workflow_id)
+        from temporalio.service import RPCError, RPCStatusCode
+
+        try:
+            return self.describe_shot(workflow_id)
+        except RPCError as error:
+            if error.status != RPCStatusCode.NOT_FOUND:
+                # A transient failure - no worker polling, an unreachable
+                # cluster - is not evidence that the child is gone, and
+                # answering ``None`` would make the dispatcher pay for a
+                # replacement child that already exists. Let it retry instead.
+                raise
+            # There is no such execution: the identity this ID was rebuilt from
+            # never produced a child, or its history has expired. The caller
+            # treats that as "nothing to resume" and starts a replacement.
+            return None
 
     def start_final_qa(self, request: FinalQAActivityInput, workflow_id: str) -> tuple[str, str]:
         from temporalio.common import WorkflowIDReusePolicy
