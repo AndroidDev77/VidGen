@@ -122,6 +122,70 @@ async def test_adapter_sends_strict_structured_output_and_parses_the_response() 
 
 
 @pytest.mark.asyncio
+async def test_a_positioned_but_undeclared_character_parses_instead_of_crashing() -> None:
+    """The Director's commonest continuity slip must survive parsing.
+
+    It is reported downstream as a ``continuity_character_not_present``
+    diagnostic the repair loop can hand back, so the adapter must not raise and
+    must not patch ``present_character_ids``, which is authoritative.
+    """
+    request = _request()
+    body = await _director_payload(request)
+    intruder = str(uuid4())
+    for state_name in ("expected_incoming_continuity", "expected_outgoing_continuity"):
+        body[state_name]["subject_positions"].append(
+            {
+                "schema_version": "1.0",
+                "character_id": intruder,
+                "screen_position": "left",
+                "facing": "neutral",
+            }
+        )
+    for proposal in body["proposals"]:
+        proposal["incoming_continuity"]["character_appearance_states"].append(
+            {
+                "schema_version": "1.0",
+                "character_id": intruder,
+                "appearance_state_id": "default",
+                "wardrobe_state": "default",
+                "injury_state": "none",
+                "emotional_state": "neutral",
+            }
+        )
+
+    async def handler(http_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "id": "resp_storyboard_undeclared",
+                "status": "completed",
+                "output": [
+                    {
+                        "type": "message",
+                        "content": [{"type": "output_text", "text": json.dumps(body)}],
+                    }
+                ],
+            },
+        )
+
+    director = OpenAIStoryboardDirector(
+        OpenAIStoryboardConfig(api_key="test-key"), _client(handler)
+    )
+    result = await director.propose(request)
+
+    assert intruder not in [
+        str(item) for item in result.expected_incoming_continuity.present_character_ids
+    ]
+    problems = result.expected_incoming_continuity.undeclared_character_references()
+    assert [str(problem.character_id) for problem in problems] == [intruder]
+    assert [problem.field for problem in problems] == ["subject_positions"]
+    assert all(
+        proposal.incoming_continuity.undeclared_character_references()
+        for proposal in result.proposals
+    )
+
+
+@pytest.mark.asyncio
 async def test_adapter_never_sends_credentials_or_trace_context_to_the_model() -> None:
     request = _request()
     body = await _director_payload(request)

@@ -14,6 +14,7 @@ from services.storyboard.retimer import ShotTiming
 from vidgen.contracts.episode_analysis import StructuredNote
 from vidgen.contracts.storyboard import (
     ContinuityState,
+    StoryboardProviderResult,
     StoryboardShot,
     StoryboardShotProposal,
     StoryboardValidationDiagnostic,
@@ -38,6 +39,7 @@ REPAIRABLE_CODES = frozenset(
         "missing_evidence_reference",
         "provider_schema_failure",
         "continuity_contradiction",
+        "continuity_character_not_present",
         "unsupported_camera_movement",
         "unsupported_transition",
         "word_range_gap",
@@ -272,12 +274,49 @@ def _transition_diagnostics(
     return diagnostics
 
 
+def _undeclared_character_diagnostics(
+    state: ContinuityState,
+    *,
+    context: SegmentValidationContext,
+    entity_path: str,
+    shot_sequence: int = -1,
+) -> list[StoryboardValidationDiagnostic]:
+    """Report characters a continuity state references but never declares present.
+
+    ``present_character_ids`` is what every later stage reads, so the state is
+    reported as proposed instead of being patched: the Director is told exactly
+    which character it left out and gets a repair attempt to declare it.
+    """
+    return [
+        _diagnostic(
+            "continuity_character_not_present",
+            problem.message,
+            entity_path=f"{entity_path}.{problem.field}",
+            segment_sequence=context.segment_sequence,
+            shot_sequence=shot_sequence,
+        )
+        for problem in state.undeclared_character_references()
+    ]
+
+
 def _continuity_declaration_diagnostics(
     proposal: StoryboardShotProposal, context: SegmentValidationContext, path: str
 ) -> list[StoryboardValidationDiagnostic]:
     diagnostics: list[StoryboardValidationDiagnostic] = []
     incoming = proposal.incoming_continuity
     outgoing = proposal.expected_outgoing_continuity
+    for name, state in (
+        ("incoming_continuity", incoming),
+        ("expected_outgoing_continuity", outgoing),
+    ):
+        diagnostics.extend(
+            _undeclared_character_diagnostics(
+                state,
+                context=context,
+                entity_path=f"{path}.{name}",
+                shot_sequence=proposal.proposal_sequence,
+            )
+        )
     missing = [
         character_id
         for character_id in proposal.character_reference_ids
@@ -387,6 +426,30 @@ def _compare_continuity(
                 entity_path=f"{entity_path}.character_appearance_states",
                 segment_sequence=context.segment_sequence,
                 shot_sequence=shot_sequence,
+            )
+        )
+    return diagnostics
+
+
+def validate_result_continuity_references(
+    result: StoryboardProviderResult, context: SegmentValidationContext
+) -> list[StoryboardValidationDiagnostic]:
+    """Check the segment-level continuity states the Director declared.
+
+    The outgoing state becomes the next segment's incoming state, so a character
+    it positions without declaring present would silently disappear from every
+    stage that reads ``present_character_ids``.
+    """
+    diagnostics: list[StoryboardValidationDiagnostic] = []
+    for name, state in (
+        ("expected_incoming_continuity", result.expected_incoming_continuity),
+        ("expected_outgoing_continuity", result.expected_outgoing_continuity),
+    ):
+        diagnostics.extend(
+            _undeclared_character_diagnostics(
+                state,
+                context=context,
+                entity_path=f"segments[{context.segment_sequence}].{name}",
             )
         )
     return diagnostics

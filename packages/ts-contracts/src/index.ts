@@ -254,6 +254,7 @@ export type StoryboardDiagnosticCode =
   | "missing_evidence_reference"
   | "provider_schema_failure"
   | "continuity_contradiction"
+  | "continuity_character_not_present"
   | "unsupported_camera_movement"
   | "unsupported_transition"
   | "nonpositive_duration"

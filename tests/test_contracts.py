@@ -2,11 +2,17 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from uuid import UUID
 
 import pytest
 from pydantic import ValidationError
 
 from vidgen.contracts import EpisodeAnalysis, StoryboardShot
+from vidgen.contracts.storyboard import (
+    CharacterAppearanceState,
+    ContinuityState,
+    SubjectPosition,
+)
 
 FIXTURES = Path(__file__).parent / "fixtures" / "contracts"
 
@@ -21,6 +27,49 @@ def test_invalid_contract_is_rejected() -> None:
     payload = json.loads((FIXTURES / "episode_analysis.invalid.json").read_text())
     with pytest.raises(ValidationError):
         EpisodeAnalysis.model_validate(payload)
+
+
+def test_continuity_reports_undeclared_characters_instead_of_rejecting_them() -> None:
+    """The Director's commonest continuity slip is a finding, not a schema error.
+
+    ``present_character_ids`` is authoritative, so the state is kept exactly as
+    proposed and the defect is surfaced for a targeted repair rather than
+    raising a ValidationError that would abort the whole storyboard run.
+    """
+    positioned = UUID("1" * 32)
+    dressed = UUID("2" * 32)
+    declared = UUID("3" * 32)
+    state = ContinuityState.model_validate(
+        {
+            "present_character_ids": [str(declared)],
+            "subject_positions": [
+                {"character_id": str(positioned), "screen_position": "left"},
+                {"character_id": str(declared), "screen_position": "center"},
+            ],
+            "character_appearance_states": [
+                {"character_id": str(dressed), "appearance_state_id": "soaked"}
+            ],
+        }
+    )
+    assert state.present_character_ids == [declared]
+    problems = state.undeclared_character_references()
+    assert [(problem.field, problem.character_id) for problem in problems] == [
+        ("character_appearance_states", dressed),
+        ("subject_positions", positioned),
+    ]
+    assert "present_character_ids" in problems[0].message
+
+
+def test_continuity_with_a_fully_declared_cast_reports_nothing() -> None:
+    character_id = UUID("4" * 32)
+    state = ContinuityState(
+        present_character_ids=[character_id],
+        subject_positions=[SubjectPosition(character_id=character_id, screen_position="center")],
+        character_appearance_states=[
+            CharacterAppearanceState(character_id=character_id, appearance_state_id="default")
+        ],
+    )
+    assert state.undeclared_character_references() == []
 
 
 def test_shot_rejects_zero_duration() -> None:
