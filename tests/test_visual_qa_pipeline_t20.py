@@ -385,6 +385,8 @@ def test_a_budget_denial_stops_the_run_before_the_provider_call(
 def _hard_failure(shot_id: UUID) -> dict[UUID, FakeDefect]:
     return {
         shot_id: FakeDefect(
+            # The evaluator's identity score corroborates the flag, so it blocks.
+            dimension_scores={VisualQADimension.CHARACTER_IDENTITY: 20.0},
             findings=(
                 FakeFinding(
                     dimension=VisualQADimension.CHARACTER_IDENTITY,

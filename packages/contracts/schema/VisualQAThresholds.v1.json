@@ -50,6 +50,13 @@
       "title": "Schema Version",
       "type": "string"
     },
+    "semantic_hard_failure_dimension_floor": {
+      "default": 50,
+      "maximum": 100,
+      "minimum": 0,
+      "title": "Semantic Hard Failure Dimension Floor",
+      "type": "number"
+    },
     "targeted_repair_floor": {
       "default": 75,
       "maximum": 100,
@@ -69,6 +76,14 @@
       "minimum": 0,
       "title": "Utility Pass Score",
       "type": "number"
+    },
+    "warn_only_codes": {
+      "items": {
+        "type": "string"
+      },
+      "maxItems": 16,
+      "title": "Warn Only Codes",
+      "type": "array"
     }
   },
   "required": [

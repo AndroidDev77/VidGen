@@ -60,7 +60,12 @@ from services.qa.sampler import (
     finalize_plan,
     plan_video_samples,
 )
-from services.qa.scoring import build_dimension_results, decide, recompute
+from services.qa.scoring import (
+    HARD_FAILURE_DOWNGRADED_BY_SCORE,
+    build_dimension_results,
+    decide,
+    recompute,
+)
 from services.qa.visual_agent import (
     VisualAgentCall,
     VisualAgentError,
@@ -92,6 +97,7 @@ from vidgen.contracts.visual_qa import (
     VisualQASamplingManifest,
     VisualQAShotImportance,
     VisualQATargetType,
+    VisualQAThresholds,
 )
 
 SHOT_DURATION_US = 3_000_000
@@ -210,7 +216,16 @@ def test_every_repair_code_has_a_complete_taxonomy_entry() -> None:
             "none",
         }
         assert definition.retryability in {"creative_retry", "deterministic", "human_review"}
-    assert VisualQARepairCode.WRONG_CHARACTER_IDENTITY in HARD_FAILURE_CODES
+    # Only unrecoverable technical failures block regardless of score. Every
+    # semantic judgement from the evaluator respects the recomputed number.
+    assert HARD_FAILURE_CODES == {
+        VisualQARepairCode.BLACK_VIDEO,
+        VisualQARepairCode.DECODE_FAILURE,
+        VisualQARepairCode.DURATION_MISMATCH,
+    }
+    assert VisualQARepairCode.WRONG_CHARACTER_IDENTITY not in HARD_FAILURE_CODES
+    assert VisualQARepairCode.ANATOMY_BREAKAGE not in HARD_FAILURE_CODES
+    assert VisualQARepairCode.MISSING_REQUIRED_PROP not in HARD_FAILURE_CODES
     assert VisualQARepairCode.STYLE_DRIFT not in HARD_FAILURE_CODES
 
 
@@ -221,6 +236,22 @@ def test_thresholds_follow_the_documented_policy() -> None:
     assert THRESHOLDS.targeted_repair_floor == 75
     assert THRESHOLDS.adjudication_confidence_floor == 0.70
     assert THRESHOLDS.adjudication_decision_confidence == 0.80
+    assert THRESHOLDS.semantic_hard_failure_dimension_floor == 50
+    assert THRESHOLDS.warn_only_codes == []
+
+
+def test_warn_only_codes_must_name_known_repair_codes() -> None:
+    thresholds = VisualQAThresholds(
+        threshold_version="test", warn_only_codes=["PROMPT_TOO_COMPLEX"]
+    )
+    assert thresholds.warn_only_codes == ["PROMPT_TOO_COMPLEX"]
+    with pytest.raises(ValueError, match="unknown warn-only"):
+        VisualQAThresholds(threshold_version="test", warn_only_codes=["NOT_A_CODE"])
+    with pytest.raises(ValueError, match="repeat"):
+        VisualQAThresholds(
+            threshold_version="test",
+            warn_only_codes=["PROMPT_TOO_COMPLEX", "PROMPT_TOO_COMPLEX"],
+        )
 
 
 # --- sampling ----------------------------------------------------------------
@@ -658,25 +689,215 @@ def test_hero_shot_requires_ninety() -> None:
     assert outcome.recommendation.routing is VisualQARoutingRecommendation.TARGETED_REPAIR
 
 
-def test_a_hard_failure_overrides_a_high_numeric_score() -> None:
+def _semantic_hard_failure(
+    dimension: VisualQADimension,
+    code: VisualQARepairCode,
+    *,
+    scores: dict[VisualQADimension, float],
+) -> VisualQAProviderResult:
+    return provider_result(
+        scores=scores,
+        findings=[
+            {
+                "dimension": dimension,
+                "severity": "hard_failure",
+                "code": code.value.lower(),
+                "repair_codes": [code],
+            }
+        ],
+        hard_failures=[code.value],
+    )
+
+
+@pytest.mark.parametrize(
+    ("dimension", "code", "total"),
+    [
+        (VisualQADimension.ANATOMY_AND_ARTIFACTS, VisualQARepairCode.ANATOMY_BREAKAGE, 95.0),
+        (VisualQADimension.CHARACTER_IDENTITY, VisualQARepairCode.WRONG_CHARACTER_IDENTITY, 99.0),
+        (VisualQADimension.WARDROBE_AND_STATE, VisualQARepairCode.MISSING_REQUIRED_PROP, 96.0),
+    ],
+)
+def test_a_semantic_hard_failure_on_a_high_scoring_shot_passes(
+    dimension: VisualQADimension, code: VisualQARepairCode, total: float
+) -> None:
+    """The evaluator's own number wins over a flag it contradicts."""
+    result = _semantic_hard_failure(dimension, code, scores=dict.fromkeys(VisualQADimension, total))
+    dimensions, score = _score(result)
+    outcome = decide(score, empty_report(), result, thresholds=THRESHOLDS)
+    assert score.total == pytest.approx(total)
+    assert outcome.outcome is VisualQAOutcome.PASS
+    assert outcome.hard_failure is False
+    assert outcome.hard_failure_codes == ()
+    assert outcome.repair_codes == ()
+    flagged = next(item for item in dimensions if item.dimension is dimension)
+    # The finding, its evidence and its repair code are kept, as a warning.
+    assert flagged.hard_failure_codes == []
+    assert flagged.findings[0].severity == "warning"
+    assert flagged.findings[0].repair_codes == [code]
+    assert code in flagged.repair_codes
+    assert HARD_FAILURE_DOWNGRADED_BY_SCORE in flagged.warning_codes
+    assert HARD_FAILURE_DOWNGRADED_BY_SCORE in outcome.warning_codes
+
+
+def test_a_semantic_hard_failure_blocks_when_its_dimension_scores_below_the_floor() -> None:
+    """A flag the evaluator's own dimension score corroborates still blocks."""
+    result = _semantic_hard_failure(
+        VisualQADimension.CHARACTER_IDENTITY,
+        VisualQARepairCode.WRONG_CHARACTER_IDENTITY,
+        scores={
+            **dict.fromkeys(VisualQADimension, 100.0),
+            VisualQADimension.CHARACTER_IDENTITY: 49.0,
+        },
+    )
+    _, score = _score(result)
+    outcome = decide(score, empty_report(), result, thresholds=THRESHOLDS)
+    # Identity is 25 points, so the total still clears the normal threshold.
+    assert score.total == pytest.approx(87.25)
+    assert score.total >= score.pass_threshold
+    assert outcome.outcome is VisualQAOutcome.FAIL
+    assert outcome.hard_failure is True
+    assert outcome.hard_failure_codes == ("WRONG_CHARACTER_IDENTITY",)
+    assert outcome.recommendation.routing is VisualQARoutingRecommendation.NEW_SEED
+
+
+def test_the_semantic_floor_is_configurable() -> None:
+    result = _semantic_hard_failure(
+        VisualQADimension.ANATOMY_AND_ARTIFACTS,
+        VisualQARepairCode.ANATOMY_BREAKAGE,
+        scores={
+            **dict.fromkeys(VisualQADimension, 99.0),
+            VisualQADimension.ANATOMY_AND_ARTIFACTS: 70.0,
+        },
+    )
+    strict = THRESHOLDS.model_copy(update={"semantic_hard_failure_dimension_floor": 75})
+    dimensions = build_dimension_results(
+        result,
+        empty_report(),
+        rubric=RUBRIC,
+        samples=[sample(0, 0)],
+        source_asset_id=UUID(int=99),
+        thresholds=strict,
+    )
+    score = recompute(
+        dimensions, rubric=RUBRIC, thresholds=strict, importance=VisualQAShotImportance.NORMAL
+    )
+    outcome = decide(score, empty_report(), result, thresholds=strict)
+    assert score.total > score.pass_threshold
+    assert outcome.outcome is VisualQAOutcome.FAIL
+    assert outcome.hard_failure_codes == ("ANATOMY_BREAKAGE",)
+
+
+@pytest.mark.parametrize(
+    "code", [VisualQARepairCode.BLACK_VIDEO, VisualQARepairCode.DECODE_FAILURE]
+)
+def test_a_technical_hard_failure_overrides_a_high_numeric_score(
+    code: VisualQARepairCode,
+) -> None:
     result = provider_result(
         scores=dict.fromkeys(VisualQADimension, 99.0),
         findings=[
             {
-                "dimension": VisualQADimension.CHARACTER_IDENTITY,
+                "dimension": VisualQADimension.ANATOMY_AND_ARTIFACTS,
                 "severity": "hard_failure",
-                "code": "wrong_primary_character",
-                "repair_codes": [VisualQARepairCode.WRONG_CHARACTER_IDENTITY],
+                "code": code.value.lower(),
+                "repair_codes": [code],
             }
         ],
-        hard_failures=["WRONG_CHARACTER_IDENTITY"],
+        hard_failures=[code.value],
     )
     _, score = _score(result)
     outcome = decide(score, empty_report(), result, thresholds=THRESHOLDS)
     assert score.total == pytest.approx(99.0)
     assert outcome.outcome is VisualQAOutcome.FAIL
     assert outcome.hard_failure is True
-    assert "WRONG_CHARACTER_IDENTITY" in outcome.hard_failure_codes
+    assert code.value in outcome.hard_failure_codes
+
+
+def _decode_failure_report() -> VisualQADeterministicReport:
+    return empty_report(
+        usable=False,
+        metrics=[
+            VisualQADeterministicMetric(
+                code="complete_decode",
+                measurement=0.0,
+                threshold=1.0,
+                outcome="hard_failure",
+                evidence_timestamp_us=0,
+                tool="ffmpeg",
+                diagnostic_code="decode_failed",
+                repair_code=VisualQARepairCode.DECODE_FAILURE,
+            )
+        ],
+    )
+
+
+def test_a_deterministic_decode_failure_forces_fail_at_any_score() -> None:
+    report = _decode_failure_report()
+    result = provider_result(scores=dict.fromkeys(VisualQADimension, 100.0))
+    _, score = _score(result, report)
+    outcome = decide(score, report, result, thresholds=THRESHOLDS)
+    assert score.total == pytest.approx(100.0)
+    assert outcome.outcome is VisualQAOutcome.FAIL
+    assert outcome.hard_failure_codes == ("DECODE_FAILURE",)
+
+
+def test_warn_only_codes_downgrade_a_hard_failure_to_a_warning() -> None:
+    report = _decode_failure_report()
+    result = provider_result(scores=dict.fromkeys(VisualQADimension, 99.0))
+    _, score = _score(result, report)
+    tolerant = THRESHOLDS.model_copy(update={"warn_only_codes": ["DECODE_FAILURE"]})
+    outcome = decide(score, report, result, thresholds=tolerant)
+    assert outcome.outcome is VisualQAOutcome.PASS
+    assert outcome.hard_failure is False
+    assert VisualQARepairCode.DECODE_FAILURE not in outcome.repair_codes
+    assert "warn_only:DECODE_FAILURE" in outcome.warning_codes
+    # The keyword argument overrides the thresholds' own set, like narration.
+    strict = decide(score, report, result, thresholds=tolerant, warn_only_codes=())
+    assert strict.outcome is VisualQAOutcome.FAIL
+    override = decide(
+        score, report, result, thresholds=THRESHOLDS, warn_only_codes=["DECODE_FAILURE"]
+    )
+    assert override.outcome is VisualQAOutcome.PASS
+
+
+def test_warn_only_codes_are_never_handed_to_repair() -> None:
+    """A tolerated structural code is recorded but not routed."""
+    result = provider_result(
+        scores={**dict.fromkeys(VisualQADimension, 80.0), VisualQADimension.LOCATION: 10.0}
+    )
+    _, score = _score(result)
+    tolerant = THRESHOLDS.model_copy(update={"warn_only_codes": ["PROMPT_TOO_COMPLEX"]})
+    outcome = decide(score, empty_report(), result, thresholds=tolerant)
+    assert outcome.outcome is VisualQAOutcome.FAIL
+    assert outcome.recommendation.routing is VisualQARoutingRecommendation.PROMPT_SIMPLIFICATION
+    assert VisualQARepairCode.PROMPT_TOO_COMPLEX not in outcome.repair_codes
+    assert "warn_only:PROMPT_TOO_COMPLEX" in outcome.warning_codes
+    assert outcome.repair_codes, "every non-pass result still carries a repair code"
+
+
+def test_prompt_too_complex_is_only_added_for_prompt_simplification() -> None:
+    seed = provider_result(
+        scores={
+            **dict.fromkeys(VisualQADimension, 80.0),
+            VisualQADimension.CHARACTER_IDENTITY: 10.0,
+        }
+    )
+    _, seed_score = _score(seed)
+    seed_outcome = decide(seed_score, empty_report(), seed, thresholds=THRESHOLDS)
+    assert seed_outcome.recommendation.routing is VisualQARoutingRecommendation.NEW_SEED
+    assert VisualQARepairCode.PROMPT_TOO_COMPLEX not in seed_outcome.repair_codes
+    assert VisualQARepairCode.TOO_MANY_CHARACTERS not in seed_outcome.repair_codes
+
+    simplify = provider_result(
+        scores={**dict.fromkeys(VisualQADimension, 80.0), VisualQADimension.LOCATION: 10.0}
+    )
+    _, simplify_score = _score(simplify)
+    simplify_outcome = decide(simplify_score, empty_report(), simplify, thresholds=THRESHOLDS)
+    assert (
+        simplify_outcome.recommendation.routing
+        is VisualQARoutingRecommendation.PROMPT_SIMPLIFICATION
+    )
+    assert VisualQARepairCode.PROMPT_TOO_COMPLEX in simplify_outcome.repair_codes
 
 
 def test_a_low_score_recommends_a_structural_repair_family() -> None:
@@ -1077,6 +1298,7 @@ def test_adjudication_never_softens_a_hard_failure() -> None:
     first_outcome = decide(first_score, empty_report(), first, thresholds=THRESHOLDS)
     triggers = evaluate_triggers(first, empty_report(), first_outcome, thresholds=THRESHOLDS)
     blocking = provider_result(
+        scores={VisualQADimension.CHARACTER_IDENTITY: 20.0},
         findings=[
             {
                 "dimension": VisualQADimension.CHARACTER_IDENTITY,
@@ -1165,6 +1387,8 @@ def test_two_findings_sharing_a_dimension_code_and_frame_stay_distinct() -> None
 def test_more_provider_findings_than_the_contract_allows_are_bounded() -> None:
     """A verbose provider must not make the dimension result unconstructable."""
     result = provider_result(
+        # Scored below the semantic floor, so the anatomy flag really blocks.
+        scores={VisualQADimension.ANATOMY_AND_ARTIFACTS: 30.0},
         findings=[
             {
                 "dimension": VisualQADimension.ANATOMY_AND_ARTIFACTS,
@@ -1175,7 +1399,7 @@ def test_more_provider_findings_than_the_contract_allows_are_bounded() -> None:
                 "sample_ids": [UUID(int=1)],
             }
             for index in range(24)
-        ]
+        ],
     )
     dimensions, score = _score(result)
     anatomy = next(
