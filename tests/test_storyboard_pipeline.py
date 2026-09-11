@@ -7,6 +7,7 @@ import json
 from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
+from typing import get_args
 from uuid import uuid4
 
 import pytest
@@ -31,9 +32,11 @@ from tests.storyboard_fixtures import (
     segment_duration_us,
 )
 from vidgen.contracts.storyboard import (
+    STORYBOARD_WARN_ONLY_ELIGIBLE_VALIDATION_CODES,
     Storyboard,
     StoryboardProviderRequest,
     StoryboardProviderResult,
+    StoryboardValidationCode,
     TimingManifest,
 )
 from vidgen.db.cost_models import (
@@ -709,6 +712,34 @@ def test_only_eligible_codes_can_be_demoted(tmp_path: Path) -> None:
             warn_only_codes={"continuity_contradiction", "missing_continuity_state"},
         )
     assert "invalid_character_reference" in str(error.value)
+
+
+def test_an_invalid_reference_can_be_tolerated_when_the_project_elects_to(tmp_path: Path) -> None:
+    """Every storyboard code is eligible now; tolerating one records it and keeps the shot."""
+    fixture = build_fixture(tmp_path)
+    result = run_pipeline(
+        fixture,
+        director=_AlwaysInvalidDirector(),
+        warn_only_codes=set(STORYBOARD_WARN_ONLY_ELIGIBLE_VALIDATION_CODES),
+    )
+    assert result.status == "storyboard_complete"
+    assert list(fixture.session.scalars(select(StoryboardRepairAttempt))) == []
+    checkpoint = fixture.session.scalar(
+        select(StoryboardSegmentCheckpoint).where(StoryboardSegmentCheckpoint.sequence == 0)
+    )
+    assert checkpoint is not None and checkpoint.validation_report["valid"] is True
+    findings = [
+        item
+        for item in checkpoint.validation_report["diagnostics"]
+        if item["code"] == "invalid_character_reference"
+    ]
+    assert findings and all(item["severity"] == "warning" for item in findings)
+
+
+def test_every_code_the_storyboard_validator_emits_is_eligible() -> None:
+    assert set(STORYBOARD_WARN_ONLY_ELIGIBLE_VALIDATION_CODES) == set(
+        get_args(StoryboardValidationCode)
+    )
 
 
 def test_an_explained_continuity_change_is_not_a_contradiction(tmp_path: Path) -> None:

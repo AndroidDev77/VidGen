@@ -162,8 +162,16 @@ def test_the_storyboard_resolver_prefers_the_project_override() -> None:
         )
         == frozenset()
     )
-    with pytest.raises(ValueError, match="unknown validation codes: too_many_references"):
-        ProjectGenerationSettings(storyboard_warn_only_validation_codes=["too_many_references"])
+    # Every code the storyboard validator emits is eligible, including one that
+    # hands the animator a shot it cannot generate: which finding is worth
+    # failing a run over is the owner's call. A code of another validator's
+    # vocabulary is still refused, since it would match nothing.
+    assert effective_storyboard_warn_only_validation_codes(
+        ProjectGenerationSettings(storyboard_warn_only_validation_codes=["too_many_references"]),
+        default,
+    ) == frozenset({"too_many_references"})
+    with pytest.raises(ValueError, match="unknown validation codes: SCENE_SET_MISMATCH"):
+        ProjectGenerationSettings(storyboard_warn_only_validation_codes=["SCENE_SET_MISMATCH"])
 
 
 def test_the_storyboard_handler_hands_the_pipeline_the_projects_warn_only_codes(

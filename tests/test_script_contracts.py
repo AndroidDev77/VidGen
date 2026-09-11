@@ -366,3 +366,37 @@ def test_the_default_tolerates_an_invented_reference_but_not_an_unknown_beat() -
     bogus = plan.selected_beats[0].model_copy(update={"plot_beat_id": uuid4()})
     tampered = plan.model_copy(update={"selected_beats": [bogus, *plan.selected_beats[1:]]})
     assert not validate_compressed_plot_plan(tampered, analysis=analysis, request=request).valid
+
+
+def test_every_code_either_t11_validator_emits_may_be_tolerated() -> None:
+    """The eligible set is the union of both validators' vocabularies, deduplicated."""
+    from vidgen.contracts.script import (
+        PLOT_PLAN_VALIDATION_CODES,
+        RECAP_SCRIPT_VALIDATION_CODES,
+        SCRIPT_WARN_ONLY_ELIGIBLE_VALIDATION_CODES,
+    )
+
+    assert set(SCRIPT_WARN_ONLY_ELIGIBLE_VALIDATION_CODES) == set(PLOT_PLAN_VALIDATION_CODES) | set(
+        RECAP_SCRIPT_VALIDATION_CODES
+    )
+    assert len(SCRIPT_WARN_ONLY_ELIGIBLE_VALIDATION_CODES) == len(
+        set(SCRIPT_WARN_ONLY_ELIGIBLE_VALIDATION_CODES)
+    )
+
+
+def test_every_structural_compression_code_may_be_tolerated() -> None:
+    """A structural omission is now an owner's choice, not an unconditional failure."""
+    from vidgen.contracts.script import SCRIPT_WARN_ONLY_ELIGIBLE_VALIDATION_CODES
+
+    analysis = _make_analysis(uuid4())
+    request = _request(analysis)
+    plan = compress_plot(analysis=analysis, request=request, plan_id=uuid4())
+    stripped = plan.model_copy(update={"selected_beats": plan.selected_beats[:1]})
+    report = validate_compressed_plot_plan(
+        stripped,
+        analysis=analysis,
+        request=request,
+        warn_only_codes=set(SCRIPT_WARN_ONLY_ELIGIBLE_VALIDATION_CODES),
+    )
+    assert report.valid, report.errors
+    assert report.warnings

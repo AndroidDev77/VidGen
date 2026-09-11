@@ -14,7 +14,7 @@ representation.
 
 from __future__ import annotations
 
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any, Literal, get_args
 from uuid import UUID
 
 from pydantic import Field, model_validator
@@ -24,15 +24,34 @@ from vidgen.contracts.episode_analysis import StructuredNote
 
 CONTRACT_VERSION = "storyboard/1.0"
 MICROSECONDS_PER_SECOND = 1_000_000
-#: Deterministic storyboard validation codes a deployment or project may choose
-#: to record as warnings instead of repairing. Every other code names a plan
-#: the animator cannot execute at all - a reference it cannot load, a duration
-#: the provider cannot generate - and is always an error.
-STORYBOARD_WARN_ONLY_ELIGIBLE_VALIDATION_CODES: tuple[str, ...] = (
-    "continuity_contradiction",
+#: Every deterministic code the T13 validator and retimer can emit.
+STORYBOARD_VALIDATION_CODES: tuple[str, ...] = (
+    "narration_coverage_gap",
+    "invalid_overlap",
+    "impossible_duration_allocation",
+    "unsupported_provider_duration",
+    "excessive_character_count",
+    "too_many_references",
     "missing_continuity_state",
+    "invalid_character_reference",
+    "invalid_location_reference",
     "missing_evidence_reference",
+    "provider_schema_failure",
+    "continuity_contradiction",
+    "unsupported_camera_movement",
+    "unsupported_transition",
+    "nonpositive_duration",
+    "word_range_gap",
 )
+#: Deterministic storyboard validation codes a deployment or project may choose
+#: to record as warnings instead of repairing: every code the validator emits.
+#: A tolerated finding stays on the report at warning severity and never
+#: spends a repair attempt or fails the run. Tolerating a code the animator
+#: cannot execute - a reference it cannot load, a duration the provider cannot
+#: generate - is the owner's call; the shot is persisted as proposed and the
+#: downstream stage decides what to do with it. The one exception is a retimer
+#: failure: it leaves no timing to persist, so the pipeline never demotes it.
+STORYBOARD_WARN_ONLY_ELIGIBLE_VALIDATION_CODES: tuple[str, ...] = STORYBOARD_VALIDATION_CODES
 #: continuity_contradiction by default: a Director that lets the time of day
 #: drift between consecutive shots describes the story's continuity badly, but
 #: the shot still renders, and the repair loop rarely talks it out of the
@@ -515,26 +534,30 @@ class TimingManifest(StrictContract):
         return self
 
 
+StoryboardValidationCode = Literal[
+    "narration_coverage_gap",
+    "invalid_overlap",
+    "impossible_duration_allocation",
+    "unsupported_provider_duration",
+    "excessive_character_count",
+    "too_many_references",
+    "missing_continuity_state",
+    "invalid_character_reference",
+    "invalid_location_reference",
+    "missing_evidence_reference",
+    "provider_schema_failure",
+    "continuity_contradiction",
+    "unsupported_camera_movement",
+    "unsupported_transition",
+    "nonpositive_duration",
+    "word_range_gap",
+]
+assert set(get_args(StoryboardValidationCode)) == set(STORYBOARD_VALIDATION_CODES)
+
+
 class StoryboardValidationDiagnostic(StrictContract):
     schema_version: Literal["1.0"] = "1.0"
-    code: Literal[
-        "narration_coverage_gap",
-        "invalid_overlap",
-        "impossible_duration_allocation",
-        "unsupported_provider_duration",
-        "excessive_character_count",
-        "too_many_references",
-        "missing_continuity_state",
-        "invalid_character_reference",
-        "invalid_location_reference",
-        "missing_evidence_reference",
-        "provider_schema_failure",
-        "continuity_contradiction",
-        "unsupported_camera_movement",
-        "unsupported_transition",
-        "nonpositive_duration",
-        "word_range_gap",
-    ]
+    code: StoryboardValidationCode
     severity: Literal["error", "warning"]
     repairable: bool
     message: str = Field(min_length=1, max_length=1024)

@@ -77,11 +77,11 @@ class ProjectGenerationSettings(StrictContract):
     #: reported as warnings instead of failing the run. ``None`` means the
     #: project has no override and uses the deployment's global
     #: ``warn_only_validation_codes`` setting.
-    warn_only_validation_codes: list[str] | None = Field(default=None, max_length=16)
+    warn_only_validation_codes: list[str] | None = Field(default=None, max_length=64)
     #: The same, for the T11 compression validator. ``None`` means the project
     #: has no override and uses the deployment's global
     #: ``script_warn_only_validation_codes`` setting.
-    script_warn_only_validation_codes: list[str] | None = Field(default=None, max_length=16)
+    script_warn_only_validation_codes: list[str] | None = Field(default=None, max_length=64)
     #: Per-project override of the T12 narration quality codes recorded as
     #: warnings instead of failing the attempt. ``None`` means the project has
     #: no override and uses the deployment's global
@@ -94,7 +94,7 @@ class ProjectGenerationSettings(StrictContract):
     #: The same, for the T13 storyboard validator. ``None`` means the project
     #: has no override and uses the deployment's global
     #: ``storyboard_warn_only_validation_codes`` setting.
-    storyboard_warn_only_validation_codes: list[str] | None = Field(default=None, max_length=16)
+    storyboard_warn_only_validation_codes: list[str] | None = Field(default=None, max_length=64)
     origin: GenerationSettingsOrigin = GenerationSettingsOrigin.EXPLICIT
 
     @field_validator("warn_only_validation_codes")

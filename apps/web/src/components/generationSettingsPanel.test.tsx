@@ -15,10 +15,12 @@ const VALUE: GenerationSettingsInput = {
   scene_detection_threshold: 0.3,
   warn_only_validation_codes: ["SCENE_SET_MISMATCH"],
   script_warn_only_validation_codes: ["UNKNOWN_SOURCE_REFERENCE"],
+  storyboard_warn_only_validation_codes: ["continuity_contradiction"],
 };
 
 const LABEL = "Treat as warnings (not errors)";
 const SCRIPT_LABEL = "Script: Treat as warnings (not errors)";
+const STORYBOARD_LABEL = "Storyboard: Treat as warnings (not errors)";
 
 function renderPanel(): (next: GenerationSettingsInput) => void {
   const onChange = vi.fn<(next: GenerationSettingsInput) => void>();
@@ -41,8 +43,10 @@ function renderPanel(): (next: GenerationSettingsInput) => void {
  */
 function chosen(
   onChange: (next: GenerationSettingsInput) => void,
-  field: "warn_only_validation_codes" | "script_warn_only_validation_codes" =
-    "warn_only_validation_codes",
+  field:
+    | "warn_only_validation_codes"
+    | "script_warn_only_validation_codes"
+    | "storyboard_warn_only_validation_codes" = "warn_only_validation_codes",
 ): string[] {
   const last = vi.mocked(onChange).mock.calls.at(-1);
   if (last === undefined) {
@@ -89,6 +93,45 @@ describe("GenerationSettingsPanel script warn-only validation codes", () => {
     await user.click(await screen.findByRole("menuitemcheckbox", { name: /UNKNOWN_BEAT/ }));
     expect(chosen(onChange, "script_warn_only_validation_codes")).toEqual([
       "UNKNOWN_BEAT",
+      "UNKNOWN_SOURCE_REFERENCE",
+    ]);
+    expect(chosen(onChange)).toEqual(["SCENE_SET_MISMATCH"]);
+  });
+
+  it("offers a recap-script code alongside the plot-compression codes", async () => {
+    const onChange = renderPanel();
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("combobox", { name: SCRIPT_LABEL }));
+    await user.click(
+      await screen.findByRole("menuitemcheckbox", { name: /MANDATORY_BEAT_NOT_COVERED/ }),
+    );
+    expect(chosen(onChange, "script_warn_only_validation_codes")).toEqual([
+      "MANDATORY_BEAT_NOT_COVERED",
+      "UNKNOWN_SOURCE_REFERENCE",
+    ]);
+  });
+});
+
+describe("GenerationSettingsPanel storyboard warn-only validation codes", () => {
+  it("shows the codes the project currently treats as warnings", () => {
+    renderPanel();
+    expect(screen.getByRole("combobox", { name: STORYBOARD_LABEL })).toHaveValue(
+      "continuity_contradiction",
+    );
+  });
+
+  it("changes only the storyboard codes, leaving the other stages alone", async () => {
+    const onChange = renderPanel();
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("combobox", { name: STORYBOARD_LABEL }));
+    await user.click(
+      await screen.findByRole("menuitemcheckbox", { name: /unsupported_transition/ }),
+    );
+    expect(chosen(onChange, "storyboard_warn_only_validation_codes")).toEqual([
+      "continuity_contradiction",
+      "unsupported_transition",
+    ]);
+    expect(chosen(onChange, "script_warn_only_validation_codes")).toEqual([
       "UNKNOWN_SOURCE_REFERENCE",
     ]);
     expect(chosen(onChange)).toEqual(["SCENE_SET_MISMATCH"]);

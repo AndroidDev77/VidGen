@@ -274,16 +274,7 @@ def validate_compressed_plot_plan(
             f"Total estimated duration must fit the target within {DURATION_TOLERANCE:.0%}",
         )
 
-    demoted = [
-        StructuredNote(
-            code=item.code,
-            message=f"{item.entity_path}: {item.explanation} (value: {item.invalid_value})",
-        )
-        for item in errors
-        if item.code in tolerated
-    ]
-    blocking = [item for item in errors if item.code not in tolerated]
-    return ScriptValidationReport(valid=not blocking, errors=blocking, warnings=demoted)
+    return _report(errors, tolerated)
 
 
 def validate_recap_script(
@@ -297,7 +288,17 @@ def validate_recap_script(
     previous_script: RecapScript | None = None,
     previous_coverage: Mapping[UUID, str] | None = None,
     allow_anonymous_speakers: bool = True,
+    warn_only_codes: set[str] | None = None,
 ) -> ScriptValidationReport:
+    """Validate a recap script deterministically against its plan and analysis.
+
+    ``warn_only_codes`` works exactly as in ``validate_compressed_plot_plan``:
+    a finding carrying a tolerated code is reported as a warning, so it stays
+    visible without failing the draft or paying to write it again.
+    """
+    tolerated = frozenset(
+        DEFAULT_SCRIPT_WARN_ONLY_VALIDATION_CODES if warn_only_codes is None else warn_only_codes
+    )
     errors: list[ScriptValidationError] = []
     character_ids = {character.character_id for character in analysis.characters}
     scene_ids = {scene.scene_id for scene in analysis.scenes}
@@ -514,7 +515,23 @@ def validate_recap_script(
                     "A revision must not reduce mandatory beat coverage",
                 )
 
-    return ScriptValidationReport(valid=not errors, errors=errors)
+    return _report(errors, tolerated)
+
+
+def _report(
+    errors: list[ScriptValidationError], tolerated: frozenset[str]
+) -> ScriptValidationReport:
+    """Split findings into blocking errors and tolerated warnings."""
+    demoted = [
+        StructuredNote(
+            code=item.code,
+            message=f"{item.entity_path}: {item.explanation} (value: {item.invalid_value})",
+        )
+        for item in errors
+        if item.code in tolerated
+    ]
+    blocking = [item for item in errors if item.code not in tolerated]
+    return ScriptValidationReport(valid=not blocking, errors=blocking, warnings=demoted)
 
 
 def build_beat_coverage(script: RecapScript, plan: CompressedPlotPlan) -> list[BeatCoverage]:

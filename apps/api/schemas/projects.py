@@ -143,9 +143,9 @@ class CreateProjectRequest(BaseModel):
     #: Per-project override of the episode-analysis validation codes reported
     #: as warnings instead of failing the run. Leave unset to use the
     #: deployment's global default.
-    warn_only_validation_codes: list[str] | None = Field(default=None, max_length=16)
+    warn_only_validation_codes: list[str] | None = Field(default=None, max_length=64)
     #: The same, for T11 plot compression.
-    script_warn_only_validation_codes: list[str] | None = Field(default=None, max_length=16)
+    script_warn_only_validation_codes: list[str] | None = Field(default=None, max_length=64)
     #: Per-project override of the T12 narration quality codes recorded as
     #: warnings instead of failing the attempt. Leave unset to use the
     #: deployment's global default.
@@ -154,7 +154,7 @@ class CreateProjectRequest(BaseModel):
     #: limit keeps the deployment default. Leave unset for no override at all.
     narration_quality_thresholds: NarrationQualityThresholdOverrides | None = None
     #: The same, for the T13 storyboard validator.
-    storyboard_warn_only_validation_codes: list[str] | None = Field(default=None, max_length=16)
+    storyboard_warn_only_validation_codes: list[str] | None = Field(default=None, max_length=64)
 
     _known_codes = field_validator("warn_only_validation_codes")(known_warn_only_codes)
     _known_script_codes = field_validator("script_warn_only_validation_codes")(
@@ -202,16 +202,16 @@ class SetGenerationSettingsRequest(BaseModel):
     scene_detection_threshold: float | None = Field(default=None, gt=0, lt=1)
     #: The same kind of optional override: ``None`` means "use the deployment
     #: default", an empty list means "tolerate nothing; every code fails".
-    warn_only_validation_codes: list[str] | None = Field(default=None, max_length=16)
+    warn_only_validation_codes: list[str] | None = Field(default=None, max_length=64)
     #: The same, for T11 plot compression.
-    script_warn_only_validation_codes: list[str] | None = Field(default=None, max_length=16)
+    script_warn_only_validation_codes: list[str] | None = Field(default=None, max_length=64)
     #: The same, for the T12 narration quality gate.
     narration_warn_only_quality_codes: list[str] | None = Field(default=None, max_length=16)
     #: Optional T12 quality-limit overrides; ``None`` (or an unset limit inside)
     #: means "use the deployment default".
     narration_quality_thresholds: NarrationQualityThresholdOverrides | None = None
     #: The same, for the T13 storyboard validator.
-    storyboard_warn_only_validation_codes: list[str] | None = Field(default=None, max_length=16)
+    storyboard_warn_only_validation_codes: list[str] | None = Field(default=None, max_length=64)
 
     _known_codes = field_validator("warn_only_validation_codes")(known_warn_only_codes)
     _known_script_codes = field_validator("script_warn_only_validation_codes")(

@@ -128,6 +128,7 @@ export function NewProjectPage(): JSX.Element {
     scene_detection_threshold: 0.3,
     warn_only_validation_codes: ["SCENE_SET_MISMATCH"],
     script_warn_only_validation_codes: ["UNKNOWN_SOURCE_REFERENCE"],
+    storyboard_warn_only_validation_codes: ["continuity_contradiction"],
   });
   const [nameError, setNameError] = useState<string | null>(null);
   // Tracked per field so an invalid warning cap is flagged on the warning cap.
@@ -160,6 +161,7 @@ export function NewProjectPage(): JSX.Element {
           scene_detection_threshold: generation.scene_detection_threshold,
           warn_only_validation_codes: generation.warn_only_validation_codes,
           script_warn_only_validation_codes: generation.script_warn_only_validation_codes,
+          storyboard_warn_only_validation_codes: generation.storyboard_warn_only_validation_codes,
         },
         client,
       ).then((response) => response.data),
