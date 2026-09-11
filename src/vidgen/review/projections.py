@@ -69,6 +69,10 @@ WORKFLOW_STAGE_ALIASES: dict[str, PipelineStage] = {
     "narration": PipelineStage.NARRATION,
     "storyboard": PipelineStage.STORYBOARD,
     "keyframes": PipelineStage.KEYFRAMES,
+    # The T14 stage names itself "image_generation" in the worker's handler
+    # table and "keyframes" on the timeline. A failure recorded under either
+    # spelling has to reach the same retryable stage.
+    "image_generation": PipelineStage.KEYFRAMES,
     "animation": PipelineStage.ANIMATION,
     "shot_generation": PipelineStage.SHOT_ORCHESTRATION,
     "shot_generation_running": PipelineStage.SHOT_ORCHESTRATION,

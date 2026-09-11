@@ -34,6 +34,8 @@ const TIMELINE_STAGE_BY_FAILURE_STAGE: Readonly<Record<string, PipelineStage>> =
   narration: "narration",
   storyboard: "storyboard",
   keyframes: "keyframes",
+  // The T14 stage is "image_generation" in the worker and "keyframes" here.
+  image_generation: "keyframes",
   animation: "animation",
   shot_generation: "shot_orchestration",
   shot_orchestration: "shot_orchestration",
