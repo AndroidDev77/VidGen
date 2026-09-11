@@ -125,6 +125,19 @@ VisualQAHumanReviewDecision = Literal["approved", "rejected", "force_approved"]
 #: The decision recorded when a person overrides a soft ``FAIL``.
 VISUAL_QA_FORCE_APPROVED = "force_approved"
 
+#: The repair codes tolerated out of the box. Each is a judgement the evaluator
+#: is weakest at - "this prompt is too complex", "the evidence is ambiguous",
+#: "there is not enough motion", "there are too many references" - and each
+#: produced false-positive failures often enough to be worth recording rather
+#: than acting on. A deployment that wants them back sets ``warn_only_codes``
+#: to a narrower list; passing ``[]`` tolerates nothing.
+DEFAULT_VISUAL_QA_WARN_ONLY_CODES: tuple[str, ...] = (
+    VisualQARepairCode.AMBIGUOUS_VISUAL_EVIDENCE.value,
+    VisualQARepairCode.INSUFFICIENT_MOTION.value,
+    VisualQARepairCode.PROMPT_TOO_COMPLEX.value,
+    VisualQARepairCode.TOO_MANY_REFERENCES.value,
+)
+
 
 class VisualQASampleType(StrEnum):
     """Why the deterministic sampler selected a timestamp."""
@@ -512,7 +525,11 @@ class VisualQAThresholds(StrictContract):
     semantic_hard_failure_dimension_floor: RawScore = 50
     #: Repair codes this deployment tolerates: still measured and recorded as
     #: warnings, never a hard failure and never handed to T21 as a repair.
-    warn_only_codes: list[str] = Field(default_factory=list, max_length=16)
+    #: Defaults to the codes that most often produce a false-positive failure;
+    #: an explicit ``[]`` tolerates nothing.
+    warn_only_codes: list[str] = Field(
+        default_factory=lambda: list(DEFAULT_VISUAL_QA_WARN_ONLY_CODES), max_length=16
+    )
 
     @field_validator("warn_only_codes")
     @classmethod
