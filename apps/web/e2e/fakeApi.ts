@@ -854,6 +854,7 @@ function generationSettings() {
       narration_warn_only_quality_codes: null,
       narration_quality_thresholds: null,
       storyboard_warn_only_validation_codes: null,
+      visual_qa_warn_only_codes: null,
       origin: "explicit",
     },
     generation_policy_identity:
@@ -940,6 +941,13 @@ function generationSettings() {
       "nonpositive_duration",
       "word_range_gap",
     ],
+    effective_visual_qa_warn_only_codes: [
+      "AMBIGUOUS_VISUAL_EVIDENCE",
+      "INSUFFICIENT_MOTION",
+      "PROMPT_TOO_COMPLEX",
+      "TOO_MANY_REFERENCES",
+    ],
+    available_visual_qa_warn_only_codes: ["WRONG_CHARACTER_IDENTITY", "ANATOMY_BREAKAGE"],
   };
 }
 

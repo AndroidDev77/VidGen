@@ -21,6 +21,7 @@ from vidgen.contracts.narration import (
 )
 from vidgen.contracts.script import SCRIPT_WARN_ONLY_ELIGIBLE_VALIDATION_CODES
 from vidgen.contracts.storyboard import STORYBOARD_WARN_ONLY_ELIGIBLE_VALIDATION_CODES
+from vidgen.contracts.visual_qa import VISUAL_QA_WARN_ONLY_ELIGIBLE_CODES
 
 GENERATION_SETTINGS_VERSION = "generation-settings/1"
 
@@ -95,6 +96,11 @@ class ProjectGenerationSettings(StrictContract):
     #: has no override and uses the deployment's global
     #: ``storyboard_warn_only_validation_codes`` setting.
     storyboard_warn_only_validation_codes: list[str] | None = Field(default=None, max_length=64)
+    #: Per-project override of the T20 visual-QA repair codes recorded as
+    #: warnings instead of blocking the shot or routing a repair. ``None``
+    #: means the project has no override and uses the deployment's global
+    #: ``visual_qa_warn_only_codes`` setting.
+    visual_qa_warn_only_codes: list[str] | None = Field(default=None, max_length=64)
     origin: GenerationSettingsOrigin = GenerationSettingsOrigin.EXPLICIT
 
     @field_validator("warn_only_validation_codes")
@@ -158,6 +164,20 @@ class ProjectGenerationSettings(StrictContract):
             raise ValueError(
                 f"unknown narration quality codes: {', '.join(unknown)}; "
                 f"expected any of {', '.join(NARRATION_WARN_ONLY_ELIGIBLE_QUALITY_CODES)}"
+            )
+        return sorted(set(value))
+
+    @field_validator("visual_qa_warn_only_codes")
+    @classmethod
+    def validate_visual_qa_warn_only_codes(cls, value: list[str] | None) -> list[str] | None:
+        """The T20 repair-code taxonomy; see the check above."""
+        if value is None:
+            return None
+        unknown = sorted(set(value) - set(VISUAL_QA_WARN_ONLY_ELIGIBLE_CODES))
+        if unknown:
+            raise ValueError(
+                f"unknown visual QA repair codes: {', '.join(unknown)}; "
+                f"expected any of {', '.join(VISUAL_QA_WARN_ONLY_ELIGIBLE_CODES)}"
             )
         return sorted(set(value))
 

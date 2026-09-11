@@ -19,7 +19,7 @@ from __future__ import annotations
 import json
 import logging
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
@@ -113,6 +113,7 @@ from vidgen.contracts.visual_qa import (
     VisualQASampleReference,
     VisualQASamplingManifest,
     VisualQATargetType,
+    VisualQAThresholds,
 )
 from vidgen.db.continuity_models import character_identity_versions, location_identity_versions
 from vidgen.db.cost_models import ProjectBudget
@@ -139,6 +140,9 @@ class VisualQAOptions:
 
     sampling: SamplingConfiguration = SAMPLING_CONFIGURATION
     thresholds: DeterministicThresholds = DETERMINISTIC_THRESHOLDS
+    #: The versioned pass policy, after the deployment's and the project's
+    #: warn-only overrides. Bound into the QA identity like every other threshold.
+    pass_thresholds: VisualQAThresholds = field(default_factory=lambda: THRESHOLDS)
     expected_width: int | None = None
     expected_height: int | None = None
     trace_context: dict[str, str] | None = None
@@ -240,7 +244,7 @@ class VisualQAPipeline:
             "first_pass_model": self.agent.model,
             "contract_version": "visual-qa/1.0",
             "pipeline_version": PIPELINE_VERSION,
-            **rubric_material(),
+            **rubric_material(thresholds=self.options.pass_thresholds),
         }
         return canonical_hash(material), material
 
@@ -267,7 +271,7 @@ class VisualQAPipeline:
             importance=target.importance.value,
             rubric_version=RUBRIC.rubric_version,
             sampling_version=self.options.sampling.version,
-            threshold_version=THRESHOLDS.threshold_version,
+            threshold_version=self.options.pass_thresholds.threshold_version,
             deterministic_version=DETERMINISTIC_CHECK_VERSION,
             pipeline_version=PIPELINE_VERSION,
             started_at=datetime.now(UTC),
@@ -302,13 +306,17 @@ class VisualQAPipeline:
                 first_pass,
                 report,
                 outcome,
-                thresholds=THRESHOLDS,
+                thresholds=self.options.pass_thresholds,
                 ambiguity_reasons=self._ambiguity_reasons(inputs),
                 prior_outcome=self._prior_outcome(inputs, run),
             )
             adjudication = None
             attempt = first_attempt
-            if triggers and self.adjudicator is not None and THRESHOLDS.max_adjudication_attempts:
+            if (
+                triggers
+                and self.adjudicator is not None
+                and self.options.pass_thresholds.max_adjudication_attempts
+            ):
                 run.status = "visual_qa_adjudicating"
                 self.session.commit()
                 adjudicated_request = self._provider_request(
@@ -336,7 +344,7 @@ class VisualQAPipeline:
                     first_pass=first_pass,
                     adjudicator=adjudicated,
                     adjudicated_outcome=adjudicated_outcome,
-                    thresholds=THRESHOLDS,
+                    thresholds=self.options.pass_thresholds,
                     attempts_used=1,
                 )
                 outcome = self._score(
@@ -758,7 +766,7 @@ class VisualQAPipeline:
             ],
             deterministic_summary=[item for item in diagnostics if item][:32],
             rubric_version=RUBRIC.rubric_version,
-            threshold_version=THRESHOLDS.threshold_version,
+            threshold_version=self.options.pass_thresholds.threshold_version,
             prompt_version=PROMPT_VERSION,
             trace_context=dict(self.options.trace_context or {}),
         )
@@ -930,12 +938,21 @@ class VisualQAPipeline:
             rubric=RUBRIC,
             samples=manifest.samples,
             source_asset_id=manifest.source_asset_id,
-            thresholds=THRESHOLDS,
+            thresholds=self.options.pass_thresholds,
         )
         score = recompute(
-            dimensions, rubric=RUBRIC, thresholds=THRESHOLDS, importance=inputs.importance
+            dimensions,
+            rubric=RUBRIC,
+            thresholds=self.options.pass_thresholds,
+            importance=inputs.importance,
         )
-        return decide(score, report, provider, thresholds=THRESHOLDS, review_reasons=review_reasons)
+        return decide(
+            score,
+            report,
+            provider,
+            thresholds=self.options.pass_thresholds,
+            review_reasons=review_reasons,
+        )
 
     def _deterministic_outcome(
         self,
@@ -951,12 +968,15 @@ class VisualQAPipeline:
             rubric=RUBRIC,
             samples=samples,
             source_asset_id=inputs.target_asset.id,
-            thresholds=THRESHOLDS,
+            thresholds=self.options.pass_thresholds,
         )
         score = recompute(
-            dimensions, rubric=RUBRIC, thresholds=THRESHOLDS, importance=inputs.importance
+            dimensions,
+            rubric=RUBRIC,
+            thresholds=self.options.pass_thresholds,
+            importance=inputs.importance,
         )
-        return decide(score, report, provider, thresholds=THRESHOLDS)
+        return decide(score, report, provider, thresholds=self.options.pass_thresholds)
 
     def _record_local_attempt(
         self, run: VisualQARun, provider: VisualQAProviderResult
@@ -1122,7 +1142,7 @@ class VisualQAPipeline:
             score=recompute(
                 [VisualQADimensionResult.model_validate(item) for item in record.dimension_results],
                 rubric=RUBRIC,
-                thresholds=THRESHOLDS,
+                thresholds=self.options.pass_thresholds,
                 importance=inputs.importance,
             ),
             outcome=VisualQAOutcome(record.outcome),

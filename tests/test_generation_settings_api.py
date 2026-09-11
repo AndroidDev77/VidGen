@@ -13,6 +13,7 @@ from sqlalchemy import select
 from services.generation.estimate import estimate_generation_costs
 from services.generation.settings import (
     effective_script_warn_only_validation_codes,
+    effective_visual_qa_warn_only_codes,
     effective_warn_only_validation_codes,
 )
 from tests.client_fixtures import review_client_context
@@ -26,6 +27,7 @@ from vidgen.contracts.storyboard import (
     STORYBOARD_WARN_ONLY_ELIGIBLE_VALIDATION_CODES,
     StoryboardValidationCode,
 )
+from vidgen.contracts.visual_qa import VISUAL_QA_WARN_ONLY_ELIGIBLE_CODES
 from vidgen.db.models import Project
 
 OWNER = {"X-VidGen-User": "owner-a"}
@@ -383,6 +385,115 @@ def test_the_script_resolver_prefers_the_project_override() -> None:
         )
         == frozenset()
     )
+
+
+def test_the_visual_qa_resolver_prefers_the_project_override() -> None:
+    default = ["PROMPT_TOO_COMPLEX"]
+    assert effective_visual_qa_warn_only_codes(ProjectGenerationSettings(), default) == (
+        frozenset({"PROMPT_TOO_COMPLEX"})
+    )
+    assert effective_visual_qa_warn_only_codes(
+        ProjectGenerationSettings(visual_qa_warn_only_codes=["ANATOMY_BREAKAGE"]), default
+    ) == frozenset({"ANATOMY_BREAKAGE"})
+    assert (
+        effective_visual_qa_warn_only_codes(
+            ProjectGenerationSettings(visual_qa_warn_only_codes=[]), default
+        )
+        == frozenset()
+    )
+
+
+def test_visual_qa_warn_only_codes_default_to_the_deployment_set(tmp_path: Path) -> None:
+    with review_client_context(tmp_path) as (client, _, _):
+        project_id = _create(client).json()["id"]
+        body = client.get(
+            f"/api/v1/projects/{project_id}/generation-settings", headers=OWNER
+        ).json()
+        assert body["settings"]["visual_qa_warn_only_codes"] is None
+        assert body["effective_visual_qa_warn_only_codes"] == [
+            "AMBIGUOUS_VISUAL_EVIDENCE",
+            "INSUFFICIENT_MOTION",
+            "PROMPT_TOO_COMPLEX",
+            "TOO_MANY_REFERENCES",
+        ]
+        available = body["available_visual_qa_warn_only_codes"]
+        assert "ANATOMY_BREAKAGE" in available
+        assert "BLACK_VIDEO" in available
+        assert len(available) == len(VISUAL_QA_WARN_ONLY_ELIGIBLE_CODES)
+
+
+def test_visual_qa_warn_only_codes_can_be_overridden_per_project(tmp_path: Path) -> None:
+    with review_client_context(tmp_path) as (client, factory, _):
+        project_id = _create(client).json()["id"]
+        updated = client.put(
+            f"/api/v1/projects/{project_id}/generation-settings",
+            json={
+                "generation_quality": "balanced",
+                "shot_pacing": "normal",
+                "premium_fallback_allowed": False,
+                "visual_qa_warn_only_codes": ["WRONG_CHARACTER_IDENTITY", "ANATOMY_BREAKAGE"],
+            },
+            headers=OWNER,
+        )
+        assert updated.status_code == 200, updated.text
+        body = updated.json()
+        assert body["settings"]["visual_qa_warn_only_codes"] == [
+            "ANATOMY_BREAKAGE",
+            "WRONG_CHARACTER_IDENTITY",
+        ]
+        assert body["effective_visual_qa_warn_only_codes"] == [
+            "ANATOMY_BREAKAGE",
+            "WRONG_CHARACTER_IDENTITY",
+        ]
+        with factory() as session:
+            project = session.get(Project, UUID(project_id))
+            assert project is not None
+            assert project.settings["generation"]["visual_qa_warn_only_codes"] == [
+                "ANATOMY_BREAKAGE",
+                "WRONG_CHARACTER_IDENTITY",
+            ]
+        # An empty list is a real choice - nothing is tolerated - not "use the default".
+        emptied = client.put(
+            f"/api/v1/projects/{project_id}/generation-settings",
+            json={
+                "generation_quality": "balanced",
+                "shot_pacing": "normal",
+                "premium_fallback_allowed": False,
+                "visual_qa_warn_only_codes": [],
+            },
+            headers=OWNER,
+        )
+        assert emptied.status_code == 200, emptied.text
+        assert emptied.json()["effective_visual_qa_warn_only_codes"] == []
+
+
+def test_visual_qa_warn_only_codes_are_accepted_at_creation(tmp_path: Path) -> None:
+    with review_client_context(tmp_path) as (client, _, _):
+        created = _create(client, visual_qa_warn_only_codes=["MISSING_REQUIRED_PROP"])
+        assert created.status_code == 201, created.text
+        body = client.get(
+            f"/api/v1/projects/{created.json()['id']}/generation-settings", headers=OWNER
+        ).json()
+        assert body["effective_visual_qa_warn_only_codes"] == ["MISSING_REQUIRED_PROP"]
+
+
+def test_an_unknown_visual_qa_code_is_refused(tmp_path: Path) -> None:
+    with review_client_context(tmp_path) as (client, _, _):
+        response = _create(client, visual_qa_warn_only_codes=["not_a_code"])
+        assert response.status_code == 422, response.text
+        project_id = _create(client).json()["id"]
+        updated = client.put(
+            f"/api/v1/projects/{project_id}/generation-settings",
+            json={
+                "generation_quality": "balanced",
+                "shot_pacing": "normal",
+                "premium_fallback_allowed": False,
+                # A narration quality code, not a T20 repair code.
+                "visual_qa_warn_only_codes": ["alignment_coverage"],
+            },
+            headers=OWNER,
+        )
+        assert updated.status_code == 422, updated.text
 
 
 def test_narration_quality_defaults_to_the_deployment_gate(tmp_path: Path) -> None:

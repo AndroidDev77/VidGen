@@ -81,7 +81,7 @@
       "items": {
         "type": "string"
       },
-      "maxItems": 16,
+      "maxItems": 64,
       "title": "Warn Only Codes",
       "type": "array"
     }
