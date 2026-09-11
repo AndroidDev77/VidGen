@@ -11,6 +11,12 @@
       "title": "Created At",
       "type": "string"
     },
+    "editing_pass": {
+      "default": 0,
+      "minimum": 0,
+      "title": "Editing Pass",
+      "type": "integer"
+    },
     "parent_script_id": {
       "anyOf": [
         {
@@ -23,6 +29,19 @@
       ],
       "default": null,
       "title": "Parent Script Id"
+    },
+    "rejection_reason": {
+      "anyOf": [
+        {
+          "maxLength": 20000,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Rejection Reason"
     },
     "row_version": {
       "minimum": 1,

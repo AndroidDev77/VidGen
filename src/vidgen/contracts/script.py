@@ -413,6 +413,10 @@ class ComedyEditRequest(StrictContract):
     rubric: ComedyRubric
     prior_review_id: UUID | None = None
     attempt_number: int = Field(ge=1)
+    #: The human reviewer's reason for rejecting the previous editing pass.
+    #: Present from the second pass on; the editor must address it rather than
+    #: re-edit the script blindly.
+    reviewer_feedback: str | None = Field(default=None, max_length=20_000)
     input_hash: str = Field(pattern=r"^[a-f0-9]{64}$")
     idempotency_key: str = Field(min_length=1)
     contract_version: str

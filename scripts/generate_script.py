@@ -46,6 +46,7 @@ async def main() -> None:
         compressor_model=settings.script_compressor_model,
         writer_model=settings.script_writer_model,
         editor_model=settings.script_editor_model,
+        max_editing_passes=settings.script_max_editing_passes,
     )
     if args.provider == "openai" and not options.openai_api_key:
         parser.error("VIDGEN_OPENAI_API_KEY or OPENAI_API_KEY is required for --provider openai")

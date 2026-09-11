@@ -1689,9 +1689,7 @@ def test_continuing_rebinds_the_projects_workflow_run_to_the_new_execution(
     with factory() as session:
         rows = list(
             session.scalars(
-                select(ProjectWorkflowRun).where(
-                    ProjectWorkflowRun.project_id == graph.project_id
-                )
+                select(ProjectWorkflowRun).where(ProjectWorkflowRun.project_id == graph.project_id)
             )
         )
     assert len(rows) == 1, "the project's workflow ID is stable, so the row is rebound"

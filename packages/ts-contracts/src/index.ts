@@ -1210,6 +1210,8 @@ export interface ScriptSummaryProjection {
   target_word_count: number;
   target_duration_ms: number;
   parent_script_id: UUID | null;
+  editing_pass: number;
+  rejection_reason: string | null;
   created_at: string;
   row_version: number;
 }

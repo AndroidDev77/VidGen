@@ -27,6 +27,29 @@ class ScriptRepository:
             )
         )
 
+    def resumable_run(
+        self, project_id: UUID, episode_analysis_id: UUID, input_hash: str
+    ) -> ScriptGenerationRun | None:
+        """The run a continuation from ``script_generation`` picks back up.
+
+        A continuation after a review decision arrives under a fresh workflow
+        idempotency key, so the run it resumes is found by what it was
+        generating from rather than by key. A run paused at review resumes
+        with the reviewer's decision; an approved run answers with its
+        approved version so the stage costs nothing on the way to narration.
+        A failed run is history: continuing past it opens a new one.
+        """
+        return self.session.scalar(
+            select(ScriptGenerationRun)
+            .where(
+                ScriptGenerationRun.project_id == project_id,
+                ScriptGenerationRun.episode_analysis_id == episode_analysis_id,
+                ScriptGenerationRun.input_hash == input_hash,
+                ScriptGenerationRun.status.in_(("script_review_required", "script_approved")),
+            )
+            .order_by(ScriptGenerationRun.created_at.desc(), ScriptGenerationRun.id.desc())
+        )
+
     def selected_plan(self, generation_run_id: UUID) -> CompressedPlotPlanRecord | None:
         return self.session.scalar(
             select(CompressedPlotPlanRecord).where(

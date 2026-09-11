@@ -81,7 +81,7 @@ from services.review.shot_identity import (
 )
 from services.script.fake_provider import FakeScriptGenerationProvider
 from services.script.openai_adapter import OpenAIScriptConfig, OpenAIScriptGenerationProvider
-from services.script.pipeline import ScriptGenerationPipeline
+from services.script.pipeline import ScriptEditingExhausted, ScriptGenerationPipeline
 from services.storyboard.fake_provider import FakeStoryboardDirector
 from services.storyboard.openai_adapter import (
     OpenAIStoryboardConfig,
@@ -1077,11 +1077,22 @@ def _generate_script(
     warn_only_codes = effective_script_warn_only_validation_codes(
         project_generation_settings(project), settings.script_warn_only_validation_codes
     )
-    result = asyncio.run(
-        ScriptGenerationPipeline(
-            session, blob_store, provider, warn_only_codes=warn_only_codes
-        ).process(project_id=request.project_id, idempotency_key=request.idempotency_key)
-    )
+    try:
+        result = asyncio.run(
+            ScriptGenerationPipeline(
+                session,
+                blob_store,
+                provider,
+                max_editing_passes=settings.script_max_editing_passes,
+                warn_only_codes=warn_only_codes,
+            ).process(project_id=request.project_id, idempotency_key=request.idempotency_key)
+        )
+    except ScriptEditingExhausted as exc:
+        # The reviewer's last "no" is a decision, not a transient fault: a
+        # retry would open a fresh run and regenerate the script from scratch.
+        raise ApplicationError(
+            str(exc)[:500], type="ScriptEditingExhausted", non_retryable=True
+        ) from exc
     return StageActivityResult(
         stage=request.stage,
         entity_id=result.script_id,

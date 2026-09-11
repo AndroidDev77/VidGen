@@ -249,8 +249,13 @@ Seeding real dated rates makes the fallback inert.
 
 T11 consumes the selected, validated T10 `EpisodeAnalysis` and produces a causally complete
 `CompressedPlotPlan`, an original comedy `RecapScript` draft, a deterministic validation report, a
-structured Comedy Editor review, up to two targeted revision passes, and a selected, versioned,
-diffable `RecapScript` suitable for T12 narration generation.
+structured Comedy Editor review, and a selected, versioned, diffable `RecapScript` suitable for T12
+narration generation. Every Comedy Editor pass is a human checkpoint: the pipeline stops after each
+pass with the edited version in `pending_review` and the workflow paused at `script_review_required`.
+Approving (selecting) the version moves the project on to narration; rejecting it with a reason
+stores that reason on the version, and the next `workflow:continue` runs the following pass with the
+feedback in the `ComedyEditRequest`. The pass budget is `VIDGEN_SCRIPT_MAX_EDITING_PASSES` (default
+3, recorded on the run); rejecting the last pass fails the run with `EDITING_PASSES_EXHAUSTED`.
 
 The parent Temporal workflow runs script generation after Episode Analyst completes. Compression,
 writing, and editing each run inside their own activity; only project/source IDs and the normal

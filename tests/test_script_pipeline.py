@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 import vidgen.db.workflow_models  # noqa: F401
 from services.script.fake_provider import FakeScriptGenerationProvider
-from services.script.pipeline import ScriptGenerationPipeline
+from services.script.pipeline import ScriptEditingExhausted, ScriptGenerationPipeline
 from vidgen.contracts.episode_analysis import (
     BeatDependency,
     CanonicalScene,
@@ -151,36 +151,226 @@ def _database(
     return session, blobs, project, record
 
 
+def _pending_candidate(session: Session, run_id) -> Script:
+    """The version the pipeline left in front of the reviewer."""
+    session.expire_all()
+    candidates = session.scalars(
+        select(Script).where(Script.generation_run_id == run_id).order_by(Script.version)
+    ).all()
+    assert candidates, "the run left no script behind"
+    latest = candidates[-1]
+    assert latest.status == "pending_review"
+    return latest
+
+
+def _approve(session: Session, script: Script) -> None:
+    """What ``POST /scripts/{id}:select`` does: the existing selected/approved pattern."""
+    session.query(Script).filter_by(project_id=script.project_id, selected=True).update(
+        {"selected": False}
+    )
+    script.selected = True
+    script.status = "approved"
+    run = session.get(ScriptGenerationRun, script.generation_run_id)
+    assert run is not None
+    run.status = "script_approved"
+    project = session.get(Project, script.project_id)
+    assert project is not None
+    project.status = "script_approved"
+    session.commit()
+
+
+def _reject(session: Session, script: Script, reason: str) -> None:
+    """What ``POST /scripts/{id}:reject`` does: the reason stays with the version."""
+    script.status = "rejected"
+    script.rejection_reason = reason
+    session.commit()
+
+
 @pytest.mark.asyncio
-async def test_pipeline_produces_an_approved_script(tmp_path: Path) -> None:
+async def test_pipeline_stops_after_the_first_editing_pass_for_review(tmp_path: Path) -> None:
     session, blobs, project, _record = _database(tmp_path)
     provider = FakeScriptGenerationProvider()
     result = await ScriptGenerationPipeline(session, blobs, provider).process(
         project_id=project.id, idempotency_key="run-1"
     )
-    assert result.status == "script_approved"
-    assert result.script_id is not None
-    assert result.review_scores is not None
-    assert result.review_scores.overall >= 85
-    assert result.review_scores.plot_fidelity >= 92
+    # Pass 1 is a checkpoint, not a verdict: no version is selected, the
+    # workflow's review gate fires on the missing entity, and the editor ran
+    # exactly once.
+    assert result.status == "script_review_required"
+    assert result.script_id is None
+    assert len(provider.edit_requests) == 1
+    assert provider.edit_requests[0].reviewer_feedback is None
+    assert provider.edit_requests[0].attempt_number == 1
 
     session.expire_all()
-    script_record = session.get(Script, result.script_id)
-    assert script_record is not None
-    assert script_record.selected is True
+    run = session.scalars(select(ScriptGenerationRun)).one()
+    assert run.status == "script_review_required"
+    assert run.error_code is None
+    assert run.max_editing_passes == 3
+    versions = session.scalars(
+        select(Script).where(Script.generation_run_id == run.id).order_by(Script.version)
+    ).all()
+    assert [item.status for item in versions] == ["draft", "pending_review"]
+    assert [item.editing_pass for item in versions] == [0, 1]
+    assert not any(item.selected for item in versions)
+    candidate = versions[-1]
+    assert candidate.parent_script_id == versions[0].id
+    assert candidate.review_scores is not None
     assert (
-        abs(script_record.actual_word_count - script_record.target_word_count)
-        / script_record.target_word_count
+        abs(candidate.actual_word_count - candidate.target_word_count) / candidate.target_word_count
         <= 0.05
     )
-
     segments = session.scalars(
-        select(ScriptSegment).where(ScriptSegment.script_id == script_record.id)
+        select(ScriptSegment).where(ScriptSegment.script_id == candidate.id)
     ).all()
     assert len(segments) > 0
-
     project_row = session.get(Project, project.id)
-    assert project_row is not None and project_row.status == "script_approved"
+    assert project_row is not None and project_row.status == "script_review_required"
+
+
+@pytest.mark.asyncio
+async def test_approving_after_pass_one_skips_the_remaining_passes(tmp_path: Path) -> None:
+    """Integration: approve → the run is done, and a continuation spends nothing."""
+    session, blobs, project, _record = _database(tmp_path)
+    provider = FakeScriptGenerationProvider()
+    pipeline = ScriptGenerationPipeline(session, blobs, provider)
+    first = await pipeline.process(project_id=project.id, idempotency_key="run-1")
+    assert first.status == "script_review_required"
+    run = session.scalars(select(ScriptGenerationRun)).one()
+    candidate = _pending_candidate(session, run.id)
+    _approve(session, candidate)
+
+    submissions = len(provider.submissions)
+    # The workflow continues from ``script_generation`` under a new key.
+    second = await pipeline.process(project_id=project.id, idempotency_key="continue-1")
+    assert second.status == "script_approved"
+    assert second.script_id == candidate.id
+    assert second.script_version == candidate.version
+    assert second.review_scores is not None
+    assert second.review_scores.overall >= 85
+    assert len(provider.submissions) == submissions
+    assert len(provider.edit_requests) == 1
+
+    session.expire_all()
+    assert len(session.scalars(select(ScriptGenerationRun)).all()) == 1
+    assert len(session.scalars(select(Script)).all()) == 2
+    selected = session.scalars(select(Script).where(Script.selected)).one()
+    assert selected.id == candidate.id and selected.status == "approved"
+    assert session.get(Project, project.id).status == "script_approved"
+
+
+@pytest.mark.asyncio
+async def test_rejection_feedback_drives_the_second_pass(tmp_path: Path) -> None:
+    session, blobs, project, _record = _database(tmp_path)
+    provider = FakeScriptGenerationProvider()
+    pipeline = ScriptGenerationPipeline(session, blobs, provider)
+    await pipeline.process(project_id=project.id, idempotency_key="run-1")
+    run = session.scalars(select(ScriptGenerationRun)).one()
+    first_candidate = _pending_candidate(session, run.id)
+    _reject(session, first_candidate, "The cold open gives away the finale. Hold it back.")
+
+    result = await pipeline.process(project_id=project.id, idempotency_key="continue-1")
+    assert result.status == "script_review_required"
+    assert result.script_id is None
+    assert result.revision_count == 1
+
+    # Pass 2 edits the rejected version, not the draft, and carries the
+    # reviewer's reason to the editor.
+    assert len(provider.edit_requests) == 2
+    second_request = provider.edit_requests[1]
+    assert second_request.script_id == first_candidate.id
+    assert second_request.attempt_number == 2
+    assert second_request.reviewer_feedback == (
+        "The cold open gives away the finale. Hold it back."
+    )
+
+    session.expire_all()
+    versions = session.scalars(
+        select(Script).where(Script.generation_run_id == run.id).order_by(Script.version)
+    ).all()
+    assert [item.status for item in versions] == ["draft", "rejected", "pending_review"]
+    assert [item.editing_pass for item in versions] == [0, 1, 2]
+    assert versions[1].rejection_reason == "The cold open gives away the finale. Hold it back."
+    assert versions[2].parent_script_id == first_candidate.id
+    # The same run was resumed under the new workflow key.
+    assert len(session.scalars(select(ScriptGenerationRun)).all()) == 1
+    assert session.get(ScriptGenerationRun, run.id).status == "script_review_required"
+
+
+@pytest.mark.asyncio
+async def test_three_rejections_exhaust_the_editing_budget(tmp_path: Path) -> None:
+    session, blobs, project, _record = _database(tmp_path)
+    provider = FakeScriptGenerationProvider()
+    pipeline = ScriptGenerationPipeline(session, blobs, provider)
+    await pipeline.process(project_id=project.id, idempotency_key="run-1")
+    run = session.scalars(select(ScriptGenerationRun)).one()
+    for attempt in range(1, 4):
+        candidate = _pending_candidate(session, run.id)
+        assert candidate.editing_pass == attempt
+        _reject(session, candidate, f"Still not funny enough ({attempt}).")
+        if attempt < 3:
+            result = await pipeline.process(
+                project_id=project.id, idempotency_key=f"continue-{attempt}"
+            )
+            assert result.status == "script_review_required"
+
+    submissions = len(provider.submissions)
+    with pytest.raises(ScriptEditingExhausted, match="EDITING_PASSES_EXHAUSTED"):
+        await pipeline.process(project_id=project.id, idempotency_key="continue-3")
+    # The third rejection is final: no fourth editor call, and the run fails
+    # rather than waiting on a review it can no longer act on.
+    assert len(provider.submissions) == submissions
+    assert len(provider.edit_requests) == 3
+    assert [item.reviewer_feedback for item in provider.edit_requests] == [
+        None,
+        "Still not funny enough (1).",
+        "Still not funny enough (2).",
+    ]
+    session.expire_all()
+    run = session.get(ScriptGenerationRun, run.id)
+    assert run.status == "script_generation_failed"
+    assert run.error_code == "EDITING_PASSES_EXHAUSTED"
+    assert run.revision_count == 2
+    assert session.get(Project, project.id).status == "script_generation_failed"
+    failures = session.scalars(select(PipelineFailureEvent)).all()
+    assert [item.error_code for item in failures] == ["EDITING_PASSES_EXHAUSTED"]
+    assert failures[0].projected_status == "script_generation_failed"
+    # The exhausted run is history: the next continuation starts a fresh one
+    # rather than resuming a run that can spend nothing.
+    fresh = await pipeline.process(project_id=project.id, idempotency_key="continue-4")
+    assert fresh.status == "script_review_required"
+    assert len(session.scalars(select(ScriptGenerationRun)).all()) == 2
+
+
+@pytest.mark.asyncio
+async def test_the_editing_budget_is_configurable(tmp_path: Path) -> None:
+    session, blobs, project, _record = _database(tmp_path)
+    provider = FakeScriptGenerationProvider()
+    pipeline = ScriptGenerationPipeline(session, blobs, provider, max_editing_passes=1)
+    await pipeline.process(project_id=project.id, idempotency_key="run-1")
+    run = session.scalars(select(ScriptGenerationRun)).one()
+    assert run.max_editing_passes == 1
+    _reject(session, _pending_candidate(session, run.id), "No.")
+    with pytest.raises(ScriptEditingExhausted):
+        await pipeline.process(project_id=project.id, idempotency_key="continue-1")
+    assert len(provider.edit_requests) == 1
+    with pytest.raises(ValueError, match="max_editing_passes"):
+        ScriptGenerationPipeline(session, blobs, provider, max_editing_passes=0)
+
+
+@pytest.mark.asyncio
+async def test_continuing_without_a_decision_spends_nothing(tmp_path: Path) -> None:
+    session, blobs, project, _record = _database(tmp_path)
+    provider = FakeScriptGenerationProvider()
+    pipeline = ScriptGenerationPipeline(session, blobs, provider)
+    await pipeline.process(project_id=project.id, idempotency_key="run-1")
+    submissions = len(provider.submissions)
+    result = await pipeline.process(project_id=project.id, idempotency_key="continue-1")
+    assert result.status == "script_review_required"
+    assert len(provider.submissions) == submissions
+    session.expire_all()
+    assert len(session.scalars(select(ScriptGenerationRun)).all()) == 1
+    assert len(session.scalars(select(Script)).all()) == 2
 
 
 @pytest.mark.asyncio
@@ -189,16 +379,18 @@ async def test_completed_run_is_idempotent(tmp_path: Path) -> None:
     provider = FakeScriptGenerationProvider()
     pipeline = ScriptGenerationPipeline(session, blobs, provider)
     first = await pipeline.process(project_id=project.id, idempotency_key="run-1")
+    assert first.status == "script_review_required"
     submissions_after_first = len(provider.submissions)
     second = await pipeline.process(project_id=project.id, idempotency_key="run-1")
-    assert second.script_id == first.script_id
-    assert second.script_version == first.script_version
+    assert second.status == first.status
+    assert second.generation_run_id == first.generation_run_id
     assert len(provider.submissions) == submissions_after_first
 
     runs = session.scalars(select(ScriptGenerationRun)).all()
     assert len(runs) == 1
     scripts = session.scalars(select(Script)).all()
     assert len({s.id for s in scripts}) == len(scripts)
+    assert len(scripts) == 2
 
 
 @pytest.mark.asyncio
@@ -314,15 +506,18 @@ async def test_reusing_key_with_changed_analysis_requires_new_key(tmp_path: Path
     with pytest.raises(ValueError, match="idempotency key is bound to a different"):
         await pipeline.process(project_id=project.id, idempotency_key="run-1")
 
-    # A fresh idempotency key starts a new lineage against the new analysis.
+    # A fresh idempotency key starts a new lineage against the new analysis;
+    # the run paused on the old analysis is not the one it resumes.
     second_result = await pipeline.process(project_id=project.id, idempotency_key="run-2")
-    assert second_result.status == "script_approved"
+    assert second_result.status == "script_review_required"
     session.expire_all()
-    selected_scripts = session.scalars(
-        select(Script).where(Script.project_id == project.id, Script.selected)
+    runs = session.scalars(
+        select(ScriptGenerationRun).order_by(ScriptGenerationRun.created_at)
     ).all()
-    assert len(selected_scripts) == 1
-    assert selected_scripts[0].id == second_result.script_id
+    assert len(runs) == 2
+    assert runs[1].id == second_result.generation_run_id
+    assert runs[1].episode_analysis_id == new_record.id
+    assert _pending_candidate(session, runs[1].id).episode_analysis_id == new_record.id
 
 
 class _NeverApprovingProvider(FakeScriptGenerationProvider):
@@ -350,7 +545,10 @@ class _NeverApprovingProvider(FakeScriptGenerationProvider):
 
 
 @pytest.mark.asyncio
-async def test_revision_exhaustion_sets_script_review_required(tmp_path: Path) -> None:
+async def test_the_editors_verdict_is_recorded_but_does_not_loop(tmp_path: Path) -> None:
+    """A ``revise`` recommendation is advice for the reviewer, not a reason to spend again."""
+    from vidgen.db.script_models import ScriptReview
+
     session, blobs, project, _record = _database(tmp_path)
     provider = _NeverApprovingProvider()
     result = await ScriptGenerationPipeline(session, blobs, provider).process(
@@ -359,13 +557,15 @@ async def test_revision_exhaustion_sets_script_review_required(tmp_path: Path) -
     assert result.status == "script_review_required"
     session.expire_all()
     run = session.scalars(select(ScriptGenerationRun)).one()
-    assert run.error_code == "REVISION_EXHAUSTED"
-    assert run.revision_count == 2
+    assert run.error_code is None
+    assert run.revision_count == 0
     script_versions = session.scalars(
         select(Script).where(Script.generation_run_id == run.id)
     ).all()
-    # draft (v1) plus one revised candidate per evaluation (3 evaluations total)
-    assert len(script_versions) == 4
+    # draft (v1) plus exactly one edited candidate, waiting for the reviewer
+    assert len(script_versions) == 2
+    review = session.scalars(select(ScriptReview)).one()
+    assert review.approval_recommendation == "revise"
     assert session.get(Project, project.id).status == "script_review_required"
 
 
@@ -417,24 +617,31 @@ async def test_draft_validation_exhaustion_records_failures(tmp_path: Path) -> N
 
 
 @pytest.mark.asyncio
-async def test_failed_replacement_preserves_prior_selected_script(tmp_path: Path) -> None:
+async def test_a_replacement_run_preserves_the_prior_selected_script(tmp_path: Path) -> None:
     session, blobs, project, _record = _database(tmp_path)
-    first = await ScriptGenerationPipeline(session, blobs, FakeScriptGenerationProvider()).process(
-        project_id=project.id, idempotency_key="run-1"
-    )
-    assert first.status == "script_approved"
+    pipeline = ScriptGenerationPipeline(session, blobs, FakeScriptGenerationProvider())
+    await pipeline.process(project_id=project.id, idempotency_key="run-1")
+    first_run = session.scalars(select(ScriptGenerationRun)).one()
+    approved = _pending_candidate(session, first_run.id)
+    _approve(session, approved)
 
+    # A run against changed settings is new material, so it opens a new run
+    # rather than resuming the approved one; while its first pass waits for
+    # review the approved script stays selected.
     second = await ScriptGenerationPipeline(session, blobs, _NeverApprovingProvider()).process(
-        project_id=project.id, idempotency_key="run-2"
+        project_id=project.id,
+        idempotency_key="run-2",
+        setting_overrides={"humor_intensity": 0.9},
     )
     assert second.status == "script_review_required"
+    assert second.generation_run_id != first_run.id
 
     session.expire_all()
     selected = session.scalars(
         select(Script).where(Script.project_id == project.id, Script.selected)
     ).all()
     assert len(selected) == 1
-    assert selected[0].id == first.script_id
+    assert selected[0].id == approved.id
 
 
 @pytest.mark.asyncio
@@ -532,10 +739,12 @@ async def test_empty_beats_are_cleared_before_the_script_is_persisted(tmp_path: 
     result = await ScriptGenerationPipeline(session, blobs, provider).process(
         project_id=project.id, idempotency_key="run-1"
     )
-    assert result.status == "script_approved"
+    assert result.status == "script_review_required"
+    script_record = _pending_candidate(session, result.generation_run_id)
+    _approve(session, script_record)
 
     session.expire_all()
-    script_record = session.get(Script, result.script_id)
+    script_record = session.get(Script, script_record.id)
     assert script_record is not None
     rows = session.scalars(
         select(ScriptSegment)

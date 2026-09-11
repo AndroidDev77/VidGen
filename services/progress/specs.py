@@ -132,6 +132,7 @@ EPISODE_ANALYSIS = StageSpec(
 )
 
 #: One draft plus the bounded editorial revisions the pipeline allows.
+#: The historical default; a run reports its own ``max_editing_passes``.
 SCRIPT_EDITORIAL_PASSES = 3
 
 SCRIPT_GENERATION = StageSpec(
