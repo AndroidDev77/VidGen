@@ -57,6 +57,7 @@ from vidgen.contracts.control_commands import (
 from vidgen.contracts.final_editorial import FinalRemediationTarget
 from vidgen.contracts.shot_workflow import ShotWorkflowInput, ShotWorkflowStatus
 from vidgen.contracts.workflow import (
+    PROJECT_STAGE_ORDER,
     FinalQAActivityInput,
     ProjectWorkflowInput,
     RenderActivityInput,
@@ -584,6 +585,26 @@ def _record_project_workflow_run(
 
 
 # -- revisions and continuation -------------------------------------------
+def _prior_completed_stages(entry_stage: str) -> list[str]:
+    """The stages a run entering at ``entry_stage`` inherits as already done.
+
+    An entry stage is chosen precisely because every stage before it already
+    has an authoritative, compatible output this run must not pay for a second
+    time - the workflow skips them on exactly that basis. So the prefix of the
+    pipeline order *is* the previous run's completed set, and the workflow and
+    the dispatcher cannot drift apart about it because both read one order.
+
+    Without this the continued run reports only its own stages, and the review
+    UI redraws a project that is most of the way through the pipeline as one
+    that has not started.
+    """
+    if entry_stage not in PROJECT_STAGE_ORDER:
+        # An unknown stage is rejected by ``ProjectWorkflowInput`` a few lines
+        # later, with a message that names the field.
+        return []
+    return list(PROJECT_STAGE_ORDER[: PROJECT_STAGE_ORDER.index(entry_stage)])
+
+
 def dispatch_generation_run(
     context: DispatchContext, record: ControlCommandRecord
 ) -> DispatchOutcome:
@@ -639,6 +660,7 @@ def dispatch_generation_run(
             idempotency_key=f"t18b:{run.id}"[:220],
             generation_run_id=run.id,
             entry_stage=entry_stage,
+            prior_completed_stages=_prior_completed_stages(entry_stage),
         )
     )
     runs.bind_workflow(run, workflow_id=workflow_id, run_id=run_id)

@@ -17,6 +17,7 @@ from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
 from vidgen.contracts.visual_qa import (
+    VISUAL_QA_FORCE_APPROVED,
     VisualQAAttemptType,
     VisualQAEvidence,
     VisualQAOutcome,
@@ -284,17 +285,28 @@ class VisualQARepository:
 
     # --- gating -----------------------------------------------------------
     def gate(self, shot_id: UUID, target_type: VisualQATargetType) -> tuple[bool, str]:
-        """Whether one shot may proceed past a T16 QA stage, and why not."""
+        """Whether one shot may proceed past a T16 QA stage, and why not.
+
+        A human decision is consulted here and only here: the canonical QA
+        result keeps saying what the pipeline measured, and the gate reports
+        separately that a person cleared it. A hard failure never reaches a
+        review at all, so no decision can open this gate on one.
+        """
         run = self.canonical_run(shot_id, target_type)
         if run is None:
             return False, "visual_qa_missing"
         if run.final_outcome == VisualQAOutcome.PASS.value:
             return True, "visual_qa_pass"
+        review = self.latest_human_review(run.id)
+        decision = review.decision if review is not None else None
         if run.final_outcome == VisualQAOutcome.REVIEW.value:
-            review = self.latest_human_review(run.id)
-            if review is not None and review.decision == "approved":
+            if decision == "approved":
                 return True, "visual_qa_human_approved"
             return False, "visual_qa_review_required"
+        if run.final_outcome == VisualQAOutcome.FAIL.value and not run.hard_failure:
+            if decision == VISUAL_QA_FORCE_APPROVED:
+                return True, "visual_qa_human_force_approved"
+            return False, "visual_qa_failed"
         return False, "visual_qa_failed"
 
     def project_gate(self, project_id: UUID, shot_ids: Sequence[UUID]) -> dict[UUID, str]:

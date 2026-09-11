@@ -458,7 +458,7 @@ def _decide(
             payload={"qa_run_id": str(qa_run_id), "decision": decision, **payload},
             expected_row_version=expected,
             metadata={
-                "decision": decision,
+                "decision": outcome.decision,
                 "qa_run_id": str(qa_run_id),
                 "resulting_gate": str(outcome.resulting_gate),
                 "shot_identity_hash": identity_hash,
@@ -470,7 +470,9 @@ def _decide(
     body = VisualQADecisionResponse(
         qa_run_id=run.id,
         review_id=outcome.review_id,
-        decision=decision,  # type: ignore[arg-type]
+        # What the reviewer asked for was "approve"; what was recorded may be
+        # ``force_approved``. The response reports the recorded decision.
+        decision=outcome.decision,  # type: ignore[arg-type]
         resulting_gate=outcome.resulting_gate,
         row_version=new_version,
         continuation_command_id=command.command_id,

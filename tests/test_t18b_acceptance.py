@@ -198,7 +198,10 @@ async def _environment(
 
 
 def _input(
-    *, entry_stage: str = "upload", generation_run_id: UUID | None = None
+    *,
+    entry_stage: str = "upload",
+    generation_run_id: UUID | None = None,
+    prior_completed_stages: list[str] | None = None,
 ) -> ProjectWorkflowInput:
     return ProjectWorkflowInput(
         project_id=PROJECT,
@@ -206,6 +209,7 @@ def _input(
         idempotency_key=f"t18b-{entry_stage}",
         entry_stage=entry_stage,
         generation_run_id=generation_run_id,
+        prior_completed_stages=prior_completed_stages or [],
     )
 
 
@@ -364,6 +368,46 @@ async def test_a_continuation_run_reuses_every_stage_above_its_entry_point() -> 
     assert state.entry_stage == "narration"
     assert state.status == "completed"
     assert len(renders) == 1
+
+
+@pytest.mark.asyncio
+async def test_a_continuation_reports_the_stages_the_previous_run_completed() -> None:
+    """A continued project is not a project that has not started.
+
+    The stages before the entry point are skipped precisely because they are
+    finished. Reporting only this run's stages made the review UI redraw a
+    project most of the way through the pipeline as entirely pending.
+    """
+    executed: list[str] = []
+    activities = [
+        *_stage_activities(executed),
+        *_continuity_activities(requires_approval=False, approvals=[]),
+        *_fanout_activities(),
+        *_final_qa_activity([]),
+    ]
+    environment, project_worker, render_worker = await _environment(
+        activities, _render_activity([])
+    )
+    prior = ["upload", "media_processing", "transcript_acquisition", "evidence"]
+    async with environment, project_worker, render_worker:
+        state = await environment.client.execute_workflow(
+            ProjectWorkflow.run,
+            _input(entry_stage="episode_analysis", prior_completed_stages=prior),
+            id=f"project-{uuid4()}",
+            task_queue=TASK_QUEUE,
+        )
+    assert executed == ["episode_analysis", "script_generation", "narration", "storyboard"]
+    # Inherited first, then this run's own, in pipeline order either way.
+    assert state.completed_stages[: len(prior)] == prior
+    assert state.completed_stages == [
+        *prior,
+        *executed,
+        "continuity_references",
+        "shot_generation",
+        "render",
+        "final_editorial_qa",
+    ]
+    assert state.status == "completed"
 
 
 @pytest.mark.asyncio

@@ -1930,6 +1930,12 @@ export interface VisualQAEvidenceProjection {
   explanation: string;
 }
 
+/**
+ * What a person may record against one QA run. `force_approved` is the
+ * override of a soft `FAIL`; a hard failure can never be cleared at all.
+ */
+export type VisualQAHumanReviewDecision = "approved" | "rejected" | "force_approved";
+
 export interface VisualQARunProjection {
   qa_run_id: UUID;
   project_id: UUID;
@@ -1946,7 +1952,7 @@ export interface VisualQARunProjection {
   warning_codes: string[];
   confidence: number | null;
   adjudicated: boolean;
-  human_review_decision: "approved" | "rejected" | null;
+  human_review_decision: VisualQAHumanReviewDecision | null;
   provider: string;
   model: string;
   cost_microusd: number;
@@ -2016,7 +2022,8 @@ export interface VisualQADecisionRequest {
 export interface VisualQADecisionResponse {
   qa_run_id: UUID;
   review_id: UUID;
-  decision: "approved" | "rejected";
+  /** What was recorded: overriding a soft FAIL is recorded as `force_approved`. */
+  decision: VisualQAHumanReviewDecision;
   resulting_gate: string;
   row_version: number;
 }

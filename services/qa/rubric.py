@@ -21,7 +21,10 @@ from vidgen.contracts.visual_qa import (
 )
 
 RUBRIC_VERSION: Final = "visual-qa-rubric/1.0"
-THRESHOLD_VERSION: Final = "visual-qa-thresholds/1.0"
+#: 1.1 adds the warn-only repair codes. A shot whose only failing reasons are
+#: warn-only comes out as ``REVIEW`` rather than ``FAIL``, which changes what
+#: the gate does with it - so it is a version change, not a silent drift.
+THRESHOLD_VERSION: Final = "visual-qa-thresholds/1.1"
 SAMPLING_VERSION: Final = "visual-qa-sampler/1.0"
 DETERMINISTIC_CHECK_VERSION: Final = "visual-qa-deterministic/1.0"
 ADJUDICATION_POLICY_VERSION: Final = "visual-qa-adjudication/1.0"

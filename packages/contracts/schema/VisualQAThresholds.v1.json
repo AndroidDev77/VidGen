@@ -69,6 +69,14 @@
       "minimum": 0,
       "title": "Utility Pass Score",
       "type": "number"
+    },
+    "warn_only_codes": {
+      "items": {
+        "type": "string"
+      },
+      "maxItems": 16,
+      "title": "Warn Only Codes",
+      "type": "array"
     }
   },
   "required": [

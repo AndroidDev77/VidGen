@@ -5,6 +5,10 @@ import {
   BreadcrumbDivider,
   BreadcrumbItem,
   Caption1,
+  MessageBar,
+  MessageBarActions,
+  MessageBarBody,
+  MessageBarTitle,
   makeStyles,
   mergeClasses,
   tokens,
@@ -109,6 +113,20 @@ const useStyles = makeStyles({
       color: tokens.colorNeutralForeground1,
     },
   },
+  review: { marginTop: tokens.spacingVerticalS },
+  reviewLink: {
+    display: "inline-flex",
+    alignItems: "center",
+    whiteSpace: "nowrap",
+    padding: `${tokens.spacingVerticalXS} ${tokens.spacingHorizontalM}`,
+    borderRadius: tokens.borderRadiusMedium,
+    textDecoration: "none",
+    color: tokens.colorNeutralForeground1,
+    backgroundColor: tokens.colorNeutralBackground1,
+    border: `1px solid ${tokens.colorNeutralStroke1}`,
+    fontWeight: tokens.fontWeightSemibold,
+    ":hover": { backgroundColor: tokens.colorNeutralBackground1Hover },
+  },
   navLinkActive: {
     backgroundColor: tokens.colorBrandBackground2,
     color: tokens.colorBrandForeground2,
@@ -126,6 +144,32 @@ const SECTIONS: readonly (readonly [path: string, label: string])[] = [
   ["/review", "Review"],
 ];
 
+/** The project statuses that mean "nothing moves until a person decides". */
+const REVIEW_STATUSES: ReadonlySet<string> = new Set([
+  "shot_generation_failed",
+  "awaiting_review",
+]);
+
+export interface ReviewPrompt {
+  /** Shots whose QA raised an ambiguity for a person to settle. */
+  readonly review: number;
+  /** Shots that failed on judgement, which a person may still override. */
+  readonly failed: number;
+}
+
+function reviewMessage({ review, failed }: ReviewPrompt): string {
+  const parts: string[] = [];
+  if (review > 0) {
+    parts.push(`${review} shot${review === 1 ? "" : "s"} need${review === 1 ? "s" : ""} review`);
+  }
+  if (failed > 0) {
+    parts.push(`${failed} shot${failed === 1 ? "" : "s"} failed`);
+  }
+  return parts.length > 0
+    ? `${parts.join(", ")}. Approve or reject them on the storyboard to let the project continue.`
+    : "This project is waiting on a review decision before it can continue.";
+}
+
 export interface ProjectStatusHeaderProps {
   readonly projectId: string;
   readonly projectName: string;
@@ -133,6 +177,12 @@ export interface ProjectStatusHeaderProps {
   readonly workflow?: WorkflowStatusProjection | undefined;
   readonly connectionLabel?: string | undefined;
   readonly actions?: ReactNode;
+  /**
+   * Shots waiting on a human decision. A paused project says so here, with a
+   * way through: without it the dashboard reports a failed stage and leaves
+   * the owner to find the buttons on their own.
+   */
+  readonly reviewPrompt?: ReviewPrompt | undefined;
 }
 
 export function ProjectStatusHeader({
@@ -142,10 +192,17 @@ export function ProjectStatusHeader({
   workflow,
   connectionLabel,
   actions,
+  reviewPrompt,
 }: ProjectStatusHeaderProps): JSX.Element {
   const styles = useStyles();
   const { pathname } = useLocation();
   const base = `/projects/${projectId}`;
+  const storyboard = `${base}/storyboard`;
+  const waiting = workflow !== undefined && REVIEW_STATUSES.has(workflow.status);
+  const pending = (reviewPrompt?.review ?? 0) + (reviewPrompt?.failed ?? 0);
+  // The prompt is worth showing either because shots are actually waiting, or
+  // because the project stopped at a review and the counts have not loaded.
+  const showReview = pending > 0 || (waiting && reviewPrompt === undefined);
 
   return (
     <div className={styles.header}>
@@ -212,6 +269,22 @@ export function ProjectStatusHeader({
             </Caption1>
           )}
         </div>
+      )}
+
+      {showReview && (
+        <MessageBar intent="warning" className={styles.review}>
+          <MessageBarBody>
+            <MessageBarTitle>Keyframes need review</MessageBarTitle>
+            {reviewMessage(reviewPrompt ?? { review: 0, failed: 0 })}
+          </MessageBarBody>
+          {!pathname.startsWith(storyboard) && (
+            <MessageBarActions>
+              <Link className={styles.reviewLink} to={storyboard}>
+                Go to Storyboard
+              </Link>
+            </MessageBarActions>
+          )}
+        </MessageBar>
       )}
 
       <nav className={styles.nav} aria-label="Project sections">

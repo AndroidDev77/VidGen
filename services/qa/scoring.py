@@ -11,7 +11,7 @@ The routing recommendation produced here is advisory. T20 never executes it.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from typing import Any
 from uuid import UUID
@@ -332,20 +332,46 @@ def decide(
     *,
     thresholds: VisualQAThresholds,
     review_reasons: Sequence[str] = (),
+    warn_only_codes: Iterable[str] | None = None,
 ) -> ScoringOutcome:
-    """Derive the canonical outcome, repair codes and routing recommendation."""
+    """Derive the canonical outcome, repair codes and routing recommendation.
+
+    ``warn_only_codes`` names the repair codes this deployment tolerates. They
+    are still measured, still carried on the result and still routed for
+    repair; they just no longer block the shot on their own. A shot whose only
+    failing reasons are warn-only codes comes out as ``REVIEW`` - a person
+    decides - instead of ``FAIL``. Unset, the thresholds' own set applies.
+
+    Nothing here can demote a genuine hard failure: the contract refuses to
+    accept one into ``warn_only_codes`` in the first place.
+    """
+    warn_only = frozenset(
+        thresholds.warn_only_codes if warn_only_codes is None else warn_only_codes
+    )
     hard_codes: set[str] = set()
     repair_codes: set[VisualQARepairCode] = set()
     warning_codes: set[str] = set()
+    #: Codes that would have blocked the shot but were demoted. They still mean
+    #: "a person must look at this", so they never fall through to ``PASS``.
+    demoted_codes: set[str] = set()
+
+    def block(code: str) -> None:
+        if code in warn_only:
+            warning_codes.add(code)
+            demoted_codes.add(code)
+            return
+        hard_codes.add(code)
+
     for dimension in score.dimensions:
-        hard_codes.update(dimension.hard_failure_codes)
+        for code in dimension.hard_failure_codes:
+            block(code)
         repair_codes.update(dimension.repair_codes)
         warning_codes.update(dimension.warning_codes)
     for metric in report.metrics:
         if metric.outcome == "warning":
             warning_codes.add(metric.diagnostic_code)
         if metric.outcome == "hard_failure" and metric.repair_code is not None:
-            hard_codes.add(metric.repair_code.value)
+            block(metric.repair_code.value)
             repair_codes.add(metric.repair_code)
     warning_codes.update(provider.warning_codes)
     # A provider may propose a hard failure, but only a code in the bounded
@@ -359,10 +385,36 @@ def decide(
             warning_codes.add("unknown_provider_hard_failure_code")
             continue
         if code in HARD_FAILURE_CODES and code in evidenced:
-            hard_codes.add(code.value)
+            block(code.value)
             repair_codes.add(code)
         else:
             warning_codes.add("unevidenced_provider_hard_failure_proposal")
+
+    def human_review(
+        codes: Iterable[VisualQARepairCode], rationale: str, reasons: Sequence[str]
+    ) -> ScoringOutcome:
+        """A result a person has to settle, never one the pipeline failed."""
+        ordered = sorted(
+            {*codes, VisualQARepairCode.HUMAN_REVIEW_REQUIRED}, key=lambda code: code.value
+        )
+        return ScoringOutcome(
+            score=score,
+            outcome=VisualQAOutcome.REVIEW,
+            hard_failure_codes=(),
+            warning_codes=tuple(sorted(warning_codes)),
+            repair_codes=tuple(ordered),
+            recommendation=VisualQARepairRecommendation(
+                routing=VisualQARoutingRecommendation.HUMAN_REVIEW,
+                repair_codes=ordered,
+                rationale=rationale[:500],
+            ),
+            review_reasons=tuple(reasons),
+        )
+
+    def warn_only_reasons(codes: Iterable[VisualQARepairCode] = ()) -> tuple[str, ...]:
+        names = sorted({*demoted_codes, *(code.value for code in codes)} & warn_only)
+        return tuple(f"{name} is warn-only in this deployment" for name in names)
+
     if hard_codes:
         codes = sorted(repair_codes, key=lambda code: code.value)
         primary = min(
@@ -411,6 +463,15 @@ def decide(
             review_reasons=tuple(review_reasons),
         )
     if score.total >= score.pass_threshold:
+        if demoted_codes:
+            # The shot scores well enough, but something that would have
+            # blocked it was demoted. Recording that as a plain PASS would
+            # hide the measurement; it goes to a person instead.
+            return human_review(
+                repair_codes,
+                "every blocking reason for this shot is warn-only in this deployment",
+                warn_only_reasons(),
+            )
         return ScoringOutcome(
             score=score,
             outcome=VisualQAOutcome.PASS,
@@ -432,6 +493,13 @@ def decide(
                 key=lambda item: item.raw_score,
             )
             codes = [DIMENSION_DEFAULT_REPAIR[worst.dimension]]
+        if all(code.value in warn_only for code in codes):
+            return human_review(
+                codes,
+                f"score {score.total:.2f} is below the {score.pass_threshold:.0f} threshold, "
+                "but every repair code behind it is warn-only in this deployment",
+                warn_only_reasons(codes),
+            )
         return ScoringOutcome(
             score=score,
             outcome=VisualQAOutcome.FAIL,
@@ -450,6 +518,14 @@ def decide(
         )
     routing, extra = _structural_routing(score.dimensions)
     codes = sorted({*repair_codes, *extra}, key=lambda code: code.value)
+    if all(code.value in warn_only for code in codes):
+        return human_review(
+            codes,
+            f"score {score.total:.2f} is below the "
+            f"{thresholds.targeted_repair_floor:.0f} targeted-repair floor, but every repair "
+            "code behind it is warn-only in this deployment",
+            warn_only_reasons(codes),
+        )
     return ScoringOutcome(
         score=score,
         outcome=VisualQAOutcome.FAIL,

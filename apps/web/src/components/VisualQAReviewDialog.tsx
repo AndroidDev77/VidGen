@@ -19,28 +19,38 @@ export interface VisualQAReviewDialogProps {
   readonly busy: boolean;
   /** A hard failure can never be cleared by a human; the dialog says so and disables approval. */
   readonly hardFailure: boolean;
+  /** How many shots this one decision covers. One, unless it came from the bulk bar. */
+  readonly shotCount?: number;
+  /** At least one shot is a soft `FAIL` being overruled rather than an ambiguity. */
+  readonly overriding?: boolean;
   readonly onCancel: () => void;
   readonly onConfirm: (reason: string) => void;
 }
 
-/** Records a human decision on an ambiguous `REVIEW` outcome. */
+/**
+ * Records a human decision on an ambiguous `REVIEW` outcome, or a human
+ * override of a soft `FAIL`, for one shot or for a batch of them.
+ */
 export function VisualQAReviewDialog({
   open,
   decision,
   busy,
   hardFailure,
+  shotCount = 1,
+  overriding = false,
   onCancel,
   onConfirm,
 }: VisualQAReviewDialogProps): JSX.Element {
   const [reason, setReason] = useState("");
   const approving = decision === "approve";
   const blocked = approving && hardFailure;
+  const shots = shotCount === 1 ? "this visual-QA result" : `${shotCount} visual-QA results`;
   return (
     <Dialog open={open} onOpenChange={(_, data) => (data.open ? undefined : onCancel())}>
       <DialogSurface>
         <DialogBody>
           <DialogTitle>
-            {approving ? "Approve this visual-QA result?" : "Reject this visual-QA result?"}
+            {approving ? `Approve ${shots}?` : `Reject ${shots}?`}
           </DialogTitle>
           <DialogContent>
             {blocked && (
@@ -48,6 +58,17 @@ export function VisualQAReviewDialog({
                 <MessageBarBody>
                   This result carries a hard failure. A hard failure is a measured fact and cannot
                   be cleared by human review.
+                </MessageBarBody>
+              </MessageBar>
+            )}
+            {approving && overriding && !blocked && (
+              <MessageBar intent="warning">
+                <MessageBarBody>
+                  {shotCount === 1
+                    ? "This shot failed automated QA on judgement, not on a measured defect. "
+                    : "Some of these shots failed automated QA on judgement, not on a measured " +
+                      "defect. "}
+                  Approving records that you overrode the automated verdict.
                 </MessageBarBody>
               </MessageBar>
             )}

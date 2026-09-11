@@ -298,7 +298,11 @@ class VisualQAEvidenceRecord(UUIDPrimaryKeyMixin, Base):
 
 
 class VisualQAHumanReview(UUIDPrimaryKeyMixin, TimestampMixin, Base):
-    """One owner-scoped human resolution of an ambiguous ``REVIEW`` outcome."""
+    """One owner-scoped human resolution of a ``REVIEW`` outcome or a soft ``FAIL``.
+
+    ``force_approved`` is the override of a soft ``FAIL``, kept distinct from
+    ``approved`` so the audit trail says which of the two a person did.
+    """
 
     __tablename__ = "visual_qa_human_reviews"
     qa_run_id: Mapped[UUID] = mapped_column(
@@ -314,7 +318,8 @@ class VisualQAHumanReview(UUIDPrimaryKeyMixin, TimestampMixin, Base):
             "qa_run_id", "idempotency_key", name="uq_visual_qa_human_review_idempotency"
         ),
         CheckConstraint(
-            "decision IN ('approved','rejected')", name="visual_qa_human_review_decision"
+            "decision IN ('approved','rejected','force_approved')",
+            name="visual_qa_human_review_decision",
         ),
         CheckConstraint("expected_row_version > 0", name="visual_qa_human_review_row_version"),
     )
