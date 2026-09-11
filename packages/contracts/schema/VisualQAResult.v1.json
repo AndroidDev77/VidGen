@@ -1360,7 +1360,8 @@
         {
           "enum": [
             "approved",
-            "rejected"
+            "rejected",
+            "force_approved"
           ],
           "type": "string"
         },

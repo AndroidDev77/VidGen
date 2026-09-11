@@ -223,3 +223,169 @@ describe("visual-QA status across the review UI", () => {
     ).toBeVisible();
   });
 });
+
+/**
+ * Deciding twenty keyframes used to mean twenty trips through the inspector.
+ * These cover the flow that replaces it: the decision is on the card, the two
+ * bulk decisions are above the grid, and the dashboard says a decision is due.
+ */
+describe("keyframe review without the inspector", () => {
+  /** Shot 1 is ambiguous, shot 2 soft-failed, shot 3 carries a hard failure. */
+  function reviewableProject() {
+    const shotId = (index: number) => fixtures.storyboard.shots[index]!.shot_id;
+    server.use(
+      http.get(/\/api\/v1\/projects\/[^/]+\/visual-qa$/, () =>
+        HttpResponse.json({
+          project_id: PROJECT_ID,
+          items: [
+            fixtures.visualQaRun(1, {
+              shot_id: shotId(1),
+              outcome: "REVIEW",
+              hard_failure: false,
+              repair_codes: ["HUMAN_REVIEW_REQUIRED"],
+            }),
+            fixtures.visualQaRun(2, {
+              shot_id: shotId(2),
+              outcome: "FAIL",
+              hard_failure: false,
+              repair_codes: ["PROMPT_TOO_COMPLEX"],
+            }),
+            fixtures.visualQaRun(3, { shot_id: shotId(3), outcome: "FAIL", hard_failure: true }),
+          ],
+        }),
+      ),
+    );
+  }
+
+  it("offers the decision on the shot card, naming the override for a soft failure", async () => {
+    reviewableProject();
+    renderProjectRoute(<StoryboardPage />, `/projects/${PROJECT_ID}/storyboard`);
+    // Shot 2 is the ambiguous one (shots are numbered from one in the UI).
+    expect(await screen.findByRole("button", { name: "Approve shot 2" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "Reject shot 2" })).toBeVisible();
+    // Shot 3 failed on judgement: the same button, named as the override it is.
+    expect(screen.getByRole("button", { name: "Force approve shot 3" })).toBeVisible();
+    // Shot 4 carries a hard failure, which no decision can clear.
+    expect(screen.queryByRole("button", { name: /approve shot 4/i })).toBeNull();
+    // Shot 1 passed; there is nothing to decide.
+    expect(screen.queryByRole("button", { name: /approve shot 1/i })).toBeNull();
+  });
+
+  it("records the decision for one shot straight from its card", async () => {
+    reviewableProject();
+    const posted: string[] = [];
+    server.use(
+      http.post(/\/visual-qa\/[^/]+:approve$/, ({ request }) => {
+        posted.push(new URL(request.url).pathname);
+        return HttpResponse.json({
+          qa_run_id: fixtures.uuid(2, 9),
+          review_id: fixtures.uuid(3, 9),
+          decision: "force_approved",
+          resulting_gate: "visual_qa_human_force_approved",
+          row_version: 4,
+        });
+      }),
+    );
+    renderProjectRoute(<StoryboardPage />, `/projects/${PROJECT_ID}/storyboard`);
+    await userEvent.click(await screen.findByRole("button", { name: "Force approve shot 3" }));
+    const dialog = await screen.findByRole("dialog", { hidden: true });
+    // The dialog says plainly that this overrides the automated verdict.
+    expect(
+      within(dialog).getByText(/failed automated QA on judgement, not on a measured defect/),
+    ).toBeVisible();
+    await userEvent.click(
+      within(dialog).getByRole("button", { name: "Record approval", hidden: true }),
+    );
+    await waitFor(() => expect(posted).toHaveLength(1));
+    expect(posted[0]).toContain(fixtures.storyboard.shots[2]!.shot_id);
+  });
+
+  it("counts what is waiting and force-approves every soft failure at once", async () => {
+    reviewableProject();
+    const posted: string[] = [];
+    server.use(
+      http.post(/\/visual-qa\/[^/]+:approve$/, ({ request }) => {
+        posted.push(new URL(request.url).pathname);
+        return HttpResponse.json({
+          qa_run_id: fixtures.uuid(2, 9),
+          review_id: fixtures.uuid(3, 9),
+          decision: "force_approved",
+          resulting_gate: "visual_qa_human_force_approved",
+          row_version: 4,
+        });
+      }),
+    );
+    renderProjectRoute(<StoryboardPage />, `/projects/${PROJECT_ID}/storyboard`);
+    const bar = await screen.findByRole("region", { name: "Shots awaiting review" });
+    // One ambiguous shot and one soft failure; the hard failure is in neither.
+    expect(within(bar).getByText(/1 shot needs review, 1 shot failed\./)).toBeVisible();
+    await userEvent.click(
+      within(bar).getByRole("button", { name: "Force approve all failed (1)" }),
+    );
+    const dialog = await screen.findByRole("dialog", { hidden: true });
+    await userEvent.click(
+      within(dialog).getByRole("button", { name: "Record approval", hidden: true }),
+    );
+    await waitFor(() => expect(posted).toHaveLength(1));
+    expect(posted[0]).toContain(fixtures.storyboard.shots[2]!.shot_id);
+  });
+
+  it("tells the dashboard owner that shots are waiting and where to decide", async () => {
+    reviewableProject();
+    renderProjectRoute(<ProjectDashboardPage />, `/projects/${PROJECT_ID}`);
+    expect(await screen.findByText("Keyframes need review")).toBeVisible();
+    expect(screen.getByText(/1 shot needs review, 1 shot failed/)).toBeVisible();
+    expect(screen.getByRole("link", { name: "Go to Storyboard" })).toHaveAttribute(
+      "href",
+      `/projects/${PROJECT_ID}/storyboard`,
+    );
+  });
+});
+
+describe("VisualQAResultPanel human override", () => {
+  it("offers a force approval for a failure that is not a hard failure", async () => {
+    server.use(
+      http.get(/\/api\/v1\/projects\/[^/]+\/shots\/[^/]+\/visual-qa$/, () =>
+        HttpResponse.json({
+          project_id: PROJECT_ID,
+          items: [
+            fixtures.visualQaRun(0, {
+              outcome: "FAIL",
+              hard_failure: false,
+              repair_codes: ["PROMPT_TOO_COMPLEX"],
+            }),
+          ],
+        }),
+      ),
+      http.get(/\/api\/v1\/projects\/[^/]+\/shots\/[^/]+\/visual-qa\/[^/]+$/, () =>
+        HttpResponse.json(
+          fixtures.visualQaDetail(0, {
+            outcome: "FAIL",
+            hard_failure: false,
+            repair_codes: ["PROMPT_TOO_COMPLEX"],
+          }),
+        ),
+      ),
+    );
+    const panel = await openVisualQa();
+    expect(await within(panel).findByRole("button", { name: "Force approve" })).toBeVisible();
+    expect(within(panel).getByRole("button", { name: "Confirm failure" })).toBeVisible();
+    expect(
+      within(panel).getByText(/failed on score, not on a measured defect/),
+    ).toBeVisible();
+  });
+
+  it("offers nothing at all for a hard failure", async () => {
+    server.use(
+      http.get(/\/api\/v1\/projects\/[^/]+\/shots\/[^/]+\/visual-qa$/, () =>
+        HttpResponse.json({ project_id: PROJECT_ID, items: [fixtures.visualQaRun(0)] }),
+      ),
+      http.get(/\/api\/v1\/projects\/[^/]+\/shots\/[^/]+\/visual-qa\/[^/]+$/, () =>
+        HttpResponse.json(fixtures.visualQaDetail(0)),
+      ),
+    );
+    const panel = await openVisualQa();
+    expect(within(panel).queryByRole("button", { name: /approve/i })).toBeNull();
+    expect(within(panel).queryByRole("button", { name: /reject|confirm failure/i })).toBeNull();
+  });
+});

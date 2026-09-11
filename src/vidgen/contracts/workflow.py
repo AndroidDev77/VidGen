@@ -5,7 +5,7 @@ from enum import StrEnum
 from typing import Literal
 from uuid import UUID
 
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 
 from vidgen.contracts.common import StrictContract
 
@@ -65,6 +65,11 @@ class ProjectWorkflowInput(StrictContract):
     #: acquisition. When present these are tried before provider search and
     #: Whisper transcription.
     sidecar_asset_ids: tuple[UUID, ...] = Field(default=())
+    #: The stages a previous run of this project already completed. A run that
+    #: enters late does not re-execute them, so without this the state it
+    #: reports would call work that is finished "pending" and the UI would
+    #: redraw a completed pipeline as empty.
+    prior_completed_stages: list[str] = Field(default_factory=list, max_length=32)
 
     @field_validator("entry_stage")
     @classmethod
@@ -72,6 +77,32 @@ class ProjectWorkflowInput(StrictContract):
         if value not in PROJECT_STAGE_ORDER:
             raise ValueError(f"unknown project entry stage: {value}")
         return value
+
+    @field_validator("prior_completed_stages")
+    @classmethod
+    def known_prior_stages(cls, value: list[str]) -> list[str]:
+        unknown = sorted(set(value) - set(PROJECT_STAGE_ORDER))
+        if unknown:
+            raise ValueError(f"unknown project stages: {', '.join(unknown)}")
+        # Pipeline order, duplicate-free: the workflow appends to this list as
+        # it runs, and a timeline reader should never have to sort it.
+        return [stage for stage in PROJECT_STAGE_ORDER if stage in set(value)]
+
+    @model_validator(mode="after")
+    def prior_stages_precede_the_entry(self) -> ProjectWorkflowInput:
+        entry = PROJECT_STAGE_ORDER.index(self.entry_stage)
+        late = [
+            stage
+            for stage in self.prior_completed_stages
+            if PROJECT_STAGE_ORDER.index(stage) >= entry
+        ]
+        if late:
+            # A stage at or after the entry is this run's work to do. Claiming
+            # it was already complete would report it done before it ran.
+            raise ValueError(
+                f"prior completed stages must precede {self.entry_stage}: {', '.join(late)}"
+            )
+        return self
 
 
 class StageActivityInput(StrictContract):

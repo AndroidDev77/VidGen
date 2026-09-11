@@ -24,6 +24,7 @@ import type {
 } from "@vidgen/contracts";
 
 import { formatMicroseconds, formatMoney, humanize } from "../state/format";
+import { decisionAffordance } from "../state/visualQa";
 import { StatusBadge } from "./StatusBadge";
 import { TechnicalDetails } from "./TechnicalDetails";
 import { VisualQAComparisonPanel } from "./VisualQAComparisonPanel";
@@ -73,6 +74,9 @@ export function VisualQAResultPanel({
   const styles = useStyles();
   const keyframe = runs.find((run) => run.target_type === "keyframe") ?? null;
   const video = runs.find((run) => run.target_type === "video") ?? null;
+  // A hard failure is never decidable, so the buttons are absent rather than
+  // present and rejected by the API when pressed.
+  const affordance = decisionAffordance(selected);
   return (
     <section className={styles.wrapper} aria-labelledby="visual-qa-panel-heading">
       <Title3 as="h2" id="visual-qa-panel-heading">
@@ -199,15 +203,21 @@ export function VisualQAResultPanel({
               ? "not required"
               : humanize(selected.human_review_decision)}
           </Caption1>
-          {selected.outcome === "REVIEW" && (
+          {affordance !== null && (
             <div className={styles.actions}>
               <Button appearance="primary" onClick={onApprove} disabled={busy}>
-                Approve after review
+                {affordance === "override" ? "Force approve" : "Approve after review"}
               </Button>
               <Button appearance="secondary" onClick={onReject} disabled={busy}>
-                Reject after review
+                {affordance === "override" ? "Confirm failure" : "Reject after review"}
               </Button>
             </div>
+          )}
+          {affordance === "override" && (
+            <Caption1>
+              This shot failed on score, not on a measured defect. Forcing approval records that
+              you overrode the automated result; the result itself is kept as it was.
+            </Caption1>
           )}
 
           <VisualQAEvidenceViewer

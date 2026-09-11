@@ -85,6 +85,11 @@ class ProjectWorkflow:
             status="ingesting",
             generation_run_id=request.generation_run_id,
             entry_stage=request.entry_stage,
+            # A run that enters late inherits what the previous run finished.
+            # The stages it skips below are skipped *because* they are already
+            # complete, so reporting them as pending would describe the project
+            # as less finished than it is every time it is continued.
+            completed_stages=list(request.prior_completed_stages),
         )
         entry = _stage_index(request.entry_stage)
         stages = (

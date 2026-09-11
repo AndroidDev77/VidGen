@@ -17,7 +17,7 @@ import {
 import type { JSX } from "react";
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import type { PipelineStage } from "@vidgen/contracts";
+import type { PipelineStage, VisualQARunProjection } from "@vidgen/contracts";
 
 import { newIdempotencyKey } from "../../api/client";
 import { listFailures, listProviderAttempts } from "../../api/costs";
@@ -39,6 +39,7 @@ import { TechnicalDetails } from "../../components/TechnicalDetails";
 import { ErrorState, LoadingState } from "../../components/states";
 import { formatDurationSeconds, formatMoney, formatStage } from "../../state/format";
 import { retryStage, retryableStages } from "../../state/retryStage";
+import { reviewCounts } from "../../state/visualQa";
 import { stageProgressPollInterval } from "../../state/stageProgress";
 import { useProjectContext } from "./useProjectContext";
 
@@ -219,6 +220,14 @@ export function ProjectDashboardPage(): JSX.Element {
   const stalledStage = retryableStages(workflowData)[0];
 
   const visualQaRuns = visualQa.data?.items ?? [];
+  // What the dashboard owes a returning owner: not "shot generation failed",
+  // but "N shots are waiting on you, and here is where you decide".
+  const reviewPrompt = reviewCounts(
+    visualQaRuns.reduce((byShot, run) => {
+      byShot.set(run.shot_id, [...(byShot.get(run.shot_id) ?? []), run]);
+      return byShot;
+    }, new Map<string, VisualQARunProjection[]>()),
+  );
   const visualQaSummary = {
     total: visualQaRuns.length,
     passed: visualQaRuns.filter((run) => run.outcome === "PASS").length,
@@ -235,6 +244,7 @@ export function ProjectDashboardPage(): JSX.Element {
         pageTitle="Dashboard"
         workflow={workflowData}
         connectionLabel={connectionLabel}
+        reviewPrompt={visualQa.isSuccess ? reviewPrompt : undefined}
         actions={
           <div className={styles.actions}>
             {!started && (

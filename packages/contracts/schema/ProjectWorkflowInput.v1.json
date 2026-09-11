@@ -27,6 +27,14 @@
       "title": "Idempotency Key",
       "type": "string"
     },
+    "prior_completed_stages": {
+      "items": {
+        "type": "string"
+      },
+      "maxItems": 32,
+      "title": "Prior Completed Stages",
+      "type": "array"
+    },
     "project_id": {
       "format": "uuid",
       "title": "Project Id",

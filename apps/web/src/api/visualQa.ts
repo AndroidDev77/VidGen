@@ -73,8 +73,11 @@ export function runShotVisualQa(
 }
 
 /**
- * Resolve an ambiguous `REVIEW` outcome. A hard failure can never be cleared
- * this way: the API rejects the attempt.
+ * Resolve an ambiguous `REVIEW` outcome, or override a soft `FAIL`.
+ *
+ * Approving a `FAIL` is recorded as `force_approved`, so the response's
+ * decision is not always the one that was asked for. A hard failure can never
+ * be cleared this way: the API rejects the attempt.
  */
 export function decideVisualQa(
   projectId: string,

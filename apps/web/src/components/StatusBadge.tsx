@@ -65,6 +65,7 @@ const LABELS: Record<string, string> = {
   narration_failed: "Narration failed",
   rendering_failed: "Render failed",
   awaiting_upload: "Awaiting upload",
+  awaiting_review: "Awaiting review",
 };
 
 function inferTone(status: string): Tone {

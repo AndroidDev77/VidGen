@@ -1064,6 +1064,21 @@ def test_continuing_a_project_opens_a_new_generation_run(
     assert started.entry_stage == "shot_generation"
     assert started.generation_run_id is not None
 
+    # The new run inherits every stage above its entry point as complete. The
+    # workflow deliberately does not re-execute them, so without this the UI
+    # would redraw a project that is eight stages in as one that has not begun.
+    assert started.prior_completed_stages == [
+        "upload",
+        "media_processing",
+        "transcript_acquisition",
+        "evidence",
+        "episode_analysis",
+        "script_generation",
+        "narration",
+        "storyboard",
+        "continuity_references",
+    ]
+
     with factory() as session:
         runs = GenerationRunService(session).history(graph.project_id)
     assert [run.entry_stage for run in runs] == ["shot_generation"]

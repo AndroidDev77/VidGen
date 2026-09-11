@@ -28,10 +28,10 @@ def resolver(_session: Session, _storyboard: object, _shot: object) -> str:
 
 
 def build_qa_project(session: Session, blob_root: Path, workspace: Path) -> VisualQAFixture:
-    """Two shots, QA already run: one passes, one cannot be adjudicated."""
+    """Three shots, QA already run: one passes, one is ambiguous, one soft-fails."""
     store = FilesystemBlobStore(blob_root, b"test-secret")
     fixture = build_visual_qa_project(
-        session, blob_root, workspace, owner_subject="owner-a", shot_count=2
+        session, blob_root, workspace, owner_subject="owner-a", shot_count=3
     )
     asyncio.run(
         run_visual_qa(
@@ -59,6 +59,26 @@ def build_qa_project(session: Session, blob_root: Path, workspace: Path) -> Visu
                     fixture.shot_ids[1]: FakeDefect(
                         dimension_confidence={VisualQADimension.CHARACTER_IDENTITY: 0.4},
                         overall_confidence=0.4,
+                    )
+                },
+            ),
+            identity_resolver=resolver,
+        )
+    )
+    # A soft failure: the shot scores badly on identity, but nothing about it
+    # was measured as broken, so a human may still overrule the verdict.
+    asyncio.run(
+        run_visual_qa(
+            session,
+            store,
+            project_id=fixture.project_id,
+            options=VisualQACommandOptions(
+                provider="fake",
+                shot_id=fixture.shot_ids[2],
+                targets=(VisualQATargetType.VIDEO,),
+                fake_defects={
+                    fixture.shot_ids[2]: FakeDefect(
+                        dimension_scores=dict.fromkeys(VisualQADimension, 40.0)
                     )
                 },
             ),
@@ -93,7 +113,8 @@ def test_project_listing_is_owner_scoped(
     response = client.get(f"/api/v1/projects/{fixture.project_id}/visual-qa", headers=OWNER)
     assert response.status_code == 200
     body = response.json()
-    assert len(body["items"]) == 3
+    # Shot 1 was QA'd for both targets; shots 2 and 3 for video only.
+    assert len(body["items"]) == 4
     first = body["items"][0]
     assert {"qa_run_id", "outcome", "score", "pass_threshold", "repair_codes"} <= set(first)
     # The compact projection never leaks provider payloads or signed URLs.
@@ -228,6 +249,39 @@ def test_a_review_result_can_be_approved_and_a_hard_failure_cannot(
         # The automated result is preserved verbatim.
         preserved = repository.run(fixture.project_id, run_id)
         assert preserved is not None and preserved.final_outcome == "REVIEW"
+
+
+def test_a_soft_failure_can_be_force_approved_and_the_shot_becomes_renderable(
+    qa_client: tuple[TestClient, sessionmaker[Session], VisualQAFixture],
+) -> None:
+    """The override reaches the gate; the recorded QA result never changes."""
+    client, factory, fixture = qa_client
+    shot_id = fixture.shot_ids[2]
+    with factory() as session:
+        repository = VisualQARepository(session)
+        run = repository.runs_for_shot(fixture.project_id, shot_id)[0]
+        assert run.final_outcome == "FAIL"
+        assert run.hard_failure is False
+        run_id = run.id
+        assert repository.gate(shot_id, VisualQATargetType.VIDEO) == (False, "visual_qa_failed")
+
+    response = client.post(
+        f"/api/v1/projects/{fixture.project_id}/shots/{shot_id}/visual-qa/{run_id}:approve",
+        json={"reason": "the shot is fine; the score is not"},
+        headers={**OWNER, "Idempotency-Key": "force-1", "If-Match": "1"},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    # The response names what was recorded, not what was asked for.
+    assert body["decision"] == "force_approved"
+    assert body["resulting_gate"] == "visual_qa_human_force_approved"
+
+    with factory() as session:
+        repository = VisualQARepository(session)
+        assert repository.gate(shot_id, VisualQATargetType.VIDEO)[0] is True
+        preserved = repository.run(fixture.project_id, run_id)
+        assert preserved is not None
+        assert preserved.final_outcome == "FAIL", "the automated verdict is never rewritten"
 
 
 def test_a_stale_if_match_is_a_conflict(

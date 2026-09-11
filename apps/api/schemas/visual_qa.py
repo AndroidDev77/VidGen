@@ -14,6 +14,7 @@ from uuid import UUID
 from pydantic import Field
 
 from vidgen.contracts.common import StrictContract
+from vidgen.contracts.visual_qa import VisualQAHumanReviewDecision
 
 VisualQATargetLiteral = Literal["keyframe", "video"]
 
@@ -171,7 +172,9 @@ class VisualQADecisionResponse(StrictContract):
 
     qa_run_id: UUID
     review_id: UUID
-    decision: Literal["approved", "rejected"]
+    #: What was recorded, which is not always what was asked for:
+    #: overriding a soft ``FAIL`` is recorded as ``force_approved``.
+    decision: VisualQAHumanReviewDecision
     resulting_gate: str
     row_version: int = Field(gt=0)
     continuation_command_id: UUID | None = None

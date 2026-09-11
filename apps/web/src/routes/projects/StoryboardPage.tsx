@@ -30,11 +30,13 @@ import { ProjectStatusHeader } from "../../components/ProjectStatusHeader";
 import { RepairLineagePanel } from "../../components/RepairLineagePanel";
 import { ShotInspector } from "../../components/ShotInspector";
 import { StoryboardGrid } from "../../components/StoryboardGrid";
+import { StoryboardReviewBar } from "../../components/StoryboardReviewBar";
 import { TimelinePreview } from "../../components/TimelinePreview";
 import { VisualQAResultPanel } from "../../components/VisualQAResultPanel";
 import { VisualQAReviewDialog } from "../../components/VisualQAReviewDialog";
 import { PageStack } from "../../components/Surface";
 import { EmptyState, ErrorState, LoadingState } from "../../components/states";
+import { decidableRun, decisionAffordance, type QaDecisionAffordance } from "../../state/visualQa";
 import { useProjectContext } from "./useProjectContext";
 
 const useStyles = makeStyles({
@@ -63,6 +65,22 @@ const useStyles = makeStyles({
 
 type PendingAction = "regenerate" | null;
 
+/** One shot's decidable QA run, with everything the decision call needs. */
+interface QaDecisionTarget {
+  readonly shotId: string;
+  readonly qaRunId: string;
+  readonly rowVersion: number;
+  readonly affordance: Exclude<QaDecisionAffordance, null>;
+  /** Carried so the confirmation dialog can refuse an unclearable result. */
+  readonly hardFailure: boolean;
+}
+
+/** A decision awaiting its reason. One shot from a card, many from the bar. */
+interface PendingQaDecision {
+  readonly decision: "approve" | "reject";
+  readonly targets: readonly QaDecisionTarget[];
+}
+
 export function StoryboardPage(): JSX.Element {
   const styles = useStyles();
   const client = useApiClient();
@@ -75,7 +93,7 @@ export function StoryboardPage(): JSX.Element {
   const [previewUrls, setPreviewUrls] = useState<ReadonlyMap<string, string>>(new Map());
   const [selectedVideoUrl, setSelectedVideoUrl] = useState<string | null>(null);
   const [selectedQaRunId, setSelectedQaRunId] = useState<string | null>(null);
-  const [qaDecision, setQaDecision] = useState<"approve" | "reject" | null>(null);
+  const [qaDecision, setQaDecision] = useState<PendingQaDecision | null>(null);
   const [selectedRepairRunId, setSelectedRepairRunId] = useState<string | null>(null);
 
   const storyboard = useQuery({
@@ -112,6 +130,35 @@ export function StoryboardPage(): JSX.Element {
     }
     return byShot;
   }, [projectVisualQa.data]);
+
+  // Every shot whose QA is still waiting on a person, in storyboard order.
+  // Built from the storyboard rather than from the QA collection so the bar's
+  // counts, the card buttons and the bulk actions always name the same shots.
+  const decisionTargets = useMemo(() => {
+    const targets: QaDecisionTarget[] = [];
+    for (const entry of storyboard.data?.shots ?? []) {
+      const run = decidableRun(visualQaByShot.get(entry.shot_id) ?? []);
+      const affordance = decisionAffordance(run);
+      if (run !== null && affordance !== null) {
+        targets.push({
+          shotId: entry.shot_id,
+          qaRunId: run.qa_run_id,
+          rowVersion: entry.row_version,
+          affordance,
+          hardFailure: run.hard_failure,
+        });
+      }
+    }
+    return targets;
+  }, [storyboard.data, visualQaByShot]);
+
+  const reviewCounts = useMemo(
+    () => ({
+      review: decisionTargets.filter((target) => target.affordance === "review").length,
+      failed: decisionTargets.filter((target) => target.affordance === "override").length,
+    }),
+    [decisionTargets],
+  );
 
   const qaRun = useQuery({
     queryKey: queryKeys.visualQaRun(projectId, selectedShotId ?? "", selectedQaRunId ?? ""),
@@ -201,24 +248,54 @@ export function StoryboardPage(): JSX.Element {
   });
 
   const decideQa = useMutation({
-    mutationFn: (input: { decision: "approve" | "reject"; reason: string }) =>
-      decideVisualQa(
-        projectId,
-        selectedShotId ?? "",
-        selectedQaRunId ?? "",
-        input.decision,
-        input.reason,
-        shot.data?.shot.row_version ?? 1,
-        newIdempotencyKey(`visual-qa-${input.decision}-${selectedQaRunId ?? ""}`),
-        client,
-      ),
-    onSuccess: () => {
-      setQaDecision(null);
-      invalidateVisualQa(selectedShotId ?? "");
-      invalidateShot(selectedShotId ?? "");
+    mutationFn: async (input: { pending: PendingQaDecision; reason: string }) => {
+      // One request per shot, in order. A decision bumps that shot's row
+      // version, so batching them into one call would need an endpoint that
+      // does not exist - and a partial failure here still leaves every shot it
+      // did reach correctly decided.
+      for (const target of input.pending.targets) {
+        await decideVisualQa(
+          projectId,
+          target.shotId,
+          target.qaRunId,
+          input.pending.decision,
+          input.reason,
+          target.rowVersion,
+          newIdempotencyKey(`visual-qa-${input.pending.decision}-${target.qaRunId}`),
+          client,
+        );
+      }
+      return input.pending.targets.map((target) => target.shotId);
     },
-    onError: () => setQaDecision(null),
+    onSettled: (shotIds) => {
+      setQaDecision(null);
+      // Even a failed batch may have decided some shots before it stopped, so
+      // the refetch happens either way rather than only on success.
+      void queryClient.invalidateQueries({ queryKey: queryKeys.visualQa(projectId) });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.storyboard(projectId) });
+      for (const shotId of shotIds ?? []) {
+        invalidateVisualQa(shotId);
+        invalidateShot(shotId);
+      }
+    },
   });
+
+  /** The decision a shot card offers: the run that shot is actually waiting on. */
+  const cardTarget = useCallback(
+    (shotId: string): QaDecisionTarget | null =>
+      decisionTargets.find((target) => target.shotId === shotId) ?? null,
+    [decisionTargets],
+  );
+
+  const decideOneShot = useCallback(
+    (shotId: string, decision: "approve" | "reject") => {
+      const target = cardTarget(shotId);
+      if (target !== null) {
+        setQaDecision({ decision, targets: [target] });
+      }
+    },
+    [cardTarget],
+  );
 
   // Evidence frames use the same short-lived signed URLs as the grid previews,
   // requested only when a frame is about to be displayed.
@@ -355,6 +432,28 @@ export function StoryboardPage(): JSX.Element {
 
   const busy =
     regenerate.isPending || retry.isPending || cancelOne.isPending || chooseAttempt.isPending;
+  // The QA run the inspector has open, which is not always the run the shot is
+  // waiting on: a reviewer may be inspecting the keyframe result of a shot
+  // whose video result is the decidable one.
+  const inspectorTarget: QaDecisionTarget | null = (() => {
+    const run = qaRun.data ?? null;
+    const affordance = decisionAffordance(run);
+    if (run === null || affordance === null || selectedShotId === null) {
+      return null;
+    }
+    return {
+      shotId: selectedShotId,
+      qaRunId: run.qa_run_id,
+      rowVersion: shot.data?.shot.row_version ?? 1,
+      affordance,
+      hardFailure: run.hard_failure,
+    };
+  })();
+  const decideSelectedRun = (decision: "approve" | "reject") => {
+    if (inspectorTarget !== null) {
+      setQaDecision({ decision, targets: [inspectorTarget] });
+    }
+  };
 
   return (
     <PageStack>
@@ -364,6 +463,7 @@ export function StoryboardPage(): JSX.Element {
         pageTitle="Storyboard"
         workflow={workflow.data}
         connectionLabel={connectionLabel}
+        reviewPrompt={reviewCounts}
       />
 
       {storyboard.isPending && <LoadingState label="Loading the storyboard" rows={4} />}
@@ -388,6 +488,7 @@ export function StoryboardPage(): JSX.Element {
       {retry.isError && <ErrorState error={retry.error} />}
       {cancelOne.isError && <ErrorState error={cancelOne.error} />}
       {chooseAttempt.isError && <ErrorState error={chooseAttempt.error} />}
+      {decideQa.isError && <ErrorState error={decideQa.error} />}
 
       {storyboard.isSuccess && storyboard.data.shots.length === 0 && (
         <EmptyState
@@ -405,12 +506,31 @@ export function StoryboardPage(): JSX.Element {
               selectedShotId={selectedShotId}
               onSelect={selectShotId}
             />
+            <StoryboardReviewBar
+              counts={reviewCounts}
+              busy={decideQa.isPending}
+              onApproveReviewable={() =>
+                setQaDecision({
+                  decision: "approve",
+                  targets: decisionTargets.filter((target) => target.affordance === "review"),
+                })
+              }
+              onForceApproveFailed={() =>
+                setQaDecision({
+                  decision: "approve",
+                  targets: decisionTargets.filter((target) => target.affordance === "override"),
+                })
+              }
+            />
             <StoryboardGrid
               shots={storyboard.data.shots}
               selectedShotId={selectedShotId}
               onSelect={selectShotId}
               previewUrls={previewUrls}
               visualQaByShot={visualQaByShot}
+              busy={decideQa.isPending}
+              onApprove={(shotId) => decideOneShot(shotId, "approve")}
+              onReject={(shotId) => decideOneShot(shotId, "reject")}
             />
           </div>
           <aside className={styles.panel} aria-label="Shot inspector">
@@ -445,8 +565,8 @@ export function StoryboardPage(): JSX.Element {
                 busy={busy || startVisualQa.isPending || decideQa.isPending}
                 onSelectRun={setSelectedQaRunId}
                 onRunQa={() => startVisualQa.mutate()}
-                onApprove={() => setQaDecision("approve")}
-                onReject={() => setQaDecision("reject")}
+                onApprove={() => decideSelectedRun("approve")}
+                onReject={() => decideSelectedRun("reject")}
                 resolveAssetUrl={resolveAssetUrl}
               />
             )}
@@ -479,13 +599,17 @@ export function StoryboardPage(): JSX.Element {
 
       <VisualQAReviewDialog
         open={qaDecision !== null}
-        decision={qaDecision ?? "approve"}
+        decision={qaDecision?.decision ?? "approve"}
         busy={decideQa.isPending}
-        hardFailure={qaRun.data?.hard_failure ?? false}
+        hardFailure={qaDecision?.targets.some((target) => target.hardFailure) ?? false}
+        shotCount={qaDecision?.targets.length ?? 1}
+        overriding={qaDecision?.targets.some((target) => target.affordance === "override") ?? false}
         onCancel={() => setQaDecision(null)}
-        onConfirm={(reason) =>
-          decideQa.mutate({ decision: qaDecision ?? "approve", reason })
-        }
+        onConfirm={(reason) => {
+          if (qaDecision !== null) {
+            decideQa.mutate({ pending: qaDecision, reason });
+          }
+        }}
       />
     </PageStack>
   );

@@ -237,7 +237,14 @@ def test_thresholds_follow_the_documented_policy() -> None:
     assert THRESHOLDS.adjudication_confidence_floor == 0.70
     assert THRESHOLDS.adjudication_decision_confidence == 0.80
     assert THRESHOLDS.semantic_hard_failure_dimension_floor == 50
-    assert THRESHOLDS.warn_only_codes == []
+    # The four codes the evaluator most often gets wrong are tolerated out of
+    # the box: recorded on the result, never blocking and never routed.
+    assert THRESHOLDS.warn_only_codes == [
+        "AMBIGUOUS_VISUAL_EVIDENCE",
+        "INSUFFICIENT_MOTION",
+        "PROMPT_TOO_COMPLEX",
+        "TOO_MANY_REFERENCES",
+    ]
 
 
 def test_warn_only_codes_must_name_known_repair_codes() -> None:
@@ -876,6 +883,11 @@ def test_warn_only_codes_are_never_handed_to_repair() -> None:
 
 
 def test_prompt_too_complex_is_only_added_for_prompt_simplification() -> None:
+    # Which family the routing names is a property of the routing, not of the
+    # deployment's tolerance, so the thresholds here tolerate nothing. With the
+    # default warn-only set the code is stripped either way, which would make
+    # the negative assertion below pass for the wrong reason.
+    strict = THRESHOLDS.model_copy(update={"warn_only_codes": []})
     seed = provider_result(
         scores={
             **dict.fromkeys(VisualQADimension, 80.0),
@@ -883,7 +895,7 @@ def test_prompt_too_complex_is_only_added_for_prompt_simplification() -> None:
         }
     )
     _, seed_score = _score(seed)
-    seed_outcome = decide(seed_score, empty_report(), seed, thresholds=THRESHOLDS)
+    seed_outcome = decide(seed_score, empty_report(), seed, thresholds=strict)
     assert seed_outcome.recommendation.routing is VisualQARoutingRecommendation.NEW_SEED
     assert VisualQARepairCode.PROMPT_TOO_COMPLEX not in seed_outcome.repair_codes
     assert VisualQARepairCode.TOO_MANY_CHARACTERS not in seed_outcome.repair_codes
@@ -892,12 +904,17 @@ def test_prompt_too_complex_is_only_added_for_prompt_simplification() -> None:
         scores={**dict.fromkeys(VisualQADimension, 80.0), VisualQADimension.LOCATION: 10.0}
     )
     _, simplify_score = _score(simplify)
-    simplify_outcome = decide(simplify_score, empty_report(), simplify, thresholds=THRESHOLDS)
+    simplify_outcome = decide(simplify_score, empty_report(), simplify, thresholds=strict)
     assert (
         simplify_outcome.recommendation.routing
         is VisualQARoutingRecommendation.PROMPT_SIMPLIFICATION
     )
     assert VisualQARepairCode.PROMPT_TOO_COMPLEX in simplify_outcome.repair_codes
+
+    # And with the deployment default in force it is recorded, not routed.
+    tolerated = decide(simplify_score, empty_report(), simplify, thresholds=THRESHOLDS)
+    assert VisualQARepairCode.PROMPT_TOO_COMPLEX not in tolerated.repair_codes
+    assert "warn_only:PROMPT_TOO_COMPLEX" in tolerated.warning_codes
 
 
 def test_a_low_score_recommends_a_structural_repair_family() -> None:

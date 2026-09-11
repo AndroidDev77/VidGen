@@ -13,6 +13,7 @@ import type { JSX } from "react";
 import type { StoryboardShotProjection, VisualQARunProjection } from "@vidgen/contracts";
 
 import { formatMicroseconds, formatMoney, formatTimecode, humanize } from "../state/format";
+import { decidableRun, decisionAffordance } from "../state/visualQa";
 import { StatusBadge } from "./StatusBadge";
 
 const useStyles = makeStyles({
@@ -42,6 +43,7 @@ const useStyles = makeStyles({
     backgroundColor: tokens.colorNeutralBackground3,
   },
   selected: { outline: `2px solid ${tokens.colorBrandStroke1}`, outlineOffset: "2px" },
+  decide: { display: "flex", gap: tokens.spacingHorizontalS, flexWrap: "wrap" },
 });
 
 export interface StoryboardGridProps {
@@ -52,6 +54,14 @@ export interface StoryboardGridProps {
   readonly previewUrls: ReadonlyMap<string, string>;
   /** The canonical T20 visual-QA runs for this project, keyed by shot ID. */
   readonly visualQaByShot?: ReadonlyMap<string, readonly VisualQARunProjection[]>;
+  /**
+   * Record a human decision on the shot's decidable QA run, without opening
+   * the inspector first. Omit both to render the grid read-only.
+   */
+  readonly onApprove?: (shotId: string) => void;
+  readonly onReject?: (shotId: string) => void;
+  /** A decision is already in flight; the card's actions wait for it. */
+  readonly busy?: boolean;
 }
 
 /**
@@ -67,6 +77,9 @@ export function StoryboardGrid({
   onSelect,
   previewUrls,
   visualQaByShot,
+  onApprove,
+  onReject,
+  busy = false,
 }: StoryboardGridProps): JSX.Element {
   const styles = useStyles();
   return (
@@ -77,6 +90,10 @@ export function StoryboardGrid({
             ? undefined
             : previewUrls.get(shot.selected_keyframe_asset_id);
         const isSelected = shot.shot_id === selectedShotId;
+        const qaRuns = visualQaByShot?.get(shot.shot_id) ?? [];
+        // Reviewing 20 shots one inspector at a time is the flow this
+        // replaces: the decision a shot is waiting for is offered on the card.
+        const affordance = decisionAffordance(decidableRun(qaRuns));
         return (
           <li key={shot.shot_id}>
             <Card className={isSelected ? `${styles.card} ${styles.selected}` : styles.card}>
@@ -111,7 +128,7 @@ export function StoryboardGrid({
                     {humanize(shot.warning_code)}
                   </Badge>
                 )}
-                {(visualQaByShot?.get(shot.shot_id) ?? []).map((run) => (
+                {qaRuns.map((run) => (
                   <Badge
                     key={run.qa_run_id}
                     appearance={run.outcome === "PASS" ? "outline" : "filled"}
@@ -146,6 +163,31 @@ export function StoryboardGrid({
                 {shot.provider ?? "no provider"} / {shot.model ?? "no model"} ·{" "}
                 {shot.attempt_count} attempts · {formatMoney(shot.cost_amount)}
               </Caption1>
+              {affordance !== null && (onApprove !== undefined || onReject !== undefined) && (
+                <div className={styles.decide}>
+                  {onApprove !== undefined && (
+                    <Button
+                      size="small"
+                      appearance="primary"
+                      disabled={busy}
+                      onClick={() => onApprove(shot.shot_id)}
+                    >
+                      {affordance === "override" ? "Force approve" : "Approve"} shot{" "}
+                      {shot.global_sequence + 1}
+                    </Button>
+                  )}
+                  {onReject !== undefined && (
+                    <Button
+                      size="small"
+                      appearance="secondary"
+                      disabled={busy}
+                      onClick={() => onReject(shot.shot_id)}
+                    >
+                      Reject shot {shot.global_sequence + 1}
+                    </Button>
+                  )}
+                </div>
+              )}
               <Button appearance="secondary" onClick={() => onSelect(shot.shot_id)}>
                 Inspect shot {shot.global_sequence + 1}
               </Button>
