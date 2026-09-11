@@ -4,7 +4,6 @@ from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
-from sqlalchemy import delete as sql_delete
 from sqlalchemy import exc as sql_exc
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -55,6 +54,11 @@ from services.narration.voice_profiles import (
 )
 from services.progress.engine import StageProgress
 from services.progress.loaders import load_stage_progress
+from services.projects.deletion import (
+    ProjectDeletionError,
+    delete_project_rows,
+    unreferenced_storage_keys,
+)
 from services.storyboard.providers import load_capability_profile
 from vidgen.contracts.episode_analysis import WARN_ONLY_ELIGIBLE_VALIDATION_CODES
 from vidgen.contracts.generation import GenerationCostEstimate, ProjectGenerationSettings
@@ -67,7 +71,7 @@ from vidgen.contracts.script import SCRIPT_WARN_ONLY_ELIGIBLE_VALIDATION_CODES
 from vidgen.contracts.storyboard import STORYBOARD_WARN_ONLY_ELIGIBLE_VALIDATION_CODES
 from vidgen.contracts.visual_qa import VISUAL_QA_WARN_ONLY_ELIGIBLE_CODES
 from vidgen.db.cost_models import ProjectBudget
-from vidgen.db.models import Asset, Project, SourceVideo, asset_dependencies
+from vidgen.db.models import Project, SourceVideo
 from vidgen.db.repositories import ProjectRepository
 from vidgen.db.upload_models import UploadSession
 from vidgen.db.workflow_models import ProjectWorkflowRun
@@ -556,10 +560,12 @@ def delete_project(
     blob_store: BlobDependency,
     controller: ControllerDependency,
 ) -> Response:
-    """Delete a project and all of its assets.
+    """Delete a project and everything the pipeline recorded for it.
 
-    Any running workflow is cancelled first (best-effort). Blob storage keys are
-    cleaned up before the database row is removed. All related DB rows cascade.
+    Any running workflow is cancelled first (best-effort). The project's rows
+    are removed children-first across the whole schema, and the blobs only go
+    once that transaction commits: a delete the database refuses must leave the
+    project exactly as it was, storage included.
     """
     project = owned_project(session, project_id, principal)
     # Cancel any live workflow so the worker stops before we remove its data.
@@ -571,24 +577,8 @@ def delete_project(
             controller.cancel_workflow(run.workflow_id)
         except Exception:
             pass
-    # Delete blobs for all assets owned by this project.
-    assets = session.scalars(select(Asset).where(Asset.project_id == project.id)).all()
-    for asset in assets:
-        try:
-            blob_store.delete(asset.storage_key)
-        except Exception:
-            pass
-    # asset_dependencies.parent_asset_id has RESTRICT — clear dependency rows
-    # that point to this project's assets before the cascade hits the assets table.
-    asset_ids = [a.id for a in assets]
-    if asset_ids:
-        session.execute(
-            sql_delete(asset_dependencies).where(
-                asset_dependencies.c.parent_asset_id.in_(asset_ids)
-            )
-        )
     try:
-        session.delete(project)
+        storage_keys = delete_project_rows(session, project.id)
         session.commit()
     except sql_exc.IntegrityError as exc:
         session.rollback()
@@ -596,6 +586,15 @@ def delete_project(
             status_code=status.HTTP_409_CONFLICT,
             detail="project_has_references",
         ) from exc
+    except ProjectDeletionError:
+        session.rollback()
+        raise
+    # Blobs are content-addressed, so only the keys nothing else points at now.
+    for storage_key in unreferenced_storage_keys(session, storage_keys):
+        try:
+            blob_store.delete(storage_key)
+        except Exception:
+            pass
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
