@@ -242,12 +242,104 @@ export const NARRATION_WARN_ONLY_QUALITY_CODES: ReadonlyArray<{
   },
 ];
 
+/**
+ * The same, for the T20 visual-QA gate, which judges the keyframe and the
+ * animated clip against the shot it was planned from. A tolerated code is
+ * still recorded on the QA report; it just no longer blocks the shot.
+ */
+export const VISUAL_QA_WARN_ONLY_CODES: ReadonlyArray<{
+  readonly value: string;
+  readonly description: string;
+}> = [
+  {
+    value: "WRONG_CHARACTER_IDENTITY",
+    description: "the character in frame is not the one the shot calls for",
+  },
+  {
+    value: "MISSING_PRIMARY_CHARACTER",
+    description: "a character the shot requires is absent",
+  },
+  { value: "EXTRA_CHARACTER", description: "someone the shot never called for is in frame" },
+  {
+    value: "WRONG_CHARACTER_COUNT",
+    description: "the frame holds a different number of characters than planned",
+  },
+  { value: "WRONG_WARDROBE", description: "a character wears the wrong outfit for the scene" },
+  {
+    value: "WRONG_CHARACTER_STATE",
+    description: "a character's continuity state is wrong for this point in the story",
+  },
+  {
+    value: "WRONG_LOCATION",
+    description: "the shot is set somewhere other than the location it names",
+  },
+  {
+    value: "WRONG_LOCATION_STATE",
+    description: "the location is right but its time, weather or condition is not",
+  },
+  { value: "MISSING_REQUIRED_PROP", description: "a prop the shot depends on is not in frame" },
+  { value: "WRONG_PROP_OWNERSHIP", description: "the wrong character holds the prop" },
+  {
+    value: "MISSING_MANDATORY_ACTION",
+    description: "the action the shot exists to show never happens",
+  },
+  {
+    value: "WRONG_ACTION",
+    description: "the characters do something other than the planned action",
+  },
+  { value: "INSUFFICIENT_MOTION", description: "the clip barely moves" },
+  { value: "EXCESSIVE_MOTION", description: "the clip moves far more than the shot asked for" },
+  {
+    value: "CAMERA_PLAN_MISMATCH",
+    description: "the camera framing or movement is not the one planned",
+  },
+  { value: "COMPOSITION_MISMATCH", description: "the composition departs from the storyboard" },
+  {
+    value: "SCREEN_DIRECTION_CONTRADICTION",
+    description: "the screen direction contradicts the shots around it",
+  },
+  { value: "FACE_BREAKAGE", description: "a face is distorted" },
+  { value: "ANATOMY_BREAKAGE", description: "a body is distorted, e.g. an extra or missing limb" },
+  {
+    value: "UNINTENDED_TEXT",
+    description: "text the shot never asked for is rendered in the frame",
+  },
+  { value: "STYLE_DRIFT", description: "the frame drifts from the project's visual style" },
+  {
+    value: "CONTINUITY_BREAK",
+    description: "the frame contradicts the continuity the shots before it established",
+  },
+  { value: "BLACK_VIDEO", description: "the generated clip is blank" },
+  { value: "EXCESSIVE_FREEZE", description: "the clip holds still for too long" },
+  { value: "EXCESSIVE_FLICKER", description: "the clip flickers between frames" },
+  { value: "DURATION_MISMATCH", description: "the clip is not the length the shot was solved to" },
+  { value: "DECODE_FAILURE", description: "the generated file cannot be decoded" },
+  {
+    value: "PROMPT_TOO_COMPLEX",
+    description: "the prompt asks the provider for more than it can render",
+  },
+  {
+    value: "TOO_MANY_CHARACTERS",
+    description: "the shot asks for more characters than the provider can keep straight",
+  },
+  {
+    value: "TOO_MANY_REFERENCES",
+    description: "the shot carries more reference images than the provider supports",
+  },
+  {
+    value: "AMBIGUOUS_VISUAL_EVIDENCE",
+    description: "the evaluator could not tell from the frame whether the shot is right",
+  },
+  { value: "HUMAN_REVIEW_REQUIRED", description: "the evaluator refers the shot to a person" },
+];
+
 /** The warn-only settings, in the order the stages run. */
 type WarnOnlyField =
   | "warn_only_validation_codes"
   | "script_warn_only_validation_codes"
   | "storyboard_warn_only_validation_codes"
-  | "narration_warn_only_quality_codes";
+  | "narration_warn_only_quality_codes"
+  | "visual_qa_warn_only_codes";
 
 interface WarnOnlyGroup {
   readonly field: WarnOnlyField;
@@ -257,7 +349,7 @@ interface WarnOnlyGroup {
 }
 
 /**
- * One description per stage, rendered by one component, so the four settings
+ * One description per stage, rendered by one component, so the five settings
  * stay identical in look and behaviour as codes are added to any of them.
  */
 export const WARN_ONLY_GROUPS: readonly WarnOnlyGroup[] = [
@@ -293,6 +385,15 @@ export const WARN_ONLY_GROUPS: readonly WarnOnlyGroup[] = [
       "A tolerated code is still measured and recorded on the take's quality report. " +
       "Every other code fails the take and pays for another provider attempt.",
     codes: NARRATION_WARN_ONLY_QUALITY_CODES,
+  },
+  {
+    field: "visual_qa_warn_only_codes",
+    label: "Visual QA",
+    hint:
+      "A tolerated code still lands on the QA report, and the keyframe or clip passes and " +
+      "moves on to the next stage. Every other code blocks the shot, which then waits for " +
+      "human review or is generated again.",
+    codes: VISUAL_QA_WARN_ONLY_CODES,
   },
 ];
 
