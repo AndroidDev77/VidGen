@@ -1,6 +1,11 @@
 import {
+  Accordion,
+  AccordionHeader,
+  AccordionItem,
+  AccordionPanel,
   Body1,
   Caption1,
+  Checkbox,
   Dropdown,
   Field,
   Input,
@@ -33,6 +38,20 @@ const useStyles = makeStyles({
   scroll: { overflowX: "auto" },
   amount: { fontVariantNumeric: "tabular-nums", textAlign: "right", whiteSpace: "nowrap" },
   selected: { fontWeight: tokens.fontWeightSemibold },
+  // The accordion supplies no surface of its own, so a bare one floats on the
+  // page ground between the fields above it.
+  surface: {
+    borderRadius: tokens.borderRadiusLarge,
+    border: `1px solid ${tokens.colorNeutralStroke2}`,
+    backgroundColor: tokens.colorNeutralBackground1,
+    paddingLeft: tokens.spacingHorizontalS,
+    paddingRight: tokens.spacingHorizontalS,
+    overflow: "hidden",
+  },
+  group: { display: "flex", flexDirection: "column", gap: tokens.spacingVerticalM },
+  // The select-all control sits with the dropdown, not above the label, so
+  // every stage reads the same way down the panel.
+  control: { display: "flex", flexDirection: "column", gap: tokens.spacingVerticalXS },
 });
 
 /** What each strict value means, in the owner's terms. */
@@ -199,6 +218,80 @@ export const STORYBOARD_WARN_ONLY_VALIDATION_CODES: ReadonlyArray<{
   { value: "word_range_gap", description: "shots leave a gap in the word ranges" },
 ];
 
+/**
+ * The same, for the T12 narration quality gate. Every code the gate can emit
+ * is here: a tolerated one is still measured and recorded on the take's
+ * quality report, it just no longer buys another provider attempt.
+ */
+export const NARRATION_WARN_ONLY_QUALITY_CODES: ReadonlyArray<{
+  readonly value: string;
+  readonly description: string;
+}> = [
+  { value: "clipping", description: "the recorded audio clips" },
+  { value: "leading_silence", description: "the take starts with too much silence" },
+  { value: "trailing_silence", description: "the take ends with too much silence" },
+  { value: "internal_silence", description: "the take pauses for too long inside" },
+  { value: "speaking_rate", description: "the narrator speaks too fast or too slow" },
+  {
+    value: "alignment_coverage",
+    description: "too little of the approved text was transcribed back",
+  },
+];
+
+/** The warn-only settings, in the order the stages run. */
+type WarnOnlyField =
+  | "warn_only_validation_codes"
+  | "script_warn_only_validation_codes"
+  | "storyboard_warn_only_validation_codes"
+  | "narration_warn_only_quality_codes";
+
+interface WarnOnlyGroup {
+  readonly field: WarnOnlyField;
+  readonly label: string;
+  readonly hint: string;
+  readonly codes: ReadonlyArray<{ readonly value: string; readonly description: string }>;
+}
+
+/**
+ * One description per stage, rendered by one component, so the four settings
+ * stay identical in look and behaviour as codes are added to any of them.
+ */
+export const WARN_ONLY_GROUPS: readonly WarnOnlyGroup[] = [
+  {
+    field: "warn_only_validation_codes",
+    label: "Episode analysis",
+    hint:
+      "A finding with one of these codes is reported and the run continues. Every other " +
+      "code fails the analysis and pays to generate it again.",
+    codes: WARN_ONLY_VALIDATION_CODES,
+  },
+  {
+    field: "script_warn_only_validation_codes",
+    label: "Script",
+    hint:
+      "Covers both script validators: plot compression and the recap script it writes. " +
+      "Every other code fails the step and pays to run it again.",
+    codes: SCRIPT_WARN_ONLY_VALIDATION_CODES,
+  },
+  {
+    field: "storyboard_warn_only_validation_codes",
+    label: "Storyboard",
+    hint:
+      "A tolerated finding is recorded on the report and the shot is kept as proposed. " +
+      "Every other code sends the segment back for repair, and fails the run once the " +
+      "repair attempts are spent.",
+    codes: STORYBOARD_WARN_ONLY_VALIDATION_CODES,
+  },
+  {
+    field: "narration_warn_only_quality_codes",
+    label: "Narration",
+    hint:
+      "A tolerated code is still measured and recorded on the take's quality report. " +
+      "Every other code fails the take and pays for another provider attempt.",
+    codes: NARRATION_WARN_ONLY_QUALITY_CODES,
+  },
+];
+
 const SCENE_THRESHOLD_MIN = 0.1;
 const SCENE_THRESHOLD_MAX = 0.9;
 const SCENE_THRESHOLD_STEP = 0.05;
@@ -208,6 +301,64 @@ function clampSceneThreshold(value: number): number {
     return SCENE_THRESHOLD_MIN;
   }
   return Math.min(SCENE_THRESHOLD_MAX, Math.max(SCENE_THRESHOLD_MIN, value));
+}
+
+interface WarnOnlyFieldProps {
+  readonly group: WarnOnlyGroup;
+  readonly selected: readonly string[];
+  readonly disabled: boolean;
+  readonly onChange: (codes: string[]) => void;
+}
+
+/**
+ * One stage's warn-only codes: a select-all control and a multiselect list.
+ *
+ * The select-all checkbox reads "mixed" while some codes are chosen, so the
+ * control shows the current state as well as changing it; clicking it takes
+ * the stage to all or to none, the two ends an owner actually wants.
+ */
+function WarnOnlyField({
+  group,
+  selected,
+  disabled,
+  onChange,
+}: WarnOnlyFieldProps): JSX.Element {
+  const styles = useStyles();
+  const all = group.codes.length > 0 && selected.length === group.codes.length;
+  const some = selected.length > 0 && !all;
+  // Long lists make the joined text unreadable, and "every code" is the fact
+  // the owner wants at a glance anyway.
+  const summary = all ? `All ${group.codes.length} codes` : selected.join(", ");
+  return (
+    <Field label={group.label} hint={group.hint}>
+      <div className={styles.control}>
+        <Checkbox
+          label={`Select all (${group.codes.length})`}
+          aria-label={`Select all ${group.label} codes`}
+          disabled={disabled}
+          checked={all ? true : some ? "mixed" : false}
+          onChange={(_, data) =>
+            onChange(data.checked === true ? group.codes.map((code) => code.value) : [])
+          }
+        />
+        <Dropdown
+          multiselect
+          aria-label={`${group.label}: treat as warnings`}
+          placeholder="Nothing tolerated; every code fails"
+          disabled={disabled}
+          value={summary}
+          selectedOptions={[...selected]}
+          onOptionSelect={(_, data) => onChange([...data.selectedOptions])}
+        >
+          {group.codes.map((code) => (
+            <Option key={code.value} value={code.value} text={code.value}>
+              {`${code.value} — ${code.description}`}
+            </Option>
+          ))}
+        </Dropdown>
+      </div>
+    </Field>
+  );
 }
 
 export interface GenerationSettingsPanelProps {
@@ -323,85 +474,28 @@ export function GenerationSettingsPanel({
           }}
         />
       </Field>
-      <Field
-        label="Treat as warnings (not errors)"
-        hint={
-          "Episode-analysis validation findings with these codes are reported and the run " +
-          "continues. Every other code fails the analysis and pays to generate it again."
-        }
-      >
-        <Dropdown
-          multiselect
-          aria-label="Treat as warnings (not errors)"
-          placeholder="Nothing tolerated; every code fails"
-          disabled={disabled}
-          value={value.warn_only_validation_codes.join(", ")}
-          selectedOptions={[...value.warn_only_validation_codes]}
-          onOptionSelect={(_, data) =>
-            onChange({ ...value, warn_only_validation_codes: [...data.selectedOptions] })
-          }
-        >
-          {WARN_ONLY_VALIDATION_CODES.map((code) => (
-            <Option key={code.value} value={code.value} text={code.value}>
-              {`${code.value} — ${code.description}`}
-            </Option>
-          ))}
-        </Dropdown>
-      </Field>
-      <Field
-        label="Script: Treat as warnings (not errors)"
-        hint={
-          "The same, for the script stage: plot compression and the recap script it " +
-          "writes. Every other code fails the step and pays to run it again."
-        }
-      >
-        <Dropdown
-          multiselect
-          aria-label="Script: Treat as warnings (not errors)"
-          placeholder="Nothing tolerated; every code fails"
-          disabled={disabled}
-          value={value.script_warn_only_validation_codes.join(", ")}
-          selectedOptions={[...value.script_warn_only_validation_codes]}
-          onOptionSelect={(_, data) =>
-            onChange({ ...value, script_warn_only_validation_codes: [...data.selectedOptions] })
-          }
-        >
-          {SCRIPT_WARN_ONLY_VALIDATION_CODES.map((code) => (
-            <Option key={code.value} value={code.value} text={code.value}>
-              {`${code.value} — ${code.description}`}
-            </Option>
-          ))}
-        </Dropdown>
-      </Field>
-      <Field
-        label="Storyboard: Treat as warnings (not errors)"
-        hint={
-          "The same, for the storyboard validator. A tolerated finding is recorded on the " +
-          "report and the shot is kept as proposed; every other code sends the segment " +
-          "back for repair and fails the run once the attempts are spent."
-        }
-      >
-        <Dropdown
-          multiselect
-          aria-label="Storyboard: Treat as warnings (not errors)"
-          placeholder="Nothing tolerated; every code fails"
-          disabled={disabled}
-          value={value.storyboard_warn_only_validation_codes.join(", ")}
-          selectedOptions={[...value.storyboard_warn_only_validation_codes]}
-          onOptionSelect={(_, data) =>
-            onChange({
-              ...value,
-              storyboard_warn_only_validation_codes: [...data.selectedOptions],
-            })
-          }
-        >
-          {STORYBOARD_WARN_ONLY_VALIDATION_CODES.map((code) => (
-            <Option key={code.value} value={code.value} text={code.value}>
-              {`${code.value} — ${code.description}`}
-            </Option>
-          ))}
-        </Dropdown>
-      </Field>
+      <Accordion collapsible className={styles.surface}>
+        <AccordionItem value="warn-only">
+          <AccordionHeader>Treat errors as warnings</AccordionHeader>
+          <AccordionPanel>
+            <div className={styles.group}>
+              <Caption1 className={styles.muted}>
+                A finding whose code is chosen here is reported as a warning and the stage
+                keeps its output, instead of failing the run and paying to generate it again.
+              </Caption1>
+              {WARN_ONLY_GROUPS.map((group) => (
+                <WarnOnlyField
+                  key={group.field}
+                  group={group}
+                  selected={value[group.field]}
+                  disabled={disabled}
+                  onChange={(codes) => onChange({ ...value, [group.field]: codes })}
+                />
+              ))}
+            </div>
+          </AccordionPanel>
+        </AccordionItem>
+      </Accordion>
       {fetched.isError && estimate === undefined && (
         <Caption1 className={styles.muted} role="status">
           The cost estimate is unavailable right now; the settings above still apply.

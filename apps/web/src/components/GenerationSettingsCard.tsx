@@ -58,6 +58,10 @@ export function GenerationSettingsCard({ projectId }: GenerationSettingsCardProp
           settings.data.settings.storyboard_warn_only_validation_codes ??
           settings.data.effective_storyboard_warn_only_validation_codes ??
           [],
+        narration_warn_only_quality_codes:
+          settings.data.settings.narration_warn_only_quality_codes ??
+          settings.data.effective_narration_warn_only_quality_codes ??
+          [],
       });
     }
   }, [settings.data]);
@@ -101,6 +105,14 @@ export function GenerationSettingsCard({ projectId }: GenerationSettingsCardProp
         [
           ...(settings.data.settings.storyboard_warn_only_validation_codes ??
             settings.data.effective_storyboard_warn_only_validation_codes ??
+            []),
+        ]
+          .sort()
+          .join(",") ||
+      [...draft.narration_warn_only_quality_codes].sort().join(",") !==
+        [
+          ...(settings.data.settings.narration_warn_only_quality_codes ??
+            settings.data.effective_narration_warn_only_quality_codes ??
             []),
         ]
           .sort()
