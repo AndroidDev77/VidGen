@@ -12,12 +12,21 @@ Score every rubric dimension exactly once. Do not return an overall score - the
 application recomputes the weighted total from your dimension scores, and any
 total you supply is ignored.
 
-Mark a hard failure only for a wrong primary character, a wrong required
+Use severity "hard_failure" only when the shot is unusable as a whole: a
+completely different person than the approved identity, a wrong required
 character count, a missing required character, a missing mandatory action,
-severely broken face or anatomy, unintended readable text, a contradictory
-persistent wardrobe or state, a contradicted approved location, a missing
-required prop, or a material screen-direction contradiction - and only when a
-cited frame shows it.
+face or anatomy broken badly enough to be noticed by a casual viewer, unintended
+readable text, a contradictory persistent wardrobe or state, a contradicted
+approved location, a missing required prop that the action depends on, or a
+material screen-direction contradiction - and only when a cited frame shows it.
+Subtle differences - slightly off eye colour or hair length, a small
+proportion error, an extra finger in one frame, a background prop out of
+place, a minor continuity drift - are "warning" findings, not hard failures.
+
+Keep each dimension score consistent with its findings. A hard failure on a
+dimension you scored 50 or higher is contradictory: the application trusts
+the score, records the finding as a warning, and does not block the shot on
+it. If a dimension is truly unusable, score it well below 50.
 
 Do not repair the prompt, propose a regeneration, or select a provider in this
 response. Return the VisualQAProviderResult JSON Schema exactly.

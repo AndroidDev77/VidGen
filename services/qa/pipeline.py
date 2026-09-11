@@ -930,6 +930,7 @@ class VisualQAPipeline:
             rubric=RUBRIC,
             samples=manifest.samples,
             source_asset_id=manifest.source_asset_id,
+            thresholds=THRESHOLDS,
         )
         score = recompute(
             dimensions, rubric=RUBRIC, thresholds=THRESHOLDS, importance=inputs.importance
@@ -950,6 +951,7 @@ class VisualQAPipeline:
             rubric=RUBRIC,
             samples=samples,
             source_asset_id=inputs.target_asset.id,
+            thresholds=THRESHOLDS,
         )
         score = recompute(
             dimensions, rubric=RUBRIC, thresholds=THRESHOLDS, importance=inputs.importance

@@ -496,6 +496,25 @@ class VisualQAThresholds(StrictContract):
     adjudication_decision_confidence: Confidence = 0.80
     near_threshold_margin: RawScore = 2.0
     max_adjudication_attempts: int = Field(default=1, ge=0, le=3)
+    #: A semantic hard-failure proposal (identity, action, props, anatomy...)
+    #: only blocks the shot when the evaluator also scored that dimension below
+    #: this floor. Above it the numeric score is trusted and the finding is
+    #: recorded as a warning. Technical hard failures ignore this floor.
+    semantic_hard_failure_dimension_floor: RawScore = 50
+    #: Repair codes this deployment tolerates: still measured and recorded as
+    #: warnings, never a hard failure and never handed to T21 as a repair.
+    warn_only_codes: list[str] = Field(default_factory=list, max_length=16)
+
+    @field_validator("warn_only_codes")
+    @classmethod
+    def warn_only_codes_are_known(cls, value: list[str]) -> list[str]:
+        known = {code.value for code in VisualQARepairCode}
+        unknown = sorted(set(value) - known)
+        if unknown:
+            raise ValueError(f"unknown warn-only repair codes: {', '.join(unknown)}")
+        if len(set(value)) != len(value):
+            raise ValueError("warn_only_codes must not repeat a code")
+        return value
 
     def pass_score(self, importance: VisualQAShotImportance) -> float:
         return {
