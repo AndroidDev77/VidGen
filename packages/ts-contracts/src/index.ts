@@ -1766,6 +1766,9 @@ export interface PipelineFailureListItem {
   errorCode: string;
   retryable: boolean;
   status: string;
+  createdAt: string | null;
+  /** `null` while the failure still explains why the project is stopped. */
+  resolvedAt: string | null;
 }
 
 export interface PipelineFailureListResponse {

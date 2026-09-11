@@ -36,6 +36,7 @@ from services.control_plane.generation_runs import (
     GenerationRunService,
     generation_input_identity,
 )
+from services.control_plane.reconciliation import reconcile_project_workflow
 from services.costs.project_budget import BudgetDeployment, budget_for, startable
 from services.narration.voice_profiles import current_selection
 from vidgen.contracts.control_commands import (
@@ -260,6 +261,11 @@ def get_workflow(
     run = session.scalar(
         select(ProjectWorkflowRun).where(ProjectWorkflowRun.project_id == project.id)
     )
+    # A project workflow that died does not write its own epitaph: the row keeps
+    # saying "running" and the dashboard keeps drawing a live pipeline. Asking
+    # the cluster here - on the one endpoint the dashboard polls anyway - is what
+    # turns that into a failed status the owner can act on.
+    reconcile_project_workflow(session, project_id=project.id, controller=controller, run=run)
     state = controller.describe_project(run.workflow_id) if run is not None else None
     body = workflow_status(session, project, run, state)
     session.commit()
@@ -276,6 +282,7 @@ def continue_workflow(
     request: ContinueWorkflowRequest,
     session: SessionDep,
     principal: PrincipalDep,
+    controller: ControllerDep,
     idempotency_key: IdempotencyKeyDep = None,
 ) -> ControlCommandResponse:
     """Continue a project that paused, partially completed, or was revised.
@@ -301,6 +308,12 @@ def continue_workflow(
             ApiErrorCode.VOICE_PROFILE_REQUIRED,
             "Select a narration voice profile before continuing this project.",
         )
+    # A generation run left active by an execution that already failed blocks
+    # this continuation with ``project_generation_run_active`` - the dispatcher
+    # refuses to join a run it believes is still executing. It is not, and the
+    # owner should not have to edit two rows by hand to say so: ask the cluster,
+    # and settle the stale rows before the command is written.
+    reconcile_project_workflow(session, project_id=project.id, controller=controller)
     outcome = ControlPlaneService(session, principal.subject).submit(
         project,
         command_type=ControlCommandType.PROJECT_CONTINUE,

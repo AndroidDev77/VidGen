@@ -11,6 +11,7 @@ import {
   TableHeaderCell,
   TableRow,
   makeStyles,
+  mergeClasses,
   tokens,
 } from "@fluentui/react-components";
 import { ArrowCounterclockwiseRegular, ShieldTaskRegular } from "@fluentui/react-icons";
@@ -106,6 +107,7 @@ export function FailurePanel({
                 <TableHeaderCell>Error</TableHeaderCell>
                 <TableHeaderCell>Classification</TableHeaderCell>
                 <TableHeaderCell>Status</TableHeaderCell>
+                <TableHeaderCell>Recorded</TableHeaderCell>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -123,7 +125,17 @@ export function FailurePanel({
                       {failure.retryable ? "Retryable" : "Not retryable"}
                     </Badge>
                   </TableCell>
-                  <TableCell>{humanize(failure.status)}</TableCell>
+                  <TableCell>
+                    {humanize(failure.status)}
+                    {failure.resolvedAt === null && (
+                      <Caption1 as="p" className={styles.muted}>
+                        Unresolved
+                      </Caption1>
+                    )}
+                  </TableCell>
+                  <TableCell className={mergeClasses(styles.muted, styles.nowrap)}>
+                    {formatTimestamp(failure.createdAt)}
+                  </TableCell>
                 </TableRow>
               ))}
             </TableBody>

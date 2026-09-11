@@ -9,6 +9,7 @@ render.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any
@@ -89,6 +90,21 @@ WORKFLOW_STAGE_ALIASES: dict[str, PipelineStage] = {
     "render_cancelled": PipelineStage.RENDERING,
     "review": PipelineStage.REVIEW,
 }
+
+
+#: Workflow statuses that mean the run stopped on a failure rather than on a
+#: human decision. Reconciliation writes the bare ``"failed"``; the rest are the
+#: stage-specific statuses a workflow records for itself on the way out.
+_FAILED_WORKFLOW_STATUSES: frozenset[str] = frozenset(
+    {
+        "failed",
+        "script_generation_failed",
+        "shot_generation_failed",
+        "render_failed",
+        "FINAL_QA_FAILED",
+        "references_failed",
+    }
+)
 
 
 def utc(value: datetime | None) -> datetime | None:
@@ -248,7 +264,10 @@ def project_summary(
 
 
 def _stage_timeline(
-    completed: list[str], current: PipelineStage | None, cancelled: bool
+    completed: list[str],
+    current: PipelineStage | None,
+    cancelled: bool,
+    failed: PipelineStage | None = None,
 ) -> list[StageTimelineEntry]:
     completed_stages = {
         WORKFLOW_STAGE_ALIASES[name] for name in completed if name in WORKFLOW_STAGE_ALIASES
@@ -257,6 +276,12 @@ def _stage_timeline(
     for stage in PIPELINE_STAGE_ORDER:
         if stage in completed_stages:
             state = StageState.COMPLETE
+        elif failed is not None and stage == failed:
+            # A workflow that died cannot be queried, so the only witness to
+            # *where* it died is the failure it recorded on its way out. Without
+            # this the timeline draws every stage as pending and the dashboard
+            # offers no stage to retry.
+            state = StageState.FAILED
         elif cancelled:
             state = StageState.CANCELLED
         elif current is not None and stage == current:
@@ -265,6 +290,27 @@ def _stage_timeline(
             state = StageState.PENDING
         entries.append(StageTimelineEntry(stage=stage, state=state))
     return entries
+
+
+#: Failure statuses describing something the pipeline got past on its own. A
+#: retried provider call leaves an unresolved row behind, and naming its stage
+#: as the one that stopped the project would point a retry at the wrong work.
+_RECOVERED_FAILURE_STATUSES: frozenset[str] = frozenset({"recovered", "resolved"})
+
+
+def latest_unresolved_failure(
+    failures: Sequence[PipelineFailureEvent],
+) -> PipelineFailureEvent | None:
+    """The most recent failure nobody has marked resolved, if there is one."""
+    unresolved = [
+        failure
+        for failure in failures
+        if failure.resolved_at is None
+        and failure.projected_status not in _RECOVERED_FAILURE_STATUSES
+    ]
+    if not unresolved:
+        return None
+    return max(unresolved, key=lambda failure: (failure.created_at, failure.id.hex))
 
 
 def workflow_status(
@@ -290,6 +336,14 @@ def workflow_status(
     failures = session.scalars(
         select(PipelineFailureEvent).where(PipelineFailureEvent.project_id == project.id)
     ).all()
+    # A run the reconciler settled as failed has no workflow left to query, so
+    # the stage it stopped at comes from its own failure record instead.
+    latest_failure = latest_unresolved_failure(failures)
+    failed_stage = (
+        WORKFLOW_STAGE_ALIASES.get(latest_failure.stage)
+        if latest_failure is not None and not cancelled and status in _FAILED_WORKFLOW_STATUSES
+        else None
+    )
     render = current_render(session, project.id)
     started = utc(run.created_at) if run else None
     updated = utc(run.updated_at) if run else None
@@ -316,7 +370,7 @@ def workflow_status(
         failed_shot_count=sum(1 for failure in failures if not failure.retryable),
         retryable_failure_count=sum(1 for failure in failures if failure.retryable),
         render_status=render.status if render else None,
-        stages=_stage_timeline(completed, current, cancelled),
+        stages=_stage_timeline(completed, current, cancelled, failed_stage),
         progress_percentage=percentage,
     )
 
