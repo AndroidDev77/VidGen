@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from services.script.fake_provider import FakeScriptGenerationProvider
 from services.script.openai_adapter import OpenAIScriptConfig, OpenAIScriptGenerationProvider
-from services.script.pipeline import ScriptGenerationPipeline
+from services.script.pipeline import DEFAULT_MAX_EDITING_PASSES, ScriptGenerationPipeline
 from services.script.provider import ScriptGenerationProvider
 from vidgen.contracts.script import ScriptGenerationResult
 from vidgen.storage.blob import BlobStore
@@ -30,6 +30,8 @@ class ScriptCommandOptions:
     #: Compression-validation codes reported as warnings instead of failing the
     #: run. ``None`` leaves the pipeline on its own default.
     warn_only_codes: frozenset[str] | None = None
+    #: Comedy Editor passes the run may spend; each stops for human review.
+    max_editing_passes: int = DEFAULT_MAX_EDITING_PASSES
 
 
 def build_provider(options: ScriptCommandOptions) -> ScriptGenerationProvider:
@@ -66,7 +68,9 @@ async def generate_script(
     }
     idempotency_key = options.idempotency_key or f"script-generation:{uuid4()}"
     return await ScriptGenerationPipeline(
-        session, blob_store, resolved_provider, warn_only_codes=options.warn_only_codes
-    ).process(
-        project_id=project_id, idempotency_key=idempotency_key, setting_overrides=overrides
-    )
+        session,
+        blob_store,
+        resolved_provider,
+        max_editing_passes=options.max_editing_passes,
+        warn_only_codes=options.warn_only_codes,
+    ).process(project_id=project_id, idempotency_key=idempotency_key, setting_overrides=overrides)

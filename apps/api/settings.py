@@ -99,6 +99,10 @@ class APISettings(BaseSettings):
     script_compressor_model: str = "gpt-5.6"
     script_writer_model: str = "gpt-5.6"
     script_editor_model: str = "gpt-5.6"
+    #: How many T11 Comedy Editor passes a script generation run may spend.
+    #: Each pass stops for human review; a rejection with feedback runs the
+    #: next one, and rejecting the last one fails the run.
+    script_max_editing_passes: int = Field(default=3, ge=1)
     storyboard_model: str = "gpt-5.6"
     image_model: str = "gpt-image-2-2026-04-21"
     # T20 visual QA. The design names two roles - Luna for the first pass and

@@ -14,6 +14,8 @@ from vidgen.contracts.review import (
 )
 
 __all__ = [
+    "RejectScriptRequest",
+    "RejectScriptResponse",
     "ScriptListResponse",
     "ScriptResponse",
     "SelectScriptResponse",
@@ -61,3 +63,26 @@ class SelectScriptResponse(BaseModel):
     rebuild_command_id: UUID | None = None
     rebuild_command_status: str | None = Field(default=None, max_length=32)
     rebuild_entry_stage: str | None = Field(default=None, max_length=64)
+
+
+class RejectScriptRequest(BaseModel):
+    """Why the reviewer is sending a version back for another editing pass."""
+
+    model_config = ConfigDict(extra="forbid")
+    reason: str = Field(min_length=1, max_length=20_000)
+
+
+class RejectScriptResponse(BaseModel):
+    """The rejected version, and how many editing passes the run has left.
+
+    No command is created here on purpose: the next pass costs an editor call,
+    so it starts only when the owner continues the workflow. ``passes_remaining``
+    is what they are agreeing to when they do - zero means the next continue
+    fails the run rather than editing again.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+    script: ScriptSummaryProjection
+    editing_pass: int = Field(ge=0)
+    max_editing_passes: int = Field(ge=1)
+    passes_remaining: int = Field(ge=0)

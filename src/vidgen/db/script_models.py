@@ -53,11 +53,16 @@ class ScriptGenerationRun(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     rubric_version: Mapped[str] = mapped_column(String(32))
     attempt_count: Mapped[int] = mapped_column(Integer, default=0)
     revision_count: Mapped[int] = mapped_column(Integer, default=0)
+    # The editing-pass budget this run was opened with. Each pass is a human
+    # checkpoint: the reviewer either approves the pass or rejects it with
+    # feedback that the next pass incorporates, until this many have run.
+    max_editing_passes: Mapped[int] = mapped_column(Integer, default=3, nullable=False)
     error_code: Mapped[str | None] = mapped_column(String(64))
     __table_args__ = (
         Index("uq_script_run_project_idempotency", "project_id", "idempotency_key", unique=True),
         CheckConstraint("attempt_count >= 0", name="script_run_attempt_nonnegative"),
         CheckConstraint("revision_count >= 0", name="script_run_revision_nonnegative"),
+        CheckConstraint("max_editing_passes > 0", name="script_run_positive_max_passes"),
         CheckConstraint("target_duration_ms > 0", name="script_run_positive_duration"),
         CheckConstraint("target_word_count > 0", name="script_run_positive_words"),
         CheckConstraint("target_words_per_minute > 0", name="script_run_positive_wpm"),
@@ -132,6 +137,13 @@ class Script(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     rubric_version: Mapped[str | None] = mapped_column(String(32))
     review_scores: Mapped[dict[str, Any] | None] = mapped_column(JSON)
     selected: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    # Which Comedy Editor pass produced this version: 0 for the writer's draft,
+    # 1..n for the edited candidates presented to the reviewer in turn.
+    editing_pass: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    # The reviewer's reason for rejecting this version. It is the feedback the
+    # next editing pass is asked to incorporate, so it lives with the version it
+    # was written about.
+    rejection_reason: Mapped[str | None] = mapped_column(Text)
     __table_args__ = (
         # Named to match the migration: T01 created this as "uq_scripts_project_id"
         # on (project_id, revision); T11 renames the column in place rather than
@@ -150,6 +162,7 @@ class Script(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         CheckConstraint("actual_word_count >= 0", name="nonnegative_actual_words"),
         CheckConstraint("target_duration_ms > 0", name="positive_duration"),
         CheckConstraint("humor_intensity BETWEEN 0 AND 1", name="humor_range"),
+        CheckConstraint("editing_pass >= 0", name="script_editing_pass_nonnegative"),
     )
 
 

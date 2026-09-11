@@ -13,7 +13,13 @@ import { newIdempotencyKey } from "../../api/client";
 import { continueWorkflow } from "../../api/commands";
 import { VidGenApiError } from "../../api/errors";
 import { queryKeys } from "../../api/queryKeys";
-import { getScript, listScripts, selectScript, updateScriptSegment } from "../../api/scripts";
+import {
+  getScript,
+  listScripts,
+  rejectScript,
+  selectScript,
+  updateScriptSegment,
+} from "../../api/scripts";
 import { useApiClient } from "../../app/apiContext";
 import { ConfirmInvalidationDialog } from "../../components/ConfirmInvalidationDialog";
 import { ProjectStatusHeader } from "../../components/ProjectStatusHeader";
@@ -110,6 +116,34 @@ export function ScriptPage(): JSX.Element {
     },
   });
 
+  const reject = useMutation({
+    mutationFn: async ({ scriptId, reason }: { scriptId: string; reason: string }) => {
+      const version = versions.data?.items.find((item) => item.script_id === scriptId);
+      const rejected = await rejectScript(
+        projectId,
+        scriptId,
+        reason,
+        version?.row_version ?? 1,
+        newIdempotencyKey(`script-reject-${scriptId}`),
+        client,
+      );
+      // Rejecting only records the feedback. The next editing pass is the
+      // paid step, and continuing the workflow from script generation is what
+      // resumes the paused run with that feedback.
+      await continueWorkflow(
+        projectId,
+        { entry_stage: "script_generation", reason: "review_resolved" },
+        newIdempotencyKey(`script-revise-${scriptId}`),
+        client,
+      );
+      return rejected.data;
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.scripts(projectId) });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.workflow(projectId) });
+    },
+  });
+
   const retryScript = useMutation({
     mutationFn: () =>
       continueWorkflow(
@@ -133,6 +167,10 @@ export function ScriptPage(): JSX.Element {
     !script.isSuccess &&
     !script.isPending &&
     (status === "script_review_required" || scriptMissing);
+  // A pass waiting on the reviewer is the normal checkpoint; retrying from
+  // scratch is only the answer when the run left nothing to decide on.
+  const awaitingDecision =
+    versions.data?.items.some((item) => item.status === "pending_review") ?? false;
 
   return (
     <PageStack>
@@ -149,18 +187,24 @@ export function ScriptPage(): JSX.Element {
         <MessageBar intent="warning">
           <MessageBarBody>
             <MessageBarTitle>Pick the script to build on</MessageBarTitle>
-            The automatic script generation stopped without approving a version. Choose one of the
-            scripts below, or retry generation for a fresh compression and writing pass.
+            {awaitingDecision
+              ? "An editing pass is waiting for your review. Approve the version the rest of " +
+                "the pipeline should build on, or send it back with feedback for the next pass."
+              : "The automatic script generation stopped without approving a version. Choose " +
+                "one of the scripts below, or retry generation for a fresh compression and " +
+                "writing pass."}
           </MessageBarBody>
-          <MessageBarActions>
-            <Button
-              appearance="primary"
-              disabled={retryScript.isPending}
-              onClick={() => retryScript.mutate()}
-            >
-              {retryScript.isPending ? "Retrying…" : "Retry script generation"}
-            </Button>
-          </MessageBarActions>
+          {!awaitingDecision && (
+            <MessageBarActions>
+              <Button
+                appearance="primary"
+                disabled={retryScript.isPending}
+                onClick={() => retryScript.mutate()}
+              >
+                {retryScript.isPending ? "Retrying…" : "Retry script generation"}
+              </Button>
+            </MessageBarActions>
+          )}
         </MessageBar>
       )}
       {scriptReviewRequired && versions.isPending && (
@@ -179,6 +223,8 @@ export function ScriptPage(): JSX.Element {
           candidates={versions.data.items}
           selectingScriptId={select.isPending ? (select.variables ?? null) : null}
           onSelect={(scriptId) => select.mutate(scriptId)}
+          rejectingScriptId={reject.isPending ? (reject.variables?.scriptId ?? null) : null}
+          onReject={(scriptId, reason) => reject.mutate({ scriptId, reason })}
         />
       )}
       {script.isError && !scriptReviewRequired && (
@@ -190,6 +236,7 @@ export function ScriptPage(): JSX.Element {
       )}
       {save.isError && <ErrorState error={save.error} />}
       {select.isError && <ErrorState error={select.error} />}
+      {reject.isError && <ErrorState error={reject.error} />}
 
       {lastInvalidation !== null && lastInvalidation.entries.length > 0 && (
         <MessageBar intent="warning">

@@ -33,6 +33,9 @@ class FakeScriptGenerationProvider:
 
     def __init__(self) -> None:
         self.submissions: list[str] = []
+        #: Every editing request received, in order, so a test can check which
+        #: reviewer feedback a pass was asked to incorporate.
+        self.edit_requests: list[ComedyEditRequest] = []
 
     def _metadata(
         self,
@@ -77,6 +80,7 @@ class FakeScriptGenerationProvider:
     async def edit_script(
         self, request: ComedyEditRequest, context: GenerationContext
     ) -> ProviderComedyEditResult:
+        self.edit_requests.append(request)
         edits, revised = propose_revision(request.recap_script)
         coverage = build_beat_coverage(revised, request.compressed_plot)
         revised = revised.model_copy(update={"beat_coverage": coverage})

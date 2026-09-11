@@ -3,7 +3,9 @@ import {
   Body1,
   Button,
   Caption1,
+  Field,
   Subtitle2,
+  Textarea,
   makeStyles,
   tokens,
 } from "@fluentui/react-components";
@@ -31,6 +33,14 @@ const useStyles = makeStyles({
   },
   meta: { display: "flex", gap: tokens.spacingHorizontalM, flexWrap: "wrap", alignItems: "center" },
   actions: { display: "flex", gap: tokens.spacingHorizontalS, flexWrap: "wrap" },
+  // Rejecting is a written brief for the next pass, so the feedback box sits
+  // with the decision rather than in a dialog the reader has to leave for.
+  feedback: { display: "grid", gap: tokens.spacingVerticalS, maxWidth: "80ch" },
+  reason: {
+    padding: tokens.spacingHorizontalM,
+    borderRadius: tokens.borderRadiusMedium,
+    backgroundColor: tokens.colorNeutralBackground2,
+  },
   // The preview is reading copy, not editing copy: a measured column keeps a
   // full script scannable while the reader compares it against a sibling.
   preview: {
@@ -48,27 +58,46 @@ export interface ScriptCandidateListProps {
   readonly candidates: readonly ScriptSummaryProjection[];
   readonly selectingScriptId: string | null;
   readonly onSelect: (scriptId: string) => void;
+  /** The candidate whose rejection is in flight, if any. */
+  readonly rejectingScriptId?: string | null;
+  /**
+   * Send an editing pass back with feedback. Offered only for a version that
+   * is waiting on the reviewer, since that is the one the next pass revises.
+   */
+  readonly onReject?: (scriptId: string, reason: string) => void;
 }
 
+/** What each pipeline status means to the reader, where the raw word is unclear. */
+const STATUS_LABELS: Readonly<Record<string, string>> = {
+  pending_review: "awaiting your review",
+};
+
 /**
- * The scripts a stalled generation run left behind, offered for approval.
+ * The scripts a generation run has produced so far, offered for review.
  *
- * When the pipeline exhausts its revision attempts it stops without approving
- * a version, so `GET /script` has nothing to answer with. The candidates are
- * still there, and approving one is what unblocks the run — this list is that
- * choice, with each version readable in place first.
+ * Every editing pass stops here: the pipeline leaves the edited version
+ * waiting on the reviewer, so `GET /script` has nothing to answer with.
+ * Approving a version is what moves the project on to narration; rejecting
+ * it with feedback is what the next pass is asked to fix. Each version is
+ * readable in place first.
  */
 export function ScriptCandidateList({
   projectId,
   candidates,
   selectingScriptId,
   onSelect,
+  rejectingScriptId = null,
+  onReject,
 }: ScriptCandidateListProps): JSX.Element {
   const styles = useStyles();
+  const busy = selectingScriptId !== null || rejectingScriptId !== null;
   return (
     <SectionCard
       title="Available scripts"
-      description="Read a version, then approve the one the rest of the pipeline should build on."
+      description={
+        "Read a version, then approve the one the rest of the pipeline should build on, or " +
+        "send the latest pass back with feedback for the next one."
+      }
     >
       {candidates.length === 0 ? (
         <Body1>
@@ -80,7 +109,10 @@ export function ScriptCandidateList({
             <li key={candidate.script_id} className={styles.candidate}>
               <div className={styles.meta}>
                 <Subtitle2 as="h3">Version {candidate.version}</Subtitle2>
-                <Badge appearance="tint">{candidate.status}</Badge>
+                <Badge appearance="tint">{STATUS_LABELS[candidate.status] ?? candidate.status}</Badge>
+                {candidate.editing_pass > 0 && (
+                  <Badge appearance="outline">Editing pass {candidate.editing_pass}</Badge>
+                )}
                 {candidate.selected && (
                   <Badge appearance="tint" color="success">
                     Selected
@@ -91,21 +123,72 @@ export function ScriptCandidateList({
                 </Caption1>
                 <Caption1>{formatTimestamp(candidate.created_at)}</Caption1>
               </div>
+              {candidate.rejection_reason !== null && (
+                <Body1 as="p" className={styles.reason}>
+                  Rejected: {candidate.rejection_reason}
+                </Body1>
+              )}
               <ScriptCandidatePreview projectId={projectId} scriptId={candidate.script_id} />
               <div className={styles.actions}>
                 <Button
                   appearance="primary"
-                  disabled={selectingScriptId !== null}
+                  disabled={busy}
                   onClick={() => onSelect(candidate.script_id)}
                 >
                   {selectingScriptId === candidate.script_id ? "Approving…" : "Approve this script"}
                 </Button>
               </div>
+              {onReject !== undefined && candidate.status === "pending_review" && (
+                <ScriptRejection
+                  scriptId={candidate.script_id}
+                  busy={busy}
+                  rejecting={rejectingScriptId === candidate.script_id}
+                  onReject={onReject}
+                />
+              )}
             </li>
           ))}
         </ul>
       )}
     </SectionCard>
+  );
+}
+
+interface ScriptRejectionProps {
+  readonly scriptId: string;
+  readonly busy: boolean;
+  readonly rejecting: boolean;
+  readonly onReject: (scriptId: string, reason: string) => void;
+}
+
+/** The feedback the next editing pass is asked to address, and the button that sends it. */
+function ScriptRejection({ scriptId, busy, rejecting, onReject }: ScriptRejectionProps): JSX.Element {
+  const styles = useStyles();
+  const [reason, setReason] = useState("");
+  const trimmed = reason.trim();
+  return (
+    <div className={styles.feedback}>
+      <Field
+        label="What should the next editing pass fix?"
+        hint="Your feedback goes to the Comedy Editor as the brief for the next pass."
+      >
+        <Textarea
+          value={reason}
+          resize="vertical"
+          disabled={busy}
+          onChange={(_event, data) => setReason(data.value)}
+        />
+      </Field>
+      <div className={styles.actions}>
+        <Button
+          appearance="secondary"
+          disabled={busy || trimmed === ""}
+          onClick={() => onReject(scriptId, trimmed)}
+        >
+          {rejecting ? "Sending back…" : "Reject and run the next pass"}
+        </Button>
+      </div>
+    </div>
   );
 }
 

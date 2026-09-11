@@ -63,6 +63,17 @@ from vidgen.telemetry.provider import instrument_provider_attempt, record_pipeli
 CONTRACT_VERSION = "1.0"
 PROMPT_VERSION = "comedy-script-v1"
 CONFIG_VERSION = "script-provider-v1"
+DEFAULT_MAX_EDITING_PASSES = 3
+
+#: Script statuses a run's latest version can be in while the run waits on the
+#: reviewer, and what each one asks the pipeline to do next.
+PENDING_REVIEW = "pending_review"
+REJECTED = "rejected"
+APPROVED_STATUSES = frozenset({"approved", "final"})
+
+
+class ScriptEditingExhausted(RuntimeError):
+    """The reviewer rejected the last editing pass the run was allowed."""
 
 
 class ScriptGenerationPipeline:
@@ -73,15 +84,20 @@ class ScriptGenerationPipeline:
         provider: ScriptGenerationProvider,
         *,
         max_repair_attempts: int = 2,
-        max_revision_passes: int = 2,
+        max_editing_passes: int = DEFAULT_MAX_EDITING_PASSES,
         metrics: Metrics | None = None,
         warn_only_codes: Iterable[str] | None = None,
     ) -> None:
+        if max_editing_passes < 1:
+            raise ValueError("max_editing_passes must be at least 1")
         self.session = session
         self.blob_store = blob_store
         self.provider = provider
         self.max_repair_attempts = max_repair_attempts
-        self.max_revision_passes = max_revision_passes
+        # How many Comedy Editor passes a run may spend before its reviewer's
+        # third "no" is final. Every pass is a checkpoint: the pipeline stops
+        # after each one and waits for the reviewer's decision.
+        self.max_editing_passes = max_editing_passes
         self.repository = ScriptRepository(session)
         self.assets = AssetService(session, blob_store)
         self.configuration_version = getattr(provider, "configuration_version", CONFIG_VERSION)
@@ -153,6 +169,12 @@ class ScriptGenerationPipeline:
                 "idempotency key is bound to a different episode analysis or configuration; "
                 "use a new idempotency key"
             )
+        if existing is None:
+            # A continuation after a review decision runs under a fresh
+            # workflow key. The run it belongs to is the one still waiting on
+            # the reviewer for this exact analysis and configuration; starting
+            # another would throw away the passes already paid for.
+            existing = self.repository.resumable_run(project_id, analysis_record.id, input_hash)
         run = existing or ScriptGenerationRun(
             project_id=project_id,
             episode_analysis_id=analysis_record.id,
@@ -174,18 +196,21 @@ class ScriptGenerationPipeline:
             rubric_version=self.rubric.rubric_version,
             attempt_count=0,
             revision_count=0,
+            max_editing_passes=self.max_editing_passes,
         )
         if existing is None:
             self.session.add(run)
             self.session.commit()
+        # Provider and asset keys derive from the run's own key so that a
+        # continuation under a different workflow key replays, rather than
+        # repeats, any call the run already made.
+        idempotency_key = run.idempotency_key
 
         selected_for_run = next(
             (item for item in self.repository.scripts_for_run(run.id) if item.selected), None
         )
         if selected_for_run is not None:
             return self._result(run, selected_for_run)
-        if run.status == "script_review_required":
-            return self._result(run, None)
 
         plan_record = self.repository.selected_plan(run.id)
         if plan_record is None:
@@ -257,12 +282,48 @@ class ScriptGenerationPipeline:
                 )
             scripts = [draft_record]
         candidate_record = scripts[-1]
+        if candidate_record.status in APPROVED_STATUSES:
+            # Approved here, then superseded by a version selected out of
+            # another run. This run has nothing left to decide.
+            return self._result(run, candidate_record)
+        if candidate_record.status == PENDING_REVIEW:
+            # The last pass is still in front of the reviewer. Nothing to do
+            # but keep waiting: no decision means no feedback to act on.
+            run.status = project.status = "script_review_required"
+            self.session.commit()
+            return self._result(run, None)
+
+        feedback: str | None = None
+        if candidate_record.status == REJECTED:
+            feedback = candidate_record.rejection_reason
+        editing_pass = candidate_record.editing_pass + 1
+        if editing_pass > run.max_editing_passes:
+            run.status = project.status = "script_generation_failed"
+            run.error_code = "EDITING_PASSES_EXHAUSTED"
+            self.session.commit()
+            record_pipeline_failure(
+                self.session,
+                project_id=project_id,
+                workflow_id=str(run.id),
+                stage="script_generation",
+                failure_class=FailureClass.CONTRACT_VALIDATION,
+                error_code="EDITING_PASSES_EXHAUSTED",
+                retryable=False,
+                projected_status="script_generation_failed",
+                idempotency_key=_derived_key(idempotency_key, "edit:exhausted"),
+                related_entity_type="script_generation_run",
+                related_entity_id=run.id,
+            )
+            self.session.commit()
+            raise ScriptEditingExhausted(
+                "EDITING_PASSES_EXHAUSTED: the reviewer rejected all "
+                f"{run.max_editing_passes} editing passes"
+            )
+
         candidate = self._load_script(candidate_record)
         project.status = run.status = "script_validating"
         self.session.commit()
-
-        completed_evaluations = sum(len(self.repository.reviews(item.id)) for item in scripts)
-        approved_record = await self._run_editorial_loop(
+        await self._run_editing_pass(
             run,
             plan_record,
             plan,
@@ -271,19 +332,14 @@ class ScriptGenerationPipeline:
             analysis,
             settings,
             idempotency_key,
-            starting_evaluation=completed_evaluations + 1,
+            editing_pass=editing_pass,
+            reviewer_feedback=feedback,
         )
-        if approved_record is not None:
-            self.session.query(Script).filter_by(project_id=project_id, selected=True).update(
-                {"selected": False}
-            )
-            approved_record.selected = True
-            approved_record.status = "approved"
-            run.status = project.status = "script_approved"
-            self.session.commit()
-            return self._result(run, approved_record)
+        # Every pass is a checkpoint: the edited version waits for the reviewer
+        # rather than feeding the next pass, so the workflow pauses here and a
+        # continuation after the decision resumes this run.
         run.status = project.status = "script_review_required"
-        run.error_code = "REVISION_EXHAUSTED"
+        run.error_code = None
         self.session.commit()
         return self._result(run, None)
 
@@ -565,7 +621,7 @@ class ScriptGenerationPipeline:
         self.session.commit()
         return draft_record, report
 
-    async def _run_editorial_loop(
+    async def _run_editing_pass(
         self,
         run: ScriptGenerationRun,
         plan_record: CompressedPlotPlanRecord,
@@ -576,152 +632,148 @@ class ScriptGenerationPipeline:
         settings: ScriptGenerationSettings,
         idempotency_key: str,
         *,
-        starting_evaluation: int = 1,
-    ) -> Script | None:
-        max_evaluations = self.max_revision_passes + 1
-        evaluation = starting_evaluation
-        while True:
-            review_row = self._existing_review(candidate_record.id)
-            next_version_row = self.session.scalar(
-                select(Script).where(Script.parent_script_id == candidate_record.id)
+        editing_pass: int,
+        reviewer_feedback: str | None,
+    ) -> Script:
+        """Run one Comedy Editor pass over ``candidate`` and park it for review.
+
+        ``reviewer_feedback`` is the reason the reviewer rejected ``candidate``;
+        it is handed to the editor so the pass addresses what was actually
+        wrong instead of re-editing blindly. The revised version and its review
+        trail are committed together, so a restart either finds the finished
+        pass waiting for review or repeats it under the same idempotency key.
+        """
+        review_row = self._existing_review(candidate_record.id)
+        next_version_row = self.session.scalar(
+            select(Script).where(Script.parent_script_id == candidate_record.id)
+        )
+        if review_row is not None and next_version_row is not None:
+            return next_version_row
+        project = self.session.get(Project, run.project_id)
+        assert project is not None
+        project.status = run.status = "comedy_editing"
+        self.session.commit()
+        request = ComedyEditRequest(
+            project_id=run.project_id,
+            script_id=candidate_record.id,
+            script_version=candidate_record.version,
+            recap_script=candidate,
+            compressed_plot=plan,
+            rubric=self.rubric,
+            attempt_number=editing_pass,
+            reviewer_feedback=reviewer_feedback,
+            input_hash=run.input_hash,
+            idempotency_key=_derived_key(
+                idempotency_key, "edit", f"{candidate_record.id}:{editing_pass}"
+            ),
+            contract_version=CONTRACT_VERSION,
+            prompt_version=PROMPT_VERSION,
+            rubric_version=self.rubric.rubric_version,
+            provider_configuration_version=self.configuration_version,
+        )
+        async with instrument_provider_attempt(
+            session=self.session,
+            tracer=self.tracer,
+            metrics=self.metrics,
+            project_id=run.project_id,
+            provider=self.provider_name,
+            model=self.provider_model,
+            operation="script.edit_script",
+            input_hash=run.input_hash,
+            idempotency_key=request.idempotency_key,
+            related_entity_id=candidate_record.id,
+            attempt_number=editing_pass,
+        ) as provider_attempt:
+            result = await self.provider.edit_script(
+                request, GenerationContext(attempt_number=editing_pass)
             )
-            if review_row is not None and next_version_row is not None:
-                recommendation = review_row.approval_recommendation
-                revised_record = next_version_row
-                revised = self._load_script(revised_record)
-            else:
-                project = self.session.get(Project, run.project_id)
-                assert project is not None
-                project.status = run.status = "comedy_editing"
-                self.session.commit()
-                request = ComedyEditRequest(
-                    project_id=run.project_id,
-                    script_id=candidate_record.id,
-                    script_version=candidate_record.version,
-                    recap_script=candidate,
-                    compressed_plot=plan,
-                    rubric=self.rubric,
-                    attempt_number=evaluation,
-                    input_hash=run.input_hash,
-                    idempotency_key=_derived_key(
-                        idempotency_key, "edit", f"{candidate_record.id}:{evaluation}"
-                    ),
-                    contract_version=CONTRACT_VERSION,
-                    prompt_version=PROMPT_VERSION,
-                    rubric_version=self.rubric.rubric_version,
-                    provider_configuration_version=self.configuration_version,
-                )
-                async with instrument_provider_attempt(
-                    session=self.session,
-                    tracer=self.tracer,
-                    metrics=self.metrics,
-                    project_id=run.project_id,
-                    provider=self.provider_name,
-                    model=self.provider_model,
-                    operation="script.edit_script",
-                    input_hash=run.input_hash,
-                    idempotency_key=request.idempotency_key,
-                    related_entity_id=candidate_record.id,
-                    attempt_number=evaluation,
-                ) as provider_attempt:
-                    result = await self.provider.edit_script(
-                        request, GenerationContext(attempt_number=evaluation)
-                    )
-                    provider_attempt.set_result(
-                        provider_request_id=result.metadata.provider_request_id,
-                        usage=_usage_from_metadata(result.metadata),
-                    )
-                revised = drop_empty_segments(
-                    result.output.revised_script.model_copy(
-                        update={
-                            "script_id": uuid4(),
-                            "version": candidate_record.version,
-                            "parent_script_id": candidate_record.id,
-                        }
-                    )
-                )
-                coverage = build_beat_coverage(revised, plan)
-                revised = canonicalize_script(
-                    revised.model_copy(update={"beat_coverage": coverage})
-                )
-                previous_coverage = {
-                    item.plot_beat_id: item.coverage for item in candidate.beat_coverage
+            provider_attempt.set_result(
+                provider_request_id=result.metadata.provider_request_id,
+                usage=_usage_from_metadata(result.metadata),
+            )
+        revised = drop_empty_segments(
+            result.output.revised_script.model_copy(
+                update={
+                    "script_id": uuid4(),
+                    "version": candidate_record.version,
+                    "parent_script_id": candidate_record.id,
                 }
-                report = validate_recap_script(
-                    revised,
-                    analysis=analysis,
-                    plan=plan,
-                    prohibited_patterns=settings.prohibited_patterns,
-                    previous_script=candidate,
-                    previous_coverage=previous_coverage,
-                )
-                mandatory_total = sum(1 for item in coverage if item.mandatory)
-                mandatory_covered = sum(
-                    1 for item in coverage if item.mandatory and item.coverage == "covered"
-                )
-                mandatory_ratio = (
-                    1.0 if mandatory_total == 0 else mandatory_covered / mandatory_total
-                )
-                within_target = (
-                    revised.target_word_count == 0
-                    or abs(revised.actual_word_count - revised.target_word_count)
-                    / revised.target_word_count
-                    <= 0.05
-                )
-                recommendation = approval_recommendation(
-                    result.output.scores,
-                    self.rubric,
-                    mandatory_coverage_ratio=mandatory_ratio,
-                    word_count_within_target=within_target,
-                    validation_valid=report.valid,
-                )
-                revised_record = self._persist_script_version(
-                    run,
-                    plan_record,
-                    revised,
-                    parent=candidate_record,
-                    provider_request_id=result.metadata.provider_request_id,
-                    validation_report=report,
-                    idempotency_suffix=f"edit:{evaluation}:asset",
-                    idempotency_key=idempotency_key,
-                    review_scores=result.output.scores.model_dump(mode="json"),
-                )
-                review_row = ScriptReview(
-                    script_id=candidate_record.id,
-                    review_sequence=self.repository.next_review_sequence(candidate_record.id),
-                    provider_request_id=result.metadata.provider_request_id,
-                    attempt_number=evaluation,
-                    rubric_version=self.rubric.rubric_version,
-                    scores=result.output.scores.model_dump(mode="json"),
-                    issues=[item.model_dump(mode="json") for item in result.output.issues],
-                    approval_recommendation=recommendation,
-                    validation_report=report.model_dump(mode="json"),
-                )
-                self.session.add(review_row)
-                self.session.flush()
-                self.session.add_all(
-                    ScriptEditRecord(
-                        review_id=review_row.id,
-                        segment_id=edit.segment_id,
-                        old_content_hash=_hash(edit.old_text),
-                        new_content_hash=_hash(edit.new_text),
-                        old_text=edit.old_text,
-                        new_text=edit.new_text,
-                        reason=edit.reason,
-                        rubric_dimensions=list(edit.rubric_dimensions),
-                        applied=True,
-                    )
-                    for edit in result.output.edits
-                )
-                if evaluation > 1:
-                    run.revision_count += 1
-                self.session.commit()
-            if recommendation == "approve":
-                return revised_record
-            if evaluation >= max_evaluations:
-                return None
-            candidate_record, candidate = revised_record, revised
-            evaluation += 1
+            )
+        )
+        coverage = build_beat_coverage(revised, plan)
+        revised = canonicalize_script(revised.model_copy(update={"beat_coverage": coverage}))
+        previous_coverage = {item.plot_beat_id: item.coverage for item in candidate.beat_coverage}
+        report = validate_recap_script(
+            revised,
+            analysis=analysis,
+            plan=plan,
+            prohibited_patterns=settings.prohibited_patterns,
+            previous_script=candidate,
+            previous_coverage=previous_coverage,
+        )
+        mandatory_total = sum(1 for item in coverage if item.mandatory)
+        mandatory_covered = sum(
+            1 for item in coverage if item.mandatory and item.coverage == "covered"
+        )
+        mandatory_ratio = 1.0 if mandatory_total == 0 else mandatory_covered / mandatory_total
+        within_target = (
+            revised.target_word_count == 0
+            or abs(revised.actual_word_count - revised.target_word_count)
+            / revised.target_word_count
+            <= 0.05
+        )
+        # The editor's own verdict is recorded for the reviewer to weigh; it no
+        # longer approves anything by itself.
+        recommendation = approval_recommendation(
+            result.output.scores,
+            self.rubric,
+            mandatory_coverage_ratio=mandatory_ratio,
+            word_count_within_target=within_target,
+            validation_valid=report.valid,
+        )
+        revised_record = self._persist_script_version(
+            run,
+            plan_record,
+            revised,
+            parent=candidate_record,
+            provider_request_id=result.metadata.provider_request_id,
+            validation_report=report,
+            idempotency_suffix=f"edit:{editing_pass}:asset",
+            idempotency_key=idempotency_key,
+            review_scores=result.output.scores.model_dump(mode="json"),
+            editing_pass=editing_pass,
+        )
+        review_row = ScriptReview(
+            script_id=candidate_record.id,
+            review_sequence=self.repository.next_review_sequence(candidate_record.id),
+            provider_request_id=result.metadata.provider_request_id,
+            attempt_number=editing_pass,
+            rubric_version=self.rubric.rubric_version,
+            scores=result.output.scores.model_dump(mode="json"),
+            issues=[item.model_dump(mode="json") for item in result.output.issues],
+            approval_recommendation=recommendation,
+            validation_report=report.model_dump(mode="json"),
+        )
+        self.session.add(review_row)
+        self.session.flush()
+        self.session.add_all(
+            ScriptEditRecord(
+                review_id=review_row.id,
+                segment_id=edit.segment_id,
+                old_content_hash=_hash(edit.old_text),
+                new_content_hash=_hash(edit.new_text),
+                old_text=edit.old_text,
+                new_text=edit.new_text,
+                reason=edit.reason,
+                rubric_dimensions=list(edit.rubric_dimensions),
+                applied=True,
+            )
+            for edit in result.output.edits
+        )
+        if editing_pass > 1:
+            run.revision_count += 1
+        self.session.commit()
+        return revised_record
 
     def _existing_review(self, script_id: UUID) -> ScriptReview | None:
         return self.session.scalar(
@@ -742,6 +794,7 @@ class ScriptGenerationPipeline:
         idempotency_suffix: str,
         idempotency_key: str,
         review_scores: dict[str, object] | None = None,
+        editing_pass: int = 0,
     ) -> Script:
         version = self.repository.next_script_version(run.project_id)
         script = script.model_copy(update={"version": version})
@@ -773,7 +826,10 @@ class ScriptGenerationPipeline:
             compressed_plot_plan_id=plan_record.id,
             parent_script_id=parent.id if parent else None,
             version=version,
-            status="draft" if parent is None else "revised",
+            # An edited version is a checkpoint for the reviewer; only their
+            # decision moves it to ``approved`` or ``rejected``.
+            status="draft" if parent is None else PENDING_REVIEW,
+            editing_pass=editing_pass,
             target_word_count=script.target_word_count,
             actual_word_count=script.actual_word_count,
             target_duration_ms=script.target_duration_ms,
