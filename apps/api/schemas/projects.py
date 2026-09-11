@@ -22,6 +22,7 @@ from vidgen.contracts.narration import (
 )
 from vidgen.contracts.script import SCRIPT_WARN_ONLY_ELIGIBLE_VALIDATION_CODES
 from vidgen.contracts.storyboard import STORYBOARD_WARN_ONLY_ELIGIBLE_VALIDATION_CODES
+from vidgen.contracts.visual_qa import VISUAL_QA_WARN_ONLY_ELIGIBLE_CODES
 
 
 def exact_decimal_text(value: object) -> object:
@@ -80,6 +81,19 @@ def known_narration_quality_codes(value: object) -> object:
         raise ValueError(
             f"unknown narration quality codes: {', '.join(str(item) for item in unknown)}; "
             f"expected any of {', '.join(NARRATION_WARN_ONLY_ELIGIBLE_QUALITY_CODES)}"
+        )
+    return value
+
+
+def known_visual_qa_codes(value: object) -> object:
+    """The same check against the T20 visual-QA repair-code taxonomy."""
+    if not isinstance(value, list):
+        return value
+    unknown = sorted(item for item in value if item not in VISUAL_QA_WARN_ONLY_ELIGIBLE_CODES)
+    if unknown:
+        raise ValueError(
+            f"unknown visual QA repair codes: {', '.join(str(item) for item in unknown)}; "
+            f"expected any of {', '.join(VISUAL_QA_WARN_ONLY_ELIGIBLE_CODES)}"
         )
     return value
 
@@ -155,6 +169,10 @@ class CreateProjectRequest(BaseModel):
     narration_quality_thresholds: NarrationQualityThresholdOverrides | None = None
     #: The same, for the T13 storyboard validator.
     storyboard_warn_only_validation_codes: list[str] | None = Field(default=None, max_length=16)
+    #: Per-project override of the T20 visual-QA repair codes recorded as
+    #: warnings instead of blocking the shot. Leave unset to use the
+    #: deployment's global default.
+    visual_qa_warn_only_codes: list[str] | None = Field(default=None, max_length=16)
 
     _known_codes = field_validator("warn_only_validation_codes")(known_warn_only_codes)
     _known_script_codes = field_validator("script_warn_only_validation_codes")(
@@ -166,6 +184,7 @@ class CreateProjectRequest(BaseModel):
     _known_storyboard_codes = field_validator("storyboard_warn_only_validation_codes")(
         known_storyboard_warn_only_codes
     )
+    _known_visual_qa_codes = field_validator("visual_qa_warn_only_codes")(known_visual_qa_codes)
 
     _exact_caps = field_validator("budget_warning_cap", "budget_hard_cap", mode="before")(
         exact_decimal_text
@@ -182,6 +201,7 @@ class CreateProjectRequest(BaseModel):
             narration_warn_only_quality_codes=self.narration_warn_only_quality_codes,
             narration_quality_thresholds=self.narration_quality_thresholds,
             storyboard_warn_only_validation_codes=self.storyboard_warn_only_validation_codes,
+            visual_qa_warn_only_codes=self.visual_qa_warn_only_codes,
             origin=GenerationSettingsOrigin.EXPLICIT,
         )
 
@@ -212,6 +232,8 @@ class SetGenerationSettingsRequest(BaseModel):
     narration_quality_thresholds: NarrationQualityThresholdOverrides | None = None
     #: The same, for the T13 storyboard validator.
     storyboard_warn_only_validation_codes: list[str] | None = Field(default=None, max_length=16)
+    #: The same, for the T20 visual-QA gate.
+    visual_qa_warn_only_codes: list[str] | None = Field(default=None, max_length=16)
 
     _known_codes = field_validator("warn_only_validation_codes")(known_warn_only_codes)
     _known_script_codes = field_validator("script_warn_only_validation_codes")(
@@ -223,6 +245,7 @@ class SetGenerationSettingsRequest(BaseModel):
     _known_storyboard_codes = field_validator("storyboard_warn_only_validation_codes")(
         known_storyboard_warn_only_codes
     )
+    _known_visual_qa_codes = field_validator("visual_qa_warn_only_codes")(known_visual_qa_codes)
 
     def generation_settings(self) -> ProjectGenerationSettings:
         return ProjectGenerationSettings(
@@ -235,6 +258,7 @@ class SetGenerationSettingsRequest(BaseModel):
             narration_warn_only_quality_codes=self.narration_warn_only_quality_codes,
             narration_quality_thresholds=self.narration_quality_thresholds,
             storyboard_warn_only_validation_codes=self.storyboard_warn_only_validation_codes,
+            visual_qa_warn_only_codes=self.visual_qa_warn_only_codes,
             origin=GenerationSettingsOrigin.EXPLICIT,
         )
 
@@ -276,6 +300,9 @@ class GenerationSettingsResponse(BaseModel):
     #: The same two lists for the T13 storyboard validator.
     effective_storyboard_warn_only_validation_codes: list[str]
     available_storyboard_warn_only_validation_codes: list[str]
+    #: The same two lists for the T20 visual-QA gate.
+    effective_visual_qa_warn_only_codes: list[str]
+    available_visual_qa_warn_only_codes: list[str]
 
 
 class GenerationEstimateRequest(BaseModel):

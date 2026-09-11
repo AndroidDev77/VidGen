@@ -14,7 +14,9 @@ import pytest
 from pydantic import ValidationError
 
 from apps.api.settings import APISettings
+from services.qa.rubric import THRESHOLDS
 from vidgen.contracts.narration import NarrationQualityThresholds
+from vidgen.contracts.visual_qa import DEFAULT_VISUAL_QA_WARN_ONLY_CODES
 
 LIST_SETTINGS = (
     ("VIDGEN_ALLOWED_VIDEO_TYPES", "allowed_video_types"),
@@ -163,6 +165,32 @@ def test_narration_warn_only_quality_codes_load_as_a_comma_separated_list(
 def test_an_unknown_narration_quality_code_is_refused(monkeypatch: pytest.MonkeyPatch) -> None:
     # SCENE_SET_MISMATCH is an analysis validation code; the quality gate never emits it.
     monkeypatch.setenv("VIDGEN_NARRATION_WARN_ONLY_QUALITY_CODES", "SCENE_SET_MISMATCH")
+    with pytest.raises(ValidationError):
+        APISettings(_env_file=None)
+
+
+def test_visual_qa_warn_only_codes_default_to_the_contracts_set() -> None:
+    settings = APISettings(_env_file=None)
+    assert settings.visual_qa_warn_only_codes == sorted(DEFAULT_VISUAL_QA_WARN_ONLY_CODES)
+    assert settings.visual_qa_thresholds() == THRESHOLDS
+
+
+def test_visual_qa_warn_only_codes_load_as_a_comma_separated_list(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("VIDGEN_VISUAL_QA_WARN_ONLY_CODES", "anatomy_breakage, Prompt_Too_Complex")
+    settings = APISettings(_env_file=None)
+    assert settings.visual_qa_warn_only_codes == ["ANATOMY_BREAKAGE", "PROMPT_TOO_COMPLEX"]
+    assert settings.visual_qa_thresholds().warn_only_codes == [
+        "ANATOMY_BREAKAGE",
+        "PROMPT_TOO_COMPLEX",
+    ]
+    monkeypatch.setenv("VIDGEN_VISUAL_QA_WARN_ONLY_CODES", "")
+    assert APISettings(_env_file=None).visual_qa_warn_only_codes == []
+
+
+def test_an_unknown_visual_qa_code_is_refused(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("VIDGEN_VISUAL_QA_WARN_ONLY_CODES", "alignment_coverage")
     with pytest.raises(ValidationError):
         APISettings(_env_file=None)
 

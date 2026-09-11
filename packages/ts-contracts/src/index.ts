@@ -1630,6 +1630,11 @@ export interface ProjectGenerationSettings {
   narration_quality_thresholds: NarrationQualityThresholdOverrides | null;
   /** The same, for the T13 storyboard validator; `null` uses the deployment default. */
   storyboard_warn_only_validation_codes: string[] | null;
+  /**
+   * Per-project override of the T20 visual-QA repair codes recorded as
+   * warnings instead of blocking the shot; `null` uses the deployment default.
+   */
+  visual_qa_warn_only_codes: string[] | null;
   origin: GenerationSettingsOrigin;
 }
 

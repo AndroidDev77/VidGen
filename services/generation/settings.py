@@ -35,6 +35,7 @@ from vidgen.contracts.generation import (
     ShotPacing,
 )
 from vidgen.contracts.narration import NarrationQualityThresholds
+from vidgen.contracts.visual_qa import VisualQAThresholds
 from vidgen.db.models import Project
 
 GENERATION_SETTINGS_KEY = "generation"
@@ -163,6 +164,37 @@ def effective_narration_quality_thresholds(
     except ValueError as error:
         raise GenerationSettingsError(
             f"narration quality settings cannot be resolved: {error}"
+        ) from error
+
+
+def effective_visual_qa_warn_only_codes(
+    generation: ProjectGenerationSettings, global_default: Sequence[str]
+) -> frozenset[str]:
+    """The T20 repair codes to record as warnings for this project."""
+    return frozenset(
+        generation.visual_qa_warn_only_codes
+        if generation.visual_qa_warn_only_codes is not None
+        else global_default
+    )
+
+
+def effective_visual_qa_thresholds(
+    generation: ProjectGenerationSettings, deployment: VisualQAThresholds
+) -> VisualQAThresholds:
+    """The T20 pass thresholds the visual-QA pipeline is handed for this project.
+
+    ``deployment`` carries the versioned policy and the deployment-wide
+    warn-only set. The project's override, when present, replaces that set
+    outright (an empty list means "nothing is tolerated"); every other
+    threshold stays the deployment's. The result is bound into the QA
+    identity, so a change here is a new evaluation, never a reinterpretation.
+    """
+    codes = effective_visual_qa_warn_only_codes(generation, deployment.warn_only_codes)
+    try:
+        return deployment.model_copy(update={"warn_only_codes": sorted(codes)})
+    except ValueError as error:  # pragma: no cover - both inputs are validated
+        raise GenerationSettingsError(
+            f"visual QA thresholds cannot be resolved: {error}"
         ) from error
 
 

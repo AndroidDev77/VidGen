@@ -489,13 +489,19 @@ REPAIR_CODE_DIMENSIONS: Final[dict[VisualQARepairCode, VisualQADimension]] = {
 KEYFRAME_INAPPLICABLE_DIMENSIONS: Final[frozenset[VisualQADimension]] = frozenset()
 
 
-def rubric_material() -> dict[str, object]:
-    """Return exactly the rubric and threshold fields bound into a QA identity."""
+def rubric_material(thresholds: VisualQAThresholds | None = None) -> dict[str, object]:
+    """Return exactly the rubric and threshold fields bound into a QA identity.
+
+    ``thresholds`` is the pass policy actually in effect for the run - the
+    deployment's, with the project's warn-only override applied - so a change
+    to what a project tolerates is a new identity, never a reinterpretation.
+    """
+    thresholds = THRESHOLDS if thresholds is None else thresholds
     return {
         "rubric_version": RUBRIC.rubric_version,
         "weights": {item.dimension.value: item.weight for item in RUBRIC.dimensions},
-        "threshold_version": THRESHOLDS.threshold_version,
-        "thresholds": THRESHOLDS.model_dump(mode="json"),
+        "threshold_version": thresholds.threshold_version,
+        "thresholds": thresholds.model_dump(mode="json"),
         "deterministic": asdict(DETERMINISTIC_THRESHOLDS),
         "sampling": SAMPLING_CONFIGURATION.material(),
         "adjudication_policy_version": ADJUDICATION_POLICY_VERSION,

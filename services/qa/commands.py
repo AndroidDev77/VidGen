@@ -22,10 +22,10 @@ from services.qa.fake_visual_agent import FakeDefect, FakeVisualAgent
 from services.qa.pipeline import VisualQAOptions, VisualQAPipeline
 from services.qa.repair import RepairOptions, Revalidator, VisualRepairPipeline
 from services.qa.repair_policy import default_policy
-from services.qa.rubric import DETERMINISTIC_THRESHOLDS
+from services.qa.rubric import DETERMINISTIC_THRESHOLDS, THRESHOLDS
 from services.qa.visual_agent import VisualAgent, VisualQARole
 from vidgen.contracts.repair import RepairOutcome
-from vidgen.contracts.visual_qa import VisualQAResult, VisualQATargetType
+from vidgen.contracts.visual_qa import VisualQAResult, VisualQATargetType, VisualQAThresholds
 from vidgen.db.storyboard_models import StoryboardRun, StoryboardShotRecord
 from vidgen.db.visual_qa_repository import VisualQARepository
 from vidgen.storage.blob import BlobStore
@@ -52,6 +52,9 @@ class VisualQACommandOptions:
     adjudicator_model: str | None = None
     fake_defects: dict[UUID, FakeDefect] = field(default_factory=dict)
     ocr_threshold: float | None = None
+    #: The pass policy in effect for this project (deployment defaults plus the
+    #: project's warn-only override). ``None`` uses the versioned defaults.
+    thresholds: VisualQAThresholds | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -154,7 +157,9 @@ async def run_visual_qa(
         adjudicator=second,
         shot_workflow_identity_resolver=identity_resolver or shot_workflow_identity_resolver,
         options=VisualQAOptions(
-            expected_width=options.expected_width, expected_height=options.expected_height
+            expected_width=options.expected_width,
+            expected_height=options.expected_height,
+            pass_thresholds=options.thresholds or THRESHOLDS,
         ),
     )
     storyboard = session.scalar(
@@ -268,6 +273,7 @@ async def evaluate_shot_stage(
             thresholds=DETERMINISTIC_THRESHOLDS
             if options.ocr_threshold is None
             else replace(DETERMINISTIC_THRESHOLDS, ocr_confidence_warning=options.ocr_threshold),
+            pass_thresholds=options.thresholds or THRESHOLDS,
         ),
     )
     result = await pipeline.evaluate_shot(
@@ -397,6 +403,7 @@ def build_revalidator(
             options=VisualQAOptions(
                 expected_width=options.qa.expected_width or options.width,
                 expected_height=options.qa.expected_height or options.height,
+                pass_thresholds=options.qa.thresholds or THRESHOLDS,
             ),
         )
         return await pipeline.evaluate_shot(

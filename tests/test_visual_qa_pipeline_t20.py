@@ -25,6 +25,7 @@ from services.qa.contracts import AuthoritativeInputSelector, VisualQALineageErr
 from services.qa.fake_visual_agent import FakeDefect, FakeFinding, FakeVisualAgent
 from services.qa.human_review import VisualQAHumanReviewService
 from services.qa.pipeline import VisualQAPipeline
+from services.qa.rubric import THRESHOLDS
 from tests.project_template import materialize_project
 from tests.visual_qa_fixtures import VisualQAFixture, build_visual_qa_project
 from vidgen.contracts.visual_qa import (
@@ -214,6 +215,60 @@ def test_changing_a_material_input_produces_a_new_qa_identity(
         )
     )
     assert first.qa_identity != second.qa_identity
+
+
+def test_a_project_warn_only_override_is_a_new_identity_with_its_own_outcome(
+    graph: tuple[Session, FilesystemBlobStore, VisualQAFixture],
+) -> None:
+    """The resolved warn-only set is material: it changes the identity and the verdict."""
+    session, store, fixture = graph
+    # Identity is 49 (below the semantic floor) with every other dimension at
+    # 100, so the total clears the threshold and only the corroborated identity
+    # flag fails the shot.
+    defects = {
+        fixture.shot_ids[0]: FakeDefect(
+            dimension_scores={
+                **dict.fromkeys(VisualQADimension, 100.0),
+                VisualQADimension.CHARACTER_IDENTITY: 49.0,
+            },
+            findings=(
+                FakeFinding(
+                    dimension=VisualQADimension.CHARACTER_IDENTITY,
+                    severity="hard_failure",
+                    code="wrong_primary_character",
+                    summary="wrong character",
+                    repair_codes=(VisualQARepairCode.WRONG_CHARACTER_IDENTITY,),
+                ),
+            ),
+            proposed_hard_failure_codes=("WRONG_CHARACTER_IDENTITY",),
+        )
+    }
+    strict = run_one(session, store, fixture, defects=defects, key="warn-only-strict")
+    assert strict.outcome is VisualQAOutcome.FAIL
+    assert strict.hard_failure is True
+    tolerant = asyncio.run(
+        run_visual_qa(
+            session,
+            store,
+            project_id=fixture.project_id,
+            options=VisualQACommandOptions(
+                provider="fake",
+                fake_defects=defects,
+                shot_id=fixture.shot_ids[0],
+                targets=(VisualQATargetType.VIDEO,),
+                idempotency_key="warn-only-tolerant",
+                thresholds=THRESHOLDS.model_copy(
+                    update={"warn_only_codes": ["WRONG_CHARACTER_IDENTITY"]}
+                ),
+            ),
+            identity_resolver=resolver,
+        )
+    ).results[0]
+    assert tolerant.qa_identity != strict.qa_identity
+    assert tolerant.outcome is VisualQAOutcome.PASS
+    assert tolerant.hard_failure is False
+    assert "warn_only:WRONG_CHARACTER_IDENTITY" in tolerant.warning_codes
+    assert tolerant.score.threshold_version == strict.score.threshold_version
 
 
 def test_a_supplied_idempotency_key_is_scoped_per_shot_and_target(

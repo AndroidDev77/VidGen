@@ -25,6 +25,11 @@ from vidgen.contracts.storyboard import (
     DEFAULT_STORYBOARD_WARN_ONLY_VALIDATION_CODES,
     STORYBOARD_WARN_ONLY_ELIGIBLE_VALIDATION_CODES,
 )
+from vidgen.contracts.visual_qa import (
+    DEFAULT_VISUAL_QA_WARN_ONLY_CODES,
+    VISUAL_QA_WARN_ONLY_ELIGIBLE_CODES,
+    VisualQAThresholds,
+)
 from vidgen.storage.factory import SUPPORTED_BACKENDS
 
 
@@ -112,6 +117,13 @@ class APISettings(BaseSettings):
     #: Raise toward 1.0 for environments where the edge-detection algorithm
     #: produces false positives on AI-generated imagery.
     visual_qa_ocr_threshold: float = 0.80
+    #: T20 visual-QA repair codes recorded as warnings instead of blocking the
+    #: shot or routing a repair. A project may override this via its
+    #: generation settings; unset, every project uses this default. Only codes
+    #: in ``VISUAL_QA_WARN_ONLY_ELIGIBLE_CODES`` may be listed.
+    visual_qa_warn_only_codes: Annotated[list[str], NoDecode] = Field(
+        default_factory=lambda: list(DEFAULT_VISUAL_QA_WARN_ONLY_CODES)
+    )
     # T22 final editorial QA reuses the same two-role policy over the assembled
     # recap: Luna evaluates on the inexpensive vision model, Terra adjudicates
     # only borderline findings on the stronger one. Both default to the model
@@ -309,6 +321,32 @@ class APISettings(BaseSettings):
                 f"unknown: {', '.join(unknown)}"
             )
         return sorted(set(value))
+
+    @field_validator("visual_qa_warn_only_codes", mode="before")
+    @classmethod
+    def parse_visual_qa_warn_only_codes(cls, value: object) -> object:
+        if isinstance(value, str):
+            return [item.strip().upper() for item in value.split(",") if item.strip()]
+        return value
+
+    @field_validator("visual_qa_warn_only_codes")
+    @classmethod
+    def validate_visual_qa_warn_only_codes(cls, value: list[str]) -> list[str]:
+        unknown = sorted(set(value) - set(VISUAL_QA_WARN_ONLY_ELIGIBLE_CODES))
+        if unknown:
+            raise ValueError(
+                "visual_qa_warn_only_codes must name known repair codes; "
+                f"unknown: {', '.join(unknown)}"
+            )
+        return sorted(set(value))
+
+    def visual_qa_thresholds(self) -> VisualQAThresholds:
+        """The deployment-wide T20 pass thresholds, before any project override."""
+        from services.qa.rubric import THRESHOLDS
+
+        return THRESHOLDS.model_copy(
+            update={"warn_only_codes": list(self.visual_qa_warn_only_codes)}
+        )
 
     @model_validator(mode="after")
     def narration_speaking_rate_window_is_ordered(self) -> APISettings:

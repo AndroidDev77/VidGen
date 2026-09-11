@@ -125,6 +125,11 @@ VisualQAHumanReviewDecision = Literal["approved", "rejected", "force_approved"]
 #: The decision recorded when a person overrides a soft ``FAIL``.
 VISUAL_QA_FORCE_APPROVED = "force_approved"
 
+#: Every repair code a deployment or project may demote to a warning.
+VISUAL_QA_WARN_ONLY_ELIGIBLE_CODES: tuple[str, ...] = tuple(
+    code.value for code in VisualQARepairCode
+)
+
 #: The repair codes tolerated out of the box. Each is a judgement the evaluator
 #: is weakest at - "this prompt is too complex", "the evidence is ambiguous",
 #: "there is not enough motion", "there are too many references" - and each
@@ -534,8 +539,7 @@ class VisualQAThresholds(StrictContract):
     @field_validator("warn_only_codes")
     @classmethod
     def warn_only_codes_are_known(cls, value: list[str]) -> list[str]:
-        known = {code.value for code in VisualQARepairCode}
-        unknown = sorted(set(value) - known)
+        unknown = sorted(set(value) - set(VISUAL_QA_WARN_ONLY_ELIGIBLE_CODES))
         if unknown:
             raise ValueError(f"unknown warn-only repair codes: {', '.join(unknown)}")
         if len(set(value)) != len(value):

@@ -45,6 +45,7 @@ from services.generation.settings import (
     effective_scene_detection_threshold,
     effective_script_warn_only_validation_codes,
     effective_storyboard_warn_only_validation_codes,
+    effective_visual_qa_thresholds,
     effective_warn_only_validation_codes,
     generation_policy_identity,
     project_generation_settings,
@@ -124,7 +125,7 @@ from vidgen.contracts.shot_workflow import (
     ShotWorkflowStatus,
 )
 from vidgen.contracts.transcription import TranscriptSegment, TranscriptWord
-from vidgen.contracts.visual_qa import VisualQATargetType
+from vidgen.contracts.visual_qa import VisualQATargetType, VisualQAThresholds
 from vidgen.contracts.workflow import (
     FinalQAActivityInput,
     FinalQAActivityResult,
@@ -381,6 +382,18 @@ def _run_shot_keyframe(
     )
 
 
+def _visual_qa_thresholds(
+    session: Session, settings: APISettings, project_id: UUID
+) -> VisualQAThresholds:
+    """The T20 pass policy for this project: deployment defaults plus its override."""
+    project = session.get(Project, project_id)
+    if project is None:
+        raise ValueError("project does not exist")
+    return effective_visual_qa_thresholds(
+        project_generation_settings(project), settings.visual_qa_thresholds()
+    )
+
+
 def _run_shot_visual_qa(
     session: Session,
     blob_store: BlobStore,
@@ -408,6 +421,7 @@ def _run_shot_visual_qa(
             request.shot_input_hash, f"t20-{target_type.value}"
         ),
         ocr_threshold=settings.visual_qa_ocr_threshold,
+        thresholds=_visual_qa_thresholds(session, settings, request.project_id),
     )
     try:
         result = asyncio.run(
@@ -504,6 +518,7 @@ def _run_shot_repair(
             openai_api_key=settings.openai_api_key,
             first_pass_model=settings.visual_qa_first_pass_model,
             adjudicator_model=settings.visual_qa_adjudicator_model,
+            thresholds=_visual_qa_thresholds(session, settings, request.project_id),
         ),
     )
     outcome = asyncio.run(

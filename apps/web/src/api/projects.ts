@@ -89,6 +89,9 @@ export interface GenerationSettingsResponse {
   /** The same two lists for the T13 storyboard validator. */
   effective_storyboard_warn_only_validation_codes: string[];
   available_storyboard_warn_only_validation_codes: string[];
+  /** The same two lists for the T20 visual-QA gate. */
+  effective_visual_qa_warn_only_codes: string[];
+  available_visual_qa_warn_only_codes: string[];
 }
 
 export interface GenerationEstimateInput {

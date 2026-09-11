@@ -241,6 +241,22 @@
       "default": null,
       "title": "Storyboard Warn Only Validation Codes"
     },
+    "visual_qa_warn_only_codes": {
+      "anyOf": [
+        {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 16,
+          "type": "array"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Visual Qa Warn Only Codes"
+    },
     "warn_only_validation_codes": {
       "anyOf": [
         {
