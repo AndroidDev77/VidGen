@@ -110,6 +110,12 @@ class ShotWorkflow:
             )
             self._progress = await self._activity("resolve_shot_input", ShotWorkflowProgress)  # type: ignore[assignment]
             self._progress.current_attempt = max(1, self._progress.current_attempt)
+            if self._progress.selected_keyframe_asset_id is None:
+                # A replacement run for a shot whose keyframe a person already
+                # approved is handed that keyframe. Adopting it here is what
+                # makes the T14 skip below reuse the approved image instead of
+                # paying to generate another one the owner never asked for.
+                self._progress.selected_keyframe_asset_id = request.selected_keyframe_asset_id
             if self._cancelled:
                 raise CancelledError()
         if self._progress.selected_keyframe_asset_id is None:
@@ -166,8 +172,13 @@ class ShotWorkflow:
             selected_video_asset_id = (
                 self._progress.selected_video_asset_id or selected_video_asset_id
             )
-        self._progress.t14_run_id = result.t14_run_id
-        self._progress.selected_keyframe_asset_id = result.selected_keyframe_asset_id
+        self._progress.t14_run_id = result.t14_run_id or t14_run_id
+        # A run that skipped T14 still animated a real keyframe: keep the one it
+        # was handed rather than letting the checkpoint forget which image the
+        # locked clip came from.
+        self._progress.selected_keyframe_asset_id = (
+            result.selected_keyframe_asset_id or selected_keyframe_asset_id
+        )
         self._progress.t15_run_id = result.t15_run_id
         self._progress.selected_video_asset_id = selected_video_asset_id
         self._progress.repair_run_id = repair_run_id
@@ -189,6 +200,8 @@ class ShotWorkflow:
             update={
                 "child_workflow_id": child_id,
                 "final_state": ShotWorkflowStatus.LOCKED,
+                "t14_run_id": self._progress.t14_run_id,
+                "selected_keyframe_asset_id": self._progress.selected_keyframe_asset_id,
                 "selected_video_asset_id": self._progress.selected_video_asset_id,
                 "repair_run_id": self._progress.repair_run_id,
                 "selected_repair_attempt_id": self._progress.selected_repair_attempt_id,

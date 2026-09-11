@@ -446,13 +446,22 @@ class ControlCommandDispatcher:
             if ControlCommandStatus(record.status) is not ControlCommandStatus.AWAITING_REVIEW:
                 repository.mark_awaiting_review(record, reason="shot_review_required")
             return False
+        if progress.state is ShotWorkflowStatus.FAILED and progress.retryable:
+            # The child is parked on its retry signal rather than finished: it
+            # still owns the shot's durable checkpoint, and this command has
+            # already delivered the signal it exists to deliver. Reporting a
+            # retryable failure here would ask a running row to go back to
+            # pending, which the command state machine refuses outright.
+            repository.mark_progress(
+                record, ControlCommandProgress(phase=progress.current_stage, percent=50)
+            )
+            return False
         if progress.state in {ShotWorkflowStatus.FAILED, ShotWorkflowStatus.CANCELLED}:
             return repository.fail(
                 record,
                 ControlCommandFailure(
                     code=progress.state.value,
                     summary="The replacement shot workflow did not lock an output.",
-                    retryable=bool(progress.retryable),
                 ),
             )
         repository.mark_progress(

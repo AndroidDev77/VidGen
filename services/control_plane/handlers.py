@@ -55,7 +55,8 @@ from vidgen.contracts.control_commands import (
     ProjectGenerationRunStatus,
 )
 from vidgen.contracts.final_editorial import FinalRemediationTarget
-from vidgen.contracts.shot_workflow import ShotWorkflowInput, ShotWorkflowStatus
+from vidgen.contracts.shot_workflow import ShotWorkflowInput, shot_workflow_is_live
+from vidgen.contracts.visual_qa import VisualQATargetType
 from vidgen.contracts.workflow import (
     PROJECT_STAGE_ORDER,
     FinalQAActivityInput,
@@ -66,6 +67,7 @@ from vidgen.db.continuity_models import character_reference_sets, location_refer
 from vidgen.db.control_command_models import ControlCommandRecord
 from vidgen.db.models import Project, SourceVideo
 from vidgen.db.storyboard_models import StoryboardRun, StoryboardShotRecord
+from vidgen.db.visual_qa_repository import VisualQARepository
 from vidgen.db.workflow_models import ProjectWorkflowRun
 from vidgen.review.workflow_control import WorkflowController, reference_workflow_id
 
@@ -239,6 +241,35 @@ def _approved_reference_set_ids(session: Session, project_id: UUID) -> list[UUID
 
 
 # -- T16/T18 shots --------------------------------------------------------
+def _approved_keyframe_asset_id(
+    context: DispatchContext, record: ControlCommandRecord, shot: StoryboardShotRecord
+) -> UUID | None:
+    """The keyframe a replacement run must reuse rather than pay to replace.
+
+    A review continuation exists because a person settled this shot's T20
+    verdict - by approving an ambiguous review, or by force-approving a soft
+    keyframe failure - and the child that was waiting on that answer has since
+    closed. Starting the replacement from scratch would regenerate the very
+    keyframe the owner just approved, spend T14 again and re-open the same gate
+    on a different image, so the replacement is handed the asset the open gate
+    was recorded against and skips keyframe generation.
+
+    Every other shot command means what it says: a retry or a regeneration asks
+    for new work, and neither inherits a keyframe.
+    """
+    if record.command_type != ControlCommandType.SHOT_REVIEW_CONTINUE.value:
+        return None
+    repository = VisualQARepository(context.session)
+    opened, _reason = repository.gate(shot.id, VisualQATargetType.KEYFRAME)
+    if not opened:
+        # The keyframe gate is still shut - a hard failure, or a continuation
+        # that arrived before any decision was recorded. Nothing has been
+        # approved to carry, and the replacement generates its own keyframe.
+        return None
+    qa_run = repository.canonical_run(shot.id, VisualQATargetType.KEYFRAME)
+    return qa_run.target_asset_id if qa_run is not None else None
+
+
 def _replacement_shot_input(
     context: DispatchContext, record: ControlCommandRecord, *, sequence: int
 ) -> ShotWorkflowInput:
@@ -269,6 +300,7 @@ def _replacement_shot_input(
         storyboard_shot_id=shot.stable_shot_id,
         shot_input_hash=identity.identity_hash,
         workflow_identity=identity,
+        selected_keyframe_asset_id=_approved_keyframe_asset_id(context, record, shot),
         idempotency_key=f"t18b:{record.id}:{identity.identity_hash}"[:255],
         trace_context={
             key: str(value)[:128] for key, value in dict(record.trace_context or {}).items()
@@ -340,10 +372,17 @@ def dispatch_shot_regenerate(
 def dispatch_shot_retry(context: DispatchContext, record: ControlCommandRecord) -> DispatchOutcome:
     """Resume a live shot workflow, or start an immutable recovery run.
 
-    A terminal child is never signalled: a shot whose workflow has closed is
-    recovered by starting a new immutable run with the next regeneration
-    sequence, which reruns T14, T20, T15, T20 and T21 exactly as policy
-    requires and leaves every previous attempt intact.
+    A closed child is never signalled: Temporal answers queries for a completed
+    execution for the whole retention window, so the state read back has to be
+    judged against what it means - a failed child is still waiting on this
+    signal only while its failure was retryable - and signalling one that has
+    already returned would fail forever without ever recovering the shot.
+
+    A shot whose workflow has closed is recovered by starting a new immutable
+    run with the next regeneration sequence, which reruns T14, T20, T15, T20
+    and T21 exactly as policy requires and leaves every previous attempt
+    intact - except for a keyframe a person has already approved, which the
+    replacement reuses instead of regenerating.
     """
     _project(context, record)
     shot = context.session.get(StoryboardShotRecord, record.target_id)
@@ -366,10 +405,7 @@ def dispatch_shot_retry(context: DispatchContext, record: ControlCommandRecord) 
         )
     )
     progress = context.controller.describe_shot_by_id(live_id)
-    if progress is not None and progress.state not in {
-        ShotWorkflowStatus.LOCKED,
-        ShotWorkflowStatus.CANCELLED,
-    }:
+    if shot_workflow_is_live(progress):
         # The child is alive and not terminal: resuming it is the cheapest and
         # the only correct answer, because it still owns its durable checkpoint.
         from vidgen.contracts.shot_workflow import ShotWorkflowCommand

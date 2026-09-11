@@ -30,7 +30,13 @@ from services.control_plane.dispatcher import ControlCommandDispatcher
 from services.control_plane.generation_runs import GenerationRunService
 from services.control_plane.references import reference_run_id, resolve_reference_inputs
 from services.control_plane.revisions import plan_revision
-from services.review.shot_identity import current_shot_identity_hash
+from services.qa.human_review import VisualQAHumanReviewService
+from services.review.shot_identity import (
+    configuration_identities,
+    current_shot_identity_hash,
+    current_workflow_id,
+    shot_workflow_identity,
+)
 from tests.review_fixtures import ProjectGraph, build_project_graph
 from vidgen.contracts.control_commands import (
     ControlCommandFailure,
@@ -40,6 +46,13 @@ from vidgen.contracts.control_commands import (
     ControlCommandType,
     ProjectGenerationRunStatus,
 )
+from vidgen.contracts.shot_workflow import (
+    ShotFailureClass,
+    ShotWorkflowFailure,
+    ShotWorkflowProgress,
+    ShotWorkflowStatus,
+)
+from vidgen.contracts.visual_qa import VisualQATargetType
 from vidgen.contracts.workflow import FinalQAActivityResult, RenderActivityResult
 from vidgen.db.base import Base
 from vidgen.db.control_command_models import ControlCommandRecord
@@ -49,7 +62,7 @@ from vidgen.db.control_command_repository import (
 )
 from vidgen.db.models import Project
 from vidgen.db.repair_models import RepairRun
-from vidgen.db.storyboard_models import StoryboardShotRecord
+from vidgen.db.storyboard_models import StoryboardRun, StoryboardShotRecord
 from vidgen.db.visual_qa_models import VisualQARun
 from vidgen.db.workflow_models import ProjectWorkflowRun
 from vidgen.review.workflow_control import FakeWorkflowController
@@ -1589,6 +1602,275 @@ def test_a_shot_command_without_a_stamped_sequence_still_dispatches(
         assert record.command_metadata["regeneration_sequence"] == "1"
     assert controller.shot_start_calls == 1
     del client
+
+
+# -- a force-approved keyframe must actually continue the shot ---------------
+def _keyframe_qa_run(session: Session, graph: ProjectGraph, index: int) -> VisualQARun:
+    """A completed T20 keyframe run that failed softly, as a reviewer sees it."""
+    run = VisualQARun(
+        id=uuid4(),
+        project_id=graph.project_id,
+        storyboard_run_id=graph.storyboard_run_id,
+        shot_id=graph.shot_ids[index],
+        shot_workflow_identity=IDENTITY,
+        target_type=VisualQATargetType.KEYFRAME.value,
+        target_asset_id=graph.keyframe_asset_ids[index],
+        target_asset_sha256="b" * 64,
+        qa_identity=f"{index:064x}",
+        input_hash="d" * 64,
+        idempotency_key=f"keyframe-qa:{graph.shot_ids[index]}",
+        status="visual_qa_complete",
+        importance="normal",
+        rubric_version="visual-qa-rubric/1.0",
+        sampling_version="visual-qa-sampler/1.0",
+        threshold_version="visual-qa-thresholds/1.0",
+        deterministic_version="visual-qa-deterministic/1.0",
+        pipeline_version="visual-qa/1.0.0",
+        deterministic_report={},
+        final_outcome="FAIL",
+        final_score=70.0,
+        pass_threshold=85.0,
+        hard_failure=False,
+        repair_recommendation="PROMPT_SIMPLIFICATION",
+        repair_codes=["PROMPT_TOO_COMPLEX"],
+        warning_codes=[],
+        cost_microusd=0,
+        completed_at=datetime.now(UTC),
+    )
+    session.add(run)
+    session.flush()
+    return run
+
+
+def _force_approve(session: Session, run: VisualQARun) -> None:
+    outcome = VisualQAHumanReviewService(session, "owner-a").decide(
+        run,
+        decision="approved",
+        reason="the framing is fine; the score is wrong",
+        row_version=1,
+        idempotency_key=f"force:{run.id}",
+    )
+    assert outcome.resulting_gate == "visual_qa_human_force_approved"
+
+
+def _live_shot_workflow_id(session: Session, shot_id: UUID) -> str:
+    """The Temporal ID of the child that currently owns one fixture shot."""
+    shot = session.get(StoryboardShotRecord, shot_id)
+    assert shot is not None
+    storyboard = session.get(StoryboardRun, shot.storyboard_run_id)
+    assert storyboard is not None
+    settings = APISettings()
+    t14_identity, t15_identity = configuration_identities(
+        image_provider_name=settings.image_provider_name,
+        image_model=settings.image_model,
+        video_provider_name=settings.video_provider_name,
+        visual_capability_profile=settings.visual_capability_profile,
+    )
+    return current_workflow_id(
+        shot_workflow_identity(
+            session,
+            storyboard,
+            shot,
+            t14_configuration_identity=t14_identity,
+            t15_capability_profile_identity=t15_identity,
+        )
+    )
+
+
+def _submit_review_continuation(session: Session, graph: ProjectGraph, shot_id: UUID) -> UUID:
+    project = session.get(Project, graph.project_id)
+    assert project is not None
+    shot = session.get(StoryboardShotRecord, shot_id)
+    identity = current_shot_identity_hash(session, shot, APISettings())
+    outcome = ControlPlaneService(session, "owner-a").submit(
+        project,
+        command_type=ControlCommandType.SHOT_REVIEW_CONTINUE,
+        target_type=ControlCommandTargetType.SHOT,
+        target_id=shot_id,
+        idempotency_key=f"review-continue:{shot_id}",
+        payload={"decision": "force_approved"},
+        metadata={"shot_identity_hash": identity},
+        shot_identity_hash=identity,
+    )
+    return outcome.command.command_id
+
+
+def _shot_progress(
+    state: ShotWorkflowStatus, *, retryable: bool, keyframe_asset_id: UUID
+) -> ShotWorkflowProgress:
+    return ShotWorkflowProgress(
+        state=state,
+        current_stage="failed",
+        current_attempt=1,
+        retryable=retryable,
+        selected_keyframe_asset_id=keyframe_asset_id,
+        last_failure=ShotWorkflowFailure(
+            classification=ShotFailureClass.VISUAL_QA_FAILURE,
+            code="VisualQABlocked",
+            retryable=retryable,
+            attempt=1,
+            message="the keyframe did not pass T20",
+        ),
+    )
+
+
+def test_a_force_approved_shot_is_replaced_rather_than_signalled(
+    graph: ProjectGraph,
+    dispatcher: ControlCommandDispatcher,
+    controller: FakeWorkflowController,
+    review_client: tuple[TestClient, sessionmaker[Session], FakeWorkflowController],
+) -> None:
+    """A child that failed on a blocked keyframe has already returned.
+
+    Temporal keeps answering its queries for the whole retention window, so the
+    ``FAILED`` state read back is not evidence of a live child. Signalling it
+    raises ``workflow execution already completed``, and the continuation would
+    be retried for as long as the command row survives.
+    """
+    _, factory, _ = review_client
+    index = 3
+    target = graph.shot_ids[index]
+    with factory() as session:
+        _force_approve(session, _keyframe_qa_run(session, graph, index))
+        command_id = _submit_review_continuation(session, graph, target)
+        workflow_id = _live_shot_workflow_id(session, target)
+        session.commit()
+    controller.shot_states[workflow_id] = _shot_progress(
+        ShotWorkflowStatus.FAILED,
+        retryable=False,
+        keyframe_asset_id=graph.keyframe_asset_ids[index],
+    )
+
+    assert dispatcher.run_once().dispatched == 1
+
+    assert controller.shot_commands == [], "a completed child must never be signalled"
+    assert controller.shot_start_calls == 1
+    with factory() as session:
+        record = session.get(ControlCommandRecord, command_id)
+        assert record is not None
+        assert record.status == ControlCommandStatus.RUNNING.value, record.error_summary
+        assert record.workflow_id != workflow_id, "the replacement is a new child"
+
+
+def test_a_replacement_run_animates_the_force_approved_keyframe(
+    graph: ProjectGraph,
+    dispatcher: ControlCommandDispatcher,
+    controller: FakeWorkflowController,
+    review_client: tuple[TestClient, sessionmaker[Session], FakeWorkflowController],
+) -> None:
+    """Force-approving is pointless if the replacement regenerates the image.
+
+    The owner said *this* keyframe is acceptable. The replacement child is
+    handed that asset, so it skips T14 and animates what was approved instead
+    of paying for a different image that would re-open the same gate.
+    """
+    _, factory, _ = review_client
+    index = 4
+    target = graph.shot_ids[index]
+    with factory() as session:
+        _force_approve(session, _keyframe_qa_run(session, graph, index))
+        command_id = _submit_review_continuation(session, graph, target)
+        workflow_id = _live_shot_workflow_id(session, target)
+        session.commit()
+    controller.shot_states[workflow_id] = _shot_progress(
+        ShotWorkflowStatus.FAILED,
+        retryable=False,
+        keyframe_asset_id=graph.keyframe_asset_ids[index],
+    )
+
+    assert dispatcher.run_once().dispatched == 1
+
+    started = list(controller.shots.values())
+    assert len(started) == 1
+    assert started[0].selected_keyframe_asset_id == graph.keyframe_asset_ids[index]
+    assert started[0].workflow_identity.regeneration_sequence == 1
+    del command_id
+
+
+def test_a_replacement_never_inherits_a_keyframe_nobody_approved(
+    graph: ProjectGraph,
+    dispatcher: ControlCommandDispatcher,
+    controller: FakeWorkflowController,
+    review_client: tuple[TestClient, sessionmaker[Session], FakeWorkflowController],
+) -> None:
+    """The gate is still shut, so there is nothing an owner asked to keep."""
+    _, factory, _ = review_client
+    index = 5
+    target = graph.shot_ids[index]
+    with factory() as session:
+        _keyframe_qa_run(session, graph, index)
+        command_id = _submit_review_continuation(session, graph, target)
+        session.commit()
+
+    assert dispatcher.run_once().dispatched == 1
+
+    started = list(controller.shots.values())
+    assert len(started) == 1
+    assert started[0].selected_keyframe_asset_id is None
+    del command_id
+
+
+def test_a_regeneration_still_regenerates_an_approved_keyframe(
+    client: TestClient,
+    graph: ProjectGraph,
+    dispatcher: ControlCommandDispatcher,
+    controller: FakeWorkflowController,
+    review_client: tuple[TestClient, sessionmaker[Session], FakeWorkflowController],
+) -> None:
+    """A regeneration asks for new work, and an open gate does not veto that."""
+    _, factory, _ = review_client
+    index = 6
+    target = graph.shot_ids[index]
+    with factory() as session:
+        _force_approve(session, _keyframe_qa_run(session, graph, index))
+        session.commit()
+    shot = client.get(api(graph.project_id, f"/shots/{target}"), headers=OWNER).json()
+    response = client.post(
+        api(graph.project_id, f"/shots/{target}:regenerate"),
+        json={"confirm_invalidation": True},
+        headers=headers(if_match=shot["shot"]["row_version"], key="regen-approved-1"),
+    )
+    assert response.status_code == 200, response.text
+
+    assert dispatcher.run_once().dispatched == 1
+
+    started = list(controller.shots.values())
+    assert len(started) == 1
+    assert started[0].selected_keyframe_asset_id is None
+
+
+def test_a_child_still_waiting_on_a_retry_signal_is_resumed(
+    graph: ProjectGraph,
+    dispatcher: ControlCommandDispatcher,
+    controller: FakeWorkflowController,
+    review_client: tuple[TestClient, sessionmaker[Session], FakeWorkflowController],
+) -> None:
+    """A retryable failure parks the child; replacing it would pay twice.
+
+    ``FAILED`` is the one state a child holds both open and closed in, so the
+    closed-state check has to read ``retryable`` rather than the state alone.
+    """
+    _, factory, _ = review_client
+    index = 7
+    target = graph.shot_ids[index]
+    with factory() as session:
+        command_id = _submit_review_continuation(session, graph, target)
+        workflow_id = _live_shot_workflow_id(session, target)
+        session.commit()
+    controller.shot_states[workflow_id] = _shot_progress(
+        ShotWorkflowStatus.FAILED,
+        retryable=True,
+        keyframe_asset_id=graph.keyframe_asset_ids[index],
+    )
+
+    assert dispatcher.run_once().dispatched == 1
+
+    assert [signalled for signalled, _ in controller.shot_commands] == [workflow_id]
+    assert controller.shot_start_calls == 0
+    with factory() as session:
+        record = session.get(ControlCommandRecord, command_id)
+        assert record is not None
+        assert record.workflow_id == workflow_id
 
 
 def test_a_retry_and_a_regeneration_never_share_a_replacement_identity(
