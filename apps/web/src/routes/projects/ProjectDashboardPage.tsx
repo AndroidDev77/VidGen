@@ -203,10 +203,10 @@ export function ProjectDashboardPage(): JSX.Element {
       setRetryingStage(null);
     },
   });
-  const removeErrorMessage =
-    remove.isError
-      ? "Delete failed — this project has generated data that cannot yet be removed automatically. Delete support for projects with pipeline data is coming soon."
-      : null;
+  // A delete now removes the whole pipeline graph, so the only failure left is
+  // a real one: something the project produced is still referenced elsewhere.
+  // The API names it, so show what it said rather than a guess.
+  const removeErrorMessage = remove.isError ? `Delete failed — ${remove.error.message}` : null;
 
   if (project.isPending) {
     return <LoadingState label="Loading the project" rows={3} />;

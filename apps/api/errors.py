@@ -31,6 +31,9 @@ SUMMARIES = {
     "file_too_large": "That file exceeds the configured maximum upload size.",
     "checksum_mismatch": "The uploaded bytes do not match the checksum you declared.",
     "incomplete_upload": "Some parts are still missing. Finish uploading them first.",
+    "project_has_references": (
+        "Some of this project's data is still in use elsewhere, so it cannot be deleted."
+    ),
 }
 
 
