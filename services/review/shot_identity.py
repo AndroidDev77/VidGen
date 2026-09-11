@@ -16,9 +16,13 @@ from sqlalchemy.orm import Session
 
 from packages.workflows.shot_policy import identity_hash, temporal_shot_workflow_id
 from services.animation.pipeline import PIPELINE_VERSION as T15_PIPELINE_VERSION
+from services.generation.settings import (
+    generation_policy_identity,
+    project_generation_settings,
+)
 from services.image_generation.pipeline import PIPELINE_VERSION as T14_PIPELINE_VERSION
 from vidgen.contracts.shot_workflow import ShotWorkflowIdentity
-from vidgen.db.models import Asset
+from vidgen.db.models import Asset, Project
 from vidgen.db.storyboard_models import StoryboardRun, StoryboardShotRecord
 from vidgen.review.errors import not_found
 
@@ -75,6 +79,24 @@ def canonical_shot_hash(contract: object) -> str:
     ).hexdigest()
 
 
+def run_generation_policy_identity(session: Session, run: StoryboardRun) -> str:
+    """The generation-policy identity the T16 fan-out bound into this run's shots.
+
+    Derived from exactly the same persisted material the fan-out activity reads -
+    the project's stored generation settings and the storyboard's T13 capability
+    profile - so the dispatcher rebuilds the string the child workflow was minted
+    with instead of dropping it and hashing a shorter material set.
+    """
+    project = session.get(Project, run.project_id)
+    if project is None:
+        raise not_found("shot workflow")
+    return generation_policy_identity(
+        project_generation_settings(project),
+        capability_profile_id=run.capability_profile_id,
+        capability_hash=run.capability_hash,
+    )
+
+
 def shot_workflow_identity(
     session: Session,
     run: StoryboardRun,
@@ -101,6 +123,11 @@ def shot_workflow_identity(
     regeneration: dict[str, str | int] = (
         {"regeneration_sequence": regeneration_sequence} if regeneration_sequence else {}
     )
+    # The fan-out omits an empty policy identity from the hashed material, so
+    # every identity minted before the policy existed keeps the hash it has.
+    policy_identity = run_generation_policy_identity(session, run)
+    if policy_identity:
+        regeneration["generation_policy_identity"] = policy_identity
     material: dict[str, str | int] = {
         **regeneration,
         "project_id": str(run.project_id),
@@ -123,6 +150,7 @@ def shot_workflow_identity(
         {
             **material,
             "regeneration_sequence": regeneration_sequence,
+            "generation_policy_identity": policy_identity,
             "identity_hash": identity_hash(material),
         }
     )

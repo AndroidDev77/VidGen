@@ -1405,6 +1405,149 @@ def test_a_first_reference_binding_regenerates_nothing(
     assert outcome.regenerated_shot_ids == ()
 
 
+def test_a_child_that_does_not_exist_is_reported_absent_not_raised() -> None:
+    """``describe_shot_by_id`` is how the dispatcher asks "is there a child?".
+
+    A shot whose Temporal execution is gone - never started, or its history
+    expired - must answer ``None`` so the command falls through and starts a
+    replacement. Raising instead fails the command with an unhandled RPC error.
+    A *transient* RPC failure is different: answering ``None`` there would pay
+    for a second child while the first is still alive, so it must propagate.
+    """
+    from temporalio.service import RPCError, RPCStatusCode
+
+    from vidgen.review.workflow_control import TemporalWorkflowController
+
+    def controller(error: RPCError) -> TemporalWorkflowController:
+        instance = TemporalWorkflowController("host:7233", "ns")
+        # Only the query is replaced: the NOT_FOUND handling under test lives in
+        # ``describe_shot_by_id``, and no cluster is contacted.
+        instance.describe_shot = lambda _workflow_id: (_ for _ in ()).throw(error)  # type: ignore[method-assign]
+        return instance
+
+    missing = RPCError("workflow not found", RPCStatusCode.NOT_FOUND, b"")
+    assert controller(missing).describe_shot_by_id("vidgen-shot-absent") is None
+
+    unavailable = RPCError("no worker is polling", RPCStatusCode.UNAVAILABLE, b"")
+    with pytest.raises(RPCError):
+        controller(unavailable).describe_shot_by_id("vidgen-shot-live")
+
+
+def test_the_dispatcher_rebuilds_the_identity_the_fanout_actually_minted(
+    graph: ProjectGraph,
+    review_client: tuple[TestClient, sessionmaker[Session], FakeWorkflowController],
+) -> None:
+    """The two hashes must agree, or no shot command can ever find its child.
+
+    The T16 fan-out binds the project's generation policy into the material it
+    hashes. The dispatcher rebuilds that identity from persisted rows, so it has
+    to bind the same field: a material set that silently drops it resolves to a
+    Temporal ID that was never started, and every shot command fails with
+    "workflow not found" instead of reaching the child that owns the shot.
+    """
+    from packages.workflows.shot_policy import temporal_shot_workflow_id
+    from services.review.shot_identity import (
+        configuration_identities,
+        shot_workflow_identity,
+    )
+    from vidgen.contracts.shot_workflow import ProjectShotFanoutInput
+    from vidgen.db.image_generation_repository import SelectedStoryboard
+    from vidgen.db.models import Asset
+    from vidgen.db.storyboard_models import StoryboardRun
+    from workers.temporal_worker.production_handlers import (
+        _generation_policy_identity,
+        _shot_input,
+    )
+
+    _, factory, _ = review_client
+    settings = APISettings()
+    t14_identity, t15_identity = configuration_identities(
+        image_provider_name=settings.image_provider_name,
+        image_model=settings.image_model,
+        video_provider_name=settings.video_provider_name,
+        visual_capability_profile=settings.visual_capability_profile,
+    )
+    with factory() as session:
+        run = session.get(StoryboardRun, graph.storyboard_run_id)
+        project = session.get(Project, graph.project_id)
+        assert run is not None and project is not None
+        # The fan-out reads this bundle from the repository; assembling it from
+        # the same rows keeps the comparison about the two hashes rather than
+        # about T10-T13 lineage revalidation.
+        selected = SelectedStoryboard(
+            project=project,
+            storyboard=run,
+            shots=tuple(
+                session.scalars(
+                    select(StoryboardShotRecord)
+                    .where(StoryboardShotRecord.storyboard_run_id == run.id)
+                    .order_by(StoryboardShotRecord.global_sequence)
+                ).all()
+            ),
+            storyboard_asset=session.get(Asset, run.storyboard_asset_id),
+            timing_asset=session.get(Asset, run.timing_manifest_asset_id),
+        )
+        policy = _generation_policy_identity(session, selected)
+        assert policy, "the fan-out binds a policy identity for every live project"
+        fanout = ProjectShotFanoutInput(
+            project_id=graph.project_id,
+            storyboard_run_id=graph.storyboard_run_id,
+            idempotency_key="t16-fanout",
+            t14_configuration_identity=t14_identity,
+            t15_capability_profile_identity=t15_identity,
+            generation_policy_identity=policy,
+        )
+        for shot in selected.shots:
+            minted = _shot_input(fanout, selected, shot).workflow_identity
+            rebuilt = shot_workflow_identity(
+                session,
+                run,
+                shot,
+                t14_configuration_identity=t14_identity,
+                t15_capability_profile_identity=t15_identity,
+            )
+            assert rebuilt.generation_policy_identity == policy
+            assert rebuilt == minted
+            assert temporal_shot_workflow_id(rebuilt) == temporal_shot_workflow_id(minted)
+        # A regeneration must still resolve to a *different* child, so the
+        # policy identity cannot be flattening every sequence into one hash.
+        replacement = shot_workflow_identity(
+            session,
+            run,
+            selected.shots[0],
+            t14_configuration_identity=t14_identity,
+            t15_capability_profile_identity=t15_identity,
+            regeneration_sequence=1,
+        )
+        first = _shot_input(fanout, selected, selected.shots[0]).workflow_identity
+        assert replacement.identity_hash != first.identity_hash
+        assert replacement == _shot_input(fanout, selected, selected.shots[0], 1).workflow_identity
+
+
+def test_a_generation_settings_change_moves_every_shot_identity(
+    graph: ProjectGraph,
+    review_client: tuple[TestClient, sessionmaker[Session], FakeWorkflowController],
+) -> None:
+    """Binding the policy is only real if changing it changes the rebuilt hash."""
+    from services.generation.settings import with_generation_settings
+    from vidgen.contracts.generation import GenerationQuality, ProjectGenerationSettings
+
+    _, factory, _ = review_client
+    target = graph.shot_ids[0]
+    with factory() as session:
+        shot = session.get(StoryboardShotRecord, target)
+        before = current_shot_identity_hash(session, shot, APISettings())
+        project = session.get(Project, graph.project_id)
+        assert project is not None
+        project.settings = with_generation_settings(
+            project.settings,
+            ProjectGenerationSettings(generation_quality=GenerationQuality.PREMIUM),
+        )
+        session.flush()
+        after = current_shot_identity_hash(session, shot, APISettings())
+    assert before != after
+
+
 def test_a_shot_command_without_a_stamped_sequence_still_dispatches(
     client: TestClient,
     graph: ProjectGraph,
