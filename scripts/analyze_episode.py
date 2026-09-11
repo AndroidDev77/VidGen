@@ -59,6 +59,7 @@ async def main() -> None:
             session,
             FilesystemBlobStore(settings.blob_root, settings.signing_secret.encode()),
             provider,
+            concurrency=settings.analysis_concurrency,
             warn_only_codes=effective_warn_only_validation_codes(
                 project_generation_settings(project), settings.warn_only_validation_codes
             ),

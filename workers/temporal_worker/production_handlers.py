@@ -1090,7 +1090,11 @@ def _analyze_episode(
     )
     result = asyncio.run(
         EpisodeAnalysisPipeline(
-            session, blob_store, provider, warn_only_codes=warn_only_codes
+            session,
+            blob_store,
+            provider,
+            concurrency=settings.analysis_concurrency,
+            warn_only_codes=warn_only_codes,
         ).process(
             project_id=request.project_id,
             evidence_package_id=evidence.id,

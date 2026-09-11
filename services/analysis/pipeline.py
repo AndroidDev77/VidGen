@@ -67,7 +67,10 @@ class EpisodeAnalysisPipeline:
         blob_store: BlobStore,
         provider: EpisodeAnalysisProvider,
         *,
-        concurrency: int = 4,
+        # Kept low: the ceiling is the provider account's concurrent-request
+        # limit, and anything above it is rejected with 429 the moment it is
+        # sent. The worker passes the deployment's configured value.
+        concurrency: int = 2,
         max_attempts: int = 2,
         metrics: Metrics | None = None,
         warn_only_codes: Iterable[str] | None = None,
