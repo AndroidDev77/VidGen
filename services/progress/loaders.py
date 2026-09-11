@@ -258,7 +258,7 @@ def script_generation(session: Session, project: Project) -> StageProgress | Non
         spec,
         status=_status_for(spec, project, run.status),
         completed_count=len(reviews),
-        total_count=specs.SCRIPT_EDITORIAL_PASSES,
+        total_count=run.max_editing_passes,
         error_code=run.error_code,
         updated_at=latest(
             run.updated_at,

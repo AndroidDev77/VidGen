@@ -236,8 +236,8 @@ def test_storyboard_warn_only_validation_codes_load_as_a_comma_separated_list(
 def test_an_unknown_storyboard_warn_only_validation_code_is_refused(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    # too_many_references is a real storyboard code, but demoting it would hand
-    # the animator a shot it cannot generate, so it is not eligible.
-    monkeypatch.setenv("VIDGEN_STORYBOARD_WARN_ONLY_VALIDATION_CODES", "too_many_references")
+    # SCENE_SET_MISMATCH is a real code, but of the analysis validator: the
+    # storyboard validator never emits it, so it would silently match nothing.
+    monkeypatch.setenv("VIDGEN_STORYBOARD_WARN_ONLY_VALIDATION_CODES", "SCENE_SET_MISMATCH")
     with pytest.raises(ValidationError):
         APISettings(_env_file=None)

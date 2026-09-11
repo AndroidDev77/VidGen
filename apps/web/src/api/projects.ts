@@ -62,8 +62,10 @@ export interface GenerationSettingsInput {
    * the run. An empty list means every code fails the run.
    */
   warn_only_validation_codes: string[];
-  /** The same, for T11 plot compression. */
+  /** The same, for T11 plot compression and script validation. */
   script_warn_only_validation_codes: string[];
+  /** The same, for T13 storyboard validation. */
+  storyboard_warn_only_validation_codes: string[];
 }
 
 export interface GenerationSettingsResponse {
@@ -163,8 +165,10 @@ export interface CreateProjectInput {
   scene_detection_threshold: number;
   /** Episode-analysis validation codes reported as warnings instead of errors. */
   warn_only_validation_codes: string[];
-  /** The same, for T11 plot compression. */
+  /** The same, for T11 plot compression and script validation. */
   script_warn_only_validation_codes: string[];
+  /** The same, for T13 storyboard validation. */
+  storyboard_warn_only_validation_codes: string[];
 }
 
 export function listProjects(

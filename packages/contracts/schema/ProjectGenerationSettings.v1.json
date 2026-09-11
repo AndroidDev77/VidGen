@@ -205,7 +205,7 @@
           "items": {
             "type": "string"
           },
-          "maxItems": 16,
+          "maxItems": 64,
           "type": "array"
         },
         {
@@ -231,7 +231,7 @@
           "items": {
             "type": "string"
           },
-          "maxItems": 16,
+          "maxItems": 64,
           "type": "array"
         },
         {
@@ -247,7 +247,7 @@
           "items": {
             "type": "string"
           },
-          "maxItems": 16,
+          "maxItems": 64,
           "type": "array"
         },
         {
@@ -263,7 +263,7 @@
           "items": {
             "type": "string"
           },
-          "maxItems": 16,
+          "maxItems": 64,
           "type": "array"
         },
         {

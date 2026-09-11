@@ -1210,6 +1210,8 @@ export interface ScriptSummaryProjection {
   target_word_count: number;
   target_duration_ms: number;
   parent_script_id: UUID | null;
+  editing_pass: number;
+  rejection_reason: string | null;
   created_at: string;
   row_version: number;
 }
@@ -1769,6 +1771,9 @@ export interface PipelineFailureListItem {
   errorCode: string;
   retryable: boolean;
   status: string;
+  createdAt: string | null;
+  /** `null` while the failure still explains why the project is stopped. */
+  resolvedAt: string | null;
 }
 
 export interface PipelineFailureListResponse {

@@ -426,3 +426,60 @@ def test_fit_segment_text_never_exceeds_target_words_when_joke_clause_is_long() 
     )
     assert len(text.split()) == 4
     assert 0 <= joke_start <= joke_end <= len(text)
+
+
+def _script_missing_a_mandatory_beat(analysis, plan):
+    """A script whose first segment drops the beat it was the only cover for."""
+    script = _script(analysis, plan)
+    dropped = script.segments[0].plot_beat_ids[0]
+    segments = [
+        segment.model_copy(
+            update={"plot_beat_ids": [b for b in segment.plot_beat_ids if b != dropped]}
+        )
+        for segment in script.segments
+    ]
+    tampered = script.model_copy(update={"segments": segments})
+    return tampered.model_copy(
+        update={"beat_coverage": build_beat_coverage(tampered, plan)}
+    ), dropped
+
+
+def test_a_warn_only_code_is_demoted_to_a_warning_and_the_script_stays_valid() -> None:
+    """Coverage findings are the owner's call: tolerated, they no longer fail the draft."""
+    analysis = _make_analysis(uuid4())
+    _, plan = _plan(analysis)
+    tampered, _ = _script_missing_a_mandatory_beat(analysis, plan)
+    report = validate_recap_script(
+        tampered,
+        analysis=analysis,
+        plan=plan,
+        warn_only_codes={"BEAT_NOT_COVERED", "MANDATORY_BEAT_NOT_COVERED"},
+    )
+    assert report.valid, report.errors
+    assert {note.code for note in report.warnings} & {
+        "BEAT_NOT_COVERED",
+        "MANDATORY_BEAT_NOT_COVERED",
+    }
+
+
+def test_a_code_outside_warn_only_codes_still_fails_script_validation() -> None:
+    analysis = _make_analysis(uuid4())
+    _, plan = _plan(analysis)
+    tampered, _ = _script_missing_a_mandatory_beat(analysis, plan)
+    report = validate_recap_script(
+        tampered, analysis=analysis, plan=plan, warn_only_codes={"PROHIBITED_PATTERN"}
+    )
+    assert not report.valid
+    assert {error.code for error in report.errors} & {
+        "BEAT_NOT_COVERED",
+        "MANDATORY_BEAT_NOT_COVERED",
+    }
+
+
+def test_an_empty_warn_only_set_tolerates_nothing_in_script_validation() -> None:
+    """``None`` means the deployment default; an empty set tolerates nothing."""
+    analysis = _make_analysis(uuid4())
+    _, plan = _plan(analysis)
+    tampered, _ = _script_missing_a_mandatory_beat(analysis, plan)
+    report = validate_recap_script(tampered, analysis=analysis, plan=plan, warn_only_codes=set())
+    assert not report.valid

@@ -36,14 +36,57 @@ SegmentType = Literal["NARRATION", "DIALOGUE", "PAUSE"]
 SpeakerKind = Literal["narrator", "character", "anonymous"]
 ApprovalRecommendation = Literal["approve", "revise", "reject"]
 
-#: Compression-validation codes a deployment or project may choose to treat as
-#: warnings instead of hard failures. A code outside this set is always an
-#: error: it names a plan the script writer cannot be built from at all.
-SCRIPT_WARN_ONLY_ELIGIBLE_VALIDATION_CODES: tuple[str, ...] = (
-    "UNKNOWN_SOURCE_REFERENCE",
-    "UNKNOWN_BEAT",
+#: Every code ``validate_compressed_plot_plan`` can emit, in the order the
+#: validator checks for them.
+PLOT_PLAN_VALIDATION_CODES: tuple[str, ...] = (
     "DUPLICATE_ID",
+    "UNKNOWN_BEAT",
+    "MANDATORY_BEAT_OMITTED",
     "REQUIRED_BEAT_OMITTED",
+    "STRUCTURAL_BEAT_OMITTED",
+    "UNSUPPORTED_BEAT_SUMMARY",
+    "OMISSION_WITHOUT_REASON",
+    "UNKNOWN_SOURCE_REFERENCE",
+    "CAUSE_AFTER_EFFECT",
+    "MISSING_CAUSAL_BRIDGE",
+    "CYCLIC_BEAT_DEPENDENCY",
+    "WORD_BUDGET_OFF_TARGET",
+    "PACING_OFF_TARGET",
+)
+#: Every code ``validate_recap_script`` can emit, in the order the validator
+#: checks for them.
+RECAP_SCRIPT_VALIDATION_CODES: tuple[str, ...] = (
+    "WORD_COUNT_MISMATCH",
+    "WORD_COUNT_OUT_OF_RANGE",
+    "UNKNOWN_PLOT_BEAT_REFERENCE",
+    "UNKNOWN_SCENE_REFERENCE",
+    "UNKNOWN_SPEAKER",
+    "ANONYMOUS_SPEAKER_NOT_PERMITTED",
+    "INVALID_JOKE_SPAN",
+    "PROHIBITED_PATTERN",
+    "NEAR_VERBATIM_TRANSCRIPT",
+    "MANDATORY_BEAT_NOT_COVERED",
+    "BEAT_NOT_COVERED",
+    "UNKNOWN_CALLBACK_SEGMENT",
+    "CALLBACK_PAYOFF_BEFORE_SETUP",
+    "UNKNOWN_SOURCE_REFERENCE",
+    "TOO_MUCH_EXPOSITION",
+    "LONG_EXPOSITION_WITHOUT_JOKE",
+    "LOCKED_SEGMENT_CHANGED",
+    "COVERAGE_REGRESSED",
+)
+#: T11 validation codes a deployment or project may choose to treat as
+#: warnings instead of hard failures: every code the plot-plan validator and
+#: the recap-script validator can emit, without duplicates (the two share
+#: UNKNOWN_SOURCE_REFERENCE). One list serves both validators because a
+#: project tolerates a *kind* of finding, not a stage. A tolerated finding
+#: stays on the report as a warning; it never fails the run or spends a
+#: repair attempt. Tolerating a structural code is the owner's call: the
+#: output is persisted as written, so the recap may then be missing beats
+#: or off its word target.
+SCRIPT_WARN_ONLY_ELIGIBLE_VALIDATION_CODES: tuple[str, ...] = (
+    *PLOT_PLAN_VALIDATION_CODES,
+    *(code for code in RECAP_SCRIPT_VALIDATION_CODES if code not in PLOT_PLAN_VALIDATION_CODES),
 )
 #: UNKNOWN_SOURCE_REFERENCE by default: a compressor that mints a reference_id
 #: instead of copying the one it was handed is citing its evidence badly, which
@@ -413,6 +456,10 @@ class ComedyEditRequest(StrictContract):
     rubric: ComedyRubric
     prior_review_id: UUID | None = None
     attempt_number: int = Field(ge=1)
+    #: The human reviewer's reason for rejecting the previous editing pass.
+    #: Present from the second pass on; the editor must address it rather than
+    #: re-edit the script blindly.
+    reviewer_feedback: str | None = Field(default=None, max_length=20_000)
     input_hash: str = Field(pattern=r"^[a-f0-9]{64}$")
     idempotency_key: str = Field(min_length=1)
     contract_version: str

@@ -533,7 +533,7 @@ class VisualQAThresholds(StrictContract):
     #: Defaults to the codes that most often produce a false-positive failure;
     #: an explicit ``[]`` tolerates nothing.
     warn_only_codes: list[str] = Field(
-        default_factory=lambda: list(DEFAULT_VISUAL_QA_WARN_ONLY_CODES), max_length=16
+        default_factory=lambda: list(DEFAULT_VISUAL_QA_WARN_ONLY_CODES), max_length=64
     )
 
     @field_validator("warn_only_codes")

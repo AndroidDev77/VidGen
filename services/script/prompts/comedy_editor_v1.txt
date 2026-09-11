@@ -32,3 +32,9 @@ You must:
 
 If a `prior_review_id` is present, this is a targeted revision pass: focus only on
 the issues raised in that prior review.
+
+If `reviewer_feedback` is present, a human reviewer rejected the previous editing
+pass for that reason. This pass exists to address it: treat the feedback as the
+primary brief, fix what it names before anything else, and explain in each
+`ScriptEdit` reason how the change answers it. Do not re-edit passages the
+feedback does not mention unless a rubric dimension clearly requires it.

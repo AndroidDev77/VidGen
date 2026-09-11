@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime
 from decimal import Decimal
 from typing import Annotated
 from uuid import UUID
@@ -18,6 +19,7 @@ from vidgen.db.cost_models import (
     ProjectBudget,
     ProviderAttempt,
 )
+from vidgen.review.projections import utc
 
 router = APIRouter(prefix="/projects", tags=["costs", "operations"])
 S = Annotated[Session, Depends(get_session)]
@@ -139,6 +141,17 @@ def attempts(
     }
 
 
+def _iso(value: datetime | None) -> str | None:
+    """A timestamp the browser can parse as UTC, or nothing at all.
+
+    ``utc`` stamps the zone onto the naive values SQLite hands back; without it
+    the browser reads a UTC instant as local time and the dashboard reports a
+    failure hours away from when it happened.
+    """
+    stamped = utc(value)
+    return stamped.isoformat() if stamped is not None else None
+
+
 @router.get("/{project_id}/failures")
 def failures(
     project_id: UUID,
@@ -165,6 +178,10 @@ def failures(
                 "errorCode": r.error_code,
                 "retryable": r.retryable,
                 "status": r.projected_status,
+                # The dashboard needs both to tell "this is why the project is
+                # stuck" from "this is something that already recovered".
+                "createdAt": _iso(r.created_at),
+                "resolvedAt": _iso(r.resolved_at),
             }
             for r in rows
         ]

@@ -4,6 +4,7 @@ import {
   BreadcrumbButton,
   BreadcrumbDivider,
   BreadcrumbItem,
+  Button,
   Caption1,
   MessageBar,
   MessageBarActions,
@@ -14,6 +15,7 @@ import {
   tokens,
 } from "@fluentui/react-components";
 import {
+  ArrowCounterclockwiseRegular,
   ClockRegular,
   FlowRegular,
   VideoClipMultipleRegular,
@@ -22,7 +24,7 @@ import type { JSX, ReactNode } from "react";
 import { Link, useLocation } from "react-router-dom";
 import type { WorkflowStatusProjection } from "@vidgen/contracts";
 
-import { formatDurationSeconds, formatStage } from "../state/format";
+import { formatDurationSeconds, formatStage, formatTimestamp, humanize } from "../state/format";
 import { StatusBadge } from "./StatusBadge";
 
 const useStyles = makeStyles({
@@ -114,6 +116,7 @@ const useStyles = makeStyles({
     },
   },
   review: { marginTop: tokens.spacingVerticalS },
+  failureDetail: { display: "block", marginTop: tokens.spacingVerticalXXS },
   reviewLink: {
     display: "inline-flex",
     alignItems: "center",
@@ -170,6 +173,28 @@ function reviewMessage({ review, failed }: ReviewPrompt): string {
     : "This project is waiting on a review decision before it can continue.";
 }
 
+/**
+ * The failure that stopped the project, as the header states it.
+ *
+ * A workflow that died answers no query, so this comes from the project's
+ * recorded failure events rather than from the workflow projection. Without it
+ * the dashboard reports a run that is still going and offers nothing to press.
+ */
+export interface FailurePrompt {
+  /** The stage that failed, in the workflow's own vocabulary. */
+  readonly stage: string;
+  readonly errorCode: string;
+  readonly failureClass: string;
+  readonly occurredAt?: string | null;
+  /**
+   * Re-enter the pipeline at that stage. Omitted when the recorded stage has
+   * no entry point the workflow would accept, so the header never offers a
+   * button whose request would be refused.
+   */
+  readonly onRetry?: (() => void) | undefined;
+  readonly isRetrying?: boolean | undefined;
+}
+
 export interface ProjectStatusHeaderProps {
   readonly projectId: string;
   readonly projectName: string;
@@ -183,6 +208,12 @@ export interface ProjectStatusHeaderProps {
    * the owner to find the buttons on their own.
    */
   readonly reviewPrompt?: ReviewPrompt | undefined;
+  /**
+   * The unresolved failure this project is stopped on. Shown above the review
+   * prompt: a project that failed is not waiting on a decision, it is waiting
+   * on a retry.
+   */
+  readonly failurePrompt?: FailurePrompt | undefined;
 }
 
 export function ProjectStatusHeader({
@@ -193,6 +224,7 @@ export function ProjectStatusHeader({
   connectionLabel,
   actions,
   reviewPrompt,
+  failurePrompt,
 }: ProjectStatusHeaderProps): JSX.Element {
   const styles = useStyles();
   const { pathname } = useLocation();
@@ -269,6 +301,38 @@ export function ProjectStatusHeader({
             </Caption1>
           )}
         </div>
+      )}
+
+      {failurePrompt !== undefined && (
+        <MessageBar
+          intent="error"
+          className={styles.review}
+          data-testid="project-failure-banner"
+        >
+          <MessageBarBody>
+            <MessageBarTitle>{formatStage(failurePrompt.stage)} failed</MessageBarTitle>
+            {humanize(failurePrompt.errorCode)} ({humanize(failurePrompt.failureClass)}).
+            <Caption1 className={styles.failureDetail}>
+              Recorded {formatTimestamp(failurePrompt.occurredAt)}. Nothing is running for
+              this project until it is retried.
+            </Caption1>
+          </MessageBarBody>
+          {failurePrompt.onRetry !== undefined && (
+            <MessageBarActions>
+              <Button
+                appearance="primary"
+                icon={<ArrowCounterclockwiseRegular />}
+                disabled={failurePrompt.isRetrying === true}
+                onClick={failurePrompt.onRetry}
+                data-testid="project-failure-retry"
+              >
+                {failurePrompt.isRetrying === true
+                  ? "Retrying…"
+                  : `Retry from ${formatStage(failurePrompt.stage)}`}
+              </Button>
+            </MessageBarActions>
+          )}
+        </MessageBar>
       )}
 
       {showReview && (
