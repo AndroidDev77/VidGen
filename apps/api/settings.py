@@ -101,6 +101,12 @@ class APISettings(BaseSettings):
     transcription_model: str = "whisper-1"
     diarization_model: str = "gpt-4o-transcribe-diarize"
     analysis_model: str = "gpt-5.6"
+    #: How many T10 scene analyses may be in flight against the provider at
+    #: once. The ceiling is the provider account's concurrent-request limit,
+    #: not the machine's: anything above it is rejected with 429 the moment it
+    #: is sent. Defaults to 2, which the most restrictive OpenAI tiers allow;
+    #: raise it for an account with more headroom.
+    analysis_concurrency: int = Field(default=2, ge=1)
     script_compressor_model: str = "gpt-5.6"
     script_writer_model: str = "gpt-5.6"
     script_editor_model: str = "gpt-5.6"
