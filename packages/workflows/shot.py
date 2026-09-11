@@ -268,6 +268,10 @@ class ShotWorkflow:
             "VisualQAReviewRequired": (ShotFailureClass.VISUAL_QA_REVIEW_REQUIRED, False),
             "VisualQALineageError": (ShotFailureClass.INVALID_LINEAGE, False),
             "BudgetExceededError": (ShotFailureClass.BUDGET_DENIAL, False),
+            # An OpenAI spend limit is the provider's own budget denial: the
+            # adapter already gave up on it, so the shot must not retry either.
+            "OpenAISpendLimitExceeded": (ShotFailureClass.BUDGET_DENIAL, False),
+            "OpenAIRateLimited": (ShotFailureClass.RATE_LIMIT, True),
             "UnsupportedCapability": (ShotFailureClass.UNSUPPORTED_CAPABILITY, False),
             "UnknownProviderOutcome": (ShotFailureClass.UNKNOWN_FAILURE, False),
             "AmbiguousVideoSubmission": (ShotFailureClass.UNKNOWN_FAILURE, False),

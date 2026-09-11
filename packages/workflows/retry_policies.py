@@ -29,5 +29,11 @@ def provider_activity_retry_policy() -> RetryPolicy:
         backoff_coefficient=2,
         maximum_interval=timedelta(minutes=5),
         maximum_attempts=3,
-        non_retryable_error_types=[*NON_RETRYABLE_ERROR_TYPES, "QuotaError"],
+        # A provider spend limit outlives an activity retry window the same
+        # way an exhausted quota does.
+        non_retryable_error_types=[
+            *NON_RETRYABLE_ERROR_TYPES,
+            "QuotaError",
+            "OpenAISpendLimitExceeded",
+        ],
     )

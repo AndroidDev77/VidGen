@@ -33,6 +33,7 @@ from services.qa.visual_agent import (
     VisualQARole,
 )
 from vidgen.contracts.visual_qa import VisualQAProviderResult
+from vidgen.providers.openai_rate_limit import send_with_backoff
 
 _log = logging.getLogger(__name__)
 
@@ -94,15 +95,17 @@ class OpenAIVisualAgent:
             self._client = None
 
     async def evaluate(self, call: VisualAgentCall) -> VisualQAProviderResult:
-        response = await self.client.post(
-            "/responses",
-            headers={
-                "Authorization": f"Bearer {self.config.api_key}",
-                # The QA attempt identity is the application's own idempotency
-                # key, so a retried activity never buys a second evaluation.
-                "Idempotency-Key": call.request.qa_attempt_identity,
-            },
-            json=self._body(call),
+        response = await send_with_backoff(
+            lambda: self.client.post(
+                "/responses",
+                headers={
+                    "Authorization": f"Bearer {self.config.api_key}",
+                    # The QA attempt identity is the application's own idempotency
+                    # key, so a retried activity never buys a second evaluation.
+                    "Idempotency-Key": call.request.qa_attempt_identity,
+                },
+                json=self._body(call),
+            )
         )
         if response.is_error:
             _log.error(

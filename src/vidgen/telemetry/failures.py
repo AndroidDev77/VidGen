@@ -21,7 +21,10 @@ def classify_failure(
         kind, code, retry = FailureClass.TIMEOUT, "PROVIDER_TIMEOUT", True
     elif isinstance(exc, asyncio.CancelledError):
         kind, code, retry = FailureClass.CANCELLED, "CANCELLED", False
-    elif status_code == 429:
+    elif "spendlimitexceeded" in name or "budgetexceeded" in name:
+        # A provider spend limit is a 429 that no amount of waiting clears.
+        kind, code, retry = FailureClass.BUDGET_EXCEEDED, "PROVIDER_SPEND_LIMIT", False
+    elif "ratelimited" in name or status_code == 429:
         kind, code, retry = FailureClass.RATE_LIMIT, "PROVIDER_RATE_LIMIT", True
     elif status_code in (401,):
         kind, code, retry = FailureClass.AUTHENTICATION, "PROVIDER_AUTHENTICATION", False

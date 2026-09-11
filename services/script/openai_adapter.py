@@ -28,6 +28,7 @@ from vidgen.contracts.script import (
     RecapScript,
     ScriptProviderMetadata,
 )
+from vidgen.providers.openai_rate_limit import send_with_backoff
 
 _PROMPT_VERSION = "comedy-script-v1"
 
@@ -81,13 +82,15 @@ class OpenAIScriptGenerationProvider:
                 }
             },
         }
-        response = await self.client.post(
-            "/responses",
-            headers={
-                "Authorization": f"Bearer {self.config.api_key}",
-                "Idempotency-Key": request.idempotency_key,
-            },
-            json=body,
+        response = await send_with_backoff(
+            lambda: self.client.post(
+                "/responses",
+                headers={
+                    "Authorization": f"Bearer {self.config.api_key}",
+                    "Idempotency-Key": request.idempotency_key,
+                },
+                json=body,
+            )
         )
         response.raise_for_status()
         payload = response.json()
