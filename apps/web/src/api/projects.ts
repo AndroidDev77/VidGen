@@ -68,6 +68,8 @@ export interface GenerationSettingsInput {
   storyboard_warn_only_validation_codes: string[];
   /** The same, for the T12 narration quality gate. */
   narration_warn_only_quality_codes: string[];
+  /** The same, for the T20 visual-QA gate. */
+  visual_qa_warn_only_codes: string[];
 }
 
 export interface GenerationSettingsResponse {
@@ -173,6 +175,8 @@ export interface CreateProjectInput {
   storyboard_warn_only_validation_codes: string[];
   /** The same, for the T12 narration quality gate. */
   narration_warn_only_quality_codes: string[];
+  /** The same, for the T20 visual-QA gate. */
+  visual_qa_warn_only_codes: string[];
 }
 
 export function listProjects(

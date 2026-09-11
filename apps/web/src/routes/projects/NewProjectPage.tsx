@@ -130,6 +130,12 @@ export function NewProjectPage(): JSX.Element {
     script_warn_only_validation_codes: ["UNKNOWN_SOURCE_REFERENCE"],
     storyboard_warn_only_validation_codes: ["continuity_contradiction"],
     narration_warn_only_quality_codes: ["alignment_coverage"],
+    visual_qa_warn_only_codes: [
+      "AMBIGUOUS_VISUAL_EVIDENCE",
+      "INSUFFICIENT_MOTION",
+      "PROMPT_TOO_COMPLEX",
+      "TOO_MANY_REFERENCES",
+    ],
   });
   const [nameError, setNameError] = useState<string | null>(null);
   // Tracked per field so an invalid warning cap is flagged on the warning cap.
@@ -164,6 +170,7 @@ export function NewProjectPage(): JSX.Element {
           script_warn_only_validation_codes: generation.script_warn_only_validation_codes,
           storyboard_warn_only_validation_codes: generation.storyboard_warn_only_validation_codes,
           narration_warn_only_quality_codes: generation.narration_warn_only_quality_codes,
+          visual_qa_warn_only_codes: generation.visual_qa_warn_only_codes,
         },
         client,
       ).then((response) => response.data),

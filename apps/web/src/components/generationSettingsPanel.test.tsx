@@ -11,6 +11,7 @@ import {
   NARRATION_WARN_ONLY_QUALITY_CODES,
   SCRIPT_WARN_ONLY_VALIDATION_CODES,
   STORYBOARD_WARN_ONLY_VALIDATION_CODES,
+  VISUAL_QA_WARN_ONLY_CODES,
   WARN_ONLY_VALIDATION_CODES,
 } from "./GenerationSettingsPanel";
 import type { WARN_ONLY_GROUPS } from "./GenerationSettingsPanel";
@@ -26,6 +27,7 @@ const VALUE: GenerationSettingsInput = {
   script_warn_only_validation_codes: ["UNKNOWN_SOURCE_REFERENCE"],
   storyboard_warn_only_validation_codes: ["continuity_contradiction"],
   narration_warn_only_quality_codes: ["alignment_coverage"],
+  visual_qa_warn_only_codes: ["AMBIGUOUS_VISUAL_EVIDENCE"],
 };
 
 const SECTION = "Treat errors as warnings";
@@ -33,6 +35,7 @@ const ANALYSIS = "Episode analysis: treat as warnings";
 const SCRIPT = "Script: treat as warnings";
 const STORYBOARD = "Storyboard: treat as warnings";
 const NARRATION = "Narration: treat as warnings";
+const VISUAL_QA = "Visual QA: treat as warnings";
 
 function renderPanel(): (next: GenerationSettingsInput) => void {
   const onChange = vi.fn<(next: GenerationSettingsInput) => void>();
@@ -79,9 +82,9 @@ describe("GenerationSettingsPanel warn-only section", () => {
     expect(screen.getByRole("combobox", { name: ANALYSIS })).toBeInTheDocument();
   });
 
-  it("offers every stage, narration included", async () => {
+  it("offers every stage, narration and visual QA included", async () => {
     await renderExpanded();
-    for (const name of [ANALYSIS, SCRIPT, STORYBOARD, NARRATION]) {
+    for (const name of [ANALYSIS, SCRIPT, STORYBOARD, NARRATION, VISUAL_QA]) {
       expect(screen.getByRole("combobox", { name })).toBeInTheDocument();
     }
   });
@@ -90,6 +93,9 @@ describe("GenerationSettingsPanel warn-only section", () => {
     await renderExpanded();
     expect(screen.getByRole("combobox", { name: ANALYSIS })).toHaveValue("SCENE_SET_MISMATCH");
     expect(screen.getByRole("combobox", { name: NARRATION })).toHaveValue("alignment_coverage");
+    expect(screen.getByRole("combobox", { name: VISUAL_QA })).toHaveValue(
+      "AMBIGUOUS_VISUAL_EVIDENCE",
+    );
   });
 });
 
@@ -126,6 +132,21 @@ describe("GenerationSettingsPanel warn-only selection", () => {
     expect(chosen(onChange, "storyboard_warn_only_validation_codes")).toEqual([
       "continuity_contradiction",
     ]);
+    expect(chosen(onChange, "visual_qa_warn_only_codes")).toEqual([
+      "AMBIGUOUS_VISUAL_EVIDENCE",
+    ]);
+  });
+
+  it("tolerates another visual QA repair code without dropping the one chosen", async () => {
+    const onChange = await renderExpanded();
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("combobox", { name: VISUAL_QA }));
+    await user.click(await screen.findByRole("menuitemcheckbox", { name: /ANATOMY_BREAKAGE/ }));
+    expect(chosen(onChange, "visual_qa_warn_only_codes")).toEqual([
+      "AMBIGUOUS_VISUAL_EVIDENCE",
+      "ANATOMY_BREAKAGE",
+    ]);
+    expect(chosen(onChange, "narration_warn_only_quality_codes")).toEqual(["alignment_coverage"]);
   });
 
   it("offers a recap-script code alongside the plot-compression codes", async () => {
@@ -148,6 +169,7 @@ describe("GenerationSettingsPanel select all", () => {
     ["Script", "script_warn_only_validation_codes", SCRIPT_WARN_ONLY_VALIDATION_CODES],
     ["Storyboard", "storyboard_warn_only_validation_codes", STORYBOARD_WARN_ONLY_VALIDATION_CODES],
     ["Narration", "narration_warn_only_quality_codes", NARRATION_WARN_ONLY_QUALITY_CODES],
+    ["Visual QA", "visual_qa_warn_only_codes", VISUAL_QA_WARN_ONLY_CODES],
   ])("takes %s to every code at once", async (label, field, codes) => {
     const onChange = await renderExpanded();
     await userEvent
@@ -219,6 +241,11 @@ describe("GenerationSettingsPanel code lists", () => {
       NARRATION_WARN_ONLY_QUALITY_CODES,
       fixtures.generationSettings.available_narration_warn_only_quality_codes,
     ],
+    [
+      "visual QA",
+      VISUAL_QA_WARN_ONLY_CODES,
+      fixtures.generationSettings.available_visual_qa_warn_only_codes,
+    ],
   ])("offers every %s code the API accepts", (_stage, offered, available) => {
     expect([...offered.map((code) => code.value)].sort()).toEqual([...available].sort());
   });
@@ -229,6 +256,7 @@ describe("GenerationSettingsPanel code lists", () => {
       SCRIPT_WARN_ONLY_VALIDATION_CODES,
       STORYBOARD_WARN_ONLY_VALIDATION_CODES,
       NARRATION_WARN_ONLY_QUALITY_CODES,
+      VISUAL_QA_WARN_ONLY_CODES,
     ]) {
       for (const code of group) {
         expect(code.description.length).toBeGreaterThan(0);
