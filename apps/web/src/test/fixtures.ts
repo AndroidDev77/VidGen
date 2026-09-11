@@ -655,6 +655,8 @@ export const failures: PipelineFailureListResponse = {
       errorCode: "provider_timeout",
       retryable: true,
       status: "recovered",
+      createdAt: "2026-08-01T10:00:00Z",
+      resolvedAt: "2026-08-01T10:05:00Z",
     },
   ],
 };

@@ -38,6 +38,11 @@ import { SectionCard, StatTile, StatTiles } from "../../components/Surface";
 import { TechnicalDetails } from "../../components/TechnicalDetails";
 import { ErrorState, LoadingState } from "../../components/states";
 import { formatDurationSeconds, formatMoney, formatStage } from "../../state/format";
+import {
+  stoppedOnFailure,
+  timelineStageForFailure,
+  unresolvedFailure,
+} from "../../state/projectFailure";
 import { retryStage, retryableStages } from "../../state/retryStage";
 import { reviewCounts } from "../../state/visualQa";
 import { stageProgressPollInterval } from "../../state/stageProgress";
@@ -219,6 +224,31 @@ export function ProjectDashboardPage(): JSX.Element {
   // one cannot run until that stage produced its output.
   const stalledStage = retryableStages(workflowData)[0];
 
+  // A workflow that died answers no query, so the timeline can come back with
+  // nothing failed at all while the project is plainly stuck. The failure it
+  // recorded on its way out is the witness that survives, and it names the
+  // stage a retry has to re-enter.
+  // Only when the project actually stopped on it: an unresolved row left behind
+  // by a provider call the pipeline retried past is history, not a blocker.
+  const openFailure = stoppedOnFailure(workflowData)
+    ? unresolvedFailure(failures.data?.items)
+    : undefined;
+  const failureStage =
+    openFailure === undefined ? undefined : timelineStageForFailure(openFailure.stage);
+  const failurePrompt =
+    openFailure === undefined
+      ? undefined
+      : {
+          stage: openFailure.stage,
+          errorCode: openFailure.errorCode,
+          failureClass: openFailure.failureClass,
+          occurredAt: openFailure.createdAt,
+          isRetrying: retry.isPending,
+          ...(failureStage === undefined
+            ? {}
+            : { onRetry: () => retry.mutate(failureStage) }),
+        };
+
   const visualQaRuns = visualQa.data?.items ?? [];
   // What the dashboard owes a returning owner: not "shot generation failed",
   // but "N shots are waiting on you, and here is where you decide".
@@ -245,6 +275,7 @@ export function ProjectDashboardPage(): JSX.Element {
         workflow={workflowData}
         connectionLabel={connectionLabel}
         reviewPrompt={visualQa.isSuccess ? reviewPrompt : undefined}
+        failurePrompt={failurePrompt}
         actions={
           <div className={styles.actions}>
             {!started && (
@@ -440,12 +471,18 @@ export function ProjectDashboardPage(): JSX.Element {
           <FailurePanel
             failures={failures.data.items}
             attempts={attempts.data.items}
-            {...(stalledStage === undefined
-              ? {}
-              : {
-                  onRetry: () => retry.mutate(stalledStage.stage),
-                  retryStageLabel: formatStage(stalledStage.stage),
-                })}
+            {...(() => {
+              // Prefer the timeline: it reflects the live workflow. Fall back
+              // to the recorded failure for a workflow that is no longer there
+              // to be asked.
+              const stage = stalledStage?.stage ?? failureStage;
+              return stage === undefined
+                ? {}
+                : {
+                    onRetry: () => retry.mutate(stage),
+                    retryStageLabel: formatStage(stage),
+                  };
+            })()}
             isRetrying={retry.isPending}
           />
         )}

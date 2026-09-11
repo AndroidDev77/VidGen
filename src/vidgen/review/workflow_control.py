@@ -77,6 +77,17 @@ class WorkflowController(Protocol):
 
     def describe_project(self, workflow_id: str) -> ProjectWorkflowState | None: ...
 
+    def project_execution_status(self, workflow_id: str) -> str | None:
+        """The cluster's own view of the execution, independent of its query.
+
+        ``describe_project`` asks the *workflow* what it thinks; a workflow that
+        has already failed answers nothing at all. This reports the execution
+        status the cluster records - ``running``, ``completed``, ``failed``,
+        ``cancelled``, ``terminated`` or ``timed_out`` - so a
+        caller can tell "still working" from "died an hour ago". ``None`` means
+        the cluster could not be asked, which is never evidence of a failure.
+        """
+
     def send_shot_command(
         self, workflow_id: str, command: ShotWorkflowCommand
     ) -> ShotWorkflowCommandResult: ...
@@ -125,6 +136,41 @@ class WorkflowController(Protocol):
 #: Project workflow statuses after which no execution is still running.
 _CLOSED_PROJECT = {"completed", "final_qa_passed", "cancelled"}
 
+#: Execution statuses a controller may report, mirroring Temporal's
+#: ``WorkflowExecutionStatus`` with its spellings normalised.
+EXECUTION_RUNNING = "running"
+EXECUTION_COMPLETED = "completed"
+EXECUTION_FAILED = "failed"
+EXECUTION_CANCELLED = "cancelled"
+EXECUTION_TERMINATED = "terminated"
+EXECUTION_TIMED_OUT = "timed_out"
+
+#: Execution statuses after which nothing is running any more. A project whose
+#: database row still says ``running`` while the cluster reports one of these is
+#: stale, and every continuation it blocks is blocked for no reason.
+TERMINAL_EXECUTION_STATUSES = frozenset(
+    {
+        EXECUTION_COMPLETED,
+        EXECUTION_FAILED,
+        EXECUTION_CANCELLED,
+        EXECUTION_TERMINATED,
+        EXECUTION_TIMED_OUT,
+    }
+)
+
+#: ``WorkflowExecutionStatus`` value -> the spelling above. Temporal numbers the
+#: enum from 1 (``RUNNING``); a value outside this table is reported verbatim in
+#: lower case rather than guessed at.
+_TEMPORAL_EXECUTION_STATUSES: dict[int, str] = {
+    1: EXECUTION_RUNNING,
+    2: EXECUTION_COMPLETED,
+    3: EXECUTION_FAILED,
+    4: EXECUTION_CANCELLED,
+    5: EXECUTION_TERMINATED,
+    6: EXECUTION_RUNNING,  # CONTINUED_AS_NEW: a successor execution is live.
+    7: EXECUTION_TIMED_OUT,
+}
+
 
 class FakeWorkflowController:
     """Deterministic in-memory controller used by tests and local development."""
@@ -157,6 +203,11 @@ class FakeWorkflowController:
         self.project_run_ids: dict[str, str] = {}
         #: Workflow IDs the fake cluster reports as already gone.
         self.missing_workflows: set[str] = set()
+        #: Execution statuses the fake cluster reports, overriding what the
+        #: workflow's own state implies. This is how a test reproduces the case
+        #: the reconciler exists for: an execution that died while the
+        #: database still believes it is running.
+        self.execution_statuses: dict[str, str] = {}
 
     def start_project(self, request: ProjectWorkflowInput) -> tuple[str, str]:
         """Adopt a live execution, or start a new one under the same ID.
@@ -191,6 +242,21 @@ class FakeWorkflowController:
 
     def describe_project(self, workflow_id: str) -> ProjectWorkflowState | None:
         return self.states.get(workflow_id)
+
+    def project_execution_status(self, workflow_id: str) -> str | None:
+        override = self.execution_statuses.get(workflow_id)
+        if override is not None:
+            return override
+        if workflow_id in self.missing_workflows:
+            return None
+        state = self.states.get(workflow_id)
+        if state is None:
+            return None
+        if state.cancelled:
+            return EXECUTION_CANCELLED
+        if state.status in _CLOSED_PROJECT:
+            return EXECUTION_COMPLETED
+        return EXECUTION_RUNNING
 
     def send_shot_command(
         self, workflow_id: str, command: ShotWorkflowCommand
@@ -381,6 +447,37 @@ class TemporalWorkflowController:
 
         result = self._run(run())
         return result if isinstance(result, ProjectWorkflowState) else None
+
+    def project_execution_status(self, workflow_id: str) -> str | None:
+        """Ask the cluster, not the workflow, whether the execution is alive.
+
+        ``describe`` answers for an execution that already failed, which a query
+        cannot: the query needs a worker and a workflow willing to run it. That
+        difference is the whole point - a project whose workflow died is exactly
+        the project whose row still says ``running``.
+        """
+        from temporalio.service import RPCError
+
+        async def run() -> str | None:
+            client = await self._client()
+            handle = client.get_workflow_handle(workflow_id)  # type: ignore[attr-defined]
+            try:
+                description = await handle.describe()
+            except RPCError:
+                # Not found, or the cluster is unreachable. Either way this is
+                # not evidence that the execution stopped, so say nothing.
+                return None
+            status = getattr(description, "status", None)
+            if status is None:
+                return None
+            value = getattr(status, "value", None)
+            if isinstance(value, int) and value in _TEMPORAL_EXECUTION_STATUSES:
+                return _TEMPORAL_EXECUTION_STATUSES[value]
+            name = getattr(status, "name", None)
+            return str(name).lower() if name else None
+
+        result = self._run(run())
+        return result if isinstance(result, str) else None
 
     def send_shot_command(
         self, workflow_id: str, command: ShotWorkflowCommand
