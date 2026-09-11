@@ -33,6 +33,7 @@ from vidgen.contracts.storyboard import (
     StoryboardProviderResult,
     StoryboardShotProposal,
 )
+from vidgen.providers.openai_rate_limit import send_with_backoff
 
 SYSTEM_PROMPT = (
     "You are the Storyboard Director for an animated comedy recap. You convert one measured "
@@ -113,13 +114,15 @@ class OpenAIStoryboardDirector:
                 }
             },
         }
-        response = await self.client.post(
-            OPENAI_RESPONSES_PATH,
-            headers={
-                "Authorization": f"Bearer {self.config.api_key}",
-                "Idempotency-Key": request.idempotency_key,
-            },
-            json=body,
+        response = await send_with_backoff(
+            lambda: self.client.post(
+                OPENAI_RESPONSES_PATH,
+                headers={
+                    "Authorization": f"Bearer {self.config.api_key}",
+                    "Idempotency-Key": request.idempotency_key,
+                },
+                json=body,
+            )
         )
         response.raise_for_status()
         payload = cast(dict[str, Any], response.json())

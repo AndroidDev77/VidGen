@@ -16,6 +16,7 @@ from vidgen.contracts.transcription import (
     TranscriptSegment,
     TranscriptWord,
 )
+from vidgen.providers.openai_rate_limit import send_with_backoff
 
 
 class OpenAITranscriptionAdapter:
@@ -146,13 +147,18 @@ class OpenAITranscriptionAdapter:
     async def _post(
         self, audio_path: Path, data: dict[str, str], idempotency_key: str
     ) -> httpx.Response:
-        with audio_path.open("rb") as stream:
-            response = await self.client.post(
-                "/audio/transcriptions",
-                headers={**self.headers, "Idempotency-Key": idempotency_key},
-                data=data,
-                files={"file": (audio_path.name, stream, "audio/flac")},
-            )
+        async def send() -> httpx.Response:
+            # The upload stream is consumed by each attempt, so it is reopened
+            # per attempt rather than hoisted out of the retry.
+            with audio_path.open("rb") as stream:
+                return await self.client.post(
+                    "/audio/transcriptions",
+                    headers={**self.headers, "Idempotency-Key": idempotency_key},
+                    data=data,
+                    files={"file": (audio_path.name, stream, "audio/flac")},
+                )
+
+        response = await send_with_backoff(send)
         response.raise_for_status()
         return response
 

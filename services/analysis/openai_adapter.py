@@ -23,6 +23,7 @@ from vidgen.contracts.episode_analysis import (
     SceneAnalysisRequest,
     SceneAnalysisResult,
 )
+from vidgen.providers.openai_rate_limit import send_with_backoff
 
 
 @dataclass(frozen=True, slots=True)
@@ -90,13 +91,16 @@ class OpenAIEpisodeAnalysisProvider:
                 }
             },
         }
-        response = await (client or self.client).post(
-            "/responses",
-            headers={
-                "Authorization": f"Bearer {self.config.api_key}",
-                "Idempotency-Key": request.idempotency_key,
-            },
-            json=body,
+        http = client or self.client
+        response = await send_with_backoff(
+            lambda: http.post(
+                "/responses",
+                headers={
+                    "Authorization": f"Bearer {self.config.api_key}",
+                    "Idempotency-Key": request.idempotency_key,
+                },
+                json=body,
+            )
         )
         response.raise_for_status()
         payload = response.json()

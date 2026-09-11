@@ -35,6 +35,7 @@ from services.qa.final_editorial_provider import (
     FinalEditorialRole,
 )
 from vidgen.contracts.final_editorial import FinalEditorialProviderResult
+from vidgen.providers.openai_rate_limit import send_with_backoff
 
 PROMPTS = {
     FinalEditorialRole.LUNA_FIRST_PASS: "final_editorial_v1.txt",
@@ -94,15 +95,17 @@ class OpenAIFinalEditorialProvider:
             self._client = None
 
     async def evaluate(self, call: FinalEditorialCall) -> FinalEditorialProviderResult:
-        response = await self.client.post(
-            "/responses",
-            headers={
-                "Authorization": f"Bearer {self.config.api_key}",
-                # The attempt identity is the application's own idempotency key,
-                # so a retried activity never buys a second evaluation.
-                "Idempotency-Key": call.request.attempt_identity,
-            },
-            json=self._body(call),
+        response = await send_with_backoff(
+            lambda: self.client.post(
+                "/responses",
+                headers={
+                    "Authorization": f"Bearer {self.config.api_key}",
+                    # The attempt identity is the application's own idempotency key,
+                    # so a retried activity never buys a second evaluation.
+                    "Idempotency-Key": call.request.attempt_identity,
+                },
+                json=self._body(call),
+            )
         )
         response.raise_for_status()
         payload = response.json()
