@@ -14,7 +14,7 @@ representation.
 
 from __future__ import annotations
 
-from typing import Annotated, Any, Literal, get_args
+from typing import Annotated, Any, Literal, NamedTuple, get_args
 from uuid import UUID
 
 from pydantic import Field, model_validator
@@ -38,6 +38,7 @@ STORYBOARD_VALIDATION_CODES: tuple[str, ...] = (
     "missing_evidence_reference",
     "provider_schema_failure",
     "continuity_contradiction",
+    "continuity_character_not_present",
     "unsupported_camera_movement",
     "unsupported_transition",
     "nonpositive_duration",
@@ -245,6 +246,14 @@ class SubjectPosition(StrictContract):
     facing: ScreenDirection = "neutral"
 
 
+class ContinuityReferenceProblem(NamedTuple):
+    """One character a continuity state references without declaring present."""
+
+    field: str
+    character_id: UUID
+    message: str
+
+
 class ContinuityState(StrictContract):
     """Structured continuity, never prose alone."""
 
@@ -262,18 +271,50 @@ class ContinuityState(StrictContract):
     previous_shot_id: UUID | None = None
     unresolved_warnings: list[StructuredNote] = Field(default_factory=list)
 
-    @model_validator(mode="after")
-    def references_are_consistent(self) -> ContinuityState:
+    def undeclared_character_references(self) -> list[ContinuityReferenceProblem]:
+        """Characters this state positions or dresses without declaring present.
+
+        ``present_character_ids`` is authoritative downstream - it drives image
+        generation, animation priority, visual QA, and repair planning - so a
+        character referenced only by an appearance state or a subject position is
+        a real defect and is never patched in here. It is also a mistake a
+        Storyboard Director makes routinely, so it is reported as a structured
+        ``continuity_character_not_present`` finding the repair loop can hand
+        back to the provider rather than raised as a schema error that would
+        abort the whole run at parse time.
+
+        Duplicate ``present_character_ids`` are deliberately not reported:
+        canonicalization de-duplicates the list, which loses nothing.
+        """
         present = set(self.present_character_ids)
-        if len(present) != len(self.present_character_ids):
-            raise ValueError("present_character_ids must be unique")
+        problems: list[ContinuityReferenceProblem] = []
         for state in self.character_appearance_states:
             if state.character_id not in present:
-                raise ValueError("appearance state references an absent character")
+                problems.append(
+                    ContinuityReferenceProblem(
+                        field="character_appearance_states",
+                        character_id=state.character_id,
+                        message=(
+                            f"character {state.character_id} carries appearance state "
+                            f"{state.appearance_state_id!r} but is not declared in "
+                            "present_character_ids"
+                        ),
+                    )
+                )
         for position in self.subject_positions:
             if position.character_id not in present:
-                raise ValueError("subject position references an absent character")
-        return self
+                problems.append(
+                    ContinuityReferenceProblem(
+                        field="subject_positions",
+                        character_id=position.character_id,
+                        message=(
+                            f"character {position.character_id} is placed at screen position "
+                            f"{position.screen_position!r} but is not declared in "
+                            "present_character_ids"
+                        ),
+                    )
+                )
+        return problems
 
 
 class StoryboardSourceReference(StrictContract):
@@ -547,6 +588,7 @@ StoryboardValidationCode = Literal[
     "missing_evidence_reference",
     "provider_schema_failure",
     "continuity_contradiction",
+    "continuity_character_not_present",
     "unsupported_camera_movement",
     "unsupported_transition",
     "nonpositive_duration",

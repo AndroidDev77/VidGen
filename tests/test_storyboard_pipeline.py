@@ -8,7 +8,7 @@ from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
 from typing import get_args
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 from sqlalchemy import select
@@ -37,6 +37,7 @@ from vidgen.contracts.storyboard import (
     StoryboardProviderRequest,
     StoryboardProviderResult,
     StoryboardValidationCode,
+    SubjectPosition,
     TimingManifest,
 )
 from vidgen.db.cost_models import (
@@ -700,6 +701,88 @@ class _CountingContradictingDirector(_ContradictingDirector):
     async def propose(self, request):
         self.requests.append((request.segment_sequence, request.attempt_number))
         return await super().propose(request)
+
+
+#: A character the Director positions on screen without declaring it present.
+UNDECLARED_CHARACTER_ID = UUID("b0f2a2a4-6c5d-4f3e-8a1b-9d7c6e5f4a3b")
+
+
+class _UndeclaredCharacterDirector(FakeStoryboardDirector):
+    """Positions a character on screen without declaring it present.
+
+    The real Director makes exactly this mistake: it places a character in
+    ``subject_positions`` and forgets to add it to ``present_character_ids``.
+    The mistake is planted on the first attempt only, so a repair converges.
+    """
+
+    async def propose(self, request):
+        result = await super().propose(request)
+        if request.attempt_number > 1:
+            return result
+        proposals = [
+            proposal.model_copy(
+                update={
+                    "incoming_continuity": proposal.incoming_continuity.model_copy(
+                        update={
+                            "subject_positions": [
+                                *proposal.incoming_continuity.subject_positions,
+                                SubjectPosition(
+                                    character_id=UNDECLARED_CHARACTER_ID,
+                                    screen_position="left",
+                                ),
+                            ]
+                        }
+                    )
+                }
+            )
+            for proposal in result.proposals
+        ]
+        return result.model_copy(update={"proposals": proposals})
+
+
+def test_a_positioned_but_undeclared_character_is_diagnosed_and_repaired(tmp_path: Path) -> None:
+    """The mistake becomes a repairable finding instead of aborting the run."""
+    fixture = build_fixture(tmp_path)
+    result = run_pipeline(fixture, director=_UndeclaredCharacterDirector(), warn_only_codes=())
+    assert result.status == "storyboard_complete"
+    repairs = list(fixture.session.scalars(select(StoryboardRepairAttempt)))
+    assert repairs
+    codes = {diagnostic["code"] for repair in repairs for diagnostic in repair.input_diagnostics}
+    assert "continuity_character_not_present" in codes
+    assert all(repair.status == "valid" for repair in repairs)
+    # present_character_ids stays authoritative: nothing was patched in for the
+    # character the Director only positioned.
+    storyboard = load_storyboard(fixture, result)
+    for shot in storyboard.shots:
+        for state in (shot.incoming_continuity, shot.expected_outgoing_continuity):
+            assert not state.undeclared_character_references()
+
+
+def test_an_undeclared_character_can_be_tolerated_when_the_project_elects_to(
+    tmp_path: Path,
+) -> None:
+    """Tolerating the code records it as a warning and keeps the shot as proposed."""
+    fixture = build_fixture(tmp_path)
+    result = run_pipeline(
+        fixture,
+        director=_UndeclaredCharacterDirector(),
+        warn_only_codes={"continuity_character_not_present"},
+    )
+    assert result.status == "storyboard_complete"
+    assert list(fixture.session.scalars(select(StoryboardRepairAttempt))) == []
+    checkpoint = fixture.session.scalar(
+        select(StoryboardSegmentCheckpoint).where(StoryboardSegmentCheckpoint.sequence == 0)
+    )
+    assert checkpoint is not None and checkpoint.validation_report["valid"] is True
+    findings = [
+        item
+        for item in checkpoint.validation_report["diagnostics"]
+        if item["code"] == "continuity_character_not_present"
+    ]
+    assert findings and all(item["severity"] == "warning" for item in findings)
+    assert all(
+        item["entity_path"].endswith(".incoming_continuity.subject_positions") for item in findings
+    )
 
 
 def test_only_eligible_codes_can_be_demoted(tmp_path: Path) -> None:

@@ -53,6 +53,7 @@ from services.storyboard.validator import (
     trim_reference_images,
     validate_outgoing_handoff,
     validate_proposals,
+    validate_result_continuity_references,
     validate_segment_timing,
     validate_storyboard,
 )
@@ -776,6 +777,7 @@ class StoryboardPipeline:
             [
                 *validate_proposals(proposals, context),
                 *validate_outgoing_handoff(proposals, result.expected_outgoing_continuity, context),
+                *validate_result_continuity_references(result, context),
             ]
         )
         if any(item.severity == "error" for item in diagnostics):

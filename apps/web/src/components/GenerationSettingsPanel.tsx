@@ -210,6 +210,10 @@ export const STORYBOARD_WARN_ONLY_VALIDATION_CODES: ReadonlyArray<{
     description: "continuity drifts between shots without explanation",
   },
   {
+    value: "continuity_character_not_present",
+    description: "a shot positions a character it never declares present",
+  },
+  {
     value: "unsupported_camera_movement",
     description: "a camera movement the provider cannot generate",
   },
