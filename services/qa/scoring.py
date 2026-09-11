@@ -4,7 +4,14 @@ Nothing a provider says becomes the canonical score. This module takes validated
 dimension proposals plus the deterministic report, rebuilds every weighted
 contribution in application code, redistributes the weight of any genuinely
 non-applicable dimension, and derives the outcome under one absolute rule: a
-hard failure forces ``FAIL`` regardless of the number.
+technical hard failure (black video, decode failure, duration mismatch, or any
+deterministic hard-failure measurement) forces ``FAIL`` regardless of the number.
+
+Semantic hard-failure proposals from the evaluator (identity, count, action,
+props, anatomy, continuity) are soft. They block only when the evaluator also
+scored that dimension below ``semantic_hard_failure_dimension_floor``; otherwise
+the finding is demoted to a warning and the recomputed score decides. Codes in
+``warn_only_codes`` are recorded as warnings and never block or route a repair.
 
 The routing recommendation produced here is advisory. T20 never executes it.
 """
@@ -28,6 +35,7 @@ from services.qa.rubric import (
     HARD_FAILURE_CODES,
     REPAIR_CODE_DIMENSIONS,
     REPAIR_CODES,
+    THRESHOLDS,
 )
 from vidgen.contracts.visual_qa import (
     VisualQADeterministicReport,
@@ -47,6 +55,30 @@ from vidgen.contracts.visual_qa import (
     VisualQAThresholds,
 )
 from vidgen.contracts.visual_qa import VisualQADimensionResult as _DimensionResult
+
+#: Warning recorded on a dimension when a semantic hard-failure proposal was
+#: demoted because the evaluator's own dimension score did not support it.
+HARD_FAILURE_DOWNGRADED_BY_SCORE: str = "hard_failure_downgraded_by_score"
+
+
+def _warn_only_marker(code: VisualQARepairCode) -> str:
+    return f"warn_only:{code.value}"
+
+
+def blocks_regardless_of_score(
+    repair_codes: Sequence[VisualQARepairCode],
+    raw_score: float,
+    thresholds: VisualQAThresholds,
+) -> bool:
+    """Whether a hard-failure proposal carrying these codes may block the shot.
+
+    A technical code always blocks. A semantic code blocks only when the
+    evaluator scored the dimension below the configured floor, so a flag that
+    contradicts the evaluator's own number cannot fail a high-scoring shot.
+    """
+    if any(code in HARD_FAILURE_CODES for code in repair_codes):
+        return True
+    return raw_score < thresholds.semantic_hard_failure_dimension_floor
 
 
 @dataclass(frozen=True, slots=True)
@@ -89,9 +121,14 @@ def _dimension_findings(
     dimension: VisualQADimension,
     samples: Sequence[VisualQASample],
     evaluator: str,
-) -> list[VisualQAFinding]:
+    *,
+    raw_score: float,
+    thresholds: VisualQAThresholds,
+) -> tuple[list[VisualQAFinding], bool]:
+    """Rebuild one dimension's provider findings; the flag says one was demoted."""
     by_id = {sample.sample_id: sample for sample in samples}
     findings: list[VisualQAFinding] = []
+    demoted = False
     for ordinal, item in enumerate(provider.findings):
         if item.dimension is not dimension:
             continue
@@ -118,6 +155,15 @@ def _dimension_findings(
         repair_codes = list(item.repair_codes)
         if severity == "hard_failure" and not repair_codes:
             repair_codes = [DIMENSION_DEFAULT_REPAIR[dimension]]
+        if severity == "hard_failure" and not blocks_regardless_of_score(
+            repair_codes, raw_score, thresholds
+        ):
+            # A semantic hard-failure flag on a dimension the evaluator itself
+            # scored at or above the floor contradicts its own number. The
+            # number wins: the finding, its evidence and its repair codes are
+            # kept as a warning so nothing is lost, but it cannot block.
+            severity = "warning"
+            demoted = True
         findings.append(
             VisualQAFinding(
                 # The ordinal keeps two findings that share a dimension, a code
@@ -135,7 +181,7 @@ def _dimension_findings(
                 evidence=evidence,
             )
         )
-    return findings
+    return findings, demoted
 
 
 def _deterministic_findings(
@@ -182,8 +228,10 @@ def build_dimension_results(
     rubric: VisualQARubric,
     samples: Sequence[VisualQASample],
     source_asset_id: UUID,
+    thresholds: VisualQAThresholds | None = None,
 ) -> list[VisualQADimensionResult]:
     """Recompute every dimension from validated provider and deterministic input."""
+    thresholds = THRESHOLDS if thresholds is None else thresholds
     proposals = {item.dimension: item for item in provider.dimension_scores}
     applicable: dict[VisualQADimension, bool] = {}
     for entry in rubric.dimensions:
@@ -205,7 +253,15 @@ def build_dimension_results(
     for entry in rubric.dimensions:
         dimension = entry.dimension
         proposal = proposals.get(dimension)
-        findings = _dimension_findings(provider, dimension, samples, provider.model)
+        raw = float(proposal.raw_score) if proposal else 0.0
+        findings, demoted = _dimension_findings(
+            provider,
+            dimension,
+            samples,
+            provider.model,
+            raw_score=raw,
+            thresholds=thresholds,
+        )
         findings.extend(_deterministic_findings(report, dimension, samples, source_asset_id))
         findings.sort(key=_severity_rank)
         if not applicable[dimension]:
@@ -232,7 +288,6 @@ def build_dimension_results(
         # its weight to the applicable ones in proportion, so an absent dimension
         # can never hand the shot free credit.
         effective = entry.weight * 100 / total_applicable_weight
-        raw = float(proposal.raw_score) if proposal else 0.0
         hard_codes = sorted(
             {
                 code
@@ -242,7 +297,10 @@ def build_dimension_results(
             }
         )
         warning_codes = sorted(
-            {finding.code for finding in findings if finding.severity == "warning"}
+            {
+                *(finding.code for finding in findings if finding.severity == "warning"),
+                *([HARD_FAILURE_DOWNGRADED_BY_SCORE] if demoted else []),
+            }
         )
         repair_codes = sorted(
             {code for finding in findings for code in finding.repair_codes},
@@ -318,9 +376,12 @@ def _structural_routing(
     worst = applicable[0]
     routing = DIMENSION_STRUCTURAL_ROUTING[worst.dimension]
     extra: list[VisualQARepairCode] = [DIMENSION_DEFAULT_REPAIR[worst.dimension]]
+    # The structural code is only added when it names the family being
+    # recommended. A new-seed route does not imply an over-complex prompt, so
+    # PROMPT_TOO_COMPLEX is no longer a catch-all on every structural failure.
     if routing is VisualQARoutingRecommendation.COMPOSITION_SPLIT:
         extra.append(VisualQARepairCode.TOO_MANY_CHARACTERS)
-    else:
+    elif routing is VisualQARoutingRecommendation.PROMPT_SIMPLIFICATION:
         extra.append(VisualQARepairCode.PROMPT_TOO_COMPLEX)
     return routing, extra
 
@@ -336,14 +397,10 @@ def decide(
 ) -> ScoringOutcome:
     """Derive the canonical outcome, repair codes and routing recommendation.
 
-    ``warn_only_codes`` names the repair codes this deployment tolerates. They
-    are still measured, still carried on the result and still routed for
-    repair; they just no longer block the shot on their own. A shot whose only
-    failing reasons are warn-only codes comes out as ``REVIEW`` - a person
-    decides - instead of ``FAIL``. Unset, the thresholds' own set applies.
-
-    Nothing here can demote a genuine hard failure: the contract refuses to
-    accept one into ``warn_only_codes`` in the first place.
+    ``warn_only_codes`` names the repair codes this deployment or project
+    tolerates: they are still recorded, as ``warn_only:<CODE>`` warnings, but
+    never block the shot and are never handed to T21 as a repair. Unset, the
+    thresholds' own set applies.
     """
     warn_only = frozenset(
         thresholds.warn_only_codes if warn_only_codes is None else warn_only_codes
@@ -351,27 +408,15 @@ def decide(
     hard_codes: set[str] = set()
     repair_codes: set[VisualQARepairCode] = set()
     warning_codes: set[str] = set()
-    #: Codes that would have blocked the shot but were demoted. They still mean
-    #: "a person must look at this", so they never fall through to ``PASS``.
-    demoted_codes: set[str] = set()
-
-    def block(code: str) -> None:
-        if code in warn_only:
-            warning_codes.add(code)
-            demoted_codes.add(code)
-            return
-        hard_codes.add(code)
-
     for dimension in score.dimensions:
-        for code in dimension.hard_failure_codes:
-            block(code)
+        hard_codes.update(dimension.hard_failure_codes)
         repair_codes.update(dimension.repair_codes)
         warning_codes.update(dimension.warning_codes)
     for metric in report.metrics:
         if metric.outcome == "warning":
             warning_codes.add(metric.diagnostic_code)
         if metric.outcome == "hard_failure" and metric.repair_code is not None:
-            block(metric.repair_code.value)
+            hard_codes.add(metric.repair_code.value)
             repair_codes.add(metric.repair_code)
     warning_codes.update(provider.warning_codes)
     # A provider may propose a hard failure, but only a code in the bounded
@@ -385,36 +430,18 @@ def decide(
             warning_codes.add("unknown_provider_hard_failure_code")
             continue
         if code in HARD_FAILURE_CODES and code in evidenced:
-            block(code.value)
+            hard_codes.add(code.value)
             repair_codes.add(code)
         else:
             warning_codes.add("unevidenced_provider_hard_failure_proposal")
-
-    def human_review(
-        codes: Iterable[VisualQARepairCode], rationale: str, reasons: Sequence[str]
-    ) -> ScoringOutcome:
-        """A result a person has to settle, never one the pipeline failed."""
-        ordered = sorted(
-            {*codes, VisualQARepairCode.HUMAN_REVIEW_REQUIRED}, key=lambda code: code.value
-        )
-        return ScoringOutcome(
-            score=score,
-            outcome=VisualQAOutcome.REVIEW,
-            hard_failure_codes=(),
-            warning_codes=tuple(sorted(warning_codes)),
-            repair_codes=tuple(ordered),
-            recommendation=VisualQARepairRecommendation(
-                routing=VisualQARoutingRecommendation.HUMAN_REVIEW,
-                repair_codes=ordered,
-                rationale=rationale[:500],
-            ),
-            review_reasons=tuple(reasons),
-        )
-
-    def warn_only_reasons(codes: Iterable[VisualQARepairCode] = ()) -> tuple[str, ...]:
-        names = sorted({*demoted_codes, *(code.value for code in codes)} & warn_only)
-        return tuple(f"{name} is warn-only in this deployment" for name in names)
-
+    # A tolerated code is measured and visible, but it neither blocks nor buys
+    # a repair attempt: it moves from the hard and repair sets to the warnings.
+    for code in sorted(repair_codes, key=lambda code: code.value):
+        if code.value in warn_only:
+            repair_codes.discard(code)
+            hard_codes.discard(code.value)
+            warning_codes.add(_warn_only_marker(code))
+    hard_codes.difference_update(warn_only)
     if hard_codes:
         codes = sorted(repair_codes, key=lambda code: code.value)
         primary = min(
@@ -463,15 +490,6 @@ def decide(
             review_reasons=tuple(review_reasons),
         )
     if score.total >= score.pass_threshold:
-        if demoted_codes:
-            # The shot scores well enough, but something that would have
-            # blocked it was demoted. Recording that as a plain PASS would
-            # hide the measurement; it goes to a person instead.
-            return human_review(
-                repair_codes,
-                "every blocking reason for this shot is warn-only in this deployment",
-                warn_only_reasons(),
-            )
         return ScoringOutcome(
             score=score,
             outcome=VisualQAOutcome.PASS,
@@ -493,13 +511,6 @@ def decide(
                 key=lambda item: item.raw_score,
             )
             codes = [DIMENSION_DEFAULT_REPAIR[worst.dimension]]
-        if all(code.value in warn_only for code in codes):
-            return human_review(
-                codes,
-                f"score {score.total:.2f} is below the {score.pass_threshold:.0f} threshold, "
-                "but every repair code behind it is warn-only in this deployment",
-                warn_only_reasons(codes),
-            )
         return ScoringOutcome(
             score=score,
             outcome=VisualQAOutcome.FAIL,
@@ -517,15 +528,16 @@ def decide(
             review_reasons=(),
         )
     routing, extra = _structural_routing(score.dimensions)
-    codes = sorted({*repair_codes, *extra}, key=lambda code: code.value)
-    if all(code.value in warn_only for code in codes):
-        return human_review(
-            codes,
-            f"score {score.total:.2f} is below the "
-            f"{thresholds.targeted_repair_floor:.0f} targeted-repair floor, but every repair "
-            "code behind it is warn-only in this deployment",
-            warn_only_reasons(codes),
-        )
+    tolerated = [code for code in extra if code.value in warn_only]
+    warning_codes.update(_warn_only_marker(code) for code in tolerated)
+    codes = sorted(
+        {*repair_codes, *(code for code in extra if code not in tolerated)},
+        key=lambda code: code.value,
+    )
+    if not codes:
+        # Every structural code was tolerated; the family's default still names
+        # the dimension that failed so the result carries a repair code.
+        codes = [extra[0]]
     return ScoringOutcome(
         score=score,
         outcome=VisualQAOutcome.FAIL,

@@ -50,6 +50,13 @@
       "title": "Schema Version",
       "type": "string"
     },
+    "semantic_hard_failure_dimension_floor": {
+      "default": 50,
+      "maximum": 100,
+      "minimum": 0,
+      "title": "Semantic Hard Failure Dimension Floor",
+      "type": "number"
+    },
     "targeted_repair_floor": {
       "default": 75,
       "maximum": 100,

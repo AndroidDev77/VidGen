@@ -1,16 +1,20 @@
-"""Warn-only visual-QA codes, and the human override of a soft failure.
+"""The human override of a soft visual-QA failure.
 
-Two rules are asserted together here because they are two halves of one
-change: a shot that fails only on judgement should reach a person rather than
-the failure pile, and a person should be able to overrule that judgement. A
-hard failure - a decode failure, a black clip - stays outside both.
+Scoring decides whether a shot failed; this decides what a person may do about
+it afterwards. A ``REVIEW`` is an ambiguity the pipeline asked a human to
+settle, and a ``FAIL`` that is not a hard failure is a verdict a human may
+overrule - recorded distinctly, so the audit trail says which of the two
+happened. A hard failure is a measured fact and stays outside both.
+
+Which codes can produce a soft failure in the first place is the scoring
+gate's business, covered in ``test_visual_qa_t20.py``.
 """
 
 from __future__ import annotations
 
 from datetime import UTC, datetime
 from pathlib import Path
-from uuid import UUID, uuid4
+from uuid import uuid4
 
 import pytest
 from sqlalchemy import create_engine
@@ -18,265 +22,12 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from services.qa.human_review import VisualQAHumanReviewService
 from services.qa.rubric import RUBRIC, THRESHOLDS
-from services.qa.scoring import build_dimension_results, decide, recompute
 from tests.review_fixtures import build_project_graph
-from vidgen.contracts.visual_qa import (
-    DEFAULT_VISUAL_QA_WARN_ONLY_CODES,
-    VISUAL_QA_FORCE_APPROVED,
-    VISUAL_QA_WARN_ONLY_ELIGIBLE_CODES,
-    VisualQAAttemptType,
-    VisualQADeterministicReport,
-    VisualQADimension,
-    VisualQAOutcome,
-    VisualQAProviderDimensionScore,
-    VisualQAProviderResult,
-    VisualQARepairCode,
-    VisualQASample,
-    VisualQASampleType,
-    VisualQAShotImportance,
-    VisualQATargetType,
-    VisualQAThresholds,
-)
+from vidgen.contracts.visual_qa import VISUAL_QA_FORCE_APPROVED, VisualQATargetType
 from vidgen.db.base import Base
 from vidgen.db.visual_qa_models import VisualQARun
 from vidgen.db.visual_qa_repository import VisualQARepository
 from vidgen.review.errors import ReviewError
-
-HASH = "a" * 64
-
-
-# --- scoring inputs ----------------------------------------------------------
-def sample(sequence: int) -> VisualQASample:
-    timestamp = sequence * 1_000_000
-    return VisualQASample.model_validate(
-        {
-            "sample_id": UUID(int=sequence + 1),
-            "sequence": sequence,
-            "sample_type": VisualQASampleType.COVERAGE,
-            "requested_timestamp_us": timestamp,
-            "actual_timestamp_us": timestamp,
-            "shot_relative_timestamp_us": timestamp,
-            "frame_asset_id": UUID(int=1000 + sequence),
-            "frame_sha256": HASH,
-            "source_asset_id": UUID(int=99),
-            "selection_reason": "coverage",
-            "contact_sheet_position": sequence,
-        }
-    )
-
-
-def provider_result(
-    *,
-    scores: dict[VisualQADimension, float] | None = None,
-    findings: list[dict[str, object]] | None = None,
-) -> VisualQAProviderResult:
-    return VisualQAProviderResult(
-        qa_attempt_identity=HASH,
-        attempt_type=VisualQAAttemptType.FIRST_PASS,
-        dimension_scores=[
-            VisualQAProviderDimensionScore(
-                dimension=dimension,
-                raw_score=(scores or {}).get(dimension, 95.0),
-                confidence=0.9,
-                applicable=True,
-            )
-            for dimension in VisualQADimension
-        ],
-        findings=[
-            {
-                "dimension": item["dimension"],
-                "severity": item.get("severity", "warning"),
-                "code": item.get("code", "issue"),
-                "summary": item.get("summary", "an issue"),
-                "repair_codes": item.get("repair_codes", []),
-                "confidence": 0.9,
-                "sample_ids": [UUID(int=1)],
-            }
-            for item in (findings or [])
-        ],  # type: ignore[arg-type]
-        overall_confidence=0.9,
-        provider="fake",
-        model="fake-visual-qa/1",
-    )
-
-
-def empty_report() -> VisualQADeterministicReport:
-    return VisualQADeterministicReport.model_validate(
-        {
-            "check_version": "visual-qa-deterministic/1.0",
-            "target_type": VisualQATargetType.VIDEO,
-            "usable": True,
-            "metrics": [],
-        }
-    )
-
-
-def outcome_for(
-    result: VisualQAProviderResult, *, thresholds: VisualQAThresholds = THRESHOLDS
-) -> object:
-    dimensions = build_dimension_results(
-        result,
-        empty_report(),
-        rubric=RUBRIC,
-        samples=[sample(0), sample(1)],
-        source_asset_id=UUID(int=99),
-    )
-    score = recompute(
-        dimensions,
-        rubric=RUBRIC,
-        thresholds=thresholds,
-        importance=VisualQAShotImportance.NORMAL,
-    )
-    return decide(score, empty_report(), result, thresholds=thresholds)
-
-
-# --- the warn-only set itself ------------------------------------------------
-def test_a_hard_failure_measurement_can_never_be_made_warn_only() -> None:
-    """Demoting a measurement would erase it; only judgements are demotable."""
-    for code in (
-        VisualQARepairCode.DECODE_FAILURE,
-        VisualQARepairCode.BLACK_VIDEO,
-        VisualQARepairCode.EXCESSIVE_FREEZE,
-        VisualQARepairCode.EXCESSIVE_FLICKER,
-        VisualQARepairCode.DURATION_MISMATCH,
-    ):
-        assert code.value not in VISUAL_QA_WARN_ONLY_ELIGIBLE_CODES
-        with pytest.raises(ValueError):
-            VisualQAThresholds(threshold_version="t", warn_only_codes=[code.value])
-
-
-def test_the_deployment_default_names_the_four_false_positive_codes() -> None:
-    assert set(THRESHOLDS.warn_only_codes) == set(DEFAULT_VISUAL_QA_WARN_ONLY_CODES)
-    assert set(THRESHOLDS.warn_only_codes) == {
-        "AMBIGUOUS_VISUAL_EVIDENCE",
-        "INSUFFICIENT_MOTION",
-        "PROMPT_TOO_COMPLEX",
-        "TOO_MANY_REFERENCES",
-    }
-
-
-# --- scoring -----------------------------------------------------------------
-def test_a_failure_whose_only_repair_code_is_warn_only_becomes_a_review() -> None:
-    """The shot still failed on score; who decides changes, not what was measured."""
-    result = provider_result(
-        scores=dict.fromkeys(VisualQADimension, 80.0),
-        findings=[
-            {
-                "dimension": VisualQADimension.COMPOSITION,
-                "code": "too_much_going_on",
-                "repair_codes": [VisualQARepairCode.PROMPT_TOO_COMPLEX],
-            }
-        ],
-    )
-    scored = outcome_for(result)
-    assert scored.outcome is VisualQAOutcome.REVIEW  # type: ignore[attr-defined]
-    assert scored.hard_failure is False  # type: ignore[attr-defined]
-    # The demoted code is still carried: the repair consumer and the reviewer
-    # both see exactly what the automated pass objected to.
-    assert VisualQARepairCode.PROMPT_TOO_COMPLEX in scored.repair_codes  # type: ignore[attr-defined]
-    assert scored.review_reasons  # type: ignore[attr-defined]
-
-
-def test_the_same_failure_stays_a_failure_when_the_code_is_not_warn_only() -> None:
-    result = provider_result(
-        scores=dict.fromkeys(VisualQADimension, 80.0),
-        findings=[
-            {
-                "dimension": VisualQADimension.CHARACTER_IDENTITY,
-                "code": "not_maya",
-                "repair_codes": [VisualQARepairCode.WRONG_CHARACTER_IDENTITY],
-            }
-        ],
-    )
-    scored = outcome_for(result)
-    assert scored.outcome is VisualQAOutcome.FAIL  # type: ignore[attr-defined]
-
-
-def test_a_score_below_the_repair_floor_stays_a_failure() -> None:
-    """Warn-only softens a judgement, not a structurally bad shot.
-
-    Below the targeted-repair floor the routing adds the failing dimension's own
-    structural repair code, which is not warn-only and is not a false positive:
-    the shot is wrong, not merely hard to judge.
-    """
-    result = provider_result(
-        scores=dict.fromkeys(VisualQADimension, 40.0),
-        findings=[
-            {
-                "dimension": VisualQADimension.COMPOSITION,
-                "code": "too_much_going_on",
-                "repair_codes": [VisualQARepairCode.PROMPT_TOO_COMPLEX],
-            }
-        ],
-    )
-    scored = outcome_for(result)
-    assert scored.outcome is VisualQAOutcome.FAIL  # type: ignore[attr-defined]
-    assert scored.hard_failure is False  # type: ignore[attr-defined]
-
-
-def test_a_below_floor_failure_is_a_review_when_every_code_it_routes_is_warn_only() -> None:
-    """The rule is about the codes, not about which branch produced them."""
-    thresholds = VisualQAThresholds(
-        threshold_version="t",
-        warn_only_codes=[
-            "COMPOSITION_MISMATCH",
-            "PROMPT_TOO_COMPLEX",
-            "TOO_MANY_CHARACTERS",
-            "WRONG_CHARACTER_COUNT",
-        ],
-    )
-    scores = dict.fromkeys(VisualQADimension, 70.0)
-    scores[VisualQADimension.COMPOSITION] = 0.0
-    result = provider_result(
-        scores=scores,
-        findings=[
-            {
-                "dimension": VisualQADimension.COMPOSITION,
-                "code": "too_much_going_on",
-                "repair_codes": [VisualQARepairCode.PROMPT_TOO_COMPLEX],
-            }
-        ],
-    )
-    scored = outcome_for(result, thresholds=thresholds)
-    assert scored.outcome is VisualQAOutcome.REVIEW  # type: ignore[attr-defined]
-
-
-def test_an_empty_warn_only_set_restores_the_previous_behaviour() -> None:
-    thresholds = VisualQAThresholds(threshold_version="t", warn_only_codes=[])
-    result = provider_result(
-        scores=dict.fromkeys(VisualQADimension, 80.0),
-        findings=[
-            {
-                "dimension": VisualQADimension.COMPOSITION,
-                "code": "too_much_going_on",
-                "repair_codes": [VisualQARepairCode.PROMPT_TOO_COMPLEX],
-            }
-        ],
-    )
-    scored = outcome_for(result, thresholds=thresholds)
-    assert scored.outcome is VisualQAOutcome.FAIL  # type: ignore[attr-defined]
-
-
-def test_a_demoted_dimension_hard_failure_never_silently_passes() -> None:
-    """A high score plus a demoted blocker is a decision, not a pass."""
-    thresholds = VisualQAThresholds(
-        threshold_version="t", warn_only_codes=["WRONG_CHARACTER_IDENTITY"]
-    )
-    result = provider_result(
-        scores=dict.fromkeys(VisualQADimension, 99.0),
-        findings=[
-            {
-                "dimension": VisualQADimension.CHARACTER_IDENTITY,
-                "severity": "hard_failure",
-                "code": "not_maya",
-                "repair_codes": [VisualQARepairCode.WRONG_CHARACTER_IDENTITY],
-            }
-        ],
-    )
-    scored = outcome_for(result, thresholds=thresholds)
-    assert scored.outcome is VisualQAOutcome.REVIEW  # type: ignore[attr-defined]
-    assert scored.hard_failure is False  # type: ignore[attr-defined]
-    assert "WRONG_CHARACTER_IDENTITY" in scored.warning_codes  # type: ignore[attr-defined]
 
 
 # --- human override ----------------------------------------------------------

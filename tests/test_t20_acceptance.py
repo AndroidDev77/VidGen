@@ -76,10 +76,15 @@ def _defects(fixture: VisualQAFixture) -> dict[UUID, FakeDefect]:
         fixture.shot_ids[HERO_INDEX]: FakeDefect(
             dimension_scores=dict.fromkeys(VisualQADimension, 87.0)
         ),
-        # A high-scoring shot with one hard identity failure. The numeric score
-        # must not be able to override it.
+        # A hard identity failure the evaluator corroborates with an identity
+        # score below the semantic floor. The other dimensions are perfect, so
+        # the total (87.25) still clears the normal threshold; the numeric
+        # score must not be able to override a corroborated hard failure.
         fixture.shot_ids[FAILING_INDEX]: FakeDefect(
-            dimension_scores=dict.fromkeys(VisualQADimension, 99.0),
+            dimension_scores={
+                **dict.fromkeys(VisualQADimension, 100.0),
+                VisualQADimension.CHARACTER_IDENTITY: 49.0,
+            },
             findings=(
                 FakeFinding(
                     dimension=VisualQADimension.CHARACTER_IDENTITY,
@@ -171,7 +176,7 @@ def test_t20_acceptance(
     # 11-12. One hard identity failure, and its high numeric score cannot
     # override it.
     failed = by_target[(FAILING_INDEX, VisualQATargetType.VIDEO)]
-    assert failed.score.total == pytest.approx(99.0)
+    assert failed.score.total == pytest.approx(87.25)
     assert failed.score.total > failed.score.pass_threshold
     assert failed.hard_failure is True
     assert failed.outcome is VisualQAOutcome.FAIL

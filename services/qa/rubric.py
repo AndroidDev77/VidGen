@@ -20,15 +20,12 @@ from vidgen.contracts.visual_qa import (
     VisualQAThresholds,
 )
 
-RUBRIC_VERSION: Final = "visual-qa-rubric/1.0"
-#: 1.1 adds the warn-only repair codes. A shot whose only failing reasons are
-#: warn-only comes out as ``REVIEW`` rather than ``FAIL``, which changes what
-#: the gate does with it - so it is a version change, not a silent drift.
+RUBRIC_VERSION: Final = "visual-qa-rubric/1.1"
 THRESHOLD_VERSION: Final = "visual-qa-thresholds/1.1"
 SAMPLING_VERSION: Final = "visual-qa-sampler/1.0"
 DETERMINISTIC_CHECK_VERSION: Final = "visual-qa-deterministic/1.0"
 ADJUDICATION_POLICY_VERSION: Final = "visual-qa-adjudication/1.0"
-PROMPT_VERSION: Final = "visual-qa-prompt/1.0"
+PROMPT_VERSION: Final = "visual-qa-prompt/1.1"
 
 #: The authoritative weights from the technical design. The total is exactly 100.
 RUBRIC: Final = VisualQARubric(
@@ -155,20 +152,20 @@ REPAIR_CODES: Final[dict[VisualQARepairCode, RepairCodeDefinition]] = dict(
         _entry(
             VisualQARepairCode.WRONG_CHARACTER_IDENTITY,
             "identity",
-            "blocking",
+            "major",
             _SEED,
             "frame_and_reference",
             "creative_retry",
-            True,
+            False,
         ),
         _entry(
             VisualQARepairCode.MISSING_PRIMARY_CHARACTER,
             "identity",
-            "blocking",
+            "major",
             _SEED,
             "frame",
             "creative_retry",
-            True,
+            False,
         ),
         _entry(
             VisualQARepairCode.EXTRA_CHARACTER,
@@ -182,11 +179,11 @@ REPAIR_CODES: Final[dict[VisualQARepairCode, RepairCodeDefinition]] = dict(
         _entry(
             VisualQARepairCode.WRONG_CHARACTER_COUNT,
             "count",
-            "blocking",
+            "major",
             _SIMPLIFY,
             "frame",
             "creative_retry",
-            True,
+            False,
         ),
         _entry(
             VisualQARepairCode.WRONG_WARDROBE,
@@ -209,11 +206,11 @@ REPAIR_CODES: Final[dict[VisualQARepairCode, RepairCodeDefinition]] = dict(
         _entry(
             VisualQARepairCode.WRONG_LOCATION,
             "location",
-            "blocking",
+            "major",
             _SEED,
             "frame_and_reference",
             "creative_retry",
-            True,
+            False,
         ),
         _entry(
             VisualQARepairCode.WRONG_LOCATION_STATE,
@@ -227,11 +224,11 @@ REPAIR_CODES: Final[dict[VisualQARepairCode, RepairCodeDefinition]] = dict(
         _entry(
             VisualQARepairCode.MISSING_REQUIRED_PROP,
             "props",
-            "blocking",
+            "major",
             _TARGETED,
             "frame",
             "creative_retry",
-            True,
+            False,
         ),
         _entry(
             VisualQARepairCode.WRONG_PROP_OWNERSHIP,
@@ -245,11 +242,11 @@ REPAIR_CODES: Final[dict[VisualQARepairCode, RepairCodeDefinition]] = dict(
         _entry(
             VisualQARepairCode.MISSING_MANDATORY_ACTION,
             "action",
-            "blocking",
+            "major",
             _TARGETED,
             "frame",
             "creative_retry",
-            True,
+            False,
         ),
         _entry(
             VisualQARepairCode.WRONG_ACTION,
@@ -299,38 +296,38 @@ REPAIR_CODES: Final[dict[VisualQARepairCode, RepairCodeDefinition]] = dict(
         _entry(
             VisualQARepairCode.SCREEN_DIRECTION_CONTRADICTION,
             "continuity",
-            "blocking",
+            "major",
             _TARGETED,
             "frame",
             "creative_retry",
-            True,
+            False,
         ),
         _entry(
             VisualQARepairCode.FACE_BREAKAGE,
             "anatomy",
-            "blocking",
+            "major",
             _SEED,
             "frame",
             "creative_retry",
-            True,
+            False,
         ),
         _entry(
             VisualQARepairCode.ANATOMY_BREAKAGE,
             "anatomy",
-            "blocking",
+            "major",
             _SEED,
             "frame",
             "creative_retry",
-            True,
+            False,
         ),
         _entry(
             VisualQARepairCode.UNINTENDED_TEXT,
             "artifacts",
-            "blocking",
+            "major",
             _TARGETED,
             "frame",
             "creative_retry",
-            True,
+            False,
         ),
         _entry(
             VisualQARepairCode.STYLE_DRIFT,
@@ -344,11 +341,11 @@ REPAIR_CODES: Final[dict[VisualQARepairCode, RepairCodeDefinition]] = dict(
         _entry(
             VisualQARepairCode.CONTINUITY_BREAK,
             "continuity",
-            "blocking",
+            "major",
             _TARGETED,
             "frame",
             "creative_retry",
-            True,
+            False,
         ),
         _entry(
             VisualQARepairCode.BLACK_VIDEO,
@@ -444,6 +441,10 @@ REPAIR_CODES: Final[dict[VisualQARepairCode, RepairCodeDefinition]] = dict(
 )
 
 #: Codes that always force ``FAIL`` regardless of the recomputed numeric score.
+#: Only unrecoverable technical failures live here. Semantic judgements from the
+#: evaluator (identity, count, action, props, anatomy, continuity) are soft:
+#: they block only when the evaluator also scored the dimension below the
+#: configured floor, otherwise the recomputed score decides.
 HARD_FAILURE_CODES: Final[frozenset[VisualQARepairCode]] = frozenset(
     code for code, definition in REPAIR_CODES.items() if definition.hard_failure
 )

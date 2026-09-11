@@ -125,47 +125,6 @@ VisualQAHumanReviewDecision = Literal["approved", "rejected", "force_approved"]
 #: The decision recorded when a person overrides a soft ``FAIL``.
 VISUAL_QA_FORCE_APPROVED = "force_approved"
 
-#: Every repair code a deployment or project may demote to a warning. A hard
-#: failure is a measured fact - a decode failure, a black clip, a frozen or
-#: flickering one - and is deliberately not demotable: warn-only would erase a
-#: measurement rather than soften a judgement.
-VISUAL_QA_WARN_ONLY_ELIGIBLE_CODES: tuple[str, ...] = tuple(
-    code.value
-    for code in VisualQARepairCode
-    if code
-    not in {
-        VisualQARepairCode.BLACK_VIDEO,
-        VisualQARepairCode.DECODE_FAILURE,
-        VisualQARepairCode.DURATION_MISMATCH,
-        VisualQARepairCode.EXCESSIVE_FREEZE,
-        VisualQARepairCode.EXCESSIVE_FLICKER,
-    }
-)
-
-#: The codes that most often produce a false-positive ``FAIL`` in practice.
-#: Each is a judgement the model is weakest at - "this prompt is too complex",
-#: "the evidence is ambiguous", "there is not enough motion", "there are too
-#: many references" - so a shot whose only failing reasons are these is routed
-#: to a human instead of being failed outright.
-DEFAULT_VISUAL_QA_WARN_ONLY_CODES: tuple[str, ...] = (
-    VisualQARepairCode.AMBIGUOUS_VISUAL_EVIDENCE.value,
-    VisualQARepairCode.INSUFFICIENT_MOTION.value,
-    VisualQARepairCode.PROMPT_TOO_COMPLEX.value,
-    VisualQARepairCode.TOO_MANY_REFERENCES.value,
-)
-
-
-def _known_repair_codes(value: list[str]) -> list[str]:
-    unknown = sorted(set(value) - set(VISUAL_QA_WARN_ONLY_ELIGIBLE_CODES))
-    if unknown:
-        raise ValueError(
-            f"unknown or non-demotable visual QA repair codes: {', '.join(unknown)}; "
-            f"expected any of {', '.join(VISUAL_QA_WARN_ONLY_ELIGIBLE_CODES)}"
-        )
-    # Deterministic and duplicate-free: the list is bound into the QA identity
-    # and compared to decide whether the gate's rules changed.
-    return sorted(set(value))
-
 
 class VisualQASampleType(StrEnum):
     """Why the deterministic sampler selected a timestamp."""
@@ -546,18 +505,25 @@ class VisualQAThresholds(StrictContract):
     adjudication_decision_confidence: Confidence = 0.80
     near_threshold_margin: RawScore = 2.0
     max_adjudication_attempts: int = Field(default=1, ge=0, le=3)
-    #: Repair codes recorded as warnings instead of failing the shot. A shot
-    #: whose only failing reasons are warn-only codes comes out of scoring as
-    #: ``REVIEW`` - a person decides - rather than ``FAIL``. A hard failure is
-    #: never demotable; see ``VISUAL_QA_WARN_ONLY_ELIGIBLE_CODES``.
-    warn_only_codes: list[str] = Field(
-        default_factory=lambda: list(DEFAULT_VISUAL_QA_WARN_ONLY_CODES), max_length=16
-    )
+    #: A semantic hard-failure proposal (identity, action, props, anatomy...)
+    #: only blocks the shot when the evaluator also scored that dimension below
+    #: this floor. Above it the numeric score is trusted and the finding is
+    #: recorded as a warning. Technical hard failures ignore this floor.
+    semantic_hard_failure_dimension_floor: RawScore = 50
+    #: Repair codes this deployment tolerates: still measured and recorded as
+    #: warnings, never a hard failure and never handed to T21 as a repair.
+    warn_only_codes: list[str] = Field(default_factory=list, max_length=16)
 
     @field_validator("warn_only_codes")
     @classmethod
-    def validate_warn_only_codes(cls, value: list[str]) -> list[str]:
-        return _known_repair_codes(value)
+    def warn_only_codes_are_known(cls, value: list[str]) -> list[str]:
+        known = {code.value for code in VisualQARepairCode}
+        unknown = sorted(set(value) - known)
+        if unknown:
+            raise ValueError(f"unknown warn-only repair codes: {', '.join(unknown)}")
+        if len(set(value)) != len(value):
+            raise ValueError("warn_only_codes must not repeat a code")
+        return value
 
     def pass_score(self, importance: VisualQAShotImportance) -> float:
         return {
