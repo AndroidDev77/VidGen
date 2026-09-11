@@ -110,6 +110,7 @@ from vidgen.contracts.control_commands import (
     ControlCommandTargetType,
     ControlCommandType,
 )
+from vidgen.contracts.final_editorial import FinalQAStatus
 from vidgen.contracts.media import ExtractedFrame, SceneBoundary
 from vidgen.contracts.render_execution import RenderExecutionResult, RenderExecutionStatus
 from vidgen.contracts.repair import RepairRunState
@@ -123,6 +124,7 @@ from vidgen.contracts.shot_workflow import (
     ShotWorkflowResult,
     ShotWorkflowStatus,
 )
+from vidgen.contracts.telemetry import FailureClass
 from vidgen.contracts.transcription import TranscriptSegment, TranscriptWord
 from vidgen.contracts.visual_qa import VisualQATargetType
 from vidgen.contracts.workflow import (
@@ -156,6 +158,11 @@ from vidgen.storage.asset_service import AssetService
 from vidgen.storage.blob import BlobStore
 from vidgen.storage.factory import build_blob_store
 from vidgen.telemetry.failures import classify_failure
+from workers.temporal_worker.stage_failures import (
+    record_stage_failure,
+    render_failure_class,
+    resolve_stage_failures,
+)
 
 
 def build_production_handlers(
@@ -649,6 +656,21 @@ def _persist_fanout_status(settings: APISettings) -> ShotActivityHandler:
                 raise ValueError("InvalidLineage: project does not exist")
             project.status = request.status
             session.commit()
+        # The fanout reports the status it reached rather than raising, and
+        # ``shot_generation_failed`` is the one the dashboard has to be able to
+        # explain: it is where a twenty-shot recap most often stops.
+        if request.status == "shot_generation_failed":
+            record_stage_failure(
+                engine,
+                project_id=request.project_id,
+                stage="shot_generation",
+                idempotency_key=f"shot-fanout:{request.project_id}:{request.storyboard_run_id}",
+                error_code="SHOT_GENERATION_FAILED",
+                failure_class=FailureClass.QUALITY_FAILURE,
+                retryable=False,
+            )
+        else:
+            resolve_stage_failures(engine, project_id=request.project_id, stage="shot_generation")
         return request
 
     return persist
@@ -721,8 +743,25 @@ def _with_session(settings: APISettings, handler: BusinessHandler) -> StageHandl
     blob_store = build_blob_store(settings)
 
     def execute(request: StageActivityInput) -> StageActivityResult:
-        with Session(engine, expire_on_commit=False) as session:
-            return handler(session, blob_store, settings, request)
+        try:
+            with Session(engine, expire_on_commit=False) as session:
+                result = handler(session, blob_store, settings, request)
+        except Exception as error:
+            # Every linear stage funnels through here, so this is the one place
+            # that can guarantee a stopped project names the stage that stopped
+            # it. A stage that recorded its own, more specific failure keeps it.
+            record_stage_failure(
+                engine,
+                project_id=request.project_id,
+                stage=request.stage,
+                idempotency_key=f"{request.idempotency_key}:stage-failed",
+                error=error,
+            )
+            raise
+        # Temporal retries a failed activity; a stage that succeeds on a later
+        # attempt is no longer the reason the project is stopped.
+        resolve_stage_failures(engine, project_id=request.project_id, stage=request.stage)
+        return result
 
     return execute
 
@@ -1337,11 +1376,34 @@ def build_final_qa_handler(settings: APISettings | None = None) -> FinalQAHandle
                 # A stale or incomplete render is not a transient failure. It is
                 # reported as a terminal, non-retryable outcome so the workflow
                 # stops rather than paying to analyse the same stale cut again.
+                record_stage_failure(
+                    engine,
+                    project_id=request.project_id,
+                    stage="review",
+                    idempotency_key=f"{request.idempotency_key}:final-qa-lineage",
+                    error_code=error.code.value,
+                    failure_class=FailureClass.CONTRACT_VALIDATION,
+                    retryable=False,
+                )
                 raise ApplicationError(
                     f"final QA rejected the current render: {error.code.value}",
                     type="FinalQALineageError",
                     non_retryable=True,
                 ) from error
+        # T22 reports its gate decision rather than raising it, so - as with the
+        # render stage - nothing else would ever record why the project stopped.
+        if result.status is FinalQAStatus.FINAL_QA_FAILED:
+            record_stage_failure(
+                engine,
+                project_id=request.project_id,
+                stage="review",
+                idempotency_key=f"{request.idempotency_key}:final-qa-failed",
+                error_code=result.error_code or "FINAL_QA_FAILED",
+                failure_class=FailureClass.QUALITY_FAILURE,
+                retryable=False,
+            )
+        elif result.status is FinalQAStatus.FINAL_QA_PASSED:
+            resolve_stage_failures(engine, project_id=request.project_id, stage="review")
         return FinalQAActivityResult(
             project_id=result.project_id,
             final_editorial_run_id=result.final_editorial_run_id,
@@ -1391,6 +1453,15 @@ def build_render_handler(settings: APISettings | None = None) -> RenderHandler:
                 # in its current state, and retrying buys nothing but another
                 # identical refusal.
                 session.rollback()
+                record_stage_failure(
+                    engine,
+                    project_id=request.project_id,
+                    stage="rendering",
+                    idempotency_key=f"{request.idempotency_key}:render-lineage",
+                    error_code=str(error.code),
+                    failure_class=FailureClass.CONTRACT_VALIDATION,
+                    retryable=False,
+                )
                 raise ApplicationError(
                     f"render inputs rejected: {error.code}",
                     type="RenderLineageError",
@@ -1407,7 +1478,21 @@ def build_render_handler(settings: APISettings | None = None) -> RenderHandler:
             )
         # Terminal outcomes are reported, not raised: the durable render job
         # already records why it stopped, and the workflow branches on the
-        # bounded status rather than on an exception type.
+        # bounded status rather than on an exception type. That is exactly why
+        # the failure has to be recorded here - nothing throws, so nothing else
+        # would ever write the row the dashboard reads.
+        if result.status is RenderExecutionStatus.FAILED and result.failure is not None:
+            record_stage_failure(
+                engine,
+                project_id=request.project_id,
+                stage="rendering",
+                idempotency_key=f"{request.idempotency_key}:render-failed",
+                error_code=result.failure.code,
+                failure_class=render_failure_class(result.failure.classification),
+                retryable=result.failure.retryable,
+            )
+        elif result.status is RenderExecutionStatus.COMPLETE:
+            resolve_stage_failures(engine, project_id=request.project_id, stage="rendering")
         return _render_result(request, result)
 
     return execute
