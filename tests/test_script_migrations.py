@@ -38,7 +38,28 @@ def test_script_generation_migration_up_down_up(tmp_path: Path, monkeypatch: Mon
     assert "script_segments" in tables_after_downgrade
 
     command.upgrade(config, "head")
-    assert "script_edits" in inspect(create_engine(url)).get_table_names()
+    inspector = inspect(create_engine(url))
+    assert "script_edits" in inspector.get_table_names()
+    script_columns = {column["name"] for column in inspector.get_columns("scripts")}
+    assert {"editing_pass", "rejection_reason"} <= script_columns
+    run_columns = {column["name"] for column in inspector.get_columns("script_generation_runs")}
+    assert "max_editing_passes" in run_columns
+    command.check(config)
+
+
+def test_editing_pass_columns_downgrade_cleanly(tmp_path: Path, monkeypatch: MonkeyPatch) -> None:
+    url = f"sqlite+pysqlite:///{tmp_path / 'passes.db'}"
+    monkeypatch.setenv("VIDGEN_DATABASE_URL", url)
+    config = Config(str(ROOT / "alembic.ini"))
+    command.upgrade(config, "head")
+    command.downgrade(config, "0023_visual_qa_force_approval")
+    inspector = inspect(create_engine(url))
+    script_columns = {column["name"] for column in inspector.get_columns("scripts")}
+    assert "editing_pass" not in script_columns
+    assert "rejection_reason" not in script_columns
+    run_columns = {column["name"] for column in inspector.get_columns("script_generation_runs")}
+    assert "max_editing_passes" not in run_columns
+    command.upgrade(config, "head")
     command.check(config)
 
 

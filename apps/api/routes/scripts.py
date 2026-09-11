@@ -28,6 +28,8 @@ from apps.api.routes._common import (
     versions_for,
 )
 from apps.api.schemas.scripts import (
+    RejectScriptRequest,
+    RejectScriptResponse,
     ScriptListResponse,
     ScriptResponse,
     SelectScriptResponse,
@@ -41,7 +43,7 @@ from vidgen.contracts.control_commands import (
     ControlCommandType,
 )
 from vidgen.contracts.review import ScriptSegmentProjection
-from vidgen.db.script_models import Script, ScriptSegment
+from vidgen.db.script_models import Script, ScriptGenerationRun, ScriptSegment
 from vidgen.review.errors import not_found
 from vidgen.review.projections import script_projection, script_summary, selected_script
 
@@ -49,6 +51,7 @@ router = APIRouter(prefix="/projects", tags=["scripts"])
 
 EDIT_OPERATION = "script-segment:update"
 SELECT_OPERATION = "script:select"
+REJECT_OPERATION = "script:reject"
 
 
 def _owned_script(session: SessionDep, project_id: UUID, script_id: UUID) -> Script:
@@ -148,6 +151,56 @@ def select_script(
         str(script_id),
         key,
         {},
+        status.HTTP_200_OK,
+        body.model_dump(mode="json"),
+    )
+    session.commit()
+    return body
+
+
+@router.post("/{project_id}/scripts/{script_id}:reject", response_model=RejectScriptResponse)
+def reject_script(
+    project_id: UUID,
+    script_id: UUID,
+    request: RejectScriptRequest,
+    session: SessionDep,
+    principal: PrincipalDep,
+    controller: ControllerDep,
+    if_match: IfMatchDep = None,
+    idempotency_key: IdempotencyKeyDep = None,
+) -> RejectScriptResponse:
+    """Send an editing pass back with feedback for the next one.
+
+    Rejecting stores the reason on the version; it does not start the next
+    pass. That is ``workflow:continue`` from ``script_generation``, which
+    resumes the paused run and hands the reason to the Comedy Editor.
+    """
+    project = owned_project(session, project_id, principal)
+    script = _owned_script(session, project.id, script_id)
+    idempotency = idempotency_for(session, principal)
+    key = idempotency.require_key(REJECT_OPERATION, idempotency_key)
+    payload = request.model_dump(mode="json")
+    replayed = idempotency.replay(REJECT_OPERATION, str(script_id), key, payload)
+    if replayed is not None:
+        return RejectScriptResponse.model_validate(replayed)
+    versions = versions_for(session)
+    versions.require(project.id, "script", script.id, if_match, label="script")
+    rejected = mutations_for(session, principal, controller).reject_script(
+        project, script, reason=request.reason
+    )
+    run = session.get(ScriptGenerationRun, rejected.generation_run_id)
+    max_passes = run.max_editing_passes if run is not None else rejected.editing_pass
+    body = RejectScriptResponse(
+        script=script_summary(project.id, rejected, versions),
+        editing_pass=rejected.editing_pass,
+        max_editing_passes=max(max_passes, 1),
+        passes_remaining=max(max_passes - rejected.editing_pass, 0),
+    )
+    idempotency.record(
+        REJECT_OPERATION,
+        str(script_id),
+        key,
+        payload,
         status.HTTP_200_OK,
         body.model_dump(mode="json"),
     )

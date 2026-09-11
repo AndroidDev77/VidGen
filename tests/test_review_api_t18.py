@@ -585,9 +585,7 @@ def test_selecting_a_script_approves_it_and_resolves_the_review(
     with factory() as session:
         # The state a run that exhausted its revisions leaves behind: candidate
         # scripts, none of them selected, and a project waiting on the owner.
-        script = session.scalars(
-            select(Script).where(Script.project_id == graph.project_id)
-        ).one()
+        script = session.scalars(select(Script).where(Script.project_id == graph.project_id)).one()
         script.selected = False
         script.status = "draft"
         run = session.get(ScriptGenerationRun, script.generation_run_id)
@@ -623,6 +621,116 @@ def test_selecting_a_script_approves_it_and_resolves_the_review(
         assert run is not None
         assert run.status == "script_approved"
         assert run.error_code is None
+
+
+def test_rejecting_a_pass_stores_the_feedback_for_the_next_one(
+    client: TestClient,
+    graph: ProjectGraph,
+    review_client: tuple[TestClient, sessionmaker[Session], FakeWorkflowController],
+) -> None:
+    """Rejecting decides nothing downstream: it records the brief for pass two."""
+    _, factory, _ = review_client
+    with factory() as session:
+        # The state pass one leaves behind: an edited candidate waiting on the
+        # owner, nothing selected, and the run paused at review.
+        script = session.scalars(select(Script).where(Script.project_id == graph.project_id)).one()
+        script.selected = False
+        script.status = "pending_review"
+        script.editing_pass = 1
+        run = session.get(ScriptGenerationRun, script.generation_run_id)
+        assert run is not None
+        run.status = "script_review_required"
+        run.max_editing_passes = 3
+        project = session.get(Project, graph.project_id)
+        assert project is not None
+        project.status = "script_review_required"
+        session.commit()
+        script_id = script.id
+
+    candidate = next(
+        item
+        for item in client.get(api(graph.project_id, "/scripts"), headers=OWNER).json()["items"]
+        if item["script_id"] == str(script_id)
+    )
+    assert candidate["editing_pass"] == 1
+    assert candidate["rejection_reason"] is None
+
+    response = client.post(
+        api(graph.project_id, f"/scripts/{script_id}:reject"),
+        json={"reason": "The finale is spoiled in the cold open."},
+        headers=headers(if_match=candidate["row_version"], key="reject-1"),
+    )
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["script"]["status"] == "rejected"
+    assert body["script"]["rejection_reason"] == "The finale is spoiled in the cold open."
+    assert body["editing_pass"] == 1
+    assert body["max_editing_passes"] == 3
+    assert body["passes_remaining"] == 2
+    assert body["script"]["row_version"] == candidate["row_version"] + 1
+
+    # Same key, same payload: replayed, not applied twice.
+    replay = client.post(
+        api(graph.project_id, f"/scripts/{script_id}:reject"),
+        json={"reason": "The finale is spoiled in the cold open."},
+        headers=headers(if_match=candidate["row_version"], key="reject-1"),
+    )
+    assert replay.status_code == 200
+    assert replay.json() == body
+
+    with factory() as session:
+        stored = session.get(Script, script_id)
+        assert stored is not None
+        assert stored.status == "rejected"
+        assert stored.selected is False
+        assert stored.rejection_reason == "The finale is spoiled in the cold open."
+        # The project is still waiting at its review checkpoint; the next
+        # ``workflow:continue`` is what runs pass two.
+        project = session.get(Project, graph.project_id)
+        assert project is not None
+        assert project.status == "script_review_required"
+        run = session.get(ScriptGenerationRun, stored.generation_run_id)
+        assert run is not None
+        assert run.status == "script_review_required"
+        events = session.scalars(
+            select(ProjectUIEvent).where(ProjectUIEvent.event_type == "script_rejected")
+        ).all()
+        assert len(events) == 1
+
+    # A stale If-Match is refused, and so is an empty reason.
+    stale = client.post(
+        api(graph.project_id, f"/scripts/{script_id}:reject"),
+        json={"reason": "Again."},
+        headers=headers(if_match=candidate["row_version"], key="reject-2"),
+    )
+    assert stale.status_code == 409
+    empty = client.post(
+        api(graph.project_id, f"/scripts/{script_id}:reject"),
+        json={"reason": ""},
+        headers=headers(if_match=body["script"]["row_version"], key="reject-3"),
+    )
+    assert empty.status_code == 422
+
+
+def test_an_approved_script_cannot_be_rejected(client: TestClient, graph: ProjectGraph) -> None:
+    scripts = client.get(api(graph.project_id, "/scripts"), headers=OWNER).json()["items"]
+    approved = scripts[0]
+    assert approved["selected"] is True
+    response = client.post(
+        api(graph.project_id, f"/scripts/{approved['script_id']}:reject"),
+        json={"reason": "Too late."},
+        headers=headers(if_match=approved["row_version"], key="reject-approved"),
+    )
+    assert response.status_code == 409
+    assert response.json()["code"] == "validation_failed"
+    assert (
+        client.post(
+            api(graph.project_id, f"/scripts/{approved['script_id']}:reject"),
+            json={"reason": "Not mine."},
+            headers={**INTRUDER, "If-Match": "1", "Idempotency-Key": "reject-intruder"},
+        ).status_code
+        == 404
+    )
 
 
 def test_selecting_a_version_later_does_not_rewind_the_project_status(

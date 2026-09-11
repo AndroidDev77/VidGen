@@ -55,6 +55,34 @@ export function selectScript(
   );
 }
 
+export interface ScriptRejectionResult {
+  script: ScriptSummaryProjection;
+  editing_pass: number;
+  max_editing_passes: number;
+  passes_remaining: number;
+}
+
+/**
+ * Reject an editing pass with the feedback the next pass must address.
+ *
+ * Rejecting records the reason on the version; the next pass only starts when
+ * the workflow is continued from `script_generation`, which is a separate,
+ * paid step the caller takes explicitly.
+ */
+export function rejectScript(
+  projectId: string,
+  scriptId: string,
+  reason: string,
+  rowVersion: number,
+  idempotencyKey: string,
+  client: VidGenClient = apiClient,
+): Promise<ApiResponse<ScriptRejectionResult>> {
+  return client.post<ScriptRejectionResult>(
+    `/api/v1/projects/${projectId}/scripts/${scriptId}:reject`,
+    { body: { reason }, ifMatch: rowVersion, idempotencyKey },
+  );
+}
+
 export function updateScriptSegment(
   projectId: string,
   segmentId: string,

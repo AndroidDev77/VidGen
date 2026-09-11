@@ -337,6 +337,34 @@ class ReviewMutationService:
         )
         return script
 
+    def reject_script(self, project: Project, script: Script, *, reason: str) -> Script:
+        """Reject a version the pipeline left for review, with the reason why.
+
+        The reason is the brief for the next Comedy Editor pass: it is stored on
+        the version it was written about, and the run resumed by the next
+        ``workflow:continue`` hands it to the editor. The project stays at its
+        review checkpoint - rejecting decides nothing downstream, it only asks
+        for another pass - so nothing is deselected or invalidated here.
+        """
+        if script.project_id != project.id:
+            raise not_found("script")
+        if script.selected or script.status in {"approved", "final"}:
+            raise conflict(
+                ApiErrorCode.VALIDATION_FAILED,
+                "An approved script cannot be rejected. Edit it, or select another version.",
+            )
+        script.status = "rejected"
+        script.rejection_reason = reason
+        self._session.flush()
+        self._versions.bump(project.id, "script", script.id)
+        self._events.append(
+            project.id,
+            event_type="script_rejected",
+            status="rejected",
+            stage=PipelineStage.SCRIPT_GENERATION,
+        )
+        return script
+
     # ------------------------------------------------------------------
     # Shots
     # ------------------------------------------------------------------

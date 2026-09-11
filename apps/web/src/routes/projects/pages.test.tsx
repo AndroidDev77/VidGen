@@ -600,6 +600,65 @@ describe("ScriptPage under script_review_required", () => {
     expect(await screen.findByText("Version 2 opens on a wide shot.")).toBeVisible();
   });
 
+  it("sends the pending pass back with feedback and continues the workflow", async () => {
+    useReviewRequired();
+    const pending = { ...candidate(2), status: "pending_review", editing_pass: 2 };
+    const rejected = {
+      ...candidate(1),
+      status: "rejected",
+      editing_pass: 1,
+      rejection_reason: "Too long.",
+    };
+    server.use(
+      http.get(`${BASE}/api/v1/projects/:projectId/scripts`, () =>
+        HttpResponse.json({ items: [rejected, pending] }),
+      ),
+    );
+    const rejections: Array<{ scriptId: string; reason: string; ifMatch: string | null }> = [];
+    const continuations: Array<{ entry_stage: string; reason: string }> = [];
+    server.use(
+      http.post(/\/scripts\/[^/]+:reject$/, async ({ request }) => {
+        const body = (await request.json()) as { reason: string };
+        rejections.push({
+          scriptId: new URL(request.url).pathname.split("/").at(-1)!.split(":")[0]!,
+          reason: body.reason,
+          ifMatch: request.headers.get("If-Match"),
+        });
+        return HttpResponse.json({
+          script: { ...pending, status: "rejected", rejection_reason: body.reason },
+          editing_pass: 2,
+          max_editing_passes: 3,
+          passes_remaining: 1,
+        });
+      }),
+      http.post(`${BASE}/api/v1/projects/:projectId/workflow:continue`, async ({ request }) => {
+        continuations.push((await request.json()) as { entry_stage: string; reason: string });
+        return HttpResponse.json({ command: fixtures.commands.items[0] }, { status: 202 });
+      }),
+    );
+    const { queryClient } = renderProjectRoute(<ScriptPage />, `/projects/${PROJECT_ID}/script`);
+    expect(await screen.findByRole("heading", { name: "Version 2" })).toBeVisible();
+    await settle(queryClient);
+    // Only the pass awaiting review can be sent back, and the earlier
+    // rejection is shown with the reason that drove the next pass.
+    expect(screen.getByText("Rejected: Too long.")).toBeVisible();
+    expect(screen.getByText("Editing pass 2")).toBeVisible();
+    expect(screen.queryByRole("button", { name: "Retry script generation" })).not.toBeInTheDocument();
+    const send = screen.getByRole("button", { name: "Reject and run the next pass" });
+    expect(send).toBeDisabled();
+    await userEvent.type(
+      screen.getByLabelText("What should the next editing pass fix?"),
+      "Cut the cold open.",
+    );
+    expect(send).toBeEnabled();
+    fireEvent.click(send);
+    await waitFor(() => expect(continuations).toHaveLength(1));
+    expect(rejections).toEqual([
+      { scriptId: pending.script_id, reason: "Cut the cold open.", ifMatch: "2" },
+    ]);
+    expect(continuations).toEqual([{ entry_stage: "script_generation", reason: "review_resolved" }]);
+  });
+
   it("approves a script and then shows the editor for it", async () => {
     useReviewRequired();
     const selected: string[] = [];

@@ -224,6 +224,10 @@ class ScriptSummaryProjection(StrictContract):
     target_word_count: int = Field(gt=0)
     target_duration_ms: int = Field(gt=0)
     parent_script_id: UUID | None = None
+    #: Which Comedy Editor pass produced this version; 0 is the writer's draft.
+    editing_pass: int = Field(default=0, ge=0)
+    #: The reviewer's reason for rejecting this version, if they did.
+    rejection_reason: str | None = Field(default=None, max_length=20_000)
     created_at: datetime
     row_version: int = Field(ge=1)
 

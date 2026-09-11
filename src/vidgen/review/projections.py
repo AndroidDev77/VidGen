@@ -420,6 +420,8 @@ def script_summary(
         target_word_count=script.target_word_count,
         target_duration_ms=script.target_duration_ms,
         parent_script_id=script.parent_script_id,
+        editing_pass=script.editing_pass,
+        rejection_reason=script.rejection_reason,
         created_at=utc(script.created_at) or datetime.now(UTC),
         row_version=versions.current(project_id, "script", script.id),
     )

@@ -1010,6 +1010,19 @@
     "recap_script": {
       "$ref": "#/$defs/RecapScript"
     },
+    "reviewer_feedback": {
+      "anyOf": [
+        {
+          "maxLength": 20000,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Reviewer Feedback"
+    },
     "rubric": {
       "$ref": "#/$defs/ComedyRubric"
     },

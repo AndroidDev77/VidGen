@@ -487,6 +487,8 @@ export const script: ScriptProjection = {
     target_word_count: 700,
     target_duration_ms: 300_000,
     parent_script_id: null,
+    editing_pass: 1,
+    rejection_reason: null,
     created_at: "2026-08-01T09:30:00Z",
     row_version: 2,
   },
