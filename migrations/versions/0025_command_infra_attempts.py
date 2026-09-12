@@ -14,16 +14,23 @@ down never comes back.
 
 Existing rows start at zero, which is exactly right: they have not been deferred.
 
-This revision is a catch-up for databases that already have ``control_commands``,
-not the column's only source: ``0021_control_plane`` builds that table from the
-live model metadata, so a database created from empty already has the column and
-this migration finds nothing to do. That is also why the downgrade leaves the
-column alone. Dropping it would take it away from every revision back to 0021 -
-including 0021's own downgrade guard, which reads the table through the same
-model - and the column carries no provenance worth reclaiming: it records only
-how long a command once waited for a cluster.
+This revision is a catch-up, not the column's only source. ``0021_control_plane``
+builds ``control_commands`` from the live model metadata, so a database created
+from empty already arrives here with the column. That single fact shapes
+everything below:
 
-Revision ID: 0025_control_command_infrastructure_attempts
+* on PostgreSQL the statement is written ``ADD COLUMN IF NOT EXISTS``, so it is
+  correct whether or not 0021 already created the column - including in offline
+  ``--sql`` rendering, which has no database to ask and would otherwise emit an
+  ``ALTER`` for a column the same script had just created;
+* elsewhere - SQLite, which this project uses only for tests, all of which run
+  against a live connection - the column is added only after inspecting for it;
+* the downgrade leaves the column alone. Dropping it would take it away from
+  every revision back to 0021, including 0021's own downgrade guard, which reads
+  the table through the same model. The column carries no provenance worth
+  reclaiming: it records only how long a command once waited for a cluster.
+
+Revision ID: 0025_command_infra_attempts
 Revises: 0024_script_editing_passes
 """
 
@@ -32,7 +39,7 @@ from collections.abc import Sequence
 import sqlalchemy as sa
 from alembic import op
 
-revision: str = "0025_control_command_infrastructure_attempts"
+revision: str = "0025_command_infra_attempts"
 down_revision: str | None = "0024_script_editing_passes"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
@@ -42,16 +49,7 @@ _COLUMN = "infrastructure_attempt"
 
 
 def _already_added() -> bool:
-    """Whether this database already has the column and must be left alone.
-
-    ``0021_control_plane`` creates ``control_commands`` from the live model
-    metadata, so a database built from empty arrives here with the column
-    already in place and must not be asked to add it twice. Offline mode has no
-    database to ask: it renders the script for a deployment that predates the
-    column, which is the only case that needs the statement at all.
-    """
-    if op.get_context().as_sql:
-        return False
+    """Whether a live database already has the column, so nothing is to be done."""
     inspector = sa.inspect(op.get_bind())
     if _TABLE not in inspector.get_table_names():
         return True
@@ -59,7 +57,16 @@ def _already_added() -> bool:
 
 
 def upgrade() -> None:
-    if _already_added():
+    context = op.get_context()
+    if context.dialect.name == "postgresql":
+        op.execute(
+            f"ALTER TABLE {_TABLE} ADD COLUMN IF NOT EXISTS {_COLUMN} INTEGER NOT NULL DEFAULT 0"
+        )
+        return
+    if context.as_sql or _already_added():
+        # No connection to inspect, or nothing to add. A rendered script for a
+        # dialect without ``IF NOT EXISTS`` cannot know which it is, and the
+        # column is already present on every database this project builds.
         return
     op.add_column(
         _TABLE,

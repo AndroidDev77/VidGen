@@ -17,6 +17,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from enum import StrEnum
 from typing import Any, cast
 from uuid import UUID
 
@@ -58,6 +59,16 @@ INFRASTRUCTURE_BACKOFF_CEILING_SECONDS = 60
 def infrastructure_backoff_seconds(deferral: int) -> int:
     """Seconds to wait before the ``deferral``-th retry of an infrastructure failure."""
     return min(INFRASTRUCTURE_BACKOFF_CEILING_SECONDS, int(2**deferral))
+
+
+class DeferralOutcome(StrEnum):
+    """What holding a command over an infrastructure failure actually did."""
+
+    #: Re-queued on the backoff, attempts intact. The owner has lost nothing.
+    HELD = "held"
+    #: The deferral budget is spent, so the command is terminal. This is a
+    #: failed command, and callers must report it as one.
+    EXHAUSTED = "exhausted"
 
 
 class ControlCommandError(RuntimeError):
@@ -485,7 +496,13 @@ class ControlCommandRepository:
             now=moment,
         )
 
-    def defer(self, record: ControlCommandRecord, failure: ControlCommandFailure) -> bool:
+    def defer(
+        self,
+        record: ControlCommandRecord,
+        failure: ControlCommandFailure,
+        *,
+        exhausted_summary: str,
+    ) -> DeferralOutcome:
         """Hold a command over an infrastructure failure without spending a try.
 
         A cluster that could not be reached has said nothing about whether the
@@ -501,7 +518,13 @@ class ControlCommandRepository:
         Once that budget is spent the failure is no longer plausibly transient
         and the command settles as ``failed`` - still with its attempts intact,
         so an owner's explicit retry starts from a clean budget rather than from
-        one an outage emptied.
+        one an outage emptied. That row is terminal and is what the owner reads,
+        so it carries ``exhausted_summary`` rather than ``failure.summary``:
+        telling someone their dead command "will be tried again automatically"
+        is worse than telling them nothing.
+
+        The returned outcome says which of the two happened, so a caller can
+        report a killed command as killed rather than as one more deferral.
         """
         moment = _now()
         deferral = record.infrastructure_attempt + 1
@@ -509,7 +532,7 @@ class ControlCommandRepository:
         # command earned that charge, so hand it back either way.
         refunded = max(0, record.attempt - 1)
         if deferral > MAX_INFRASTRUCTURE_DEFERRALS:
-            return self._transition(
+            self._transition(
                 record,
                 ControlCommandStatus.FAILED,
                 {
@@ -518,13 +541,14 @@ class ControlCommandRepository:
                     "lease_expires_at": None,
                     "completed_at": moment,
                     "error_code": failure.code[:128],
-                    "error_summary": failure.summary[:500],
+                    "error_summary": exhausted_summary[:500],
                     "retryable": True,
                     "progress_phase": "failed",
                 },
                 now=moment,
             )
-        return self._transition(
+            return DeferralOutcome.EXHAUSTED
+        self._transition(
             record,
             ControlCommandStatus.PENDING,
             {
@@ -541,6 +565,7 @@ class ControlCommandRepository:
             },
             now=moment,
         )
+        return DeferralOutcome.HELD
 
     def cancel(self, record: ControlCommandRecord, *, reason: str = "cancelled_by_owner") -> bool:
         moment = _now()

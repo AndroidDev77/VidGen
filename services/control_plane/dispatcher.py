@@ -30,6 +30,7 @@ from dataclasses import dataclass
 from enum import Enum
 from uuid import UUID, uuid4
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
 from services.control_plane.generation_runs import GenerationRunService
@@ -54,6 +55,7 @@ from vidgen.db.control_command_models import ControlCommandRecord
 from vidgen.db.control_command_repository import (
     DEFAULT_LEASE_SECONDS,
     ControlCommandRepository,
+    DeferralOutcome,
 )
 from vidgen.review.workflow_control import WorkflowController, WorkflowControlUnavailable
 
@@ -92,6 +94,14 @@ WORKFLOW_SERVICE_UNAVAILABLE = "workflow_service_unavailable"
 WORKFLOW_SERVICE_UNAVAILABLE_SUMMARY = (
     "The workflow service could not be reached. This command is still queued "
     "and will be tried again automatically."
+)
+
+#: What the owner is told once the waiting is over and the command is dead.
+#: The sentence above would be a lie on a terminal row, and the owner is the one
+#: person who can now do something about it.
+WORKFLOW_SERVICE_UNAVAILABLE_EXHAUSTED_SUMMARY = (
+    "The workflow service stayed unreachable, so this command stopped waiting. "
+    "Retry it once the service is back."
 )
 
 
@@ -276,8 +286,9 @@ class ControlCommandDispatcher:
             # outage that outlasts a single dispatcher pass.
             session.rollback()
             fresh = repository.get(record.project_id, record.id)
+            deferral = DeferralOutcome.HELD
             if fresh is not None:
-                repository.defer(
+                deferral = repository.defer(
                     fresh,
                     ControlCommandFailure(
                         code=WORKFLOW_SERVICE_UNAVAILABLE,
@@ -285,14 +296,22 @@ class ControlCommandDispatcher:
                         retryable=True,
                         attempt=fresh.attempt,
                     ),
+                    exhausted_summary=WORKFLOW_SERVICE_UNAVAILABLE_EXHAUSTED_SUMMARY,
                 )
+            detail = {
+                "commandId": str(record.id),
+                "workflowId": unavailable.workflow_id,
+                "deferral": fresh.infrastructure_attempt if fresh is not None else 0,
+            }
+            if deferral is DeferralOutcome.EXHAUSTED:
+                # No longer a hiccup, and no longer a deferral: this command is
+                # dead and has to be counted and logged as one.
+                _LOGGER.warning(
+                    "control command failed: the workflow service never came back", extra=detail
+                )
+                return _Dispatched.FAILED
             _LOGGER.warning(
-                "control command deferred: the workflow service was unavailable",
-                extra={
-                    "commandId": str(record.id),
-                    "workflowId": unavailable.workflow_id,
-                    "deferral": fresh.infrastructure_attempt if fresh is not None else 0,
-                },
+                "control command deferred: the workflow service was unavailable", extra=detail
             )
             return _Dispatched.DEFERRED
         except Exception:
@@ -350,22 +369,37 @@ class ControlCommandDispatcher:
         outer guard - leaving every other running command unsettled. A command
         that could not be read is simply looked at again next pass; it is
         durable, and its workflow is still running.
+
+        Each command is therefore settled in its own transaction. Catching the
+        failure is not enough on its own: a database error leaves the session
+        unusable, so a single trailing commit would still escape the guard and
+        end the process. Rolling back per command also means one bad row cannot
+        discard the settlements that came before it.
         """
         settled = 0
         with self._sessions() as session:
             repository = ControlCommandRepository(session)
-            for record in session.query(ControlCommandRecord).filter(
-                ControlCommandRecord.status.in_(
-                    [
-                        ControlCommandStatus.RUNNING.value,
-                        ControlCommandStatus.AWAITING_REVIEW.value,
-                    ]
+            # Materialised before the loop: the rows are committed one at a time
+            # below, and a commit mid-iteration can invalidate a live result.
+            records = list(
+                session.scalars(
+                    select(ControlCommandRecord).where(
+                        ControlCommandRecord.status.in_(
+                            [
+                                ControlCommandStatus.RUNNING.value,
+                                ControlCommandStatus.AWAITING_REVIEW.value,
+                            ]
+                        )
+                    )
                 )
-            ):
+            )
+            for record in records:
                 try:
                     if self._settle_one(session, repository, record):
                         settled += 1
+                    session.commit()
                 except WorkflowControlUnavailable:
+                    session.rollback()
                     _LOGGER.warning(
                         "control command could not be settled: the workflow service "
                         "was unavailable",
@@ -375,10 +409,10 @@ class ControlCommandDispatcher:
                         },
                     )
                 except Exception:
+                    session.rollback()
                     _LOGGER.exception(
                         "control command settle raised", extra={"commandId": str(record.id)}
                     )
-            session.commit()
         return settled
 
     def _settle_one(

@@ -3136,10 +3136,17 @@ retrying it forever would only cycle. `infrastructure_attempt` against
 query too slowly, which is evidence about the cluster and none at all about the command. The second
 case gives the attempt straight back and re-queues the command on a longer backoff, so an outage
 lasting a minute is outlived rather than burned through - the failure mode that used to walk a
-shot approval to `5 of 5` inside half a minute and leave the owner with no way to re-drive it. Only
-`describe_shot_by_id`'s `NOT_FOUND` is ever read as "there is no such child"; every transient status
-becomes `WorkflowControlUnavailable`, which the dispatcher defers on rather than answering `None`
-and paying for a duplicate replacement child.
+shot approval to `5 of 5` inside half a minute and leave the owner with no way to re-drive it. Once
+the deferral budget *is* spent the command is terminal, is counted and reported as failed, and says
+so to its owner rather than repeating "it will be tried again automatically".
+
+The same rule governs every controller call whose `False` or `None` a caller acts on: only a
+definitive status may produce one. `describe_shot_by_id` reads `NOT_FOUND` as "there is no such
+child" and nothing else; `signal_reference_approval` reads it as "no workflow is waiting" and
+nothing else, because the caller answers that by starting a paid reference run; `cancel_workflow`
+reads it as "already gone" and nothing else, because the caller marks the command cancelled
+regardless of what it returns. Every transient status becomes `WorkflowControlUnavailable`, which
+the dispatcher defers on.
 
 `project_generation_runs` makes a project restartable. The parent workflow completes at every human
 pause, and continuing the project opens a new immutable run with its own entry stage rather than

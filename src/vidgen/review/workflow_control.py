@@ -263,6 +263,13 @@ class FakeWorkflowController:
         #: be asked" is not, and a test needs to reproduce the second without a
         #: cluster to break.
         self.unavailable_workflows: set[str] = set()
+        #: Workflow IDs whose cancellation the fake cluster cannot accept, and
+        #: whose approval signal it cannot accept. Separate from the set above
+        #: because each of these is its own "answering nothing is not an answer"
+        #: decision: a swallowed cancel reports a stop that never happened, and
+        #: a swallowed signal buys a second paid reference run.
+        self.cancel_failures: set[str] = set()
+        self.signal_failures: set[str] = set()
         #: Execution statuses the fake cluster reports, overriding what the
         #: workflow's own state implies. This is how a test reproduces the case
         #: the reconciler exists for: an execution that died while the
@@ -369,6 +376,11 @@ class FakeWorkflowController:
         return workflow_id, f"{workflow_id}-run"
 
     def signal_reference_approval(self, workflow_id: str, signal: ReferenceApprovalSignal) -> bool:
+        if workflow_id in self.signal_failures:
+            raise WorkflowControlUnavailable(
+                "The workflow service could not be reached (unavailable).",
+                workflow_id=workflow_id,
+            )
         if workflow_id not in self.references:
             return False
         self.reference_approvals.append((workflow_id, signal))
@@ -409,6 +421,11 @@ class FakeWorkflowController:
         return self.render_states.get(workflow_id)
 
     def cancel_workflow(self, workflow_id: str) -> bool:
+        if workflow_id in self.cancel_failures:
+            raise WorkflowControlUnavailable(
+                "The workflow service could not be reached (unavailable).",
+                workflow_id=workflow_id,
+            )
         self.cancelled_workflows.append(workflow_id)
         return workflow_id not in self.missing_workflows
 
@@ -783,7 +800,15 @@ class TemporalWorkflowController:
         return result
 
     def signal_reference_approval(self, workflow_id: str, signal: ReferenceApprovalSignal) -> bool:
-        from temporalio.service import RPCError
+        """``False`` only when no workflow is waiting for this approval.
+
+        The caller answers ``False`` by *starting* a reference workflow, which
+        drafts sheets and spends. So only ``NOT_FOUND`` may say it: a cluster
+        that merely failed to answer says nothing about whether one is waiting,
+        and reading that as "there is none" buys a second run of paid work -
+        the same duplicate-child harm ``describe_shot_by_id`` refuses.
+        """
+        from temporalio.service import RPCError, RPCStatusCode
 
         from packages.workflows.continuity import ContinuityReferenceWorkflow
 
@@ -794,7 +819,9 @@ class TemporalWorkflowController:
                 await handle.signal(
                     ContinuityReferenceWorkflow.approve, signal, rpc_timeout=self._rpc_timeout
                 )
-            except RPCError:
+            except RPCError as error:
+                if error.status != RPCStatusCode.NOT_FOUND:
+                    raise
                 # No live workflow is waiting for this approval. The decision is
                 # already persisted; the caller decides whether to start one.
                 return False
@@ -957,15 +984,28 @@ class TemporalWorkflowController:
         A workflow that no longer exists is reported as ``False`` rather than
         raised: the command it belonged to is finished either way, and the
         dispatcher must still be able to settle the row.
+
+        A cluster that could not be reached is *not* that. The caller marks the
+        command ``cancelled`` regardless of what this returns, so swallowing a
+        transient failure would report a stop that never happened and leave the
+        workflow running and spending. Those propagate, and the next pass tries
+        the cancellation again.
         """
-        from temporalio.service import RPCError
+        from temporalio.service import RPCError, RPCStatusCode
+
+        #: Statuses that mean there is nothing left to cancel. Temporal answers
+        #: ``NOT_FOUND`` both for an execution it has never heard of and for one
+        #: that has already closed.
+        finished = {RPCStatusCode.NOT_FOUND, RPCStatusCode.FAILED_PRECONDITION}
 
         async def run() -> bool:
             client = await self._client()
             handle = client.get_workflow_handle(workflow_id)  # type: ignore[attr-defined]
             try:
                 await handle.cancel(rpc_timeout=self._rpc_timeout)
-            except RPCError:
+            except RPCError as error:
+                if error.status not in finished:
+                    raise
                 return False
             return True
 

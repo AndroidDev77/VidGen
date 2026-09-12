@@ -39,8 +39,10 @@ from services.review.shot_identity import (
     shot_workflow_identity,
 )
 from tests.review_fixtures import ProjectGraph, build_project_graph
+from vidgen.contracts.continuity_workflow import ReferenceApprovalSignal
 from vidgen.contracts.control_commands import (
     ControlCommandFailure,
+    ControlCommandProgress,
     ControlCommandRequest,
     ControlCommandStatus,
     ControlCommandTargetType,
@@ -2310,7 +2312,9 @@ def test_an_outage_that_never_clears_still_settles_the_command(
         record.infrastructure_attempt = MAX_INFRASTRUCTURE_DEFERRALS
         session.commit()
 
-    assert dispatcher.run_once().deferred == 1
+    report = dispatcher.run_once()
+    assert report.failed == 1, "a command this kills is a failed command, not a deferral"
+    assert report.deferred == 0
 
     with factory() as session:
         record = session.get(ControlCommandRecord, command_id)
@@ -2318,6 +2322,12 @@ def test_an_outage_that_never_clears_still_settles_the_command(
         assert record.status == ControlCommandStatus.FAILED.value
         assert record.error_code == "workflow_service_unavailable"
         assert record.attempt == 0
+        failure = command_projection(record).failure
+        assert failure is not None
+        assert "will be tried again" not in failure.summary, (
+            "a dead command must not tell its owner to keep waiting"
+        )
+        assert "Retry it" in failure.summary
         assert command_projection(record).permitted_actions == ["retry"]
         # An owner's explicit retry re-drives it against both budgets.
         ControlCommandRepository(session).requeue(record)
@@ -2366,6 +2376,15 @@ class _StubHandle:
         self._calls = calls
 
     async def query(self, _query: object, *args: object, **kwargs: object) -> object:
+        return self._record(kwargs)
+
+    async def signal(self, _signal: object, *args: object, **kwargs: object) -> object:
+        return self._record(kwargs)
+
+    async def cancel(self, **kwargs: object) -> object:
+        return self._record(kwargs)
+
+    def _record(self, kwargs: dict[str, object]) -> object:
         self._calls.append(dict(kwargs))
         if self._error is not None:
             raise self._error
@@ -2455,3 +2474,196 @@ def test_a_transient_status_is_not_an_answer_about_the_child(
         monkeypatch, RPCError("workflow not found", RPCStatusCode.NOT_FOUND, b"")
     )
     assert missing.describe_shot_by_id("vidgen-shot-absent") is None
+
+
+def test_a_settle_that_hits_the_database_does_not_poison_the_pass(
+    graph: ProjectGraph,
+    dispatcher: ControlCommandDispatcher,
+    review_client: tuple[TestClient, sessionmaker[Session], FakeWorkflowController],
+) -> None:
+    """Catching the error is not enough; the transaction has to be rolled back.
+
+    A settle that fails half way has already written to the session. Without a
+    rollback those writes are still pending, and the next command's commit
+    carries them in - a command records progress it never made. On PostgreSQL
+    the same missing rollback is worse still: the aborted transaction poisons
+    every later statement, so the commit raises straight past the guard and out
+    of ``run_forever``, which is the process death the guard exists to stop.
+
+    Two commands, the first failing after a write: that write must be gone, and
+    the second must still be settled by the same pass.
+    """
+    _, factory, _ = review_client
+    with factory() as session:
+        first = _submit_review_continuation(session, graph, graph.shot_ids[2])
+        second = _submit_review_continuation(session, graph, graph.shot_ids[3])
+        session.commit()
+    assert dispatcher.run_once().dispatched == 2
+
+    seen: list[UUID] = []
+
+    def explode_then_work(
+        session: Session, repository: ControlCommandRepository, record: ControlCommandRecord
+    ) -> bool:
+        seen.append(record.id)
+        if len(seen) == 1:
+            # A real settle writes before it decides. This one then dies.
+            repository.mark_progress(record, ControlCommandProgress(phase="half", percent=42))
+            raise RuntimeError("the workflow answered something unreadable")
+        repository.mark_progress(record, ControlCommandProgress(phase="reached", percent=77))
+        return False
+
+    dispatcher._settle_one = explode_then_work  # type: ignore[method-assign]
+    assert dispatcher.settle_running() == 0
+    assert len(seen) == 2, "the pass must reach every command, not stop at the bad one"
+
+    with factory() as session:
+        poisoned = session.get(ControlCommandRecord, seen[0])
+        survivor = session.get(ControlCommandRecord, seen[1])
+        assert poisoned is not None and survivor is not None
+        assert poisoned.progress_percent != 42, "a failed settle's writes must not be committed"
+        assert survivor.progress_percent == 77, "work after the bad command must still commit"
+    assert {first, second} == set(seen)
+
+
+def test_a_cancellation_the_cluster_never_received_is_not_reported_as_done(
+    graph: ProjectGraph,
+    dispatcher: ControlCommandDispatcher,
+    controller: FakeWorkflowController,
+    review_client: tuple[TestClient, sessionmaker[Session], FakeWorkflowController],
+) -> None:
+    """The row reaches ``cancelled`` only once the workflow actually has been.
+
+    ``honour_cancellations`` ignores what ``cancel_workflow`` returns, so a
+    controller that answers ``False`` for an unreachable cluster would mark the
+    command stopped while its workflow kept running and spending.
+    """
+    _, factory, _ = review_client
+    with factory() as session:
+        project = session.get(Project, graph.project_id)
+        assert project is not None
+        command_id = _submit_review_continuation(session, graph, graph.shot_ids[2])
+        session.commit()
+    assert dispatcher.run_once().dispatched == 1
+    with factory() as session:
+        project = session.get(Project, graph.project_id)
+        assert project is not None
+        ControlPlaneService(session, "owner-a").cancel(project, command_id)
+        record = session.get(ControlCommandRecord, command_id)
+        assert record is not None
+        workflow_id = record.workflow_id or ""
+        session.commit()
+
+    controller.cancel_failures.add(workflow_id)
+    assert dispatcher.honour_cancellations() == 0
+
+    with factory() as session:
+        record = session.get(ControlCommandRecord, command_id)
+        assert record is not None
+        assert record.status == ControlCommandStatus.RUNNING.value
+        assert record.cancel_requested_at is not None, "the request stands for the next pass"
+
+    controller.cancel_failures.clear()
+    assert dispatcher.honour_cancellations() == 1
+    with factory() as session:
+        record = session.get(ControlCommandRecord, command_id)
+        assert record is not None
+        assert record.status == ControlCommandStatus.CANCELLED.value
+
+
+def test_an_unreachable_cluster_never_buys_a_second_reference_workflow(
+    client: TestClient,
+    graph: ProjectGraph,
+    dispatcher: ControlCommandDispatcher,
+    controller: FakeWorkflowController,
+    review_client: tuple[TestClient, sessionmaker[Session], FakeWorkflowController],
+) -> None:
+    """The shot rule applies to references, and for the same reason.
+
+    ``dispatch_reference_apply`` reads ``False`` from the approval signal as
+    "nothing is waiting" and starts a reference workflow, which drafts sheets
+    and spends. A cluster that merely failed to answer must not be able to say
+    that: the command waits for the cluster instead.
+    """
+    _, factory, _ = review_client
+    reference_set_id, entity_id = _seed_reference_set(factory, graph)
+    approved = client.post(
+        api(graph.project_id, f"/characters/{entity_id}/references/{reference_set_id}:approve"),
+        json={"upstream_lineage_hash": IDENTITY, "confirm_invalidation": True},
+        headers=headers(if_match=1, key="approve-unavailable"),
+    )
+    assert approved.status_code == 200
+    command_id = UUID(approved.json()["command_id"])
+    with factory() as session:
+        inputs = resolve_reference_inputs(session, project_id=graph.project_id, idempotency_key="p")
+    controller.signal_failures.add(f"vidgen-references-{inputs.reference_run_id}")
+
+    assert dispatcher.run_once().deferred == 1
+
+    assert controller.reference_start_calls == 0, (
+        "no paid reference run for a signal that timed out"
+    )
+    assert controller.reference_approvals == []
+    with factory() as session:
+        record = session.get(ControlCommandRecord, command_id)
+        assert record is not None
+        assert record.status == ControlCommandStatus.PENDING.value
+        assert record.attempt == 0
+        assert record.error_code == "workflow_service_unavailable"
+
+
+def test_a_signal_the_cluster_never_took_is_not_read_as_nothing_waiting(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """``False`` here starts a paid reference run, so only an answer may say it.
+
+    ``NOT_FOUND`` is an answer: no workflow is waiting for this approval. A
+    cluster that timed out is not, and must not be able to buy a second run of
+    reference drafting.
+    """
+    from temporalio.service import RPCError, RPCStatusCode
+
+    signal = ReferenceApprovalSignal(
+        project_id=uuid4(),
+        reference_run_id=uuid4(),
+        approval_id=uuid4(),
+        idempotency_key="k",
+        storyboard_run_id=uuid4(),
+        approved_reference_set_ids=[],
+    )
+
+    unavailable, _, _ = _stubbed_controller(
+        monkeypatch, RPCError("no worker is polling", RPCStatusCode.UNAVAILABLE, b"")
+    )
+    with pytest.raises(WorkflowControlUnavailable):
+        unavailable.signal_reference_approval("vidgen-references-x", signal)
+
+    missing, _, _ = _stubbed_controller(
+        monkeypatch, RPCError("workflow not found", RPCStatusCode.NOT_FOUND, b"")
+    )
+    assert missing.signal_reference_approval("vidgen-references-x", signal) is False
+
+
+def test_a_cancel_the_cluster_never_took_is_not_reported_as_finished(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The caller settles the row whatever this returns, so it must not lie.
+
+    Answering ``False`` for an unreachable cluster marks the command cancelled
+    while its workflow keeps running and spending. Only a workflow that is
+    genuinely gone or already closed may say so.
+    """
+    from temporalio.service import RPCError, RPCStatusCode
+
+    unavailable, _, _ = _stubbed_controller(
+        monkeypatch, RPCError("the cluster is down", RPCStatusCode.UNAVAILABLE, b"")
+    )
+    with pytest.raises(WorkflowControlUnavailable):
+        unavailable.cancel_workflow("vidgen-shot-live")
+
+    for status in (RPCStatusCode.NOT_FOUND, RPCStatusCode.FAILED_PRECONDITION):
+        finished, _, _ = _stubbed_controller(monkeypatch, RPCError("already closed", status, b""))
+        assert finished.cancel_workflow("vidgen-shot-closed") is False
+
+    healthy, _, _ = _stubbed_controller(monkeypatch, None)
+    assert healthy.cancel_workflow("vidgen-shot-live") is True
