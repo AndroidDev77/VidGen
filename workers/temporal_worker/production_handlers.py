@@ -143,7 +143,11 @@ from vidgen.db.continuity_models import (
     location_identity_versions,
     location_reference_sets,
 )
-from vidgen.db.image_generation_models import GeneratedKeyframeImage, ImageGenerationRun
+from vidgen.db.image_generation_models import (
+    GeneratedKeyframeImage,
+    ImageGenerationItem,
+    ImageGenerationRun,
+)
 from vidgen.db.image_generation_repository import ImageGenerationRepository
 from vidgen.db.models import Asset, AudioAsset, Project, Scene, SourceVideo, asset_dependencies
 from vidgen.db.session import build_engine
@@ -585,6 +589,34 @@ def terminal_animation_error(exc: Exception) -> ApplicationError | None:
     return ApplicationError(failure.sanitized_message, type=type(exc).__name__, non_retryable=True)
 
 
+def _carried_keyframe_image_run(
+    session: Session, request: ShotWorkflowInput, shot: StoryboardShotRecord
+) -> ImageGenerationRun | None:
+    """The T14 run that produced the keyframe this child was handed.
+
+    A replacement child for a keyframe a person already approved deliberately
+    skips T14, so no run exists under this child's own idempotency key.
+    Animating still has to name the run the image came from, and that is the
+    run T14 actually produced it in - not a new one, which would mean paying
+    for the keyframe the owner asked to keep.
+    """
+    asset_id = request.selected_keyframe_asset_id
+    if asset_id is None:
+        return None
+    return session.scalar(
+        select(ImageGenerationRun)
+        .join(ImageGenerationItem, ImageGenerationItem.run_id == ImageGenerationRun.id)
+        .join(GeneratedKeyframeImage, GeneratedKeyframeImage.item_id == ImageGenerationItem.id)
+        .where(
+            ImageGenerationRun.project_id == request.project_id,
+            GeneratedKeyframeImage.asset_id == asset_id,
+            GeneratedKeyframeImage.shot_id == shot.id,
+            GeneratedKeyframeImage.keyframe_role == "FIRST_FRAME",
+            GeneratedKeyframeImage.selected,
+        )
+    )
+
+
 def _run_shot_animation(
     session: Session,
     blob_store: BlobStore,
@@ -601,7 +633,7 @@ def _run_shot_animation(
             ImageGenerationRun.idempotency_key
             == shot_activity_idempotency_key(request.shot_input_hash, "t14"),
         )
-    )
+    ) or _carried_keyframe_image_run(session, request, shot)
     if image_run is None or image_run.status != "keyframes_complete":
         raise ValueError("InvalidLineage: compatible completed T14 run is missing")
     try:

@@ -341,3 +341,106 @@ async def test_temporal_ten_shot_concurrency_and_targeted_retry() -> None:
     await Replayer(
         workflows=[ShotWorkflow], data_converter=pydantic_data_converter
     ).replay_workflow(child_history)
+
+
+@pytest.mark.asyncio
+async def test_a_replacement_run_animates_the_keyframe_it_was_handed() -> None:
+    """A force-approved keyframe survives into the child that replaces the shot.
+
+    The child whose keyframe T20 blocked has closed, so the continuation starts
+    a replacement. Regenerating the image there would spend T14 again and throw
+    away the decision the owner just made, so the replacement is handed the
+    approved asset and goes straight to the gate it already cleared.
+    """
+    identity = make_identity()
+    approved = UUID(int=9001)
+    request = ShotWorkflowInput(
+        project_id=PROJECT,
+        storyboard_run_id=STORYBOARD,
+        storyboard_shot_id=SHOT,
+        shot_input_hash=identity.identity_hash,
+        workflow_identity=identity,
+        selected_keyframe_asset_id=approved,
+        idempotency_key="force-approved-replacement",
+    )
+    keyframe_calls = 0
+    checkpoints: list[ShotWorkflowProgress] = []
+
+    async def resolve_shot(_: ShotWorkflowInput) -> ShotWorkflowProgress:
+        return ShotWorkflowProgress(
+            state=ShotWorkflowStatus.PROMPTING, current_stage="resolved", current_attempt=1
+        )
+
+    async def keyframe(_: ShotWorkflowInput) -> ShotWorkflowProgress:
+        nonlocal keyframe_calls
+        keyframe_calls += 1
+        return ShotWorkflowProgress(
+            state=ShotWorkflowStatus.KEYFRAME_QA,
+            current_stage="t14_complete",
+            current_attempt=1,
+            t14_run_id=UUID(int=1001),
+            selected_keyframe_asset_id=UUID(int=9999),
+        )
+
+    async def keyframe_qa(_: ShotWorkflowInput) -> ShotWorkflowProgress:
+        """The gate the owner already cleared: the approved image passes it."""
+        return ShotWorkflowProgress(
+            state=ShotWorkflowStatus.KEYFRAME_QA,
+            current_stage="t20_keyframe_qa",
+            current_attempt=1,
+            last_checkpoint="keyframe_qa_pass",
+        )
+
+    async def animation(inner: ShotWorkflowInput) -> ShotWorkflowResult:
+        return ShotWorkflowResult(
+            shot_id=inner.storyboard_shot_id,
+            child_workflow_id="activity-placeholder",
+            identity_hash=inner.shot_input_hash,
+            final_state=ShotWorkflowStatus.VIDEO_QA,
+            t14_run_id=UUID(int=1002),
+            selected_keyframe_asset_id=inner.selected_keyframe_asset_id,
+            t15_run_id=UUID(int=3001),
+            selected_video_asset_id=UUID(int=4001),
+        )
+
+    async def video_qa(_: ShotWorkflowInput) -> ShotWorkflowProgress:
+        return ShotWorkflowProgress(
+            state=ShotWorkflowStatus.VIDEO_QA,
+            current_stage="t20_video_qa",
+            current_attempt=1,
+            last_checkpoint="video_qa_pass",
+        )
+
+    async def checkpoint(value: ShotWorkflowProgress) -> ShotWorkflowProgress:
+        checkpoints.append(value)
+        return value
+
+    def named(name: str, fn: Callable[..., Awaitable[object]]) -> Callable[..., Awaitable[object]]:
+        return activity.defn(name=name)(fn)
+
+    async with await WorkflowEnvironment.start_time_skipping(
+        data_converter=pydantic_data_converter
+    ) as environment:
+        async with Worker(
+            environment.client,
+            task_queue="vidgen-projects",
+            workflows=[ShotWorkflow],
+            activities=[
+                named("resolve_shot_input", resolve_shot),
+                named("run_shot_keyframe", keyframe),
+                named("run_shot_keyframe_qa", keyframe_qa),
+                named("run_shot_animation", animation),
+                named("run_shot_video_qa", video_qa),
+                named("persist_shot_checkpoint", checkpoint),
+            ],
+        ):
+            result = await environment.client.execute_workflow(
+                ShotWorkflow.run,
+                request,
+                id=temporal_shot_workflow_id(identity),
+                task_queue="vidgen-projects",
+            )
+    assert keyframe_calls == 0, "T14 was paid for a keyframe the owner had approved"
+    assert result.final_state == ShotWorkflowStatus.LOCKED
+    assert result.selected_keyframe_asset_id == approved
+    assert [item.selected_keyframe_asset_id for item in checkpoints] == [approved]

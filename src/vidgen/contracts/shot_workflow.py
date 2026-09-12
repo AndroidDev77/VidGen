@@ -46,6 +46,28 @@ REPAIR_TERMINAL_STATES = frozenset(
 )
 
 
+#: The states a shot child workflow has already *returned* in. Temporal keeps
+#: answering queries for a closed execution for the whole retention window, so
+#: a state read back is not evidence that the child is still running, and a
+#: closed child can only be recovered by starting a new one - signalling it
+#: raises ``workflow execution already completed``.
+#:
+#: ``FAILED`` is deliberately absent: it is the one state a child holds both
+#: open and closed in. A *retryable* failure parks the child on a wait for its
+#: retry signal, while a non-retryable one - a blocked T20 keyframe, a budget
+#: denial - has already returned its result. Callers must therefore consult
+#: :attr:`ShotWorkflowProgress.retryable` alongside this set, which is exactly
+#: what :func:`shot_workflow_is_live` does.
+CLOSED_SHOT_STATES = frozenset(
+    {
+        ShotWorkflowStatus.LOCKED,
+        ShotWorkflowStatus.CANCELLED,
+        ShotWorkflowStatus.REPAIR_FAILED,
+        ShotWorkflowStatus.HUMAN_REVIEW_REQUIRED,
+    }
+)
+
+
 class ShotFailureClass(StrEnum):
     TRANSIENT_PROVIDER_FAILURE = "transient_provider_failure"
     RATE_LIMIT = "rate_limit"
@@ -151,6 +173,18 @@ class ShotWorkflowInput(StrictContract):
     workflow_identity: ShotWorkflowIdentity
     t14_run_id: UUID | None = None
     t15_run_id: UUID | None = None
+    #: The keyframe this run must animate instead of generating one. Set only
+    #: when a person has already cleared this shot's T20 keyframe gate and the
+    #: child that owned the shot has closed: the replacement then skips T14 and
+    #: animates the very image the owner approved, rather than paying to
+    #: generate another one and throwing that decision away.
+    #:
+    #: It is deliberately not part of ``workflow_identity``. Which keyframe a
+    #: replacement is handed is an owner's routing decision, recorded in the
+    #: durable command and the QA rows; the identity keeps binding only the
+    #: material T13-T15 inputs, so every identity minted before this field
+    #: existed keeps the hash it already has.
+    selected_keyframe_asset_id: UUID | None = None
     parent_workflow_id: str | None = Field(default=None, max_length=255)
     idempotency_key: str = Field(min_length=1, max_length=255)
     trace_context: dict[str, str] = Field(default_factory=dict)
@@ -198,6 +232,25 @@ class ShotWorkflowProgress(StrictContract):
         if value is not None and (value.tzinfo is None or value.utcoffset() is None):
             raise ValueError("workflow timestamps must be timezone-aware")
         return value
+
+
+def shot_workflow_is_live(progress: ShotWorkflowProgress | None) -> bool:
+    """Whether a queried child can still be signalled, rather than replaced.
+
+    Temporal answers queries for a closed execution throughout its retention
+    window, so a progress payload proves only what the child last reported. A
+    caller that signals on that alone eventually signals a workflow that has
+    already returned, which fails and leaves the command to be retried forever.
+    """
+    if progress is None:
+        return False
+    if progress.state in CLOSED_SHOT_STATES:
+        return False
+    if progress.state is ShotWorkflowStatus.FAILED:
+        # A retryable failure is parked on the retry signal this command sends;
+        # a non-retryable one already returned its failure result.
+        return progress.retryable
+    return True
 
 
 class ShotWorkflowCommand(StrictContract):

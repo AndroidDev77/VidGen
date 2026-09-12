@@ -146,6 +146,19 @@
       "title": "Schema Version",
       "type": "string"
     },
+    "selected_keyframe_asset_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Selected Keyframe Asset Id"
+    },
     "shot_input_hash": {
       "pattern": "^[a-f0-9]{64}$",
       "title": "Shot Input Hash",
