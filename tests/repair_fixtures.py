@@ -187,6 +187,8 @@ def qa_result(
     finding_repair_codes: Sequence[VisualQARepairCode] = (VisualQARepairCode.WRONG_ACTION,),
     importance: VisualQAShotImportance = VisualQAShotImportance.NORMAL,
     outcome: VisualQAOutcome = VisualQAOutcome.FAIL,
+    warning_codes: Sequence[str] = (),
+    routing: VisualQARoutingRecommendation = VisualQARoutingRecommendation.TARGETED_REPAIR,
     compared_reference_asset_id: UUID | None = None,
     shot_id: UUID | None = None,
 ) -> VisualQAResult:
@@ -296,9 +298,10 @@ def qa_result(
         ),
         hard_failure=hard,
         hard_failure_codes=[hard_failure_code.value] if hard_failure_code else [],
+        warning_codes=list(warning_codes),
         repair_codes=list(repair_codes),
         recommendation=VisualQARepairRecommendation(
-            routing=VisualQARoutingRecommendation.TARGETED_REPAIR,
+            routing=routing,
             repair_codes=list(repair_codes),
         ),
         deterministic_report=VisualQADeterministicReport(

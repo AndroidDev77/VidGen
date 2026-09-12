@@ -7,6 +7,7 @@ from collections.abc import Callable
 from typing import Any, Literal
 from uuid import UUID
 
+from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 from temporalio import activity
@@ -449,6 +450,14 @@ def _run_shot_visual_qa(
         raise ApplicationError(str(exc), type="VisualQABlocked", non_retryable=True) from exc
     except VisualQAReviewRequired as exc:
         raise ApplicationError(str(exc), type="VisualQAReviewRequired", non_retryable=True) from exc
+    except ValidationError as exc:
+        # A QA stage that cannot build its own contract is broken code, not a
+        # flaky provider. Retrying pays for another evaluation to reach the same
+        # rejection, and the default classification would park the shot waiting
+        # for a retry signal that can never help, so it fails deterministically.
+        raise ApplicationError(
+            str(exc)[:500], type="VisualQAContractViolation", non_retryable=True
+        ) from exc
     state = (
         ShotWorkflowStatus.KEYFRAME_QA
         if target_type is VisualQATargetType.KEYFRAME

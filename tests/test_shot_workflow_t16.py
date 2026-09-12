@@ -24,6 +24,7 @@ from vidgen.contracts.shot_workflow import (
     ProjectShotFanoutInput,
     ProjectShotFanoutResult,
     ResolveShotFanoutResult,
+    ShotFailureClass,
     ShotWorkflowCommand,
     ShotWorkflowIdentity,
     ShotWorkflowInput,
@@ -112,6 +113,25 @@ def test_activity_keys_are_stable_and_stage_isolated() -> None:
     assert shot_activity_idempotency_key(value, "t14") != shot_activity_idempotency_key(
         value, "t15"
     )
+
+
+def test_a_qa_contract_violation_is_terminal_rather_than_a_parked_retry() -> None:
+    """A retryable classification parks the shot until somebody signals it.
+
+    That is the right answer for a flaky provider and the wrong one for a QA
+    result that cannot satisfy its own contract: no retry can change the
+    payload, so the shot waited forever with nothing pending. It is classified
+    as the deterministic failure it is, which ends the workflow with a reason.
+    """
+    shot = ShotWorkflow()
+    failure = shot._classify_failure(
+        ApplicationError("contract rejected", type="VisualQAContractViolation", non_retryable=True)
+    )
+    assert failure.classification is ShotFailureClass.DETERMINISTIC_CONFIGURATION_FAILURE
+    assert failure.retryable is False
+    # An unrecognised error keeps the forgiving default, which is what made the
+    # unclassified ValidationError park the shot in the first place.
+    assert shot._classify_failure(ApplicationError("boom", type="SomethingElse")).retryable is True
 
 
 def test_ten_shot_failure_isolation_acceptance_model() -> None:

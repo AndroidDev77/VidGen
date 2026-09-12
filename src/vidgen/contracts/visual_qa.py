@@ -32,6 +32,20 @@ from vidgen.contracts.common import StrictContract
 
 CONTRACT_VERSION = "visual-qa/1.0"
 
+#: Warning recorded when a shot scores below its pass threshold but every repair
+#: code it evidenced - or the one its worst dimension would name - is tolerated
+#: as warn-only by the project, leaving nothing for T21 to repair.
+#:
+#: This marker is the single, explicit exception to "a PASS is at or above the
+#: pass threshold". The alternative - having scoring restate the threshold or
+#: the total so the arithmetic works out - would make the persisted record lie
+#: about what the shot scored and what it was measured against, which is
+#: exactly what the API projection, the review scorecard and the QA metrics
+#: read. A tolerated pass is a real thing that happened, so the contract
+#: records it as one and demands the project's tolerance be stated in the
+#: result rather than inferred.
+TOLERATED_SCORE_BELOW_THRESHOLD = "warn_only:score_below_threshold"
+
 Sha256 = Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")]
 Confidence = Annotated[float, Field(ge=0, le=1)]
 RawScore = Annotated[float, Field(ge=0, le=100)]
@@ -813,10 +827,21 @@ class VisualQAResult(StrictContract):
             raise ValueError("any hard failure forces the canonical outcome to FAIL")
         if self.outcome is not VisualQAOutcome.PASS and not self.repair_codes:
             raise ValueError("a failed or review-required result requires repair codes")
-        if self.outcome is VisualQAOutcome.PASS and (
-            self.score.total < self.score.pass_threshold or self.hard_failure
-        ):
-            raise ValueError("PASS requires the pass threshold and no hard failure")
+        # A PASS carrying a hard failure is already refused above, by the
+        # stronger rule that no hard failure may end in anything but FAIL.
+        if self.outcome is VisualQAOutcome.PASS and self.score.total < self.score.pass_threshold:
+            # The one admitted below-threshold pass: the project tolerates every
+            # code that lowered the score, so there is nothing left to repair and
+            # scoring recorded the shortfall as a warning. The tolerance has to
+            # be stated here - an unmarked low-scoring PASS is still a bug - and
+            # a result that still names repair codes contradicts the premise.
+            if TOLERATED_SCORE_BELOW_THRESHOLD not in self.warning_codes:
+                raise ValueError(
+                    "PASS below the pass threshold requires the "
+                    f"{TOLERATED_SCORE_BELOW_THRESHOLD!r} warning"
+                )
+            if self.repair_codes:
+                raise ValueError("a tolerated below-threshold PASS cannot carry repair codes")
         if self.recommendation.executed:
             raise ValueError("T20 never executes a repair recommendation")
         return self
@@ -824,6 +849,7 @@ class VisualQAResult(StrictContract):
 
 __all__ = [
     "CONTRACT_VERSION",
+    "TOLERATED_SCORE_BELOW_THRESHOLD",
     "VisualQAAdjudication",
     "VisualQAAttemptType",
     "VisualQABoundingBox",
