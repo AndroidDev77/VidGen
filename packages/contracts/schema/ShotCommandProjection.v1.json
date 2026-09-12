@@ -1,0 +1,110 @@
+{
+  "additionalProperties": false,
+  "description": "The durable control command currently acting on one shot.\n\nBetween a human approving or retrying a shot and the replacement workflow\nwriting its first row, the shot's own tables still describe the *previous*\nattempt. Without this the review UI reads that stale row as a fresh failure\nand offers the same action again, so a reviewer cannot tell their decision\nlanded and can fire duplicates.\n\n``active`` says the command has not reached a terminal status, and\n``awaiting_review`` separates the one active state that is waiting on a\nperson from the ones waiting on the machine - a UI that disabled a\nreviewer's decision while the command sits waiting for exactly that\ndecision would deadlock the shot. ``dispatched`` separates a command still\nqueued for the dispatcher from one that has a real workflow behind it. A\nterminally failed command is surfaced with ``active`` false so the error is\nrenderable and the affordance comes back.",
+  "properties": {
+    "active": {
+      "default": false,
+      "title": "Active",
+      "type": "boolean"
+    },
+    "awaiting_review": {
+      "default": false,
+      "title": "Awaiting Review",
+      "type": "boolean"
+    },
+    "cancel_requested": {
+      "default": false,
+      "title": "Cancel Requested",
+      "type": "boolean"
+    },
+    "command_id": {
+      "format": "uuid",
+      "title": "Command Id",
+      "type": "string"
+    },
+    "command_type": {
+      "maxLength": 64,
+      "title": "Command Type",
+      "type": "string"
+    },
+    "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+    },
+    "dispatched": {
+      "default": false,
+      "title": "Dispatched",
+      "type": "boolean"
+    },
+    "failure_code": {
+      "anyOf": [
+        {
+          "maxLength": 128,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Failure Code"
+    },
+    "failure_summary": {
+      "anyOf": [
+        {
+          "maxLength": 500,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Failure Summary"
+    },
+    "retryable": {
+      "default": false,
+      "title": "Retryable",
+      "type": "boolean"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "status": {
+      "maxLength": 32,
+      "title": "Status",
+      "type": "string"
+    },
+    "updated_at": {
+      "format": "date-time",
+      "title": "Updated At",
+      "type": "string"
+    },
+    "workflow_id": {
+      "anyOf": [
+        {
+          "maxLength": 255,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Workflow Id"
+    }
+  },
+  "required": [
+    "command_id",
+    "command_type",
+    "status",
+    "created_at",
+    "updated_at"
+  ],
+  "title": "ShotCommandProjection",
+  "type": "object"
+}

@@ -1239,8 +1239,28 @@ export interface InvalidationSet {
   requires_confirmation: boolean;
 }
 
-export interface StoryboardShotProjection {
+export interface ShotCommandProjection {
   schema_version: "1.0";
+  command_id: UUID;
+  command_type: string;
+  status: string;
+  /** The command is still in flight: it has not reached a terminal status. */
+  active: boolean;
+  /** Active, but parked on a human decision rather than on the machine. */
+  awaiting_review: boolean;
+  /** A real workflow has been started or signalled for this command. */
+  dispatched: boolean;
+  workflow_id: string | null;
+  failure_code: string | null;
+  failure_summary: string | null;
+  retryable: boolean;
+  cancel_requested: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface StoryboardShotProjection {
+  schema_version: "1.1";
   shot_id: UUID;
   stable_shot_id: UUID;
   global_sequence: number;
@@ -1268,6 +1288,8 @@ export interface StoryboardShotProjection {
   cost_amount: string | null;
   warning_code: string | null;
   failure_code: string | null;
+  /** The unresolved control command acting on this shot, when there is one. */
+  pending_command: ShotCommandProjection | null;
   row_version: number;
 }
 
@@ -1320,13 +1342,15 @@ export interface ShotDetailProjection {
 }
 
 export interface ShotStatusProjection {
-  schema_version: "1.0";
+  schema_version: "1.1";
   shot_id: UUID;
   child_workflow_id: string | null;
   status: string;
   retryable: boolean;
   attempt_count: number;
   failure_code: string | null;
+  /** The unresolved control command acting on this shot, when there is one. */
+  pending_command: ShotCommandProjection | null;
   row_version: number;
 }
 

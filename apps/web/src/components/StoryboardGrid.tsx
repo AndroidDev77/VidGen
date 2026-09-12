@@ -13,6 +13,7 @@ import type { JSX } from "react";
 import type { StoryboardShotProjection, VisualQARunProjection } from "@vidgen/contracts";
 
 import { formatMicroseconds, formatMoney, formatTimecode, humanize } from "../state/format";
+import { shotCommandStateFor } from "../state/shotCommand";
 import { decidableRun, decisionAffordance } from "../state/visualQa";
 import { StatusBadge } from "./StatusBadge";
 
@@ -94,6 +95,9 @@ export function StoryboardGrid({
         // Reviewing 20 shots one inspector at a time is the flow this
         // replaces: the decision a shot is waiting for is offered on the card.
         const affordance = decisionAffordance(decidableRun(qaRuns));
+        // A decision already recorded against this shot outranks whatever its
+        // own rows still say: the card must not offer the same action twice.
+        const command = shotCommandStateFor(shot);
         return (
           <li key={shot.shot_id}>
             <Card className={isSelected ? `${styles.card} ${styles.selected}` : styles.card}>
@@ -118,6 +122,14 @@ export function StoryboardGrid({
               )}
               <div className={styles.meta}>
                 <StatusBadge status={shot.workflow_status} />
+                {command.label !== null && (
+                  <Badge
+                    appearance={command.inFlight ? "filled" : "outline"}
+                    color={command.inFlight ? "brand" : "danger"}
+                  >
+                    {command.label}
+                  </Badge>
+                )}
                 {shot.failure_code !== null && (
                   <Badge appearance="filled" color="danger">
                     {humanize(shot.failure_code)}
@@ -144,6 +156,10 @@ export function StoryboardGrid({
                   </Badge>
                 ))}
               </div>
+              {command.description !== null && <Caption1>{command.description}</Caption1>}
+              {command.failureMessage !== null && (
+                <Caption1 role="alert">{command.failureMessage}</Caption1>
+              )}
               <Body1>{shot.visual_objective}</Body1>
               <Caption1>
                 Usable {formatMicroseconds(shot.usable_duration_us)} · generated{" "}
@@ -169,7 +185,7 @@ export function StoryboardGrid({
                     <Button
                       size="small"
                       appearance="primary"
-                      disabled={busy}
+                      disabled={busy || command.inFlight}
                       onClick={() => onApprove(shot.shot_id)}
                     >
                       {affordance === "override" ? "Force approve" : "Approve"} shot{" "}
@@ -180,7 +196,7 @@ export function StoryboardGrid({
                     <Button
                       size="small"
                       appearance="secondary"
-                      disabled={busy}
+                      disabled={busy || command.inFlight}
                       onClick={() => onReject(shot.shot_id)}
                     >
                       Reject shot {shot.global_sequence + 1}

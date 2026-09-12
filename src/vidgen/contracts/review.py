@@ -283,8 +283,50 @@ class InvalidationSet(StrictContract):
     requires_confirmation: bool = False
 
 
-class StoryboardShotProjection(StrictContract):
+class ShotCommandProjection(StrictContract):
+    """The durable control command currently acting on one shot.
+
+    Between a human approving or retrying a shot and the replacement workflow
+    writing its first row, the shot's own tables still describe the *previous*
+    attempt. Without this the review UI reads that stale row as a fresh failure
+    and offers the same action again, so a reviewer cannot tell their decision
+    landed and can fire duplicates.
+
+    ``active`` says the command has not reached a terminal status, and
+    ``awaiting_review`` separates the one active state that is waiting on a
+    person from the ones waiting on the machine - a UI that disabled a
+    reviewer's decision while the command sits waiting for exactly that
+    decision would deadlock the shot. ``dispatched`` separates a command still
+    queued for the dispatcher from one that has a real workflow behind it. A
+    terminally failed command is surfaced with ``active`` false so the error is
+    renderable and the affordance comes back.
+    """
+
     schema_version: Literal["1.0"] = "1.0"
+    command_id: UUID
+    command_type: str = Field(max_length=64)
+    status: str = Field(max_length=32)
+    #: The command is still in flight: it has not reached a terminal status.
+    active: bool = False
+    #: The command is durably parked on a *human* decision rather than on the
+    #: machine. It is active, but the action a reviewer would take is the one
+    #: that releases it, so a UI must keep that action offered.
+    awaiting_review: bool = False
+    #: A real workflow has been started or signalled for this command.
+    dispatched: bool = False
+    workflow_id: str | None = Field(default=None, max_length=255)
+    failure_code: str | None = Field(default=None, max_length=128)
+    failure_summary: str | None = Field(default=None, max_length=500)
+    #: Whether a failed command may be resubmitted as-is.
+    retryable: bool = False
+    #: The owner asked to stop a command that had already been dispatched.
+    cancel_requested: bool = False
+    created_at: datetime
+    updated_at: datetime
+
+
+class StoryboardShotProjection(StrictContract):
+    schema_version: Literal["1.1"] = "1.1"
     shot_id: UUID
     stable_shot_id: UUID
     global_sequence: int = Field(ge=0)
@@ -312,6 +354,9 @@ class StoryboardShotProjection(StrictContract):
     cost_amount: str | None = Field(default=None, max_length=32)
     warning_code: str | None = Field(default=None, max_length=64)
     failure_code: str | None = Field(default=None, max_length=64)
+    #: The unresolved control command acting on this shot, when there is one.
+    #: ``None`` means the shot's own rows are the whole truth again.
+    pending_command: ShotCommandProjection | None = None
     row_version: int = Field(ge=1)
 
 
@@ -364,13 +409,15 @@ class ShotDetailProjection(StrictContract):
 
 
 class ShotStatusProjection(StrictContract):
-    schema_version: Literal["1.0"] = "1.0"
+    schema_version: Literal["1.1"] = "1.1"
     shot_id: UUID
     child_workflow_id: str | None = Field(default=None, max_length=255)
     status: str = Field(max_length=64)
     retryable: bool = False
     attempt_count: int = Field(ge=0)
     failure_code: str | None = Field(default=None, max_length=64)
+    #: The unresolved control command acting on this shot, when there is one.
+    pending_command: ShotCommandProjection | None = None
     row_version: int = Field(ge=1)
 
 

@@ -15,9 +15,10 @@ from decimal import Decimal
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.orm import Session
 
+from vidgen.contracts.control_commands import ControlCommandStatus, ControlCommandType
 from vidgen.contracts.review import (
     PIPELINE_STAGE_ORDER,
     PipelineStage,
@@ -29,6 +30,7 @@ from vidgen.contracts.review import (
     ScriptSegmentProjection,
     ScriptSummaryProjection,
     ShotAttemptProjection,
+    ShotCommandProjection,
     ShotDetailProjection,
     ShotStatusProjection,
     StageState,
@@ -40,6 +42,7 @@ from vidgen.contracts.review import (
     WorkflowStatusProjection,
 )
 from vidgen.db.animation_models import AnimationGeneratedVideo, AnimationItem, RunwayTask
+from vidgen.db.control_command_models import ControlCommandRecord
 from vidgen.db.cost_models import (
     CostLedgerEntry,
     PipelineFailureEvent,
@@ -534,9 +537,140 @@ def _shot_costs(session: Session, shot_id: UUID) -> Decimal:
     return sum((row.actual_amount for row in rows), Decimal(0))
 
 
+#: Control-command statuses that leave nothing for a reviewer to see: the
+#: command either did its work (and the shot's own rows now describe it) or was
+#: withdrawn before it started. A *failed* command is deliberately not here -
+#: the reviewer has to be told why, and have the action offered back.
+_RESOLVED_COMMAND_STATUSES = frozenset({"completed", "cancelled", "superseded"})
+
+#: Statuses a command can still leave on its own. ``awaiting_review`` is one of
+#: them, and is the odd one out: the command is durably parked *on a person*,
+#: so it is in flight without the machine doing anything. The UI must not read
+#: it as busy - the decision it is waiting for is exactly the one it would
+#: otherwise disable, which would deadlock the shot.
+_ACTIVE_COMMAND_STATUSES = frozenset(
+    {"pending", "claimed", "dispatching", "running", "awaiting_review"}
+)
+
+#: Statuses that can never be surfaced, so the projection never loads them. A
+#: shot accumulates one completed command per regeneration over a project's
+#: life; only the newest of those can matter, which the ordering below picks.
+_UNSURFACEABLE_STATUSES = frozenset({"cancelled", "superseded"})
+
+#: Where a command that acts on a shot without targeting one names its shot.
+#: A T22 remediation's durable row stays targeted at the final-QA run and
+#: carries the shot in metadata; the shot-targeted proxy the dispatcher builds
+#: is never persisted, so the row itself is all this projection can read.
+_SHOT_METADATA_KEY = "shot_id"
+
+
+def _shot_command_projection(record: ControlCommandRecord) -> ShotCommandProjection:
+    return ShotCommandProjection(
+        command_id=record.id,
+        command_type=record.command_type,
+        status=record.status,
+        active=record.status in _ACTIVE_COMMAND_STATUSES,
+        awaiting_review=record.status == ControlCommandStatus.AWAITING_REVIEW.value,
+        dispatched=record.workflow_id is not None,
+        workflow_id=record.workflow_id,
+        failure_code=record.error_code,
+        failure_summary=record.error_summary,
+        retryable=bool(record.retryable),
+        cancel_requested=record.cancel_requested_at is not None,
+        created_at=utc(record.created_at) or datetime.now(UTC),
+        updated_at=utc(record.updated_at) or utc(record.created_at) or datetime.now(UTC),
+    )
+
+
+def _commanded_shot_id(record: ControlCommandRecord, shot_ids: frozenset[UUID]) -> UUID | None:
+    """Which of these shots this command acts on, if any."""
+    if record.target_type == "shot":
+        return record.target_id if record.target_id in shot_ids else None
+    raw = dict(record.command_metadata or {}).get(_SHOT_METADATA_KEY)
+    if raw is None:
+        return None
+    try:
+        shot_id = UUID(str(raw))
+    except ValueError:
+        return None
+    return shot_id if shot_id in shot_ids else None
+
+
+def shot_commands(
+    session: Session, project_id: UUID, shot_ids: Sequence[UUID]
+) -> dict[UUID, ShotCommandProjection]:
+    """The unresolved control command acting on each of these shots.
+
+    The T18b command row is the only place the window between "the reviewer
+    decided" and "the replacement workflow wrote something" is recorded. The
+    shot's own tables still describe the previous attempt for that whole
+    window, so a projection built from them alone reads an accepted retry as an
+    untouched failure and offers the same button again.
+
+    A shot in flight is the answer whenever there is one, even if a *newer*
+    command against the same shot has already finished: taking the newest row
+    and then discarding it when resolved would let a quick completion mask work
+    that is still running, which is precisely the duplicate this exists to
+    prevent. Otherwise only a terminal *failure* is surfaced, and only while it
+    is the newest thing that happened to the shot - a failure a later command
+    has already succeeded past is history, not something to show.
+    """
+    if not shot_ids:
+        return {}
+    wanted = frozenset(shot_ids)
+    rows = session.scalars(
+        select(ControlCommandRecord)
+        .where(
+            ControlCommandRecord.project_id == project_id,
+            ControlCommandRecord.status.notin_(sorted(_UNSURFACEABLE_STATUSES)),
+            or_(
+                and_(
+                    ControlCommandRecord.target_type == "shot",
+                    ControlCommandRecord.target_id.in_(list(wanted)),
+                ),
+                ControlCommandRecord.command_type
+                == ControlCommandType.FINAL_QA_REMEDIATION.value,
+            ),
+        )
+        .order_by(ControlCommandRecord.created_at.desc(), ControlCommandRecord.id.desc())
+    ).all()
+    # Descending, so the first row seen for a shot is its newest.
+    newest: dict[UUID, ControlCommandRecord] = {}
+    in_flight: dict[UUID, ControlCommandRecord] = {}
+    for row in rows:
+        shot_id = _commanded_shot_id(row, wanted)
+        if shot_id is None:
+            continue
+        newest.setdefault(shot_id, row)
+        if row.status in _ACTIVE_COMMAND_STATUSES:
+            in_flight.setdefault(shot_id, row)
+    commands: dict[UUID, ShotCommandProjection] = {}
+    for shot_id, row in newest.items():
+        chosen = in_flight.get(shot_id)
+        if chosen is None and row.status not in _RESOLVED_COMMAND_STATUSES:
+            chosen = row
+        if chosen is not None:
+            commands[shot_id] = _shot_command_projection(chosen)
+    return commands
+
+
 def shot_projection(
-    session: Session, project_id: UUID, shot: StoryboardShotRecord, versions: RowVersionService
+    session: Session,
+    project_id: UUID,
+    shot: StoryboardShotRecord,
+    versions: RowVersionService,
+    *,
+    pending_command: ShotCommandProjection | None = None,
+    commands_prefetched: bool = False,
 ) -> StoryboardShotProjection:
+    """One shot, as the grid and the inspector render it.
+
+    ``commands_prefetched`` lets a caller that already batched the shots'
+    control commands pass its answer straight through, including the absence of
+    one, rather than paying a query per shot.
+    """
+    if not commands_prefetched:
+        pending_command = shot_commands(session, project_id, [shot.id]).get(shot.id)
     contract = shot.contract or {}
     camera = shot.camera or {}
     references = shot.references or {}
@@ -585,6 +719,7 @@ def shot_projection(
         cost_amount=str(_shot_costs(session, shot.id)),
         warning_code=_first_code(item.warnings if item else None),
         failure_code=item.error_code if item else None,
+        pending_command=pending_command,
         row_version=versions.current(project_id, "shot", shot.id),
     )
 
@@ -597,6 +732,7 @@ def storyboard_projection(
         .where(StoryboardShotRecord.storyboard_run_id == run.id)
         .order_by(StoryboardShotRecord.global_sequence)
     ).all()
+    commands = shot_commands(session, project_id, [shot.id for shot in shots])
     return StoryboardProjection(
         project_id=project_id,
         storyboard_run_id=run.id,
@@ -607,7 +743,17 @@ def storyboard_projection(
         total_duration_us=run.total_duration_us,
         timing_manifest_asset_id=run.timing_manifest_asset_id,
         row_version=versions.current(project_id, "storyboard", run.id),
-        shots=[shot_projection(session, project_id, shot, versions) for shot in shots],
+        shots=[
+            shot_projection(
+                session,
+                project_id,
+                shot,
+                versions,
+                pending_command=commands.get(shot.id),
+                commands_prefetched=True,
+            )
+            for shot in shots
+        ],
     )
 
 
@@ -729,6 +875,7 @@ def shot_status(
         retryable=bool(item and item.status == "failed" and item.error_code),
         attempt_count=item.attempt_count if item is not None else 0,
         failure_code=item.error_code if item is not None else None,
+        pending_command=shot_commands(session, project_id, [shot.id]).get(shot.id),
         row_version=versions.current(project_id, "shot", shot.id),
     )
 
