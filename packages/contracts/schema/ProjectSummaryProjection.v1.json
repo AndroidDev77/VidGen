@@ -20,6 +20,19 @@
       ],
       "title": "PipelineStage",
       "type": "string"
+    },
+    "ProjectRunState": {
+      "description": "Whether a project's pipeline is moving, and if not, why it stopped.\n\n``status`` on a project row names the *stage* the pipeline is in, which says\nnothing about whether anything is still executing: a project that died\ninside a stage carries the same status as one making progress through it.\nThis is the other half of that answer, and every value is derived from the\nrecorded execution in ``project_workflow_runs`` rather than inferred from\nthe stage - the control plane never writes a run status it has not observed.",
+      "enum": [
+        "not_started",
+        "running",
+        "stopped",
+        "completed",
+        "cancelled",
+        "failed"
+      ],
+      "title": "ProjectRunState",
+      "type": "string"
     }
   },
   "additionalProperties": false,
@@ -128,9 +141,13 @@
       "title": "Row Version",
       "type": "integer"
     },
+    "run_state": {
+      "$ref": "#/$defs/ProjectRunState",
+      "default": "not_started"
+    },
     "schema_version": {
-      "const": "1.0",
-      "default": "1.0",
+      "const": "1.1",
+      "default": "1.1",
       "title": "Schema Version",
       "type": "string"
     },

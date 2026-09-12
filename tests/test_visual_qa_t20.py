@@ -75,6 +75,7 @@ from services.qa.visual_agent import (
     role_for,
     validate_result,
 )
+from tests.repair_fixtures import qa_result
 from tests.visual_qa_fixtures import image_bytes, make_video, shot_contract
 from vidgen.contracts.storyboard import StoryboardShot
 from vidgen.contracts.visual_qa import (
@@ -92,6 +93,7 @@ from vidgen.contracts.visual_qa import (
     VisualQAProviderRequest,
     VisualQAProviderResult,
     VisualQARepairCode,
+    VisualQAResult,
     VisualQARoutingRecommendation,
     VisualQASample,
     VisualQASampleReference,
@@ -917,6 +919,71 @@ def test_a_shot_whose_every_code_is_tolerated_passes_below_the_threshold() -> No
     strict = decide(score, empty_report(), result, thresholds=tolerant, warn_only_codes=())
     assert strict.outcome is VisualQAOutcome.FAIL
     assert VisualQARepairCode.INSUFFICIENT_MOTION in strict.repair_codes
+
+
+def test_a_tolerated_below_threshold_pass_is_a_result_the_contract_admits() -> None:
+    """The verdict scoring reaches must survive being written down.
+
+    ``decide`` and ``VisualQAResult`` used to disagree about what the pass
+    threshold guarantees: scoring passed the shot on tolerance and the contract
+    rejected the very outcome it had just produced, so the activity died on a
+    ValidationError instead of returning a verdict.
+    """
+    record = qa_result(
+        outcome=VisualQAOutcome.PASS,
+        score=80.0,
+        repair_codes=(),
+        warning_codes=(TOLERATED_SCORE_BELOW_THRESHOLD, "warn_only:INSUFFICIENT_MOTION"),
+        routing=VisualQARoutingRecommendation.NONE,
+    )
+    assert record.outcome is VisualQAOutcome.PASS
+    assert record.score.total < record.score.pass_threshold
+    # The shortfall is recorded rather than smoothed away: the threshold the
+    # shot was measured against is still the project's own.
+    assert record.score.pass_threshold == THRESHOLDS.pass_score(VisualQAShotImportance.NORMAL)
+    assert TOLERATED_SCORE_BELOW_THRESHOLD in record.warning_codes
+
+
+def test_an_unmarked_below_threshold_pass_is_still_rejected() -> None:
+    """The relaxation is the tolerance marker, not the threshold itself."""
+    with pytest.raises(ValidationError, match="requires the 'warn_only:score_below_threshold'"):
+        qa_result(
+            outcome=VisualQAOutcome.PASS,
+            score=80.0,
+            repair_codes=(),
+            routing=VisualQARoutingRecommendation.NONE,
+        )
+
+
+def test_a_tolerated_pass_that_still_routes_a_repair_is_rejected() -> None:
+    """Nothing left to repair is the premise of the pass; codes contradict it."""
+    with pytest.raises(ValidationError, match="cannot carry repair codes"):
+        qa_result(
+            outcome=VisualQAOutcome.PASS,
+            score=80.0,
+            repair_codes=(VisualQARepairCode.INSUFFICIENT_MOTION,),
+            warning_codes=(TOLERATED_SCORE_BELOW_THRESHOLD,),
+            routing=VisualQARoutingRecommendation.NONE,
+        )
+
+
+def test_no_tolerance_admits_a_pass_that_carries_a_hard_failure() -> None:
+    """The hard-failure half of the invariant is untouched by the relaxation."""
+    tolerated = qa_result(
+        outcome=VisualQAOutcome.PASS,
+        score=80.0,
+        repair_codes=(),
+        warning_codes=(TOLERATED_SCORE_BELOW_THRESHOLD,),
+        routing=VisualQARoutingRecommendation.NONE,
+    ).model_dump()
+    with pytest.raises(ValidationError, match="forces the canonical outcome to FAIL"):
+        VisualQAResult.model_validate(
+            tolerated
+            | {
+                "hard_failure": True,
+                "hard_failure_codes": [VisualQARepairCode.BLACK_VIDEO.value],
+            }
+        )
 
 
 def test_a_tolerated_default_repair_code_is_not_re_derived_from_the_worst_dimension() -> None:

@@ -12,6 +12,12 @@ props, anatomy, continuity) are soft. They block only when the evaluator also
 scored that dimension below ``semantic_hard_failure_dimension_floor``; otherwise
 the finding is demoted to a warning and the recomputed score decides. Codes in
 ``warn_only_codes`` are recorded as warnings and never block or route a repair.
+When tolerance is the only thing left - every code the shot evidenced is one the
+project asked to be told about and not act on - the shot passes below its pass
+threshold and the shortfall is recorded as
+``vidgen.contracts.visual_qa.TOLERATED_SCORE_BELOW_THRESHOLD``. That marker is
+owned by the contract because ``VisualQAResult`` is what admits the pass: both
+layers have to agree on the exact string or the verdict cannot be persisted.
 
 The routing recommendation produced here is advisory. T20 never executes it.
 """
@@ -38,6 +44,7 @@ from services.qa.rubric import (
     THRESHOLDS,
 )
 from vidgen.contracts.visual_qa import (
+    TOLERATED_SCORE_BELOW_THRESHOLD,
     VisualQADeterministicReport,
     VisualQADimension,
     VisualQADimensionResult,
@@ -59,12 +66,6 @@ from vidgen.contracts.visual_qa import VisualQADimensionResult as _DimensionResu
 #: Warning recorded on a dimension when a semantic hard-failure proposal was
 #: demoted because the evaluator's own dimension score did not support it.
 HARD_FAILURE_DOWNGRADED_BY_SCORE: str = "hard_failure_downgraded_by_score"
-
-
-#: Recorded when a shot scores below its pass threshold but every repair code
-#: it evidenced - or the one its worst dimension would name - is tolerated by
-#: this project, so there is nothing left for T21 to repair.
-TOLERATED_SCORE_BELOW_THRESHOLD = "warn_only:score_below_threshold"
 
 
 def _warn_only_marker(code: VisualQARepairCode) -> str:

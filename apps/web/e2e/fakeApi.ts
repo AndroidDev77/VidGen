@@ -769,6 +769,7 @@ function projectListItem() {
     committed_cost_amount: "1.000000",
     hard_cap_amount: "20.000000",
     has_failures: false,
+    run_state: "completed",
     row_version: 1,
   };
 }

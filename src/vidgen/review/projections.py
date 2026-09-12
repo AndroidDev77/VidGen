@@ -21,6 +21,7 @@ from sqlalchemy.orm import Session
 from vidgen.contracts.review import (
     PIPELINE_STAGE_ORDER,
     PipelineStage,
+    ProjectRunState,
     ProjectSummaryProjection,
     RenderApprovalProjection,
     RenderProjection,
@@ -57,6 +58,7 @@ from vidgen.db.workflow_models import ProjectWorkflowRun
 from vidgen.review.errors import not_found
 from vidgen.review.lineage import render_lineage_hash
 from vidgen.review.versions import RowVersionService
+from vidgen.review.workflow_control import LIVE_RUN_STATUSES
 
 # The parent workflow's stage names, mapped onto the timeline the UI renders.
 WORKFLOW_STAGE_ALIASES: dict[str, PipelineStage] = {
@@ -109,6 +111,39 @@ _FAILED_WORKFLOW_STATUSES: frozenset[str] = frozenset(
         "references_failed",
     }
 )
+
+#: Project statuses that name the pipeline's end without naming a stage. A
+#: project that got there by finishing T22 is done even though ``completed`` and
+#: ``final_qa_passed`` have no entry in :data:`WORKFLOW_STAGE_ALIASES`.
+_FINISHED_PROJECT_STATUSES: frozenset[str] = frozenset({"completed", "final_qa_passed"})
+
+
+def project_run_state(run: ProjectWorkflowRun | None, *, project_status: str) -> ProjectRunState:
+    """What the recorded execution proves about a project right now.
+
+    Only the run row and the project's own status are read, so this stays cheap
+    enough for the list endpoint to compute per project: no round trip to the
+    cluster, and nothing claimed that was not written down. The cost is that a
+    run row nobody has reconciled still reads as ``running``; the dashboard's
+    workflow endpoint is what settles that, and it settles it for this too.
+    """
+    if run is None:
+        return ProjectRunState.NOT_STARTED
+    if run.status == "cancelled":
+        return ProjectRunState.CANCELLED
+    if run.status in _FAILED_WORKFLOW_STATUSES:
+        return ProjectRunState.FAILED
+    if run.status in LIVE_RUN_STATUSES:
+        return ProjectRunState.RUNNING
+    # The execution is over. It ending is not the same as the recap being
+    # finished: the parent workflow completes at every human pause, and only a
+    # project that reached the last pipeline stage has actually arrived.
+    if (
+        project_status in _FINISHED_PROJECT_STATUSES
+        or WORKFLOW_STAGE_ALIASES.get(project_status) is PIPELINE_STAGE_ORDER[-1]
+    ):
+        return ProjectRunState.COMPLETED
+    return ProjectRunState.STOPPED
 
 
 def utc(value: datetime | None) -> datetime | None:
@@ -252,6 +287,7 @@ def project_summary(
         project_id=project.id,
         name=project.name,
         status=effective_status,
+        run_state=project_run_state(run, project_status=project.status),
         current_stage=stage,
         progress_percentage=None,
         target_duration_seconds=project.target_duration_seconds,

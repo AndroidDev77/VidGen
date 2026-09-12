@@ -1,9 +1,13 @@
 import { useQuery } from "@tanstack/react-query";
 import {
   Badge,
+  Body1,
   Button,
   Caption1,
   Input,
+  Popover,
+  PopoverSurface,
+  PopoverTrigger,
   ProgressBar,
   Table,
   TableBody,
@@ -14,13 +18,19 @@ import {
   makeStyles,
   tokens,
 } from "@fluentui/react-components";
-import { AddRegular, SearchRegular, VideoClipMultipleRegular } from "@fluentui/react-icons";
+import {
+  AddRegular,
+  ChevronDownRegular,
+  SearchRegular,
+  VideoClipMultipleRegular,
+} from "@fluentui/react-icons";
 import { useMemo, useState, type JSX } from "react";
 import { Link, useNavigate } from "react-router-dom";
 
 import { useApiClient } from "../../app/apiContext";
 import { listProjects } from "../../api/projects";
 import { queryKeys } from "../../api/queryKeys";
+import { RunStateBadge } from "../../components/RunStateBadge";
 import { StatusBadge } from "../../components/StatusBadge";
 import { SectionCard } from "../../components/Surface";
 import { EmptyState, ErrorState, LoadingState } from "../../components/states";
@@ -76,6 +86,40 @@ const useStyles = makeStyles({
   numeric: { fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" },
   cost: { display: "flex", flexDirection: "column", gap: "2px", minWidth: "120px" },
   nowrap: { whiteSpace: "nowrap" },
+
+  // A visual style is free text and owners write long ones. Left to wrap, one
+  // of them sets the height of every other cell in its row - the settled row
+  // height the comment above promises. So the text stays on one line and the
+  // whole style moves into a popover the trigger opens. `Table` lays out
+  // `fixed`, so the column's share is stated on its header cell and the trigger
+  // ellipsises to whatever that comes out as.
+  styleColumn: { width: "16%" },
+  styleTrigger: {
+    justifyContent: "flex-start",
+    maxWidth: "100%",
+    minWidth: 0,
+    paddingLeft: tokens.spacingHorizontalXS,
+    paddingRight: tokens.spacingHorizontalXS,
+    fontWeight: tokens.fontWeightRegular,
+    color: tokens.colorNeutralForeground3,
+  },
+  styleText: {
+    display: "block",
+    minWidth: 0,
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap",
+    // Underlined on hover and focus so the cell reads as something to open
+    // rather than as truncated text nothing can be done about.
+    ":hover": { textDecoration: "underline" },
+  },
+  stylePopover: {
+    display: "flex",
+    flexDirection: "column",
+    gap: tokens.spacingVerticalXS,
+    maxWidth: "340px",
+  },
+  styleFull: { overflowWrap: "anywhere" },
   failureNotice: {
     display: "flex",
     flexDirection: "column",
@@ -193,10 +237,11 @@ export function ProjectListPage(): JSX.Element {
               <TableHeader>
                 <TableRow>
                   <TableHeaderCell>Project</TableHeaderCell>
+                  <TableHeaderCell>Run</TableHeaderCell>
                   <TableHeaderCell>Status</TableHeaderCell>
                   <TableHeaderCell>Stage</TableHeaderCell>
                   <TableHeaderCell>Target length</TableHeaderCell>
-                  <TableHeaderCell>Style</TableHeaderCell>
+                  <TableHeaderCell className={styles.styleColumn}>Style</TableHeaderCell>
                   <TableHeaderCell>Humor</TableHeaderCell>
                   <TableHeaderCell>Cost</TableHeaderCell>
                   <TableHeaderCell>Last updated</TableHeaderCell>
@@ -234,6 +279,9 @@ export function ProjectListPage(): JSX.Element {
                         )}
                       </span>
                     </TableCell>
+                    <TableCell className={styles.nowrap}>
+                      <RunStateBadge state={project.run_state} />
+                    </TableCell>
                     <TableCell>
                       <StatusBadge status={project.status} />
                     </TableCell>
@@ -258,7 +306,26 @@ export function ProjectListPage(): JSX.Element {
                     <TableCell className={styles.numeric}>
                       {formatDurationSeconds(project.target_duration_seconds)}
                     </TableCell>
-                    <TableCell className={styles.muted}>{project.visual_style}</TableCell>
+                    <TableCell>
+                      <Popover withArrow>
+                        <PopoverTrigger disableButtonEnhancement>
+                          <Button
+                            appearance="transparent"
+                            size="small"
+                            className={styles.styleTrigger}
+                            iconPosition="after"
+                            icon={<ChevronDownRegular />}
+                            aria-label={`Visual style: ${project.visual_style}. Show the full style`}
+                          >
+                            <span className={styles.styleText}>{project.visual_style}</span>
+                          </Button>
+                        </PopoverTrigger>
+                        <PopoverSurface className={styles.stylePopover}>
+                          <Caption1 className={styles.muted}>Visual style</Caption1>
+                          <Body1 className={styles.styleFull}>{project.visual_style}</Body1>
+                        </PopoverSurface>
+                      </Popover>
+                    </TableCell>
                     <TableCell className={styles.numeric}>
                       {project.humor_intensity} / 10
                     </TableCell>
