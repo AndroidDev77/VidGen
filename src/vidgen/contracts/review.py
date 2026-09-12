@@ -96,6 +96,33 @@ class PipelineStage(StrEnum):
 PIPELINE_STAGE_ORDER: tuple[PipelineStage, ...] = tuple(PipelineStage)
 
 
+class ProjectRunState(StrEnum):
+    """Whether a project's pipeline is moving, and if not, why it stopped.
+
+    ``status`` on a project row names the *stage* the pipeline is in, which says
+    nothing about whether anything is still executing: a project that died
+    inside a stage carries the same status as one making progress through it.
+    This is the other half of that answer, and every value is derived from the
+    recorded execution in ``project_workflow_runs`` rather than inferred from
+    the stage - the control plane never writes a run status it has not observed.
+    """
+
+    #: No execution has ever been recorded for this project.
+    NOT_STARTED = "not_started"
+    #: An execution is recorded as in flight.
+    RUNNING = "running"
+    #: The execution ended before the pipeline's last stage. The parent workflow
+    #: completes at every human pause, so this is the ordinary resting state of
+    #: a project waiting on its owner rather than an error.
+    STOPPED = "stopped"
+    #: The execution ended and the pipeline reached its last stage.
+    COMPLETED = "completed"
+    #: The owner cancelled the run, or the cluster terminated it.
+    CANCELLED = "cancelled"
+    #: The execution ended on a failure.
+    FAILED = "failed"
+
+
 class StageState(StrEnum):
     PENDING = "pending"
     RUNNING = "running"
@@ -439,10 +466,13 @@ class RenderApprovalProjection(StrictContract):
 class ProjectSummaryProjection(StrictContract):
     """The project-list row; costs stay exact decimal strings."""
 
-    schema_version: Literal["1.0"] = "1.0"
+    # 1.1 adds ``run_state``: ``status`` names the stage, not whether anything
+    # is still executing, and the list had no way to tell the two apart.
+    schema_version: Literal["1.1"] = "1.1"
     project_id: UUID
     name: str = Field(max_length=255)
     status: str = Field(max_length=64)
+    run_state: ProjectRunState = ProjectRunState.NOT_STARTED
     current_stage: PipelineStage | None = None
     progress_percentage: float | None = Field(default=None, ge=0, le=100)
     target_duration_seconds: float = Field(gt=0)

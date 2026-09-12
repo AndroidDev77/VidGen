@@ -80,6 +80,58 @@ describe("ProjectListPage", () => {
     expect(await screen.findByText("No projects yet")).toBeVisible();
   });
 
+  it("keeps a long visual style out of the row and behind a popover", async () => {
+    // Long enough that wrapping it would set the height of the whole row.
+    const style =
+      "hand-inked flat editorial cartoon, muted 1970s newsprint palette, heavy outlines, " +
+      "grainy paper texture, deadpan staging";
+    server.use(
+      http.get(`${BASE}/api/v1/projects`, () =>
+        HttpResponse.json([{ ...fixtures.projectListItem, visual_style: style }]),
+      ),
+    );
+    renderWithProviders(<ProjectListPage />, { route: "/projects" });
+
+    // The cell itself never wraps: the text is clipped to one line by CSS, and
+    // the full style is reachable through the trigger rather than the row.
+    const trigger = await screen.findByRole("button", {
+      name: `Visual style: ${style}. Show the full style`,
+    });
+    const clipped = trigger.querySelector("span:not([class*='icon'])");
+    expect(clipped && getComputedStyle(clipped).whiteSpace).toBe("nowrap");
+    expect(clipped && getComputedStyle(clipped).textOverflow).toBe("ellipsis");
+
+    // Keyboard-reachable, and opening it shows the style in full.
+    trigger.focus();
+    expect(trigger).toHaveFocus();
+    await userEvent.keyboard("{Enter}");
+    const popover = await screen.findByRole("group");
+    expect(within(popover).getByText(style)).toBeVisible();
+  });
+
+  it("says whether each project is actually running", async () => {
+    server.use(
+      http.get(`${BASE}/api/v1/projects`, () =>
+        HttpResponse.json([
+          { ...fixtures.projectListItem, run_state: "running" },
+          {
+            ...fixtures.projectListItem,
+            id: fixtures.uuid(1),
+            name: "Cancelled recap",
+            run_state: "cancelled",
+          },
+        ]),
+      ),
+    );
+    renderWithProviders(<ProjectListPage />, { route: "/projects" });
+
+    // Both rows sit at the same stage and carry the same status badge, so the
+    // run column is the only thing that tells them apart.
+    expect(await screen.findByLabelText(/^Run: Running\./)).toBeVisible();
+    expect(screen.getByLabelText(/^Run: Cancelled\./)).toBeVisible();
+    expect(screen.getAllByLabelText("Status: Review")).toHaveLength(2);
+  });
+
   it("renders a structured error state and offers a retry", async () => {
     server.use(
       http.get(`${BASE}/api/v1/projects`, () =>
@@ -707,6 +759,30 @@ describe("StoryboardPage", () => {
     const inspector = await screen.findByRole("complementary", { name: "Shot inspector" });
     expect(within(inspector).getByRole("heading", { name: "Shot 6" })).toBeVisible();
     expect(within(inspector).getByRole("heading", { name: "Video attempts" })).toBeVisible();
+  });
+
+  it("sizes the attempt table's columns to the content each one holds", async () => {
+    const shotId = fixtures.storyboard.shots[5]!.shot_id;
+    renderProjectRoute(<StoryboardPage />, `/projects/${PROJECT_ID}/storyboard?shot=${shotId}`);
+    const inspector = await screen.findByRole("complementary", { name: "Shot inspector" });
+
+    // Both attempt tables share one component, so both get the same treatment.
+    const tables = ["Keyframe attempts", "Video attempts"].map((name) =>
+      within(inspector).getByRole("table", { name }),
+    );
+    for (const table of tables) {
+      const widths = within(table)
+        .getAllByRole("columnheader")
+        .map((cell) => Number.parseFloat(getComputedStyle(cell).width));
+      // An even split would give the attempt number as much room as the
+      // provider and model; every column now states its own share instead.
+      expect(widths.every((width) => Number.isFinite(width) && width > 0)).toBe(true);
+      expect(new Set(widths).size).toBeGreaterThan(1);
+      const [number, status, provider] = widths as [number, number, number];
+      expect(number).toBeLessThan(status);
+      expect(number).toBeLessThan(provider);
+      expect(provider).toBeGreaterThan(status);
+    }
   });
 
   it("confirms a regeneration and shows the exact invalidation set", async () => {

@@ -36,15 +36,16 @@ from vidgen.review.workflow_control import (
     EXECUTION_FAILED,
     EXECUTION_TERMINATED,
     EXECUTION_TIMED_OUT,
+    LIVE_RUN_STATUSES,
     TERMINAL_EXECUTION_STATUSES,
     WorkflowController,
 )
 
 _LOGGER = logging.getLogger("vidgen.control_plane.reconciliation")
 
-#: Recorded run statuses that claim an execution is still in flight. Anything
-#: else was already settled by whoever wrote it and is left alone.
-LIVE_RUN_STATUSES = frozenset({"running", "dispatching", "pending", "starting"})
+#: Re-exported for the callers that already import it from here: a run status
+#: claiming the execution is live is left alone by nobody but this module.
+__all__ = ["LIVE_RUN_STATUSES", "Reconciliation", "reconcile_project_workflow"]
 
 #: What each terminal execution status means for the recorded run and for the
 #: generation run it opened.
