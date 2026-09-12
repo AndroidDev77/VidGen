@@ -136,6 +136,12 @@ class WorkflowController(Protocol):
 #: Project workflow statuses after which no execution is still running.
 _CLOSED_PROJECT = {"completed", "final_qa_passed", "cancelled"}
 
+#: Recorded ``project_workflow_runs`` statuses that claim an execution is still
+#: in flight. Anything else was already settled by whoever wrote it. This is the
+#: one place the spelling lives: reconciliation decides from it whether a row is
+#: worth asking the cluster about, and the project list reads "running" off it.
+LIVE_RUN_STATUSES = frozenset({"running", "dispatching", "pending", "starting"})
+
 #: Execution statuses a controller may report, mirroring Temporal's
 #: ``WorkflowExecutionStatus`` with its spellings normalised.
 EXECUTION_RUNNING = "running"

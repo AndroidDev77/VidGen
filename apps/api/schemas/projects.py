@@ -20,6 +20,7 @@ from vidgen.contracts.narration import (
     NarrationQualityThresholdOverrides,
     NarrationQualityThresholds,
 )
+from vidgen.contracts.review import ProjectRunState
 from vidgen.contracts.script import SCRIPT_WARN_ONLY_ELIGIBLE_VALIDATION_CODES
 from vidgen.contracts.storyboard import STORYBOARD_WARN_ONLY_ELIGIBLE_VALIDATION_CODES
 from vidgen.contracts.visual_qa import (
@@ -395,6 +396,10 @@ class ProjectListItemResponse(ProjectResponse):
     has_failures: bool = False
     latest_failure_stage: str | None = None
     latest_failure_code: str | None = None
+    #: Whether the pipeline is actually moving. ``status`` above names the stage
+    #: the project is in, which a cancelled, stopped or failed project reports
+    #: exactly the same way as one making progress.
+    run_state: ProjectRunState = ProjectRunState.NOT_STARTED
     row_version: int = Field(ge=1)
 
 

@@ -4,6 +4,7 @@ import type {
   NarrationQualityThresholds,
   ProjectCostSummaryResponse,
   ProjectGenerationSettings,
+  ProjectRunState,
   ShotPacing,
   VisualQAThresholds,
 } from "@vidgen/contracts";
@@ -27,6 +28,13 @@ export interface ProjectListItem {
   has_failures: boolean;
   latest_failure_stage: string | null;
   latest_failure_code: string | null;
+  /**
+   * Whether the pipeline is actually moving. `status` above is the stage the
+   * project is in: a cancelled, stopped or failed project reports it exactly
+   * the way one making progress does, so the list needs this to tell them
+   * apart. A row from an older API is treated as `not_started`.
+   */
+  run_state: ProjectRunState;
   row_version: number;
 }
 

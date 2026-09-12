@@ -243,6 +243,7 @@ def list_projects(
                 has_failures=summary.has_failures,
                 latest_failure_stage=summary.latest_failure_stage,
                 latest_failure_code=summary.latest_failure_code,
+                run_state=summary.run_state,
                 row_version=summary.row_version,
             )
         )

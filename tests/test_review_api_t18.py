@@ -20,6 +20,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from services.continuity.bindings import make_bundle
 from services.continuity.regeneration import ContinuityRegenerator
 from tests.review_fixtures import SHOT_COUNT, ProjectGraph, build_project_graph
+from vidgen.contracts.review import ProjectRunState
 from vidgen.db.animation_models import AnimationGeneratedVideo, AnimationItem
 from vidgen.db.control_command_models import ControlCommandRecord
 from vidgen.db.models import Project, RenderJob
@@ -27,6 +28,8 @@ from vidgen.db.review_models import ApiIdempotencyRecord, ProjectUIEvent, Render
 from vidgen.db.script_models import Script, ScriptGenerationRun, ScriptSegment
 from vidgen.db.storyboard_models import StoryboardShotRecord
 from vidgen.db.upload_models import UploadSession
+from vidgen.db.workflow_models import ProjectWorkflowRun
+from vidgen.review.projections import project_run_state
 from vidgen.review.workflow_control import FakeWorkflowController
 
 OWNER = {"X-VidGen-User": "owner-a"}
@@ -92,6 +95,55 @@ def test_project_list_carries_status_cost_and_failure_indicators(
     assert row["committed_cost_amount"] == "1.000000"
     assert row["has_failures"] is True
     assert row["row_version"] >= 1
+
+
+def test_project_list_says_whether_the_pipeline_is_actually_running(
+    client: TestClient, graph: ProjectGraph
+) -> None:
+    """``status`` names the stage; ``run_state`` says whether anything is moving.
+
+    A project that never started, one running, and one cancelled all sit at some
+    stage, so the list has to read the recorded execution to tell them apart.
+    """
+    assert client.get("/api/v1/projects", headers=OWNER).json()[0]["run_state"] == "not_started"
+
+    client.post(api(graph.project_id, "/workflow:start"), json={}, headers=headers(key="start-1"))
+    assert client.get("/api/v1/projects", headers=OWNER).json()[0]["run_state"] == "running"
+
+    client.post(api(graph.project_id, "/workflow:cancel"), headers=headers(key="cancel-1"))
+    assert client.get("/api/v1/projects", headers=OWNER).json()[0]["run_state"] == "cancelled"
+
+
+@pytest.mark.parametrize(
+    ("run_status", "project_status", "expected"),
+    [
+        # A settled execution is not the same as a finished recap: the parent
+        # workflow completes at every human pause, so only a project that
+        # reached the last pipeline stage reads as completed.
+        ("completed", "review", ProjectRunState.COMPLETED),
+        ("completed", "completed", ProjectRunState.COMPLETED),
+        ("completed", "storyboard_complete", ProjectRunState.STOPPED),
+        ("failed", "episode_analysis", ProjectRunState.FAILED),
+        ("script_generation_failed", "script_generation", ProjectRunState.FAILED),
+        ("cancelled", "review", ProjectRunState.CANCELLED),
+        ("dispatching", "storyboard", ProjectRunState.RUNNING),
+    ],
+)
+def test_run_state_reads_the_recorded_execution(
+    run_status: str, project_status: str, expected: ProjectRunState
+) -> None:
+    run = ProjectWorkflowRun(
+        project_id=uuid4(),
+        workflow_id="wf",
+        run_id="run",
+        status=run_status,
+        idempotency_key="key",
+    )
+    assert project_run_state(run, project_status=project_status) is expected
+
+
+def test_run_state_without_a_recorded_execution_is_not_started() -> None:
+    assert project_run_state(None, project_status="review") is ProjectRunState.NOT_STARTED
 
 
 @pytest.mark.parametrize(
