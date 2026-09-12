@@ -1587,11 +1587,28 @@ export interface RenderProjection {
   completed_at: string | null;
 }
 
+/**
+ * Whether a project's pipeline is moving, and if not, why it stopped.
+ *
+ * `status` names the *stage* a project is in, which says nothing about whether
+ * anything is still executing. Every value here is read off the recorded
+ * execution: `stopped` is the parent workflow ending short of the last stage,
+ * which is how it waits for a human, and so is not an error.
+ */
+export type ProjectRunState =
+  | "not_started"
+  | "running"
+  | "stopped"
+  | "completed"
+  | "cancelled"
+  | "failed";
+
 export interface ProjectSummaryProjection {
-  schema_version: "1.0";
+  schema_version: "1.1";
   project_id: UUID;
   name: string;
   status: string;
+  run_state: ProjectRunState;
   current_stage: PipelineStage | null;
   progress_percentage: number | null;
   target_duration_seconds: number;

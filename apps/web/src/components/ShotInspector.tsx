@@ -29,6 +29,31 @@ const useStyles = makeStyles({
   actions: { display: "flex", gap: tokens.spacingHorizontalS, flexWrap: "wrap" },
   scroll: { overflowX: "auto" },
   video: { width: "100%", borderRadius: tokens.borderRadiusMedium, backgroundColor: "#000" },
+
+  // `Table` lays out `fixed`, which divides the width evenly unless the header
+  // cells say otherwise: the attempt number got as much room as the provider
+  // and model, and the columns that needed more spilled over their neighbours.
+  // The shares below are set once on the header row and are what every body
+  // cell then inherits. The minimum width keeps them honest in a narrow
+  // inspector; `scroll` above is what the reader gets instead of a squeeze.
+  attemptTable: { minWidth: "620px" },
+  colNumber: { width: "6%" },
+  colStatus: { width: "20%" },
+  colProvider: { width: "25%" },
+  colDurations: { width: "23%" },
+  colSelected: { width: "16%" },
+  colAction: { width: "10%" },
+  // Provider and model identifiers have no spaces to break at, so they are told
+  // where they may break rather than being allowed to run past the column.
+  breakAnywhere: { overflowWrap: "anywhere" },
+  attemptStatus: {
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "flex-start",
+    gap: "2px",
+    paddingTop: tokens.spacingVerticalXS,
+    paddingBottom: tokens.spacingVerticalXS,
+  },
 });
 
 export interface ShotInspectorProps {
@@ -189,15 +214,17 @@ function AttemptTable({
         <Body1>No attempts recorded yet.</Body1>
       ) : (
         <div className={styles.scroll}>
-          <Table aria-labelledby={captionId} size="small">
+          <Table aria-labelledby={captionId} size="small" className={styles.attemptTable}>
             <TableHeader>
               <TableRow>
-                <TableHeaderCell>#</TableHeaderCell>
-                <TableHeaderCell>Status</TableHeaderCell>
-                <TableHeaderCell>Provider / model</TableHeaderCell>
-                <TableHeaderCell>Durations</TableHeaderCell>
-                <TableHeaderCell>Selected</TableHeaderCell>
-                {onSelect !== undefined && <TableHeaderCell>Action</TableHeaderCell>}
+                <TableHeaderCell className={styles.colNumber}>#</TableHeaderCell>
+                <TableHeaderCell className={styles.colStatus}>Status</TableHeaderCell>
+                <TableHeaderCell className={styles.colProvider}>Provider / model</TableHeaderCell>
+                <TableHeaderCell className={styles.colDurations}>Durations</TableHeaderCell>
+                <TableHeaderCell className={styles.colSelected}>Selected</TableHeaderCell>
+                {onSelect !== undefined && (
+                  <TableHeaderCell className={styles.colAction}>Action</TableHeaderCell>
+                )}
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -205,12 +232,14 @@ function AttemptTable({
                 <TableRow key={attempt.attempt_id}>
                   <TableCell>{attempt.attempt_number}</TableCell>
                   <TableCell>
-                    <StatusBadge status={attempt.status} />
-                    {attempt.failure_class !== null && (
-                      <Caption1>{humanize(attempt.failure_class)}</Caption1>
-                    )}
+                    <span className={styles.attemptStatus}>
+                      <StatusBadge status={attempt.status} />
+                      {attempt.failure_class !== null && (
+                        <Caption1>{humanize(attempt.failure_class)}</Caption1>
+                      )}
+                    </span>
                   </TableCell>
-                  <TableCell>
+                  <TableCell className={styles.breakAnywhere}>
                     {attempt.provider} / {attempt.model}
                   </TableCell>
                   <TableCell>

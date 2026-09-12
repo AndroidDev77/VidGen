@@ -52,6 +52,7 @@ export const projectListItem: ProjectListItem = {
   has_failures: true,
   latest_failure_stage: "episode_analysis",
   latest_failure_code: "openai_api_error",
+  run_state: "running",
   row_version: 1,
 };
 
