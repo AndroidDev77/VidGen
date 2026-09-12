@@ -406,6 +406,18 @@ def _visual_qa_thresholds(
     )
 
 
+def _visual_qa_contract_violation(exc: ValidationError) -> ApplicationError:
+    """A QA stage that cannot build its own contract is broken code.
+
+    It is not a flaky provider: retrying pays for another evaluation - or
+    another repair generation - to reach the same rejection, and the default
+    classification would then park the shot waiting for a retry signal that can
+    never help. Both T20 and the T21 revalidation that reruns it fail
+    deterministically instead.
+    """
+    return ApplicationError(str(exc)[:500], type="VisualQAContractViolation", non_retryable=True)
+
+
 def _run_shot_visual_qa(
     session: Session,
     blob_store: BlobStore,
@@ -451,13 +463,7 @@ def _run_shot_visual_qa(
     except VisualQAReviewRequired as exc:
         raise ApplicationError(str(exc), type="VisualQAReviewRequired", non_retryable=True) from exc
     except ValidationError as exc:
-        # A QA stage that cannot build its own contract is broken code, not a
-        # flaky provider. Retrying pays for another evaluation to reach the same
-        # rejection, and the default classification would park the shot waiting
-        # for a retry signal that can never help, so it fails deterministically.
-        raise ApplicationError(
-            str(exc)[:500], type="VisualQAContractViolation", non_retryable=True
-        ) from exc
+        raise _visual_qa_contract_violation(exc) from exc
     state = (
         ShotWorkflowStatus.KEYFRAME_QA
         if target_type is VisualQATargetType.KEYFRAME
@@ -541,16 +547,21 @@ def _run_shot_repair(
             thresholds=_visual_qa_thresholds(session, settings, request.project_id),
         ),
     )
-    outcome = asyncio.run(
-        run_visual_repair(
-            session,
-            blob_store,
-            project_id=request.project_id,
-            shot_id=shot.id,
-            options=options,
-            same_provider=video_provider,
+    try:
+        outcome = asyncio.run(
+            run_visual_repair(
+                session,
+                blob_store,
+                project_id=request.project_id,
+                shot_id=shot.id,
+                options=options,
+                same_provider=video_provider,
+            )
         )
-    )
+    except ValidationError as exc:
+        # T21 revalidates every attempt through the same T20 pipeline, so it
+        # reaches the same contract and must treat a violation the same way.
+        raise _visual_qa_contract_violation(exc) from exc
     return ShotWorkflowProgress(
         state=_REPAIR_STATES[outcome.state],
         current_stage="t21_repair",

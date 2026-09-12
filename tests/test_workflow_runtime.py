@@ -234,14 +234,26 @@ def test_a_keyless_worker_refuses_to_run_visual_qa_with_the_fake_agent(
             )
 
 
-def test_a_qa_result_that_fails_its_own_contract_stops_the_activity(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    ("handler", "stage"),
+    [
+        ("_run_shot_keyframe_qa", "evaluate_shot_stage"),
+        # T21 revalidates every repair attempt through the same T20 pipeline, so
+        # it reaches the same contract and must fail the same way.
+        ("_run_shot_repair", "run_visual_repair"),
+    ],
+)
+def test_a_qa_result_that_fails_its_own_contract_stops_the_activity(
+    tmp_path: Path, handler: str, stage: str
+) -> None:
     """A contract violation is deterministic, so it must not be retried.
 
     The T20 gate once raised a ValidationError whenever scoring exercised the
     warn-only tolerance path. Classified as an ordinary transient failure it
-    burned the whole retry budget - paying for another evaluation each time -
-    and then left the shot workflow parked on a retry signal that could never
-    help. It fails once, permanently, and names itself.
+    burned the whole retry budget - paying for another evaluation, or another
+    repair generation, each time - and then left the shot workflow parked on a
+    retry signal that could never help. It fails once, permanently, and names
+    itself.
     """
     from unittest.mock import patch
 
@@ -264,15 +276,15 @@ def test_a_qa_result_that_fails_its_own_contract_stops_the_activity(tmp_path: Pa
             module, "_authoritative_shot", return_value=(None, SimpleNamespace(id=uuid4()))
         ),
         patch.object(module, "_visual_qa_thresholds", return_value=THRESHOLDS),
-        patch.object(module, "evaluate_shot_stage", reject),
+        patch.object(module, stage, reject),
         pytest.raises(ApplicationError) as failure,
     ):
-        module._run_shot_keyframe_qa(
+        getattr(module, handler)(
             None,  # type: ignore[arg-type]
             None,  # type: ignore[arg-type]
             settings,
             None,  # type: ignore[arg-type]
-            None,  # type: ignore[arg-type]
+            SimpleNamespace(name="fake"),
             _shot_workflow_input().model_dump(mode="json"),  # type: ignore[attr-defined]
         )
     assert failure.value.type == "VisualQAContractViolation"
