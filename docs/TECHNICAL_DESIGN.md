@@ -3129,6 +3129,25 @@ API request ──► control_commands row (same transaction as the request)
 The database enforces the identity half: `control_command_dispatched_identity` refuses to store a
 `running`, `awaiting_review` or `completed` command whose `workflow_id` is null.
 
+A command carries **two separate budgets**, because two different things can go wrong with it.
+`attempt` against `max_attempts` bounds the command: something about what it asks for is wrong, and
+retrying it forever would only cycle. `infrastructure_attempt` against
+`MAX_INFRASTRUCTURE_DEFERRALS` bounds the *waiting*: Temporal could not be reached, or answered a
+query too slowly, which is evidence about the cluster and none at all about the command. The second
+case gives the attempt straight back and re-queues the command on a longer backoff, so an outage
+lasting a minute is outlived rather than burned through - the failure mode that used to walk a
+shot approval to `5 of 5` inside half a minute and leave the owner with no way to re-drive it. Once
+the deferral budget *is* spent the command is terminal, is counted and reported as failed, and says
+so to its owner rather than repeating "it will be tried again automatically".
+
+The same rule governs every controller call whose `False` or `None` a caller acts on: only a
+definitive status may produce one. `describe_shot_by_id` reads `NOT_FOUND` as "there is no such
+child" and nothing else; `signal_reference_approval` reads it as "no workflow is waiting" and
+nothing else, because the caller answers that by starting a paid reference run; `cancel_workflow`
+reads it as "already gone" and nothing else, because the caller marks the command cancelled
+regardless of what it returns. Every transient status becomes `WorkflowControlUnavailable`, which
+the dispatcher defers on.
+
 `project_generation_runs` makes a project restartable. The parent workflow completes at every human
 pause, and continuing the project opens a new immutable run with its own entry stage rather than
 re-entering a closed execution. Previous runs are preserved as history; nothing above the entry

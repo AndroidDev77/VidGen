@@ -12,7 +12,13 @@ implementation, so Temporal is not required to exercise T18.
 
 from __future__ import annotations
 
-from typing import Protocol
+import asyncio
+import os
+import threading
+from collections.abc import Coroutine
+from concurrent.futures import TimeoutError as FutureTimeoutError
+from datetime import timedelta
+from typing import Any, Protocol
 from uuid import UUID
 
 from vidgen.contracts.continuity_workflow import (
@@ -41,6 +47,54 @@ TASK_QUEUE = "vidgen-projects"
 #: T25 uploads run on their own queue so a multi-hour video cannot starve the
 #: ordinary project activities.
 PUBLISHER_TASK_QUEUE = "vidgen-publisher"
+
+#: How long a single Temporal RPC may take before the controller gives up on it.
+#: Every call here is made from a synchronous caller - an API request thread or a
+#: dispatcher pass - so an RPC with no deadline is an unbounded hang, not a slow
+#: answer. A query against a parked shot workflow that a worker cannot schedule
+#: is exactly that case.
+DEFAULT_RPC_TIMEOUT_SECONDS = 10.0
+
+#: Headroom above the RPC deadline for the surrounding work - connecting the
+#: first time, and Temporal's own retries inside one call. The outer guard only
+#: exists so a wedged connection cannot block a caller forever; the RPC deadline
+#: is what normally ends a slow call.
+CALL_TIMEOUT_MARGIN_SECONDS = 20.0
+
+
+class WorkflowControlUnavailable(RuntimeError):
+    """The cluster could not be asked. Never a verdict about the workflow.
+
+    This is the distinction the control plane has to keep: "there is no such
+    workflow" is an answer, and "nobody answered" is not. Returning ``None`` for
+    the second would make a caller start a replacement child for one that is
+    alive, so the failure is raised as its own type instead - and the dispatcher
+    treats it as an infrastructure hiccup to wait out rather than as a command
+    that has used up an attempt.
+    """
+
+    def __init__(self, summary: str, *, workflow_id: str = "") -> None:
+        super().__init__(summary)
+        self.summary = summary
+        self.workflow_id = workflow_id
+
+
+#: gRPC statuses that describe the *call*, not the workflow: the cluster was
+#: unreachable, overloaded, or too slow. None of them is evidence about what the
+#: caller asked for, so all of them become :class:`WorkflowControlUnavailable`.
+#: ``NOT_FOUND`` is deliberately absent - it is an answer, and callers that can
+#: act on it must keep seeing it as one.
+_TRANSIENT_RPC_STATUSES = frozenset(
+    {
+        "CANCELLED",
+        "UNKNOWN",
+        "DEADLINE_EXCEEDED",
+        "RESOURCE_EXHAUSTED",
+        "ABORTED",
+        "INTERNAL",
+        "UNAVAILABLE",
+    }
+)
 
 
 def project_workflow_id(project_id: UUID) -> str:
@@ -209,6 +263,19 @@ class FakeWorkflowController:
         self.project_run_ids: dict[str, str] = {}
         #: Workflow IDs the fake cluster reports as already gone.
         self.missing_workflows: set[str] = set()
+        #: Workflow IDs the fake cluster cannot answer for at all. This is the
+        #: other half of ``missing_workflows`` and the distinction the control
+        #: plane turns on: "gone" is an answer a caller may act on, "could not
+        #: be asked" is not, and a test needs to reproduce the second without a
+        #: cluster to break.
+        self.unavailable_workflows: set[str] = set()
+        #: Workflow IDs whose cancellation the fake cluster cannot accept, and
+        #: whose approval signal it cannot accept. Separate from the set above
+        #: because each of these is its own "answering nothing is not an answer"
+        #: decision: a swallowed cancel reports a stop that never happened, and
+        #: a swallowed signal buys a second paid reference run.
+        self.cancel_failures: set[str] = set()
+        self.signal_failures: set[str] = set()
         #: Execution statuses the fake cluster reports, overriding what the
         #: workflow's own state implies. This is how a test reproduces the case
         #: the reconciler exists for: an execution that died while the
@@ -315,6 +382,11 @@ class FakeWorkflowController:
         return workflow_id, f"{workflow_id}-run"
 
     def signal_reference_approval(self, workflow_id: str, signal: ReferenceApprovalSignal) -> bool:
+        if workflow_id in self.signal_failures:
+            raise WorkflowControlUnavailable(
+                "The workflow service could not be reached (unavailable).",
+                workflow_id=workflow_id,
+            )
         if workflow_id not in self.references:
             return False
         self.reference_approvals.append((workflow_id, signal))
@@ -333,6 +405,11 @@ class FakeWorkflowController:
         return workflow_id, f"{workflow_id}-run"
 
     def describe_shot_by_id(self, workflow_id: str) -> ShotWorkflowProgress | None:
+        if workflow_id in self.unavailable_workflows:
+            raise WorkflowControlUnavailable(
+                "The workflow service could not be reached (unavailable).",
+                workflow_id=workflow_id,
+            )
         return self.shot_states.get(workflow_id)
 
     def start_final_qa(self, request: FinalQAActivityInput, workflow_id: str) -> tuple[str, str]:
@@ -350,8 +427,55 @@ class FakeWorkflowController:
         return self.render_states.get(workflow_id)
 
     def cancel_workflow(self, workflow_id: str) -> bool:
+        if workflow_id in self.cancel_failures:
+            raise WorkflowControlUnavailable(
+                "The workflow service could not be reached (unavailable).",
+                workflow_id=workflow_id,
+            )
         self.cancelled_workflows.append(workflow_id)
         return workflow_id not in self.missing_workflows
+
+
+class _ControllerLoop:
+    """One event loop, owned by one daemon thread, shared by every call.
+
+    ``asyncio.run`` per call is why a query used to pay for a fresh
+    ``Client.connect``: a Temporal client is bound to the loop that created it,
+    so the only way to reuse the client is to reuse the loop. A single daemon
+    thread owns that loop for the life of the process, and each controller
+    method submits its coroutine to it and blocks on the result - so callers
+    stay exactly as synchronous as they were, and the connection setup happens
+    once instead of on every describe.
+    """
+
+    def __init__(self) -> None:
+        self._loop: asyncio.AbstractEventLoop | None = None
+        self._lock = threading.Lock()
+
+    def _ensure(self) -> asyncio.AbstractEventLoop:
+        with self._lock:
+            loop = self._loop
+            if loop is None or loop.is_closed():
+                loop = asyncio.new_event_loop()
+                threading.Thread(
+                    target=loop.run_forever, name="vidgen-workflow-control", daemon=True
+                ).start()
+                self._loop = loop
+            return loop
+
+    def run(self, coroutine: Coroutine[Any, Any, Any], *, timeout: float) -> object:
+        """Run one coroutine on the shared loop and wait ``timeout`` for it."""
+        future = asyncio.run_coroutine_threadsafe(coroutine, self._ensure())
+        try:
+            return future.result(timeout)
+        except FutureTimeoutError as expired:
+            # The RPC deadline should already have ended the call. Reaching here
+            # means the connection itself is wedged, so abandon it rather than
+            # holding the caller - a request thread or a dispatcher pass - open.
+            future.cancel()
+            raise WorkflowControlUnavailable(
+                "The workflow service did not respond within the call deadline."
+            ) from expired
 
 
 class TemporalWorkflowController:
@@ -364,6 +488,7 @@ class TemporalWorkflowController:
         *,
         api_key: str | None = None,
         tls_enabled: bool | None = None,
+        rpc_timeout_seconds: float = DEFAULT_RPC_TIMEOUT_SECONDS,
     ) -> None:
         self._target_host = target_host
         self._namespace = namespace
@@ -372,21 +497,80 @@ class TemporalWorkflowController:
         # is configured" means a deployed environment cannot accidentally
         # connect in plaintext, while a local dev server still works.
         self._tls_enabled = tls_enabled if tls_enabled is not None else api_key is not None
+        self._rpc_timeout = timedelta(seconds=rpc_timeout_seconds)
+        self._call_timeout = rpc_timeout_seconds + CALL_TIMEOUT_MARGIN_SECONDS
+        self._loop = _ControllerLoop()
+        #: The one connected client, created on the controller's own loop. It is
+        #: never rebuilt per call: the Temporal client owns a connection that
+        #: reconnects on its own, and paying for a handshake before every query
+        #: is what made a busy worker look like an unreachable one.
+        self._connection: object | None = None
+        self._connect_lock: asyncio.Lock | None = None
+        self._pid = os.getpid()
+
+    def _rebuild_if_forked(self) -> None:
+        """Start over in a child process. Nothing survives a fork intact.
+
+        A worker that forks after a controller has been used inherits an event
+        loop with no thread running it and a client bound to that loop. Calls
+        would then hang until the outer deadline in a process that never
+        connected. Rebuilding on first use in the child is cheap and makes the
+        controller safe wherever the deployment chooses to fork.
+        """
+        pid = os.getpid()
+        if self._pid == pid:
+            return
+        self._pid = pid
+        self._loop = _ControllerLoop()
+        self._connection = None
+        self._connect_lock = None
 
     def _run(self, coroutine: object) -> object:
-        import asyncio
+        """Run ``coroutine`` on the shared loop, classifying transport failures.
 
-        return asyncio.run(coroutine)  # type: ignore[arg-type]
+        A gRPC status that describes the call rather than the workflow becomes
+        :class:`WorkflowControlUnavailable` here, once, so no caller has to know
+        about ``temporalio`` to tell "the cluster did not answer" from "the
+        cluster answered no". ``NOT_FOUND`` and the other definitive statuses
+        pass through untouched, because callers act on them.
+        """
+        from temporalio.service import RPCError
+
+        self._rebuild_if_forked()
+        try:
+            return self._loop.run(
+                coroutine,  # type: ignore[arg-type]
+                timeout=self._call_timeout,
+            )
+        except RPCError as error:
+            if getattr(error.status, "name", "") not in _TRANSIENT_RPC_STATUSES:
+                raise
+            raise WorkflowControlUnavailable(
+                f"The workflow service could not be reached ({error.status.name.lower()})."
+            ) from error
+        except OSError as error:
+            raise WorkflowControlUnavailable(
+                "The workflow service could not be reached."
+            ) from error
 
     async def _client(self) -> object:
         from temporalio.client import Client, TLSConfig
 
-        return await Client.connect(
-            self._target_host,
-            namespace=self._namespace,
-            api_key=self._api_key,
-            tls=TLSConfig() if self._tls_enabled else False,
-        )
+        if self._connect_lock is None:
+            # Created on the controller's loop, and only ever awaited there, so
+            # this lazy build cannot race: there is exactly one loop thread.
+            self._connect_lock = asyncio.Lock()
+        if self._connection is not None:
+            return self._connection
+        async with self._connect_lock:
+            if self._connection is None:
+                self._connection = await Client.connect(
+                    self._target_host,
+                    namespace=self._namespace,
+                    api_key=self._api_key,
+                    tls=TLSConfig() if self._tls_enabled else False,
+                )
+        return self._connection
 
     def start_project(self, request: ProjectWorkflowInput) -> tuple[str, str]:
         """Start the project's generation run, adopting a live execution.
@@ -414,6 +598,7 @@ class TemporalWorkflowController:
                     id=workflow_id,
                     task_queue=TASK_QUEUE,
                     id_reuse_policy=WorkflowIDReusePolicy.ALLOW_DUPLICATE,
+                    rpc_timeout=self._rpc_timeout,
                 )
             except WorkflowAlreadyStartedError:
                 existing = client.get_workflow_handle(workflow_id)  # type: ignore[attr-defined]
@@ -430,7 +615,7 @@ class TemporalWorkflowController:
         async def run() -> None:
             client = await self._client()
             handle = client.get_workflow_handle(workflow_id)  # type: ignore[attr-defined]
-            await handle.signal(ProjectWorkflow.cancel_project)
+            await handle.signal(ProjectWorkflow.cancel_project, rpc_timeout=self._rpc_timeout)
 
         self._run(run())
 
@@ -443,7 +628,9 @@ class TemporalWorkflowController:
             client = await self._client()
             handle = client.get_workflow_handle(workflow_id)  # type: ignore[attr-defined]
             try:
-                state = await handle.query(ProjectWorkflow.project_state)
+                state = await handle.query(
+                    ProjectWorkflow.project_state, rpc_timeout=self._rpc_timeout
+                )
             except RPCError:
                 # Query can fail transiently when no worker is currently polling
                 # (e.g. immediately after a worker restart). Return None so the
@@ -468,7 +655,7 @@ class TemporalWorkflowController:
             client = await self._client()
             handle = client.get_workflow_handle(workflow_id)  # type: ignore[attr-defined]
             try:
-                description = await handle.describe()
+                description = await handle.describe(rpc_timeout=self._rpc_timeout)
             except RPCError:
                 # Not found, or the cluster is unreachable. Either way this is
                 # not evidence that the execution stopped, so say nothing.
@@ -493,8 +680,10 @@ class TemporalWorkflowController:
         async def run() -> ShotWorkflowCommandResult:
             client = await self._client()
             handle = client.get_workflow_handle(workflow_id)  # type: ignore[attr-defined]
-            await handle.signal(ShotWorkflow.command, command)
-            result = await handle.query(ShotWorkflow.command_result, command.command_id)
+            await handle.signal(ShotWorkflow.command, command, rpc_timeout=self._rpc_timeout)
+            result = await handle.query(
+                ShotWorkflow.command_result, command.command_id, rpc_timeout=self._rpc_timeout
+            )
             if isinstance(result, ShotWorkflowCommandResult):
                 return result
             return ShotWorkflowCommandResult(
@@ -514,7 +703,7 @@ class TemporalWorkflowController:
         async def run() -> ShotWorkflowProgress | None:
             client = await self._client()
             handle = client.get_workflow_handle(workflow_id)  # type: ignore[attr-defined]
-            state = await handle.query(ShotWorkflow.shot_state)
+            state = await handle.query(ShotWorkflow.shot_state, rpc_timeout=self._rpc_timeout)
             return getattr(state, "progress", None)
 
         result = self._run(run())
@@ -542,6 +731,7 @@ class TemporalWorkflowController:
                     # publication run is a new execution of a workflow that
                     # closed successfully, not a retry of a failed one.
                     id_reuse_policy=WorkflowIDReusePolicy.ALLOW_DUPLICATE,
+                    rpc_timeout=self._rpc_timeout,
                 )
             except WorkflowAlreadyStartedError:
                 # One is already running for this publication. Adopting it is
@@ -562,7 +752,9 @@ class TemporalWorkflowController:
         async def run() -> None:
             client = await self._client()
             handle = client.get_workflow_handle(workflow_id)  # type: ignore[attr-defined]
-            await handle.signal(YouTubePublicationWorkflow.cancel_publication)
+            await handle.signal(
+                YouTubePublicationWorkflow.cancel_publication, rpc_timeout=self._rpc_timeout
+            )
 
         self._run(run())
 
@@ -572,7 +764,9 @@ class TemporalWorkflowController:
         async def run() -> PublicationActivityResult | None:
             client = await self._client()
             handle = client.get_workflow_handle(workflow_id)  # type: ignore[attr-defined]
-            state = await handle.query(YouTubePublicationWorkflow.state)
+            state = await handle.query(
+                YouTubePublicationWorkflow.state, rpc_timeout=self._rpc_timeout
+            )
             return state if isinstance(state, PublicationActivityResult) else None
 
         result = self._run(run())
@@ -596,6 +790,7 @@ class TemporalWorkflowController:
                     id=workflow_id,
                     task_queue=TASK_QUEUE,
                     id_reuse_policy=WorkflowIDReusePolicy.ALLOW_DUPLICATE,
+                    rpc_timeout=self._rpc_timeout,
                 )
             except WorkflowAlreadyStartedError:
                 # The project workflow already owns this reference run. Adopting
@@ -611,7 +806,15 @@ class TemporalWorkflowController:
         return result
 
     def signal_reference_approval(self, workflow_id: str, signal: ReferenceApprovalSignal) -> bool:
-        from temporalio.service import RPCError
+        """``False`` only when no workflow is waiting for this approval.
+
+        The caller answers ``False`` by *starting* a reference workflow, which
+        drafts sheets and spends. So only ``NOT_FOUND`` may say it: a cluster
+        that merely failed to answer says nothing about whether one is waiting,
+        and reading that as "there is none" buys a second run of paid work -
+        the same duplicate-child harm ``describe_shot_by_id`` refuses.
+        """
+        from temporalio.service import RPCError, RPCStatusCode
 
         from packages.workflows.continuity import ContinuityReferenceWorkflow
 
@@ -619,8 +822,12 @@ class TemporalWorkflowController:
             client = await self._client()
             handle = client.get_workflow_handle(workflow_id)  # type: ignore[attr-defined]
             try:
-                await handle.signal(ContinuityReferenceWorkflow.approve, signal)
-            except RPCError:
+                await handle.signal(
+                    ContinuityReferenceWorkflow.approve, signal, rpc_timeout=self._rpc_timeout
+                )
+            except RPCError as error:
+                if error.status != RPCStatusCode.NOT_FOUND:
+                    raise
                 # No live workflow is waiting for this approval. The decision is
                 # already persisted; the caller decides whether to start one.
                 return False
@@ -635,7 +842,9 @@ class TemporalWorkflowController:
         async def run() -> ReferenceWorkflowStatus | None:
             client = await self._client()
             handle = client.get_workflow_handle(workflow_id)  # type: ignore[attr-defined]
-            state = await handle.query(ContinuityReferenceWorkflow.status)
+            state = await handle.query(
+                ContinuityReferenceWorkflow.status, rpc_timeout=self._rpc_timeout
+            )
             return state if isinstance(state, ReferenceWorkflowStatus) else None
 
         result = self._run(run())
@@ -659,6 +868,7 @@ class TemporalWorkflowController:
                     id=workflow_id,
                     task_queue=TASK_QUEUE,
                     id_reuse_policy=WorkflowIDReusePolicy.ALLOW_DUPLICATE,
+                    rpc_timeout=self._rpc_timeout,
                 )
             except WorkflowAlreadyStartedError:
                 # A duplicated regeneration command resolves to the same
@@ -673,16 +883,23 @@ class TemporalWorkflowController:
         return result
 
     def describe_shot_by_id(self, workflow_id: str) -> ShotWorkflowProgress | None:
+        """``None`` only when the cluster says there is no such execution.
+
+        A transient failure - no worker polling, an unreachable cluster, a query
+        the worker could not schedule in time - is not evidence that the child is
+        gone, and answering ``None`` would make the dispatcher pay for a
+        replacement child that already exists. Those statuses have already become
+        :class:`WorkflowControlUnavailable` in :meth:`_run`, which propagates so
+        the caller waits for the cluster instead of duplicating a live child.
+        """
         from temporalio.service import RPCError, RPCStatusCode
 
         try:
             return self.describe_shot(workflow_id)
         except RPCError as error:
             if error.status != RPCStatusCode.NOT_FOUND:
-                # A transient failure - no worker polling, an unreachable
-                # cluster - is not evidence that the child is gone, and
-                # answering ``None`` would make the dispatcher pay for a
-                # replacement child that already exists. Let it retry instead.
+                # A definitive status that is still not an answer about the
+                # child - a rejected credential, say. Never ``None``.
                 raise
             # There is no such execution: the identity this ID was rebuilt from
             # never produced a child, or its history has expired. The caller
@@ -704,6 +921,7 @@ class TemporalWorkflowController:
                     id=workflow_id,
                     task_queue=TASK_QUEUE,
                     id_reuse_policy=WorkflowIDReusePolicy.ALLOW_DUPLICATE,
+                    rpc_timeout=self._rpc_timeout,
                 )
             except WorkflowAlreadyStartedError:
                 existing = client.get_workflow_handle(workflow_id)  # type: ignore[attr-defined]
@@ -720,7 +938,9 @@ class TemporalWorkflowController:
         async def run() -> FinalQAActivityResult | None:
             client = await self._client()
             handle = client.get_workflow_handle(workflow_id)  # type: ignore[attr-defined]
-            state = await handle.query(FinalEditorialQAWorkflow.final_qa_state)
+            state = await handle.query(
+                FinalEditorialQAWorkflow.final_qa_state, rpc_timeout=self._rpc_timeout
+            )
             return state if isinstance(state, FinalQAActivityResult) else None
 
         result = self._run(run())
@@ -741,6 +961,7 @@ class TemporalWorkflowController:
                     id=workflow_id,
                     task_queue=TASK_QUEUE,
                     id_reuse_policy=WorkflowIDReusePolicy.ALLOW_DUPLICATE,
+                    rpc_timeout=self._rpc_timeout,
                 )
             except WorkflowAlreadyStartedError:
                 existing = client.get_workflow_handle(workflow_id)  # type: ignore[attr-defined]
@@ -757,7 +978,7 @@ class TemporalWorkflowController:
         async def run() -> RenderActivityResult | None:
             client = await self._client()
             handle = client.get_workflow_handle(workflow_id)  # type: ignore[attr-defined]
-            state = await handle.query(RenderWorkflow.render_state)
+            state = await handle.query(RenderWorkflow.render_state, rpc_timeout=self._rpc_timeout)
             return state if isinstance(state, RenderActivityResult) else None
 
         result = self._run(run())
@@ -769,15 +990,28 @@ class TemporalWorkflowController:
         A workflow that no longer exists is reported as ``False`` rather than
         raised: the command it belonged to is finished either way, and the
         dispatcher must still be able to settle the row.
+
+        A cluster that could not be reached is *not* that. The caller marks the
+        command ``cancelled`` regardless of what this returns, so swallowing a
+        transient failure would report a stop that never happened and leave the
+        workflow running and spending. Those propagate, and the next pass tries
+        the cancellation again.
         """
-        from temporalio.service import RPCError
+        from temporalio.service import RPCError, RPCStatusCode
+
+        #: Statuses that mean there is nothing left to cancel. Temporal answers
+        #: ``NOT_FOUND`` both for an execution it has never heard of and for one
+        #: that has already closed.
+        finished = {RPCStatusCode.NOT_FOUND, RPCStatusCode.FAILED_PRECONDITION}
 
         async def run() -> bool:
             client = await self._client()
             handle = client.get_workflow_handle(workflow_id)  # type: ignore[attr-defined]
             try:
-                await handle.cancel()
-            except RPCError:
+                await handle.cancel(rpc_timeout=self._rpc_timeout)
+            except RPCError as error:
+                if error.status not in finished:
+                    raise
                 return False
             return True
 

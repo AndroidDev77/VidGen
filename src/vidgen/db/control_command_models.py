@@ -95,6 +95,16 @@ class ControlCommandRecord(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     status: Mapped[str] = mapped_column(String(32), default=ControlCommandStatus.PENDING.value)
     attempt: Mapped[int] = mapped_column(Integer, default=0)
     max_attempts: Mapped[int] = mapped_column(Integer, default=5)
+    #: Consecutive deferrals caused by the control plane's own dependencies -
+    #: an unreachable Temporal cluster, a query no worker could answer in time.
+    #: Counted apart from ``attempt`` deliberately: an infrastructure hiccup is
+    #: not evidence that the command is bad, so waiting one out must not spend
+    #: the budget that exists to stop a genuinely bad command cycling forever.
+    #: It still has a bound of its own, so a cluster that never comes back
+    #: settles the command instead of deferring it indefinitely.
+    infrastructure_attempt: Mapped[int] = mapped_column(
+        Integer, default=0, server_default="0", nullable=False
+    )
     #: The dispatcher instance currently holding the lease, and when it expires.
     claim_owner: Mapped[str | None] = mapped_column(String(128))
     lease_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
