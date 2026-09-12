@@ -41,6 +41,7 @@ def shot_retry_policy() -> RetryPolicy:
             "BudgetDenied",
             "UnsupportedCapability",
             "UnknownProviderOutcome",
+            "VisualQAContractViolation",
             "CancelledError",
         ],
     )

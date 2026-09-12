@@ -29,6 +29,7 @@ from services.qa.rubric import THRESHOLDS
 from tests.project_template import materialize_project
 from tests.visual_qa_fixtures import VisualQAFixture, build_visual_qa_project
 from vidgen.contracts.visual_qa import (
+    TOLERATED_SCORE_BELOW_THRESHOLD,
     VisualQADimension,
     VisualQAFailureCode,
     VisualQAOutcome,
@@ -269,6 +270,92 @@ def test_a_project_warn_only_override_is_a_new_identity_with_its_own_outcome(
     assert tolerant.hard_failure is False
     assert "warn_only:WRONG_CHARACTER_IDENTITY" in tolerant.warning_codes
     assert tolerant.score.threshold_version == strict.score.threshold_version
+
+
+def test_a_tolerated_below_threshold_pass_reaches_the_persisted_result(
+    graph: tuple[Session, FilesystemBlobStore, VisualQAFixture],
+) -> None:
+    """The tolerance path has to survive the whole handoff, not just decide().
+
+    Scoring passes a shot whose every evidenced repair code the project
+    tolerates, recording the shortfall as a warning. The contract used to reject
+    exactly that result, so the activity raised a ValidationError instead of
+    returning a verdict and the shot workflow parked with nothing pending. This
+    covers the handoff: the pipeline builds the contract, persists it, and
+    rebuilds it from the row on a repeat call.
+    """
+    session, store, fixture = graph
+    # Every dimension at 80 lands between the 85 pass score and the 75 repair
+    # floor, and the only code the shot evidences is one the project tolerates.
+    defects = {
+        fixture.shot_ids[0]: FakeDefect(
+            dimension_scores=dict.fromkeys(VisualQADimension, 80.0),
+            findings=(
+                FakeFinding(
+                    dimension=VisualQADimension.ACTION_AND_MOTION,
+                    severity="warning",
+                    code="insufficient_motion",
+                    summary="the beat reads as a held pose",
+                    repair_codes=(VisualQARepairCode.INSUFFICIENT_MOTION,),
+                ),
+            ),
+        )
+    }
+    result = asyncio.run(
+        run_visual_qa(
+            session,
+            store,
+            project_id=fixture.project_id,
+            options=VisualQACommandOptions(
+                provider="fake",
+                fake_defects=defects,
+                shot_id=fixture.shot_ids[0],
+                targets=(VisualQATargetType.VIDEO,),
+                idempotency_key="tolerated-below-threshold",
+                thresholds=THRESHOLDS.model_copy(
+                    update={"warn_only_codes": ["INSUFFICIENT_MOTION"]}
+                ),
+            ),
+            identity_resolver=resolver,
+        )
+    ).results[0]
+    assert result.outcome is VisualQAOutcome.PASS
+    assert result.hard_failure is False
+    assert result.repair_codes == []
+    assert result.score.total < result.score.pass_threshold
+    # The threshold on the record is the project's own: the pass is explained by
+    # the warning, not by a threshold quietly moved down to meet the score.
+    assert result.score.pass_threshold == THRESHOLDS.pass_score(result.score.importance)
+    assert TOLERATED_SCORE_BELOW_THRESHOLD in result.warning_codes
+    assert "warn_only:INSUFFICIENT_MOTION" in result.warning_codes
+
+    run = session.get(VisualQARun, result.qa_run_id)
+    assert run is not None
+    assert run.final_outcome == VisualQAOutcome.PASS.value
+    assert TOLERATED_SCORE_BELOW_THRESHOLD in run.warning_codes
+
+    # The projection path rebuilds the same contract from the persisted row.
+    replay = asyncio.run(
+        run_visual_qa(
+            session,
+            store,
+            project_id=fixture.project_id,
+            options=VisualQACommandOptions(
+                provider="fake",
+                fake_defects=defects,
+                shot_id=fixture.shot_ids[0],
+                targets=(VisualQATargetType.VIDEO,),
+                idempotency_key="tolerated-below-threshold",
+                thresholds=THRESHOLDS.model_copy(
+                    update={"warn_only_codes": ["INSUFFICIENT_MOTION"]}
+                ),
+            ),
+            identity_resolver=resolver,
+        )
+    ).results[0]
+    assert replay.qa_run_id == result.qa_run_id
+    assert replay.outcome is VisualQAOutcome.PASS
+    assert TOLERATED_SCORE_BELOW_THRESHOLD in replay.warning_codes
 
 
 def test_a_supplied_idempotency_key_is_scoped_per_shot_and_target(

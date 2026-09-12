@@ -15,7 +15,7 @@ from temporalio.worker import Worker
 from apps.api.settings import APISettings
 from packages.workflows import activities
 from packages.workflows.project import ProjectWorkflow
-from packages.workflows.shot_policy import identity_hash
+from packages.workflows.shot_policy import identity_hash, shot_retry_policy
 from vidgen.contracts.shot_workflow import ShotWorkflowIdentity, ShotWorkflowInput
 from vidgen.contracts.workflow import ProjectWorkflowInput, StageActivityInput, StageActivityResult
 from vidgen.db.transcription_models import SpeakerTurnRecord, TranscriptSegmentRecord
@@ -232,6 +232,65 @@ def test_a_keyless_worker_refuses_to_run_visual_qa_with_the_fake_agent(
                 None,  # type: ignore[arg-type]
                 _shot_workflow_input().model_dump(mode="json"),
             )
+
+
+@pytest.mark.parametrize(
+    ("handler", "stage"),
+    [
+        ("_run_shot_keyframe_qa", "evaluate_shot_stage"),
+        # T21 revalidates every repair attempt through the same T20 pipeline, so
+        # it reaches the same contract and must fail the same way.
+        ("_run_shot_repair", "run_visual_repair"),
+    ],
+)
+def test_a_qa_result_that_fails_its_own_contract_stops_the_activity(
+    tmp_path: Path, handler: str, stage: str
+) -> None:
+    """A contract violation is deterministic, so it must not be retried.
+
+    The T20 gate once raised a ValidationError whenever scoring exercised the
+    warn-only tolerance path. Classified as an ordinary transient failure it
+    burned the whole retry budget - paying for another evaluation, or another
+    repair generation, each time - and then left the shot workflow parked on a
+    retry signal that could never help. It fails once, permanently, and names
+    itself.
+    """
+    from unittest.mock import patch
+
+    from services.qa.rubric import THRESHOLDS
+    from vidgen.contracts.visual_qa import VisualQAResult
+    from workers.temporal_worker import production_handlers as module
+
+    settings = APISettings(
+        database_url=f"sqlite:///{tmp_path / 'contract.db'}",
+        blob_root=tmp_path / "blobs",
+        temporal_allow_fake_providers=True,
+        openai_api_key=None,
+    )
+
+    def reject(*_args: object, **_kwargs: object) -> object:
+        return VisualQAResult.model_validate({})
+
+    with (
+        patch.object(
+            module, "_authoritative_shot", return_value=(None, SimpleNamespace(id=uuid4()))
+        ),
+        patch.object(module, "_visual_qa_thresholds", return_value=THRESHOLDS),
+        patch.object(module, stage, reject),
+        pytest.raises(ApplicationError) as failure,
+    ):
+        getattr(module, handler)(
+            None,  # type: ignore[arg-type]
+            None,  # type: ignore[arg-type]
+            settings,
+            None,  # type: ignore[arg-type]
+            SimpleNamespace(name="fake"),
+            _shot_workflow_input().model_dump(mode="json"),  # type: ignore[attr-defined]
+        )
+    assert failure.value.type == "VisualQAContractViolation"
+    assert failure.value.non_retryable is True
+    # And the shot workflow reads that as terminal rather than parking on it.
+    assert "VisualQAContractViolation" in (shot_retry_policy().non_retryable_error_types or ())
 
 
 def _shot_workflow_input() -> object:

@@ -279,6 +279,14 @@ class ShotWorkflow:
             ),
             "RepairConcurrencyError": (ShotFailureClass.WORKER_INTERRUPTION, True),
             "VisualQAReviewRequired": (ShotFailureClass.VISUAL_QA_REVIEW_REQUIRED, False),
+            # A QA result that fails its own contract is deterministic: every
+            # retry rebuilds the same rejected payload. Classifying it as
+            # transient would leave the shot parked on a retry signal instead of
+            # surfacing a failure someone has to fix in code.
+            "VisualQAContractViolation": (
+                ShotFailureClass.DETERMINISTIC_CONFIGURATION_FAILURE,
+                False,
+            ),
             "VisualQALineageError": (ShotFailureClass.INVALID_LINEAGE, False),
             "BudgetExceededError": (ShotFailureClass.BUDGET_DENIAL, False),
             # An OpenAI spend limit is the provider's own budget denial: the
