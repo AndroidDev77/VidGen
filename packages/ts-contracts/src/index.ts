@@ -1246,6 +1246,8 @@ export interface ShotCommandProjection {
   status: string;
   /** The command is still in flight: it has not reached a terminal status. */
   active: boolean;
+  /** Active, but parked on a human decision rather than on the machine. */
+  awaiting_review: boolean;
   /** A real workflow has been started or signalled for this command. */
   dispatched: boolean;
   workflow_id: string | null;

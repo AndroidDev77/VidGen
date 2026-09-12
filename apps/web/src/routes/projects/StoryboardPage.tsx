@@ -36,6 +36,7 @@ import { VisualQAResultPanel } from "../../components/VisualQAResultPanel";
 import { VisualQAReviewDialog } from "../../components/VisualQAReviewDialog";
 import { PageStack } from "../../components/Surface";
 import { EmptyState, ErrorState, LoadingState } from "../../components/states";
+import { shotCommandStateFor } from "../../state/shotCommand";
 import { decidableRun, decisionAffordance, type QaDecisionAffordance } from "../../state/visualQa";
 import { useProjectContext } from "./useProjectContext";
 
@@ -140,8 +141,10 @@ export function StoryboardPage(): JSX.Element {
       // A shot whose decision is already queued is not waiting on a person any
       // more, whatever its QA run still says. Leaving it in would let the bulk
       // actions - and the review counts above them - fire a second command for
-      // work the dispatcher has not got to yet.
-      if (entry.pending_command?.active === true) {
+      // work the dispatcher has not got to yet. A command parked *on* a human
+      // decision is the opposite case and stays in: it is released by the very
+      // decision these actions make.
+      if (shotCommandStateFor(entry).inFlight) {
         continue;
       }
       const run = decidableRun(visualQaByShot.get(entry.shot_id) ?? []);
@@ -439,7 +442,8 @@ export function StoryboardPage(): JSX.Element {
 
   // A command already in flight against the selected shot locks the same
   // actions the mutations above do: both would enqueue duplicate work.
-  const selectedCommandInFlight = shot.data?.shot.pending_command?.active === true;
+  const selectedCommandInFlight =
+    shot.data !== undefined && shotCommandStateFor(shot.data.shot).inFlight;
   const busy =
     regenerate.isPending || retry.isPending || cancelOne.isPending || chooseAttempt.isPending;
   // The QA run the inspector has open, which is not always the run the shot is

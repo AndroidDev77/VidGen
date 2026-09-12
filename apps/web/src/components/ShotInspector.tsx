@@ -120,7 +120,9 @@ export function ShotInspector({
         >
           Retry failed shot
         </Button>
-        <Button appearance="secondary" onClick={onCancel} disabled={locked}>
+        {/* Never gated on the command: cancelling is the way out of one that
+            is running or wedged, so locking it would trap the shot. */}
+        <Button appearance="secondary" onClick={onCancel} disabled={busy}>
           Cancel this shot
         </Button>
         <Button appearance="subtle" onClick={onRefreshStatus} disabled={busy}>

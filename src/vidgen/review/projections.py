@@ -15,9 +15,10 @@ from decimal import Decimal
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.orm import Session
 
+from vidgen.contracts.control_commands import ControlCommandStatus, ControlCommandType
 from vidgen.contracts.review import (
     PIPELINE_STAGE_ORDER,
     PipelineStage,
@@ -506,10 +507,25 @@ def _shot_costs(session: Session, shot_id: UUID) -> Decimal:
 #: the reviewer has to be told why, and have the action offered back.
 _RESOLVED_COMMAND_STATUSES = frozenset({"completed", "cancelled", "superseded"})
 
-#: Statuses that mean the command is still in flight.
+#: Statuses a command can still leave on its own. ``awaiting_review`` is one of
+#: them, and is the odd one out: the command is durably parked *on a person*,
+#: so it is in flight without the machine doing anything. The UI must not read
+#: it as busy - the decision it is waiting for is exactly the one it would
+#: otherwise disable, which would deadlock the shot.
 _ACTIVE_COMMAND_STATUSES = frozenset(
     {"pending", "claimed", "dispatching", "running", "awaiting_review"}
 )
+
+#: Statuses that can never be surfaced, so the projection never loads them. A
+#: shot accumulates one completed command per regeneration over a project's
+#: life; only the newest of those can matter, which the ordering below picks.
+_UNSURFACEABLE_STATUSES = frozenset({"cancelled", "superseded"})
+
+#: Where a command that acts on a shot without targeting one names its shot.
+#: A T22 remediation's durable row stays targeted at the final-QA run and
+#: carries the shot in metadata; the shot-targeted proxy the dispatcher builds
+#: is never persisted, so the row itself is all this projection can read.
+_SHOT_METADATA_KEY = "shot_id"
 
 
 def _shot_command_projection(record: ControlCommandRecord) -> ShotCommandProjection:
@@ -518,6 +534,7 @@ def _shot_command_projection(record: ControlCommandRecord) -> ShotCommandProject
         command_type=record.command_type,
         status=record.status,
         active=record.status in _ACTIVE_COMMAND_STATUSES,
+        awaiting_review=record.status == ControlCommandStatus.AWAITING_REVIEW.value,
         dispatched=record.workflow_id is not None,
         workflow_id=record.workflow_id,
         failure_code=record.error_code,
@@ -527,6 +544,20 @@ def _shot_command_projection(record: ControlCommandRecord) -> ShotCommandProject
         created_at=utc(record.created_at) or datetime.now(UTC),
         updated_at=utc(record.updated_at) or utc(record.created_at) or datetime.now(UTC),
     )
+
+
+def _commanded_shot_id(record: ControlCommandRecord, shot_ids: frozenset[UUID]) -> UUID | None:
+    """Which of these shots this command acts on, if any."""
+    if record.target_type == "shot":
+        return record.target_id if record.target_id in shot_ids else None
+    raw = dict(record.command_metadata or {}).get(_SHOT_METADATA_KEY)
+    if raw is None:
+        return None
+    try:
+        shot_id = UUID(str(raw))
+    except ValueError:
+        return None
+    return shot_id if shot_id in shot_ids else None
 
 
 def shot_commands(
@@ -540,27 +571,51 @@ def shot_commands(
     window, so a projection built from them alone reads an accepted retry as an
     untouched failure and offers the same button again.
 
-    The newest command per shot wins, and a resolved one is dropped entirely:
-    once a command completes, the rows it produced are the truth again.
+    A shot in flight is the answer whenever there is one, even if a *newer*
+    command against the same shot has already finished: taking the newest row
+    and then discarding it when resolved would let a quick completion mask work
+    that is still running, which is precisely the duplicate this exists to
+    prevent. Otherwise only a terminal *failure* is surfaced, and only while it
+    is the newest thing that happened to the shot - a failure a later command
+    has already succeeded past is history, not something to show.
     """
     if not shot_ids:
         return {}
+    wanted = frozenset(shot_ids)
     rows = session.scalars(
         select(ControlCommandRecord)
         .where(
             ControlCommandRecord.project_id == project_id,
-            ControlCommandRecord.target_type == "shot",
-            ControlCommandRecord.target_id.in_(list(shot_ids)),
+            ControlCommandRecord.status.notin_(sorted(_UNSURFACEABLE_STATUSES)),
+            or_(
+                and_(
+                    ControlCommandRecord.target_type == "shot",
+                    ControlCommandRecord.target_id.in_(list(wanted)),
+                ),
+                ControlCommandRecord.command_type
+                == ControlCommandType.FINAL_QA_REMEDIATION.value,
+            ),
         )
-        .order_by(ControlCommandRecord.created_at, ControlCommandRecord.id)
+        .order_by(ControlCommandRecord.created_at.desc(), ControlCommandRecord.id.desc())
     ).all()
-    # Ascending order, so the last row written for a shot is the one kept.
-    latest: dict[UUID, ControlCommandRecord] = {row.target_id: row for row in rows}
-    return {
-        shot_id: _shot_command_projection(record)
-        for shot_id, record in latest.items()
-        if record.status not in _RESOLVED_COMMAND_STATUSES
-    }
+    # Descending, so the first row seen for a shot is its newest.
+    newest: dict[UUID, ControlCommandRecord] = {}
+    in_flight: dict[UUID, ControlCommandRecord] = {}
+    for row in rows:
+        shot_id = _commanded_shot_id(row, wanted)
+        if shot_id is None:
+            continue
+        newest.setdefault(shot_id, row)
+        if row.status in _ACTIVE_COMMAND_STATUSES:
+            in_flight.setdefault(shot_id, row)
+    commands: dict[UUID, ShotCommandProjection] = {}
+    for shot_id, row in newest.items():
+        chosen = in_flight.get(shot_id)
+        if chosen is None and row.status not in _RESOLVED_COMMAND_STATUSES:
+            chosen = row
+        if chosen is not None:
+            commands[shot_id] = _shot_command_projection(chosen)
+    return commands
 
 
 def shot_projection(

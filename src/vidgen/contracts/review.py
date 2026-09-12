@@ -265,10 +265,14 @@ class ShotCommandProjection(StrictContract):
     and offers the same action again, so a reviewer cannot tell their decision
     landed and can fire duplicates.
 
-    ``active`` is the flag the UI gates its affordances on; ``dispatched``
-    separates a command still queued for the dispatcher from one that has a
-    real workflow behind it. A terminally failed command is surfaced with
-    ``active`` false so the error is renderable and the affordance comes back.
+    ``active`` says the command has not reached a terminal status, and
+    ``awaiting_review`` separates the one active state that is waiting on a
+    person from the ones waiting on the machine - a UI that disabled a
+    reviewer's decision while the command sits waiting for exactly that
+    decision would deadlock the shot. ``dispatched`` separates a command still
+    queued for the dispatcher from one that has a real workflow behind it. A
+    terminally failed command is surfaced with ``active`` false so the error is
+    renderable and the affordance comes back.
     """
 
     schema_version: Literal["1.0"] = "1.0"
@@ -277,6 +281,10 @@ class ShotCommandProjection(StrictContract):
     status: str = Field(max_length=32)
     #: The command is still in flight: it has not reached a terminal status.
     active: bool = False
+    #: The command is durably parked on a *human* decision rather than on the
+    #: machine. It is active, but the action a reviewer would take is the one
+    #: that releases it, so a UI must keep that action offered.
+    awaiting_review: bool = False
     #: A real workflow has been started or signalled for this command.
     dispatched: bool = False
     workflow_id: str | None = Field(default=None, max_length=255)

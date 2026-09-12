@@ -1081,6 +1081,131 @@ def test_the_newest_command_is_the_one_a_shot_reports(
     assert pending["active"] is True
 
 
+def test_a_command_waiting_on_a_person_still_offers_them_the_decision(
+    client: TestClient,
+    graph: ProjectGraph,
+    review_client: tuple[TestClient, sessionmaker[Session], FakeWorkflowController],
+) -> None:
+    """``awaiting_review`` is active, but it is waiting on the reviewer.
+
+    The dispatcher parks a shot command here when the replacement child reports
+    HUMAN_REVIEW_REQUIRED. Treating that as busy would disable the approve and
+    reject buttons - the only thing that can release it - and the shot would
+    have no way forward at all.
+    """
+    target = graph.shot_ids[4]
+    command_id = _queue_shot_retry(client, graph, target, "retry-awaiting-1")
+    with review_client[1]() as session:
+        record = session.get(ControlCommandRecord, command_id)
+        assert record is not None
+        record.status = "awaiting_review"
+        record.workflow_id = "shot-retry-workflow-4"
+        session.commit()
+
+    pending = _shot_from_storyboard(client, graph, target)["pending_command"]
+    assert pending["status"] == "awaiting_review"
+    assert pending["active"] is True
+    # The flag the UI needs to tell "busy" from "your move".
+    assert pending["awaiting_review"] is True
+
+
+def test_a_running_command_is_not_masked_by_a_newer_finished_one(
+    client: TestClient,
+    graph: ProjectGraph,
+    review_client: tuple[TestClient, sessionmaker[Session], FakeWorkflowController],
+) -> None:
+    """Work still in flight outranks a newer command that already finished.
+
+    Taking the newest row and only then dropping it when resolved would report
+    no pending command at all here - and the duplicate this projection exists
+    to prevent would be offered while the first command was still running.
+    """
+    target = graph.shot_ids[4]
+    running = _queue_shot_retry(client, graph, target, "retry-still-running")
+    with review_client[1]() as session:
+        record = session.get(ControlCommandRecord, running)
+        assert record is not None
+        record.status = "running"
+        record.workflow_id = "shot-retry-workflow-4"
+        session.commit()
+    later = _queue_shot_retry(client, graph, target, "retry-finished-later")
+    with review_client[1]() as session:
+        record = session.get(ControlCommandRecord, later)
+        assert record is not None
+        record.status = "completed"
+        record.workflow_id = "shot-retry-workflow-4b"
+        session.commit()
+
+    pending = _shot_from_storyboard(client, graph, target)["pending_command"]
+    assert pending is not None, "a running command was masked by a newer completed one"
+    assert pending["command_id"] == str(running)
+    assert pending["active"] is True
+
+
+def test_a_failure_a_later_command_succeeded_past_is_not_resurfaced(
+    client: TestClient,
+    graph: ProjectGraph,
+    review_client: tuple[TestClient, sessionmaker[Session], FakeWorkflowController],
+) -> None:
+    target = graph.shot_ids[4]
+    failed = _queue_shot_retry(client, graph, target, "retry-old-failure")
+    with review_client[1]() as session:
+        record = session.get(ControlCommandRecord, failed)
+        assert record is not None
+        record.status = "failed"
+        record.error_code = "lease_lost"
+        session.commit()
+    later = _queue_shot_retry(client, graph, target, "retry-succeeded-after")
+    with review_client[1]() as session:
+        record = session.get(ControlCommandRecord, later)
+        assert record is not None
+        record.status = "completed"
+        record.workflow_id = "shot-retry-workflow-4c"
+        session.commit()
+
+    # The failure is history: something newer already put it right.
+    assert _shot_from_storyboard(client, graph, target)["pending_command"] is None
+
+
+def test_a_final_qa_remediation_is_visible_on_the_shot_it_regenerates(
+    client: TestClient,
+    graph: ProjectGraph,
+    review_client: tuple[TestClient, sessionmaker[Session], FakeWorkflowController],
+) -> None:
+    """A T22 remediation regenerates a shot without ever targeting one.
+
+    Its durable row stays pointed at the final-QA run and names the shot only
+    in metadata - the shot-targeted proxy the dispatcher builds is never
+    persisted - so a projection filtering on ``target_type`` alone would leave
+    that shot looking untouched while a replacement run was being started.
+    """
+    target = graph.shot_ids[6]
+    with review_client[1]() as session:
+        session.add(
+            ControlCommandRecord(
+                project_id=graph.project_id,
+                owner_subject="owner-a",
+                command_type="final_qa_remediation",
+                target_type="final_qa_run",
+                target_id=uuid4(),
+                idempotency_key="remediation-1",
+                request_hash=hashlib.sha256(b"remediation-1").hexdigest(),
+                upstream_input_identity=hashlib.sha256(b"upstream").hexdigest(),
+                status="running",
+                workflow_id="vidgen-remediation-1",
+                command_metadata={"target": "regenerate_shot_t16", "shot_id": str(target)},
+            )
+        )
+        session.commit()
+
+    pending = _shot_from_storyboard(client, graph, target)["pending_command"]
+    assert pending is not None
+    assert pending["command_type"] == "final_qa_remediation"
+    assert pending["active"] is True
+    # And it speaks only for the shot it names.
+    assert _shot_from_storyboard(client, graph, graph.shot_ids[7])["pending_command"] is None
+
+
 def test_shot_attempt_selection(
     client: TestClient,
     graph: ProjectGraph,

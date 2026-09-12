@@ -12,7 +12,12 @@ import { humanize } from "./format";
  * exactly what this state exists to prevent.
  */
 export interface ShotCommandState {
-  /** A command is in flight: every action against this shot has to wait. */
+  /**
+   * The command is working, so every action that would enqueue another one
+   * waits. A command parked on a human decision is deliberately *not* in
+   * flight by this definition: the decision it waits for is the one the UI
+   * would otherwise disable, which would leave the shot with no way forward.
+   */
   readonly inFlight: boolean;
   /** A short status word for the card's badge, when there is something to say. */
   readonly label: string | null;
@@ -49,15 +54,29 @@ export function shotCommandState(
   if (!command) {
     return IDLE;
   }
+  if (command.active && command.awaiting_review) {
+    // Parked on a person. Say so, and leave every decision available.
+    return {
+      inFlight: false,
+      label: "Waiting on you",
+      description: `${action(command)} — the shot is waiting on your decision.`,
+      failureMessage: null,
+    };
+  }
   if (!command.active) {
     // Terminal and not resolved: the backend only keeps surfacing a command
     // that stopped on a failure, so the action comes back with the reason.
     const reason = command.failure_summary ?? humanize(command.failure_code ?? "unknown_error");
+    // A command can fail before it ever reached a worker or after its
+    // replacement workflow ran and produced nothing; saying "did not start"
+    // for the second is simply untrue, and the paid attempt it implies away
+    // is the part a reviewer most needs to know about.
+    const stage = command.dispatched ? "did not finish" : "did not start";
     return {
       inFlight: false,
       label: "Command failed",
       description: null,
-      failureMessage: `${action(command)} did not start: ${reason}${
+      failureMessage: `${action(command)} ${stage}: ${reason}${
         command.retryable ? " This can be tried again." : ""
       }`,
     };

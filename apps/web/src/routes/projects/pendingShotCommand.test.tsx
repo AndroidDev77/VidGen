@@ -152,7 +152,65 @@ describe("a shot with a control command in flight", () => {
       within(inspector).getByRole("button", { name: "Regenerate this shot" }),
     ).toBeDisabled();
     expect(within(inspector).getByRole("button", { name: "Retry failed shot" })).toBeDisabled();
-    expect(within(inspector).getByRole("button", { name: "Cancel this shot" })).toBeDisabled();
+  });
+
+  it("keeps the decision offered when the command is waiting on the reviewer", async () => {
+    // The dispatcher parks a shot command here when the replacement child
+    // reports HUMAN_REVIEW_REQUIRED. Disabling the decision would remove the
+    // only thing that releases it, leaving the shot stuck for good.
+    softFailedShot();
+    shotWithCommand(2, {
+      command_type: "shot_review_continue",
+      status: "awaiting_review",
+      awaiting_review: true,
+      dispatched: true,
+      workflow_id: "vidgen-shot-2",
+    });
+    renderStoryboard();
+
+    expect(await screen.findByText("Waiting on you")).toBeVisible();
+    expect(screen.getByRole("button", { name: "Force approve shot 3" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Reject shot 3" })).toBeEnabled();
+    // And it still counts as waiting on a person above the grid.
+    const bar = await screen.findByRole("region", { name: "Shots awaiting review" });
+    expect(within(bar).getByRole("button", { name: /Force approve all failed/ })).toBeEnabled();
+  });
+
+  it("never locks the inspector's cancel, which is the way out of a stuck command", async () => {
+    shotWithCommand(4, {
+      command_type: "shot_regenerate",
+      status: "running",
+      dispatched: true,
+      workflow_id: "vidgen-shot-4",
+    });
+    renderStoryboard(`/projects/${PROJECT_ID}/storyboard?shot=${shotId(4)}`);
+
+    const inspector = await screen.findByRole("region", { name: /^Shot 5$/ });
+    expect(within(inspector).getByRole("button", { name: "Cancel this shot" })).toBeEnabled();
+    // The actions that would enqueue a second command do stay locked.
+    expect(
+      within(inspector).getByRole("button", { name: "Regenerate this shot" }),
+    ).toBeDisabled();
+  });
+
+  it("says a dispatched command did not finish, not that it never started", async () => {
+    // A command that failed after its workflow ran has already spent a paid
+    // attempt; "did not start" would hide exactly that.
+    shotWithCommand(4, {
+      command_type: "shot_regenerate",
+      status: "failed",
+      active: false,
+      dispatched: true,
+      workflow_id: "vidgen-shot-4",
+      failure_code: "failed",
+      failure_summary: "The replacement shot workflow did not lock an output.",
+    });
+    renderStoryboard(`/projects/${PROJECT_ID}/storyboard?shot=${shotId(4)}`);
+
+    const inspector = await screen.findByRole("region", { name: /^Shot 5$/ });
+    expect(within(inspector).getByRole("alert")).toHaveTextContent(
+      /Regenerating did not finish: The replacement shot workflow did not lock an output\./,
+    );
   });
 
   it("leaves every other shot alone", async () => {

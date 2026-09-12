@@ -604,6 +604,7 @@ export function shotCommand(
     command_type: "shot_review_continue",
     status: "pending",
     active: true,
+    awaiting_review: false,
     dispatched: false,
     workflow_id: null,
     failure_code: null,
