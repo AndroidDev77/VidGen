@@ -554,6 +554,52 @@ class VisualQAThresholds(StrictContract):
         }[importance]
 
 
+class VisualQAThresholdOverrides(StrictContract):
+    """A project's partial override of the deployment's T20 pass thresholds.
+
+    Every score is optional: ``None`` means "use the deployment default" for
+    that one threshold, so a project may relax the hero pass score alone
+    without restating the others. The warn-only set is overridden separately
+    on the generation settings, mirroring the narration quality overrides.
+    """
+
+    schema_version: Literal["1.0"] = "1.0"
+    utility_pass_score: RawScore | None = None
+    normal_pass_score: RawScore | None = None
+    hero_pass_score: RawScore | None = None
+    targeted_repair_floor: RawScore | None = None
+
+    def apply(self, defaults: VisualQAThresholds) -> VisualQAThresholds:
+        """The deployment thresholds with every set override applied on top.
+
+        A repair floor above a pass score describes a gate that repairs
+        nothing - every shot that fails is already below the floor - so the
+        combination is refused rather than stored and silently reinterpreted.
+        A project that lowers a pass score past the deployment floor lowers
+        the floor in the same write.
+        """
+        values = defaults.model_dump(exclude={"schema_version"})
+        values.update(
+            {
+                key: value
+                for key, value in self.model_dump(exclude={"schema_version"}).items()
+                if value is not None
+            }
+        )
+        lowest_pass = min(
+            values["utility_pass_score"],
+            values["normal_pass_score"],
+            values["hero_pass_score"],
+        )
+        floor = values["targeted_repair_floor"]
+        if floor > lowest_pass:
+            raise ValueError(
+                f"targeted_repair_floor {floor:g} must not exceed the lowest pass "
+                f"score {lowest_pass:g}"
+            )
+        return VisualQAThresholds.model_validate(values)
+
+
 class VisualQASampleReference(StrictContract):
     """A bounded pointer handed to the visual agent; bytes are fetched by the adapter."""
 

@@ -183,16 +183,22 @@ def effective_visual_qa_thresholds(
 ) -> VisualQAThresholds:
     """The T20 pass thresholds the visual-QA pipeline is handed for this project.
 
-    ``deployment`` carries the versioned policy and the deployment-wide
-    warn-only set. The project's override, when present, replaces that set
-    outright (an empty list means "nothing is tolerated"); every other
-    threshold stays the deployment's. The result is bound into the QA
-    identity, so a change here is a new evaluation, never a reinterpretation.
+    ``deployment`` carries the versioned policy, the deployment-wide pass
+    scores and the deployment-wide warn-only set. The project's warn-only
+    override, when present, replaces that set outright (an empty list means
+    "nothing is tolerated"); its score overrides replace only the scores they
+    set, and every unset one stays the deployment's. The result is bound into
+    the QA identity, so a change here is a new evaluation, never a
+    reinterpretation.
     """
     codes = effective_visual_qa_warn_only_codes(generation, deployment.warn_only_codes)
+    overrides = generation.visual_qa_thresholds
     try:
-        return deployment.model_copy(update={"warn_only_codes": sorted(codes)})
-    except ValueError as error:  # pragma: no cover - both inputs are validated
+        resolved = overrides.apply(deployment) if overrides is not None else deployment
+        return VisualQAThresholds.model_validate(
+            {**resolved.model_dump(), "warn_only_codes": sorted(codes)}
+        )
+    except ValueError as error:
         raise GenerationSettingsError(
             f"visual QA thresholds cannot be resolved: {error}"
         ) from error

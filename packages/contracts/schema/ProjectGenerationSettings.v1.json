@@ -134,6 +134,76 @@
       ],
       "title": "ShotPacing",
       "type": "string"
+    },
+    "VisualQAThresholdOverrides": {
+      "additionalProperties": false,
+      "description": "A project's partial override of the deployment's T20 pass thresholds.\n\nEvery score is optional: ``None`` means \"use the deployment default\" for\nthat one threshold, so a project may relax the hero pass score alone\nwithout restating the others. The warn-only set is overridden separately\non the generation settings, mirroring the narration quality overrides.",
+      "properties": {
+        "hero_pass_score": {
+          "anyOf": [
+            {
+              "maximum": 100,
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Hero Pass Score"
+        },
+        "normal_pass_score": {
+          "anyOf": [
+            {
+              "maximum": 100,
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Normal Pass Score"
+        },
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "targeted_repair_floor": {
+          "anyOf": [
+            {
+              "maximum": 100,
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Targeted Repair Floor"
+        },
+        "utility_pass_score": {
+          "anyOf": [
+            {
+              "maximum": 100,
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Utility Pass Score"
+        }
+      },
+      "title": "VisualQAThresholdOverrides",
+      "type": "object"
     }
   },
   "additionalProperties": false,
@@ -240,6 +310,17 @@
       ],
       "default": null,
       "title": "Storyboard Warn Only Validation Codes"
+    },
+    "visual_qa_thresholds": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/VisualQAThresholdOverrides"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
     },
     "visual_qa_warn_only_codes": {
       "anyOf": [

@@ -136,6 +136,12 @@ export function NewProjectPage(): JSX.Element {
       "PROMPT_TOO_COMPLEX",
       "TOO_MANY_REFERENCES",
     ],
+    visual_qa_thresholds: {
+      utility_pass_score: 85,
+      normal_pass_score: 85,
+      hero_pass_score: 90,
+      targeted_repair_floor: 75,
+    },
   });
   const [nameError, setNameError] = useState<string | null>(null);
   // Tracked per field so an invalid warning cap is flagged on the warning cap.
@@ -171,6 +177,7 @@ export function NewProjectPage(): JSX.Element {
           storyboard_warn_only_validation_codes: generation.storyboard_warn_only_validation_codes,
           narration_warn_only_quality_codes: generation.narration_warn_only_quality_codes,
           visual_qa_warn_only_codes: generation.visual_qa_warn_only_codes,
+          visual_qa_thresholds: generation.visual_qa_thresholds,
         },
         client,
       ).then((response) => response.data),

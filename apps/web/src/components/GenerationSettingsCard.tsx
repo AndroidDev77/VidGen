@@ -7,6 +7,8 @@ import {
   getGenerationSettings,
   setGenerationSettings,
   type GenerationSettingsInput,
+  type GenerationSettingsResponse,
+  type VisualQAPassScores,
 } from "../api/projects";
 import { queryKeys } from "../api/queryKeys";
 import { useApiClient } from "../app/apiContext";
@@ -18,6 +20,29 @@ const useStyles = makeStyles({
   actions: { display: "flex", gap: tokens.spacingHorizontalS, flexWrap: "wrap" },
   muted: { color: tokens.colorNeutralForeground3 },
 });
+
+const VISUAL_QA_SCORE_KEYS = [
+  "utility_pass_score",
+  "normal_pass_score",
+  "hero_pass_score",
+  "targeted_repair_floor",
+] as const satisfies ReadonlyArray<keyof VisualQAPassScores>;
+
+/**
+ * The pass scores to edit: the project's own override where it has one, and
+ * otherwise the gate actually in effect, so the panel always shows the numbers
+ * the pipeline is using rather than a blank field.
+ */
+function visualQaScores(data: GenerationSettingsResponse): VisualQAPassScores {
+  const override = data.settings.visual_qa_thresholds;
+  const effective = data.effective_visual_qa_thresholds;
+  return {
+    utility_pass_score: override?.utility_pass_score ?? effective.utility_pass_score,
+    normal_pass_score: override?.normal_pass_score ?? effective.normal_pass_score,
+    hero_pass_score: override?.hero_pass_score ?? effective.hero_pass_score,
+    targeted_repair_floor: override?.targeted_repair_floor ?? effective.targeted_repair_floor,
+  };
+}
 
 export interface GenerationSettingsCardProps {
   readonly projectId: string;
@@ -66,6 +91,7 @@ export function GenerationSettingsCard({ projectId }: GenerationSettingsCardProp
           settings.data.settings.visual_qa_warn_only_codes ??
           settings.data.effective_visual_qa_warn_only_codes ??
           [],
+        visual_qa_thresholds: visualQaScores(settings.data),
       });
     }
   }, [settings.data]);
@@ -128,7 +154,10 @@ export function GenerationSettingsCard({ projectId }: GenerationSettingsCardProp
             []),
         ]
           .sort()
-          .join(","));
+          .join(",") ||
+      VISUAL_QA_SCORE_KEYS.some(
+        (key) => draft.visual_qa_thresholds[key] !== visualQaScores(settings.data)[key],
+      ));
 
   return (
     <SectionCard

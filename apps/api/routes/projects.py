@@ -40,6 +40,7 @@ from services.generation.settings import (
     effective_scene_detection_threshold,
     effective_script_warn_only_validation_codes,
     effective_storyboard_warn_only_validation_codes,
+    effective_visual_qa_thresholds,
     effective_visual_qa_warn_only_codes,
     effective_warn_only_validation_codes,
     generation_policy_identity,
@@ -69,7 +70,10 @@ from vidgen.contracts.narration import (
 from vidgen.contracts.review import ApiErrorField
 from vidgen.contracts.script import SCRIPT_WARN_ONLY_ELIGIBLE_VALIDATION_CODES
 from vidgen.contracts.storyboard import STORYBOARD_WARN_ONLY_ELIGIBLE_VALIDATION_CODES
-from vidgen.contracts.visual_qa import VISUAL_QA_WARN_ONLY_ELIGIBLE_CODES
+from vidgen.contracts.visual_qa import (
+    VISUAL_QA_WARN_ONLY_ELIGIBLE_CODES,
+    VisualQAThresholds,
+)
 from vidgen.db.cost_models import ProjectBudget
 from vidgen.db.models import Project, SourceVideo
 from vidgen.db.repositories import ProjectRepository
@@ -171,6 +175,7 @@ def create_project(
         raise _budget_error(error) from error
     generation = request.generation_settings()
     _resolved_narration_quality(generation, settings)
+    _resolved_visual_qa_thresholds(generation, settings)
     project = Project(
         name=request.name,
         owner_subject=principal.subject,
@@ -335,6 +340,7 @@ def _generation_settings_response(
         is not None
     )
     narration_quality = _resolved_narration_quality(generation, settings)
+    visual_qa = _resolved_visual_qa_thresholds(generation, settings)
     return GenerationSettingsResponse(
         project_id=project.id,
         settings=generation,
@@ -380,6 +386,7 @@ def _generation_settings_response(
             effective_visual_qa_warn_only_codes(generation, settings.visual_qa_warn_only_codes)
         ),
         available_visual_qa_warn_only_codes=list(VISUAL_QA_WARN_ONLY_ELIGIBLE_CODES),
+        effective_visual_qa_thresholds=visual_qa,
     )
 
 
@@ -403,6 +410,30 @@ def _resolved_narration_quality(
                 ApiErrorField(
                     field="narration_quality_thresholds",
                     code="UNRESOLVABLE_NARRATION_QUALITY",
+                    message=str(error),
+                )
+            ],
+        ) from error
+
+
+def _resolved_visual_qa_thresholds(
+    generation: ProjectGenerationSettings, settings: APISettings
+) -> VisualQAThresholds:
+    """The T20 gate the visual-QA worker will run under, or a 422 naming why it cannot.
+
+    Each score is valid on its own but the combination may not be - a project
+    repair floor above a pass score it did not also raise, say - so the
+    resolution is checked at the boundary, before anything is written.
+    """
+    try:
+        return effective_visual_qa_thresholds(generation, settings.visual_qa_thresholds())
+    except GenerationSettingsError as error:
+        raise validation_failed(
+            str(error),
+            [
+                ApiErrorField(
+                    field="visual_qa_thresholds",
+                    code="UNRESOLVABLE_VISUAL_QA_THRESHOLDS",
                     message=str(error),
                 )
             ],
@@ -440,6 +471,7 @@ def set_generation_settings(
     project = owned_project(session, project_id, principal)
     generation = request.generation_settings()
     _resolved_narration_quality(generation, settings)
+    _resolved_visual_qa_thresholds(generation, settings)
     project.settings = with_generation_settings(project.settings, generation)
     session.flush()
     session.commit()

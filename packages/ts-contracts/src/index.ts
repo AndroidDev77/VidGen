@@ -1638,7 +1638,38 @@ export interface ProjectGenerationSettings {
    * warnings instead of blocking the shot; `null` uses the deployment default.
    */
   visual_qa_warn_only_codes: string[] | null;
+  /**
+   * Per-project override of the T20 visual-QA pass scores; `null` means no
+   * override, and every unset score inside keeps the deployment default.
+   */
+  visual_qa_thresholds: VisualQAThresholdOverrides | null;
   origin: GenerationSettingsOrigin;
+}
+
+/** The T20 visual-QA gate: the pass scores and the codes demoted to warnings. */
+export interface VisualQAThresholds {
+  schema_version: "1.0";
+  threshold_version: string;
+  utility_pass_score: number;
+  normal_pass_score: number;
+  hero_pass_score: number;
+  targeted_repair_floor: number;
+  adjudication_confidence_floor: number;
+  adjudication_decision_confidence: number;
+  near_threshold_margin: number;
+  max_adjudication_attempts: number;
+  semantic_hard_failure_dimension_floor: number;
+  /** Repair codes recorded as warnings instead of blocking the shot. */
+  warn_only_codes: string[];
+}
+
+/** A project's partial override of the deployment's visual-QA pass scores. */
+export interface VisualQAThresholdOverrides {
+  schema_version: "1.0";
+  utility_pass_score: number | null;
+  normal_pass_score: number | null;
+  hero_pass_score: number | null;
+  targeted_repair_floor: number | null;
 }
 
 /** The T12 narration quality gate: every limit and the codes demoted to warnings. */

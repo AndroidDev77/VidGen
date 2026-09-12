@@ -1,4 +1,4 @@
-import { screen } from "@testing-library/react";
+import { fireEvent, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import type { GenerationCostEstimate } from "@vidgen/contracts";
@@ -11,8 +11,10 @@ import {
   NARRATION_WARN_ONLY_QUALITY_CODES,
   SCRIPT_WARN_ONLY_VALIDATION_CODES,
   STORYBOARD_WARN_ONLY_VALIDATION_CODES,
+  VISUAL_QA_SCORE_FIELDS,
   VISUAL_QA_WARN_ONLY_CODES,
   WARN_ONLY_VALIDATION_CODES,
+  withScore,
 } from "./GenerationSettingsPanel";
 import type { WARN_ONLY_GROUPS } from "./GenerationSettingsPanel";
 
@@ -28,6 +30,12 @@ const VALUE: GenerationSettingsInput = {
   storyboard_warn_only_validation_codes: ["continuity_contradiction"],
   narration_warn_only_quality_codes: ["alignment_coverage"],
   visual_qa_warn_only_codes: ["AMBIGUOUS_VISUAL_EVIDENCE"],
+  visual_qa_thresholds: {
+    utility_pass_score: 85,
+    normal_pass_score: 85,
+    hero_pass_score: 90,
+    targeted_repair_floor: 75,
+  },
 };
 
 const SECTION = "Treat errors as warnings";
@@ -248,6 +256,48 @@ describe("GenerationSettingsPanel code lists", () => {
     ],
   ])("offers every %s code the API accepts", (_stage, offered, available) => {
     expect([...offered.map((code) => code.value)].sort()).toEqual([...available].sort());
+  });
+
+  it("edits one pass score without disturbing the others", async () => {
+    const user = userEvent.setup();
+    const onChange = renderPanel();
+    await user.click(screen.getByRole("button", { name: "Visual QA pass scores" }));
+    const hero = await screen.findByRole("spinbutton", { name: "Hero shot pass score" });
+    expect(hero).toHaveValue(90);
+    fireEvent.change(hero, { target: { value: "82" } });
+    expect(vi.mocked(onChange).mock.calls.at(-1)?.[0].visual_qa_thresholds).toEqual({
+      ...VALUE.visual_qa_thresholds,
+      hero_pass_score: 82,
+    });
+    // A score is a percentage; anything outside 0-100 is not a gate.
+    fireEvent.change(hero, { target: { value: "180" } });
+    expect(
+      vi.mocked(onChange).mock.calls.at(-1)?.[0].visual_qa_thresholds.hero_pass_score,
+    ).toBe(100);
+  });
+
+  it("keeps the repair floor at or below every pass score", () => {
+    const scores = VALUE.visual_qa_thresholds;
+    // Lowering a pass score past the floor brings the floor down with it; the
+    // API refuses the combination the panel would otherwise send.
+    expect(withScore(scores, "normal_pass_score", 60)).toEqual({
+      ...scores,
+      normal_pass_score: 60,
+      targeted_repair_floor: 60,
+    });
+    // Raising the floor past a pass score is capped, not stored as typed.
+    expect(withScore(scores, "targeted_repair_floor", 95).targeted_repair_floor).toBe(85);
+    // A floor that already sits below every pass score is left alone.
+    expect(withScore(scores, "hero_pass_score", 95)).toEqual({ ...scores, hero_pass_score: 95 });
+  });
+
+  it("offers every pass score the API resolves", () => {
+    expect(VISUAL_QA_SCORE_FIELDS.map((score) => score.field).sort()).toEqual(
+      Object.keys(VALUE.visual_qa_thresholds).sort(),
+    );
+    for (const score of VISUAL_QA_SCORE_FIELDS) {
+      expect(score.hint.length).toBeGreaterThan(0);
+    }
   });
 
   it("describes every code it offers", () => {

@@ -21,7 +21,10 @@ from vidgen.contracts.narration import (
 )
 from vidgen.contracts.script import SCRIPT_WARN_ONLY_ELIGIBLE_VALIDATION_CODES
 from vidgen.contracts.storyboard import STORYBOARD_WARN_ONLY_ELIGIBLE_VALIDATION_CODES
-from vidgen.contracts.visual_qa import VISUAL_QA_WARN_ONLY_ELIGIBLE_CODES
+from vidgen.contracts.visual_qa import (
+    VISUAL_QA_WARN_ONLY_ELIGIBLE_CODES,
+    VisualQAThresholdOverrides,
+)
 
 GENERATION_SETTINGS_VERSION = "generation-settings/1"
 
@@ -101,6 +104,10 @@ class ProjectGenerationSettings(StrictContract):
     #: means the project has no override and uses the deployment's global
     #: ``visual_qa_warn_only_codes`` setting.
     visual_qa_warn_only_codes: list[str] | None = Field(default=None, max_length=64)
+    #: Per-project override of the T20 visual-QA pass scores. ``None`` means
+    #: the project has no override; inside it, every unset score keeps the
+    #: deployment default.
+    visual_qa_thresholds: VisualQAThresholdOverrides | None = None
     origin: GenerationSettingsOrigin = GenerationSettingsOrigin.EXPLICIT
 
     @field_validator("warn_only_validation_codes")

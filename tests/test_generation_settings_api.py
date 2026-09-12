@@ -614,6 +614,64 @@ def test_an_unknown_narration_quality_code_is_refused(tmp_path: Path) -> None:
         assert updated.status_code == 422, updated.text
 
 
+def test_visual_qa_pass_scores_can_be_overridden_per_project(tmp_path: Path) -> None:
+    with review_client_context(tmp_path) as (client, factory, _):
+        project_id = _create(client).json()["id"]
+        updated = client.put(
+            f"/api/v1/projects/{project_id}/generation-settings",
+            json={
+                "generation_quality": "balanced",
+                "shot_pacing": "normal",
+                "premium_fallback_allowed": False,
+                "visual_qa_thresholds": {"normal_pass_score": 80, "hero_pass_score": 82},
+            },
+            headers=OWNER,
+        )
+        assert updated.status_code == 200, updated.text
+        body = updated.json()
+        assert body["settings"]["visual_qa_thresholds"]["normal_pass_score"] == 80
+        assert body["settings"]["visual_qa_thresholds"]["utility_pass_score"] is None
+        gate = body["effective_visual_qa_thresholds"]
+        assert gate["normal_pass_score"] == 80
+        assert gate["hero_pass_score"] == 82
+        # Unset scores, and the whole policy around them, stay the deployment's.
+        assert gate["utility_pass_score"] == 85
+        assert gate["targeted_repair_floor"] == 75
+        assert gate["warn_only_codes"] == body["effective_visual_qa_warn_only_codes"]
+        with factory() as session:
+            project = session.get(Project, UUID(project_id))
+            assert project is not None
+            stored = project.settings["generation"]["visual_qa_thresholds"]
+            assert stored["normal_pass_score"] == 80
+
+
+def test_a_visual_qa_gate_that_cannot_resolve_is_refused_before_it_is_stored(
+    tmp_path: Path,
+) -> None:
+    """A repair floor above a pass score would repair nothing; it is a 422."""
+    with review_client_context(tmp_path) as (client, _, _):
+        project_id = _create(client).json()["id"]
+        refused = client.put(
+            f"/api/v1/projects/{project_id}/generation-settings",
+            json={
+                "generation_quality": "balanced",
+                "shot_pacing": "normal",
+                "premium_fallback_allowed": False,
+                "visual_qa_thresholds": {"targeted_repair_floor": 95},
+            },
+            headers=OWNER,
+        )
+        assert refused.status_code == 422, refused.text
+        assert "targeted_repair_floor" in refused.text
+        body = client.get(
+            f"/api/v1/projects/{project_id}/generation-settings", headers=OWNER
+        ).json()
+        assert body["settings"]["visual_qa_thresholds"] is None
+        assert (
+            _create(client, visual_qa_thresholds={"targeted_repair_floor": 95}).status_code == 422
+        )
+
+
 def test_a_narration_gate_that_cannot_resolve_is_refused_before_it_is_stored(
     tmp_path: Path,
 ) -> None:
