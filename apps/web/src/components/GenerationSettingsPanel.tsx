@@ -26,7 +26,11 @@ import { useQuery } from "@tanstack/react-query";
 import type { JSX } from "react";
 import type { GenerationCostEstimate, GenerationQuality, ShotPacing } from "@vidgen/contracts";
 
-import { getGenerationEstimate, type GenerationSettingsInput } from "../api/projects";
+import {
+  getGenerationEstimate,
+  type GenerationSettingsInput,
+  type VisualQAPassScores,
+} from "../api/projects";
 import { queryKeys } from "../api/queryKeys";
 import { useApiClient } from "../app/apiContext";
 import { formatMoney } from "../state/format";
@@ -397,6 +401,77 @@ export const WARN_ONLY_GROUPS: readonly WarnOnlyGroup[] = [
   },
 ];
 
+/**
+ * The T20 pass scores an owner may set, in the order they are read down the
+ * panel. A shot scoring at or above its importance's pass score passes; one
+ * below the repair floor is not repaired at all, so the floor may never sit
+ * above a pass score.
+ */
+export const VISUAL_QA_SCORE_FIELDS: ReadonlyArray<{
+  readonly field: keyof VisualQAPassScores;
+  readonly label: string;
+  readonly hint: string;
+}> = [
+  {
+    field: "utility_pass_score",
+    label: "Utility shot pass score",
+    hint: "An establishing or connective shot passes at or above this score.",
+  },
+  {
+    field: "normal_pass_score",
+    label: "Normal shot pass score",
+    hint: "Most shots are judged against this score.",
+  },
+  {
+    field: "hero_pass_score",
+    label: "Hero shot pass score",
+    hint: "The shots the recap leans on, usually held to a higher score.",
+  },
+  {
+    field: "targeted_repair_floor",
+    label: "Targeted repair floor",
+    hint:
+      "A failing shot at or above this score is repaired; below it the shot is generated " +
+      "again from a new seed or sent for review. Keep it at or below every pass score.",
+  },
+];
+
+const SCORE_MIN = 0;
+const SCORE_MAX = 100;
+const SCORE_STEP = 1;
+
+function clampScore(value: number): number {
+  if (Number.isNaN(value)) {
+    return SCORE_MIN;
+  }
+  return Math.min(SCORE_MAX, Math.max(SCORE_MIN, value));
+}
+
+/**
+ * One edited score, with the repair floor kept at or below every pass score.
+ *
+ * A floor above a pass score is a gate that repairs nothing - everything that
+ * fails is already below the floor - and the API refuses it. Moving the floor
+ * down with the pass score the owner just lowered keeps the two consistent
+ * here instead of handing back a validation error for a rule the panel can
+ * apply itself.
+ */
+export function withScore(
+  scores: VisualQAPassScores,
+  field: keyof VisualQAPassScores,
+  value: number,
+): VisualQAPassScores {
+  const next = { ...scores, [field]: clampScore(value) };
+  const lowestPass = Math.min(
+    next.utility_pass_score,
+    next.normal_pass_score,
+    next.hero_pass_score,
+  );
+  return next.targeted_repair_floor > lowestPass
+    ? { ...next, targeted_repair_floor: lowestPass }
+    : next;
+}
+
 const SCENE_THRESHOLD_MIN = 0.1;
 const SCENE_THRESHOLD_MAX = 0.9;
 const SCENE_THRESHOLD_STEP = 0.05;
@@ -579,6 +654,46 @@ export function GenerationSettingsPanel({
           }}
         />
       </Field>
+      <Accordion collapsible className={styles.surface}>
+        <AccordionItem value="visual-qa-scores">
+          <AccordionHeader>Visual QA pass scores</AccordionHeader>
+          <AccordionPanel>
+            <div className={styles.group}>
+              <Caption1 className={styles.muted}>
+                Every generated keyframe and clip is scored out of 100. Lowering a pass score
+                lets more shots through; raising it pays for more repairs and regenerations.
+              </Caption1>
+              {VISUAL_QA_SCORE_FIELDS.map((score) => (
+                <Field key={score.field} label={score.label} hint={score.hint}>
+                  <Input
+                    type="number"
+                    min={SCORE_MIN}
+                    max={SCORE_MAX}
+                    step={SCORE_STEP}
+                    aria-label={score.label}
+                    value={String(value.visual_qa_thresholds[score.field])}
+                    disabled={disabled}
+                    onChange={(_, data) => {
+                      const parsed = Number.parseFloat(data.value);
+                      if (Number.isNaN(parsed)) {
+                        return;
+                      }
+                      onChange({
+                        ...value,
+                        visual_qa_thresholds: withScore(
+                          value.visual_qa_thresholds,
+                          score.field,
+                          parsed,
+                        ),
+                      });
+                    }}
+                  />
+                </Field>
+              ))}
+            </div>
+          </AccordionPanel>
+        </AccordionItem>
+      </Accordion>
       <Accordion collapsible className={styles.surface}>
         <AccordionItem value="warn-only">
           <AccordionHeader>Treat errors as warnings</AccordionHeader>

@@ -22,7 +22,11 @@ from vidgen.contracts.narration import (
 )
 from vidgen.contracts.script import SCRIPT_WARN_ONLY_ELIGIBLE_VALIDATION_CODES
 from vidgen.contracts.storyboard import STORYBOARD_WARN_ONLY_ELIGIBLE_VALIDATION_CODES
-from vidgen.contracts.visual_qa import VISUAL_QA_WARN_ONLY_ELIGIBLE_CODES
+from vidgen.contracts.visual_qa import (
+    VISUAL_QA_WARN_ONLY_ELIGIBLE_CODES,
+    VisualQAThresholdOverrides,
+    VisualQAThresholds,
+)
 
 
 def exact_decimal_text(value: object) -> object:
@@ -173,6 +177,9 @@ class CreateProjectRequest(BaseModel):
     #: warnings instead of blocking the shot. Leave unset to use the
     #: deployment's global default.
     visual_qa_warn_only_codes: list[str] | None = Field(default=None, max_length=64)
+    #: Per-project override of the T20 visual-QA pass scores; every unset score
+    #: keeps the deployment default. Leave unset for no override at all.
+    visual_qa_thresholds: VisualQAThresholdOverrides | None = None
 
     _known_codes = field_validator("warn_only_validation_codes")(known_warn_only_codes)
     _known_script_codes = field_validator("script_warn_only_validation_codes")(
@@ -202,6 +209,7 @@ class CreateProjectRequest(BaseModel):
             narration_quality_thresholds=self.narration_quality_thresholds,
             storyboard_warn_only_validation_codes=self.storyboard_warn_only_validation_codes,
             visual_qa_warn_only_codes=self.visual_qa_warn_only_codes,
+            visual_qa_thresholds=self.visual_qa_thresholds,
             origin=GenerationSettingsOrigin.EXPLICIT,
         )
 
@@ -234,6 +242,9 @@ class SetGenerationSettingsRequest(BaseModel):
     storyboard_warn_only_validation_codes: list[str] | None = Field(default=None, max_length=64)
     #: The same, for the T20 visual-QA gate.
     visual_qa_warn_only_codes: list[str] | None = Field(default=None, max_length=64)
+    #: Optional T20 pass-score overrides; ``None`` (or an unset score inside)
+    #: means "use the deployment default".
+    visual_qa_thresholds: VisualQAThresholdOverrides | None = None
 
     _known_codes = field_validator("warn_only_validation_codes")(known_warn_only_codes)
     _known_script_codes = field_validator("script_warn_only_validation_codes")(
@@ -259,6 +270,7 @@ class SetGenerationSettingsRequest(BaseModel):
             narration_quality_thresholds=self.narration_quality_thresholds,
             storyboard_warn_only_validation_codes=self.storyboard_warn_only_validation_codes,
             visual_qa_warn_only_codes=self.visual_qa_warn_only_codes,
+            visual_qa_thresholds=self.visual_qa_thresholds,
             origin=GenerationSettingsOrigin.EXPLICIT,
         )
 
@@ -303,6 +315,10 @@ class GenerationSettingsResponse(BaseModel):
     #: The same two lists for the T20 visual-QA gate.
     effective_visual_qa_warn_only_codes: list[str]
     available_visual_qa_warn_only_codes: list[str]
+    #: The T20 pass thresholds actually in effect: every score and the
+    #: warn-only set, after the project's overrides are applied to the
+    #: deployment defaults.
+    effective_visual_qa_thresholds: VisualQAThresholds
 
 
 class GenerationEstimateRequest(BaseModel):

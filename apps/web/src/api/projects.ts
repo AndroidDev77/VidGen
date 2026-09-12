@@ -5,6 +5,7 @@ import type {
   ProjectCostSummaryResponse,
   ProjectGenerationSettings,
   ShotPacing,
+  VisualQAThresholds,
 } from "@vidgen/contracts";
 
 import { apiClient, type ApiResponse, type VidGenClient } from "./client";
@@ -70,6 +71,24 @@ export interface GenerationSettingsInput {
   narration_warn_only_quality_codes: string[];
   /** The same, for the T20 visual-QA gate. */
   visual_qa_warn_only_codes: string[];
+  /** The T20 pass scores this project runs under; sent as an explicit override. */
+  visual_qa_thresholds: VisualQAPassScores;
+}
+
+/**
+ * The four T20 scores a project may set. They are always sent in full: the
+ * panel seeds them from the thresholds actually in effect, so a saved value is
+ * the owner's explicit choice rather than a partial edit of a default.
+ */
+export interface VisualQAPassScores {
+  /** 0-100; a utility shot at or above this passes. */
+  utility_pass_score: number;
+  /** 0-100; a normal shot at or above this passes. */
+  normal_pass_score: number;
+  /** 0-100; a hero shot at or above this passes. */
+  hero_pass_score: number;
+  /** 0-100; below this a failing shot is unrepairable rather than repaired. */
+  targeted_repair_floor: number;
 }
 
 export interface GenerationSettingsResponse {
@@ -98,6 +117,8 @@ export interface GenerationSettingsResponse {
   /** The same two lists for the T20 visual-QA gate. */
   effective_visual_qa_warn_only_codes: string[];
   available_visual_qa_warn_only_codes: string[];
+  /** The T20 gate in effect after the project's overrides. */
+  effective_visual_qa_thresholds: VisualQAThresholds;
 }
 
 export interface GenerationEstimateInput {
@@ -177,6 +198,8 @@ export interface CreateProjectInput {
   narration_warn_only_quality_codes: string[];
   /** The same, for the T20 visual-QA gate. */
   visual_qa_warn_only_codes: string[];
+  /** The T20 pass scores the project starts with. */
+  visual_qa_thresholds: VisualQAPassScores;
 }
 
 export function listProjects(

@@ -48,6 +48,7 @@ from services.qa.identity import (
 from services.qa.openai_adapter import OpenAIVisualAgent
 from services.qa.rubric import (
     DETERMINISTIC_THRESHOLDS,
+    DIMENSION_DEFAULT_REPAIR,
     HARD_FAILURE_CODES,
     REPAIR_CODES,
     RUBRIC,
@@ -62,6 +63,7 @@ from services.qa.sampler import (
 )
 from services.qa.scoring import (
     HARD_FAILURE_DOWNGRADED_BY_SCORE,
+    TOLERATED_SCORE_BELOW_THRESHOLD,
     build_dimension_results,
     decide,
     recompute,
@@ -880,6 +882,75 @@ def test_warn_only_codes_are_never_handed_to_repair() -> None:
     assert VisualQARepairCode.PROMPT_TOO_COMPLEX not in outcome.repair_codes
     assert "warn_only:PROMPT_TOO_COMPLEX" in outcome.warning_codes
     assert outcome.repair_codes, "every non-pass result still carries a repair code"
+
+
+def test_a_shot_whose_every_code_is_tolerated_passes_below_the_threshold() -> None:
+    """Warn-only is honoured by the score gate, not only by the hard gate.
+
+    Without this the numeric path re-derived a repair code from the worst
+    dimension, so a project that tolerated every code its shots produced still
+    failed them and paid for a repair it had asked not to run.
+    """
+    result = provider_result(
+        scores=dict.fromkeys(VisualQADimension, 80.0),
+        findings=[
+            {
+                "dimension": VisualQADimension.ACTION_AND_MOTION,
+                "severity": "warning",
+                "code": "insufficient_motion",
+                "repair_codes": [VisualQARepairCode.INSUFFICIENT_MOTION],
+            }
+        ],
+    )
+    _, score = _score(result)
+    assert score.total < score.pass_threshold
+    assert score.total >= THRESHOLDS.targeted_repair_floor
+    tolerant = THRESHOLDS.model_copy(update={"warn_only_codes": ["INSUFFICIENT_MOTION"]})
+    outcome = decide(score, empty_report(), result, thresholds=tolerant)
+    assert outcome.outcome is VisualQAOutcome.PASS
+    assert outcome.repair_codes == ()
+    assert outcome.recommendation.routing is VisualQARoutingRecommendation.NONE
+    assert "warn_only:INSUFFICIENT_MOTION" in outcome.warning_codes
+    # The low score is still on the report; nothing is hidden.
+    assert TOLERATED_SCORE_BELOW_THRESHOLD in outcome.warning_codes
+    # Tolerating nothing keeps the old behaviour: a repair for the same shot.
+    strict = decide(score, empty_report(), result, thresholds=tolerant, warn_only_codes=())
+    assert strict.outcome is VisualQAOutcome.FAIL
+    assert VisualQARepairCode.INSUFFICIENT_MOTION in strict.repair_codes
+
+
+def test_a_tolerated_default_repair_code_is_not_re_derived_from_the_worst_dimension() -> None:
+    """No finding at all, but the code the worst dimension would name is tolerated."""
+    result = provider_result(
+        scores={**dict.fromkeys(VisualQADimension, 82.0), VisualQADimension.ACTION_AND_MOTION: 60.0}
+    )
+    _, score = _score(result)
+    assert score.total < score.pass_threshold
+    assert score.total >= THRESHOLDS.targeted_repair_floor
+    worst = DIMENSION_DEFAULT_REPAIR[VisualQADimension.ACTION_AND_MOTION]
+    strict = THRESHOLDS.model_copy(update={"warn_only_codes": []})
+    blocked = decide(score, empty_report(), result, thresholds=strict)
+    assert blocked.outcome is VisualQAOutcome.FAIL
+    assert blocked.repair_codes == (worst,)
+    tolerant = THRESHOLDS.model_copy(update={"warn_only_codes": [worst.value]})
+    outcome = decide(score, empty_report(), result, thresholds=tolerant)
+    assert outcome.outcome is VisualQAOutcome.PASS
+    assert outcome.repair_codes == ()
+    assert f"warn_only:{worst.value}" in outcome.warning_codes
+
+
+def test_a_project_can_lower_the_pass_score_a_shot_is_judged_against() -> None:
+    result = provider_result(scores=dict.fromkeys(VisualQADimension, 80.0))
+    dimensions, _ = _score(result)
+    relaxed = THRESHOLDS.model_copy(update={"normal_pass_score": 78})
+    score = recompute(
+        dimensions,
+        rubric=RUBRIC,
+        thresholds=relaxed,
+        importance=VisualQAShotImportance.NORMAL,
+    )
+    assert score.pass_threshold == 78
+    assert decide(score, empty_report(), result, thresholds=relaxed).outcome is VisualQAOutcome.PASS
 
 
 def test_prompt_too_complex_is_only_added_for_prompt_simplification() -> None:

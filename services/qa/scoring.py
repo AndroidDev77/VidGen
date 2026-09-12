@@ -61,6 +61,12 @@ from vidgen.contracts.visual_qa import VisualQADimensionResult as _DimensionResu
 HARD_FAILURE_DOWNGRADED_BY_SCORE: str = "hard_failure_downgraded_by_score"
 
 
+#: Recorded when a shot scores below its pass threshold but every repair code
+#: it evidenced - or the one its worst dimension would name - is tolerated by
+#: this project, so there is nothing left for T21 to repair.
+TOLERATED_SCORE_BELOW_THRESHOLD = "warn_only:score_below_threshold"
+
+
 def _warn_only_marker(code: VisualQARepairCode) -> str:
     return f"warn_only:{code.value}"
 
@@ -436,10 +442,12 @@ def decide(
             warning_codes.add("unevidenced_provider_hard_failure_proposal")
     # A tolerated code is measured and visible, but it neither blocks nor buys
     # a repair attempt: it moves from the hard and repair sets to the warnings.
+    tolerated_repair_codes: set[VisualQARepairCode] = set()
     for code in sorted(repair_codes, key=lambda code: code.value):
         if code.value in warn_only:
             repair_codes.discard(code)
             hard_codes.discard(code.value)
+            tolerated_repair_codes.add(code)
             warning_codes.add(_warn_only_marker(code))
     hard_codes.difference_update(warn_only)
     if hard_codes:
@@ -510,7 +518,30 @@ def decide(
                 (item for item in score.dimensions if item.applicable),
                 key=lambda item: item.raw_score,
             )
-            codes = [DIMENSION_DEFAULT_REPAIR[worst.dimension]]
+            derived = DIMENSION_DEFAULT_REPAIR[worst.dimension]
+            # Nothing is left to repair: either every code the shot evidenced
+            # is tolerated, or the code the worst dimension would name is. A
+            # repair would be handed exactly the codes this project asked to
+            # be told about and not act on, so the shot passes on tolerance and
+            # the low score is recorded as a warning instead.
+            if tolerated_repair_codes or derived.value in warn_only:
+                warning_codes.add(TOLERATED_SCORE_BELOW_THRESHOLD)
+                if derived.value in warn_only:
+                    warning_codes.add(_warn_only_marker(derived))
+                return ScoringOutcome(
+                    score=score,
+                    outcome=VisualQAOutcome.PASS,
+                    hard_failure_codes=(),
+                    warning_codes=tuple(sorted(warning_codes)),
+                    repair_codes=(),
+                    recommendation=VisualQARepairRecommendation(
+                        routing=VisualQARoutingRecommendation.NONE,
+                        repair_codes=[],
+                        rationale="",
+                    ),
+                    review_reasons=(),
+                )
+            codes = [derived]
         return ScoringOutcome(
             score=score,
             outcome=VisualQAOutcome.FAIL,

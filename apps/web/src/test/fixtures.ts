@@ -146,6 +146,7 @@ export const generationSettings = {
     narration_quality_thresholds: null,
     storyboard_warn_only_validation_codes: null,
     visual_qa_warn_only_codes: null,
+    visual_qa_thresholds: null,
     origin: "explicit",
   },
   generation_policy_identity:
@@ -274,6 +275,25 @@ export const generationSettings = {
     "AMBIGUOUS_VISUAL_EVIDENCE",
     "HUMAN_REVIEW_REQUIRED",
   ],
+  effective_visual_qa_thresholds: {
+    schema_version: "1.0",
+    threshold_version: "visual-qa-thresholds/1",
+    utility_pass_score: 85,
+    normal_pass_score: 85,
+    hero_pass_score: 90,
+    targeted_repair_floor: 75,
+    adjudication_confidence_floor: 0.7,
+    adjudication_decision_confidence: 0.8,
+    near_threshold_margin: 2,
+    max_adjudication_attempts: 1,
+    semantic_hard_failure_dimension_floor: 50,
+    warn_only_codes: [
+      "AMBIGUOUS_VISUAL_EVIDENCE",
+      "INSUFFICIENT_MOTION",
+      "PROMPT_TOO_COMPLEX",
+      "TOO_MANY_REFERENCES",
+    ],
+  },
 };
 
 /** The voices a fake-provider deployment offers, and the one selected. */
