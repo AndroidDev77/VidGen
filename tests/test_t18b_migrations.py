@@ -184,3 +184,39 @@ def test_the_control_plane_migration_renders_offline_for_postgresql(
     rendered = output.getvalue()
     assert "CREATE TABLE control_commands" in rendered
     assert "CREATE TABLE project_generation_runs" in rendered
+
+
+def test_a_command_carries_a_separate_budget_for_infrastructure_failures(
+    tmp_path: Path, monkeypatch: MonkeyPatch
+) -> None:
+    """``infrastructure_attempt`` exists, defaults to zero, and reverses cleanly.
+
+    The column is what lets an unreachable Temporal cluster be waited out
+    instead of spending the attempts that exist to stop a bad command cycling.
+    Rows that predate it start at zero, which is exactly true of them: they have
+    never been deferred.
+    """
+    config, url = _config(tmp_path, monkeypatch)
+    command.upgrade(config, "head")
+    engine = create_engine(url)
+    columns = {column["name"] for column in inspect(engine).get_columns("control_commands")}
+    assert "infrastructure_attempt" in columns
+
+    with Session(engine) as session:
+        project = _project(session)
+        record = _command(project)
+        session.add(record)
+        session.commit()
+        assert record.infrastructure_attempt == 0
+        session.delete(record)
+        session.delete(project)
+        session.commit()
+
+    # The column belongs to the table ``0021_control_plane`` creates, so the
+    # round trip through the revision that backfills it leaves it in place and
+    # the table still readable through the model.
+    command.downgrade(config, "0024_script_editing_passes")
+    command.upgrade(config, "head")
+    assert "infrastructure_attempt" in {
+        column["name"] for column in inspect(engine).get_columns("control_commands")
+    }

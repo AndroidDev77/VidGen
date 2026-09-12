@@ -30,6 +30,7 @@ from services.control_plane.dispatcher import ControlCommandDispatcher
 from services.control_plane.generation_runs import GenerationRunService
 from services.control_plane.references import reference_run_id, resolve_reference_inputs
 from services.control_plane.revisions import plan_revision
+from services.control_plane.status import command_projection
 from services.qa.human_review import VisualQAHumanReviewService
 from services.review.shot_identity import (
     configuration_identities,
@@ -57,15 +58,22 @@ from vidgen.contracts.workflow import FinalQAActivityResult, RenderActivityResul
 from vidgen.db.base import Base
 from vidgen.db.control_command_models import ControlCommandRecord
 from vidgen.db.control_command_repository import (
+    MAX_INFRASTRUCTURE_DEFERRALS,
     ControlCommandError,
     ControlCommandRepository,
+    infrastructure_backoff_seconds,
 )
 from vidgen.db.models import Project
 from vidgen.db.repair_models import RepairRun
 from vidgen.db.storyboard_models import StoryboardRun, StoryboardShotRecord
 from vidgen.db.visual_qa_models import VisualQARun
 from vidgen.db.workflow_models import ProjectWorkflowRun
-from vidgen.review.workflow_control import FakeWorkflowController
+from vidgen.review.workflow_control import (
+    DEFAULT_RPC_TIMEOUT_SECONDS,
+    FakeWorkflowController,
+    TemporalWorkflowController,
+    WorkflowControlUnavailable,
+)
 
 OWNER = {"X-VidGen-User": "owner-a"}
 IDENTITY = "a" * 64
@@ -2165,3 +2173,285 @@ def test_a_project_that_stops_without_waiting_settles_its_command(
         assert record.error_code == "render_failed"
         active = GenerationRunService(session).active(graph.project_id)
     assert active is None, "a failed run must not stay the project's active lineage"
+
+
+# -- a transient Temporal failure must not destroy a user's action -----------
+def _make_due(factory: sessionmaker[Session], command_id: UUID) -> None:
+    """Bring a deferred command's backoff forward, as wall-clock time would."""
+    with factory() as session:
+        record = session.get(ControlCommandRecord, command_id)
+        assert record is not None
+        record.available_at = datetime.now(UTC) - timedelta(seconds=1)
+        session.commit()
+
+
+def _unavailable_review_continuation(
+    factory: sessionmaker[Session],
+    graph: ProjectGraph,
+    controller: FakeWorkflowController,
+    *,
+    index: int = 2,
+) -> UUID:
+    """An approve on a shot whose child the cluster cannot be asked about."""
+    with factory() as session:
+        command_id = _submit_review_continuation(session, graph, graph.shot_ids[index])
+        controller.unavailable_workflows.add(_live_shot_workflow_id(session, graph.shot_ids[index]))
+        session.commit()
+    return command_id
+
+
+def test_a_query_the_cluster_cannot_answer_defers_the_approve_instead_of_killing_it(
+    graph: ProjectGraph,
+    dispatcher: ControlCommandDispatcher,
+    controller: FakeWorkflowController,
+    review_client: tuple[TestClient, sessionmaker[Session], FakeWorkflowController],
+) -> None:
+    """The failure this whole change exists for, end to end.
+
+    Approving a QA-failed shot asks Temporal whether the shot's child is still
+    alive. When that query times out, nothing has been learned: the child may be
+    parked and healthy. The command used to spend an attempt on every such pass
+    and reach ``5 of 5`` inside half a minute, leaving the owner with a dead
+    button and no way to make it go.
+
+    So: more passes than the command's whole attempt budget, all against a
+    cluster that will not answer, and the command must still be waiting with
+    every attempt intact - and must never have started a replacement child for
+    one it could not confirm was gone.
+    """
+    _, factory, _ = review_client
+    command_id = _unavailable_review_continuation(factory, graph, controller)
+
+    passes = 7  # more than ``max_attempts``, which is the whole point
+    for _ in range(passes):
+        report = dispatcher.run_once()
+        assert report.failed == 0, "an unreachable cluster is not a failed command"
+        assert report.deferred == 1
+        _make_due(factory, command_id)
+
+    with factory() as session:
+        record = session.get(ControlCommandRecord, command_id)
+        assert record is not None
+        assert record.status == ControlCommandStatus.PENDING.value, record.error_summary
+        assert record.attempt == 0, "an outage must not spend the command's own attempts"
+        assert record.infrastructure_attempt == passes
+        assert record.error_code == "workflow_service_unavailable"
+    assert controller.shot_start_calls == 0, "a child that was never confirmed gone"
+
+    # The hiccup passes. The same command, never re-submitted, now dispatches.
+    controller.unavailable_workflows.clear()
+    assert dispatcher.run_once().dispatched == 1
+    with factory() as session:
+        record = session.get(ControlCommandRecord, command_id)
+        assert record is not None
+        assert record.status == ControlCommandStatus.RUNNING.value, record.error_summary
+        assert record.infrastructure_attempt == 0, "the outage budget resets once it ran"
+    assert controller.shot_start_calls == 1
+
+
+def test_a_deferred_command_backs_off_instead_of_burning_its_budget_in_seconds(
+    graph: ProjectGraph,
+    dispatcher: ControlCommandDispatcher,
+    controller: FakeWorkflowController,
+    review_client: tuple[TestClient, sessionmaker[Session], FakeWorkflowController],
+) -> None:
+    """The retry has to outlast the condition it is retrying.
+
+    Five attempts two seconds apart is not a retry policy against a worker
+    restart; it is a way of reaching the attempt bound before the worker is
+    back. Each deferral pushes the next attempt further out, so the command is
+    still waiting minutes later rather than seconds later.
+    """
+    _, factory, _ = review_client
+    command_id = _unavailable_review_continuation(factory, graph, controller)
+
+    dispatcher.run_once()
+    with factory() as session:
+        record = session.get(ControlCommandRecord, command_id)
+        assert record is not None
+        first = record.available_at
+        assert first is not None
+    _make_due(factory, command_id)
+    dispatcher.run_once()
+    with factory() as session:
+        record = session.get(ControlCommandRecord, command_id)
+        assert record is not None
+        second = record.available_at
+        assert second is not None
+        assert infrastructure_backoff_seconds(2) > infrastructure_backoff_seconds(1)
+        # The second wait is measured from a later moment *and* is longer, so
+        # the deferrals cannot all land inside the same bad window.
+        assert _aware_utc(second) - _aware_utc(first) >= timedelta(
+            seconds=infrastructure_backoff_seconds(2) - infrastructure_backoff_seconds(1)
+        )
+
+
+def _aware_utc(value: datetime) -> datetime:
+    return value if value.tzinfo is not None else value.replace(tzinfo=UTC)
+
+
+def test_an_outage_that_never_clears_still_settles_the_command(
+    graph: ProjectGraph,
+    dispatcher: ControlCommandDispatcher,
+    controller: FakeWorkflowController,
+    review_client: tuple[TestClient, sessionmaker[Session], FakeWorkflowController],
+) -> None:
+    """Waiting is bounded too. A cluster that is simply gone is not transient.
+
+    The command settles as failed with the infrastructure code - and with its
+    attempts untouched, so the owner's retry starts from a full budget rather
+    than from one the outage emptied.
+    """
+    _, factory, _ = review_client
+    command_id = _unavailable_review_continuation(factory, graph, controller)
+    with factory() as session:
+        record = session.get(ControlCommandRecord, command_id)
+        assert record is not None
+        record.infrastructure_attempt = MAX_INFRASTRUCTURE_DEFERRALS
+        session.commit()
+
+    assert dispatcher.run_once().deferred == 1
+
+    with factory() as session:
+        record = session.get(ControlCommandRecord, command_id)
+        assert record is not None
+        assert record.status == ControlCommandStatus.FAILED.value
+        assert record.error_code == "workflow_service_unavailable"
+        assert record.attempt == 0
+        assert command_projection(record).permitted_actions == ["retry"]
+        # An owner's explicit retry re-drives it against both budgets.
+        ControlCommandRepository(session).requeue(record)
+        session.commit()
+    controller.unavailable_workflows.clear()
+    assert dispatcher.run_once().dispatched == 1
+
+
+def test_a_settle_the_cluster_cannot_answer_does_not_take_down_the_pass(
+    graph: ProjectGraph,
+    dispatcher: ControlCommandDispatcher,
+    controller: FakeWorkflowController,
+    review_client: tuple[TestClient, sessionmaker[Session], FakeWorkflowController],
+) -> None:
+    """Settling reaches the same cluster dispatch does, and may fail the same way.
+
+    ``run_forever`` has no outer guard, so an exception escaping one command's
+    settle would end the dispatcher process and strand every other command with
+    it. One unanswerable query has to cost exactly one unsettled command.
+    """
+    _, factory, _ = review_client
+    with factory() as session:
+        command_id = _submit_review_continuation(session, graph, graph.shot_ids[2])
+        session.commit()
+    assert dispatcher.run_once().dispatched == 1
+    with factory() as session:
+        record = session.get(ControlCommandRecord, command_id)
+        assert record is not None
+        assert record.workflow_id is not None
+        controller.unavailable_workflows.add(record.workflow_id)
+
+    assert dispatcher.settle_running() == 0
+
+    with factory() as session:
+        record = session.get(ControlCommandRecord, command_id)
+        assert record is not None
+        assert record.status == ControlCommandStatus.RUNNING.value
+
+
+# -- the query itself has to stop being fragile ------------------------------
+class _StubHandle:
+    """A workflow handle that records how it was queried, or fails on demand."""
+
+    def __init__(self, error: BaseException | None, calls: list[dict[str, object]]) -> None:
+        self._error = error
+        self._calls = calls
+
+    async def query(self, _query: object, *args: object, **kwargs: object) -> object:
+        self._calls.append(dict(kwargs))
+        if self._error is not None:
+            raise self._error
+        return None
+
+
+class _StubClient:
+    def __init__(self, error: BaseException | None, calls: list[dict[str, object]]) -> None:
+        self._error = error
+        self._calls = calls
+
+    def get_workflow_handle(self, _workflow_id: str) -> _StubHandle:
+        return _StubHandle(self._error, self._calls)
+
+
+def _stubbed_controller(
+    monkeypatch: pytest.MonkeyPatch, error: BaseException | None
+) -> tuple[TemporalWorkflowController, list[dict[str, object]], list[str]]:
+    """A real controller whose only stub is the cluster it would dial.
+
+    ``Client.connect`` is replaced rather than ``_client``, because the caching
+    under test lives in ``_client``: stubbing that away would prove nothing.
+    """
+    from temporalio.client import Client
+
+    calls: list[dict[str, object]] = []
+    connections: list[str] = []
+
+    async def connect(target_host: str, **_options: object) -> _StubClient:
+        connections.append(target_host)
+        return _StubClient(error, calls)
+
+    monkeypatch.setattr(Client, "connect", staticmethod(connect))
+    return TemporalWorkflowController("host:7233", "ns"), calls, connections
+
+
+def test_every_query_carries_a_deadline(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A query with no ``rpc_timeout`` is an unbounded hang, not a slow answer.
+
+    The dispatcher calls this from a synchronous pass. A parked shot workflow
+    the worker cannot schedule in time has to end the call, not the pass.
+    """
+    controller, calls, _ = _stubbed_controller(monkeypatch, None)
+    controller.describe_shot("vidgen-shot-parked")
+    assert calls and isinstance(calls[0]["rpc_timeout"], timedelta)
+    assert calls[0]["rpc_timeout"] == timedelta(seconds=DEFAULT_RPC_TIMEOUT_SECONDS)
+
+
+def test_the_controller_connects_once_and_reuses_it(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Reconnecting per call made every query pay for a handshake.
+
+    ``asyncio.run`` per call forced that: a Temporal client belongs to the loop
+    that built it. The controller now owns its loop, so the connection outlives
+    a single describe - which is what stops a busy worker from looking like an
+    unreachable one.
+    """
+    controller, _, connections = _stubbed_controller(monkeypatch, None)
+    for _ in range(4):
+        controller.describe_shot("vidgen-shot-parked")
+    assert connections == ["host:7233"], "one handshake, not one per query"
+
+
+def test_a_transient_status_is_not_an_answer_about_the_child(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """``UNAVAILABLE`` says the cluster did not answer. ``NOT_FOUND`` is an answer.
+
+    The dispatcher must be able to tell them apart without importing Temporal,
+    and only the second one may ever become ``None`` - answering ``None`` for
+    the first would start a replacement child for one that is still alive.
+    """
+    from temporalio.service import RPCError, RPCStatusCode
+
+    unavailable, _, _ = _stubbed_controller(
+        monkeypatch, RPCError("no worker is polling", RPCStatusCode.UNAVAILABLE, b"")
+    )
+    with pytest.raises(WorkflowControlUnavailable):
+        unavailable.describe_shot_by_id("vidgen-shot-live")
+
+    slow, _, _ = _stubbed_controller(
+        monkeypatch, RPCError("Timeout expired", RPCStatusCode.DEADLINE_EXCEEDED, b"")
+    )
+    with pytest.raises(WorkflowControlUnavailable):
+        slow.describe_shot_by_id("vidgen-shot-live")
+
+    missing, _, _ = _stubbed_controller(
+        monkeypatch, RPCError("workflow not found", RPCStatusCode.NOT_FOUND, b"")
+    )
+    assert missing.describe_shot_by_id("vidgen-shot-absent") is None

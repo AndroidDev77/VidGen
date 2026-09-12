@@ -27,6 +27,7 @@ import os
 import socket
 import time
 from dataclasses import dataclass
+from enum import Enum
 from uuid import UUID, uuid4
 
 from sqlalchemy.orm import Session, sessionmaker
@@ -54,7 +55,7 @@ from vidgen.db.control_command_repository import (
     DEFAULT_LEASE_SECONDS,
     ControlCommandRepository,
 )
-from vidgen.review.workflow_control import WorkflowController
+from vidgen.review.workflow_control import WorkflowController, WorkflowControlUnavailable
 
 _LOGGER = logging.getLogger("vidgen.control_dispatcher")
 
@@ -81,6 +82,33 @@ def default_dispatcher_id() -> str:
     return f"{socket.gethostname()}:{os.getpid()}:{uuid4().hex[:8]}"[:128]
 
 
+#: The code a command carries while it is waiting out an infrastructure
+#: failure, and the one it settles with if that failure never clears.
+WORKFLOW_SERVICE_UNAVAILABLE = "workflow_service_unavailable"
+
+#: What the owner is told while a command waits out an infrastructure failure.
+#: It has to say the two things a "could not start this command's workflow"
+#: never did: nothing is lost, and nobody has to do anything.
+WORKFLOW_SERVICE_UNAVAILABLE_SUMMARY = (
+    "The workflow service could not be reached. This command is still queued "
+    "and will be tried again automatically."
+)
+
+
+class _Dispatched(Enum):
+    """How one dispatch attempt ended.
+
+    Three outcomes rather than a boolean because the third one is the whole
+    point: a command held over an unreachable cluster has neither started nor
+    failed, and counting it as either is what made a hiccup look like a bad
+    command.
+    """
+
+    STARTED = "started"
+    FAILED = "failed"
+    DEFERRED = "deferred"
+
+
 @dataclass(frozen=True, slots=True)
 class DispatchReport:
     """What one pass did. Counts only, so it is safe to log verbatim."""
@@ -91,6 +119,11 @@ class DispatchReport:
     failed: int = 0
     skipped: int = 0
     cancelled: int = 0
+    #: Commands held over an infrastructure failure. Counted apart from
+    #: ``failed`` because nothing about the command went wrong and none of its
+    #: attempts were spent - a pass full of deferrals means the cluster is sick,
+    #: not that a batch of user actions is bad.
+    deferred: int = 0
 
 
 class ControlCommandDispatcher:
@@ -134,7 +167,7 @@ class ControlCommandDispatcher:
     # -- one pass ---------------------------------------------------------
     def run_once(self) -> DispatchReport:
         """Dispatch a bounded batch of pending commands, then settle running ones."""
-        claimed = dispatched = failed = skipped = 0
+        claimed = dispatched = failed = skipped = deferred = 0
         with self._sessions() as session:
             repository = ControlCommandRepository(session)
             for record in repository.claimable(limit=self._batch_size):
@@ -147,8 +180,11 @@ class ControlCommandDispatcher:
                     continue
                 session.commit()
                 claimed += 1
-                if self._dispatch_one(session, repository, record):
+                outcome = self._dispatch_one(session, repository, record)
+                if outcome is _Dispatched.STARTED:
                     dispatched += 1
+                elif outcome is _Dispatched.DEFERRED:
+                    deferred += 1
                 else:
                     failed += 1
                 session.commit()
@@ -161,6 +197,7 @@ class ControlCommandDispatcher:
             failed=failed,
             skipped=skipped,
             cancelled=cancelled,
+            deferred=deferred,
         )
 
     # -- owner cancellations ----------------------------------------------
@@ -209,7 +246,7 @@ class ControlCommandDispatcher:
         session: Session,
         repository: ControlCommandRepository,
         record: ControlCommandRecord,
-    ) -> bool:
+    ) -> _Dispatched:
         repository.mark_dispatching(record)
         session.flush()
         try:
@@ -231,7 +268,33 @@ class ControlCommandDispatcher:
                 "control command failed",
                 extra={"commandId": str(record.id), "code": failure.code},
             )
-            return False
+            return _Dispatched.FAILED
+        except WorkflowControlUnavailable as unavailable:
+            # The cluster could not be asked, so nothing has been learned about
+            # this command. Hold it on the infrastructure budget: its own
+            # attempts stay untouched, and the owner's approve survives an
+            # outage that outlasts a single dispatcher pass.
+            session.rollback()
+            fresh = repository.get(record.project_id, record.id)
+            if fresh is not None:
+                repository.defer(
+                    fresh,
+                    ControlCommandFailure(
+                        code=WORKFLOW_SERVICE_UNAVAILABLE,
+                        summary=WORKFLOW_SERVICE_UNAVAILABLE_SUMMARY,
+                        retryable=True,
+                        attempt=fresh.attempt,
+                    ),
+                )
+            _LOGGER.warning(
+                "control command deferred: the workflow service was unavailable",
+                extra={
+                    "commandId": str(record.id),
+                    "workflowId": unavailable.workflow_id,
+                    "deferral": fresh.infrastructure_attempt if fresh is not None else 0,
+                },
+            )
+            return _Dispatched.DEFERRED
         except Exception:
             # An unexpected error is retryable within the command's bound: the
             # command stays durable and the next pass tries again rather than
@@ -251,13 +314,13 @@ class ControlCommandDispatcher:
             _LOGGER.exception(
                 "control command dispatch raised", extra={"commandId": str(record.id)}
             )
-            return False
+            return _Dispatched.FAILED
         if outcome.workflow_id is None:
             # A handler with no workflow to wait on produced its result
             # directly. It is still durable work: the resource it created is
             # committed in this same transaction.
             repository.complete(record, outcome.result or ControlCommandResult())
-            return True
+            return _Dispatched.STARTED
         repository.mark_running(
             record,
             workflow_id=outcome.workflow_id,
@@ -271,7 +334,7 @@ class ControlCommandDispatcher:
             record.result_id = outcome.result.result_id
             record.result_summary = dict(outcome.result.summary)
             session.flush()
-        return True
+        return _Dispatched.STARTED
 
     # -- settling ---------------------------------------------------------
     def settle_running(self) -> int:
@@ -280,6 +343,13 @@ class ControlCommandDispatcher:
         Everything read here comes from a workflow query or from the rows the
         workflow itself wrote, so a command's status can never claim more than
         the workflow actually achieved.
+
+        Settling one command is allowed to fail. The queries here reach the same
+        cluster that dispatch does, and a single unanswerable query must not take
+        down the pass - and with it the whole dispatcher loop, which has no
+        outer guard - leaving every other running command unsettled. A command
+        that could not be read is simply looked at again next pass; it is
+        durable, and its workflow is still running.
         """
         settled = 0
         with self._sessions() as session:
@@ -292,8 +362,22 @@ class ControlCommandDispatcher:
                     ]
                 )
             ):
-                if self._settle_one(session, repository, record):
-                    settled += 1
+                try:
+                    if self._settle_one(session, repository, record):
+                        settled += 1
+                except WorkflowControlUnavailable:
+                    _LOGGER.warning(
+                        "control command could not be settled: the workflow service "
+                        "was unavailable",
+                        extra={
+                            "commandId": str(record.id),
+                            "workflowId": record.workflow_id or "",
+                        },
+                    )
+                except Exception:
+                    _LOGGER.exception(
+                        "control command settle raised", extra={"commandId": str(record.id)}
+                    )
             session.commit()
         return settled
 
@@ -550,6 +634,7 @@ class ControlCommandDispatcher:
                         "completed": report.completed,
                         "cancelled": report.cancelled,
                         "failed": report.failed,
+                        "deferred": report.deferred,
                     },
                 )
             if max_passes is not None and passes >= max_passes:

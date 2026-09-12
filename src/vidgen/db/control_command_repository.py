@@ -42,6 +42,23 @@ from vidgen.db.control_command_models import ControlCommandRecord
 #: strand a command for minutes.
 DEFAULT_LEASE_SECONDS = 120
 
+#: How many times a command may be held over an infrastructure failure before
+#: the control plane stops calling it transient. Twenty deferrals on the backoff
+#: below is roughly a quarter of an hour of waiting, which outlasts a worker
+#: restart, a deploy or a brief cluster wobble - the failures that used to kill a
+#: user's approve inside half a minute - while still ending somewhere.
+MAX_INFRASTRUCTURE_DEFERRALS = 20
+
+#: The longest gap between two deferred attempts. Capped rather than doubling
+#: without limit: the point of waiting is to notice the cluster coming back, and
+#: a ten-minute gap would turn a recovered cluster into a stalled command.
+INFRASTRUCTURE_BACKOFF_CEILING_SECONDS = 60
+
+
+def infrastructure_backoff_seconds(deferral: int) -> int:
+    """Seconds to wait before the ``deferral``-th retry of an infrastructure failure."""
+    return min(INFRASTRUCTURE_BACKOFF_CEILING_SECONDS, int(2**deferral))
+
 
 class ControlCommandError(RuntimeError):
     """A command could not be created or transitioned as requested."""
@@ -381,6 +398,10 @@ class ControlCommandRepository:
                 "waiting_reason": "",
                 "error_code": None,
                 "error_summary": None,
+                # Whatever outage this command waited through is over: it
+                # reached a real workflow. The next one starts from a full
+                # deferral budget.
+                "infrastructure_attempt": 0,
             },
             now=moment,
         )
@@ -460,6 +481,63 @@ class ControlCommandRepository:
                 "error_summary": failure.summary[:500],
                 "retryable": failure.retryable,
                 "progress_phase": "failed",
+            },
+            now=moment,
+        )
+
+    def defer(self, record: ControlCommandRecord, failure: ControlCommandFailure) -> bool:
+        """Hold a command over an infrastructure failure without spending a try.
+
+        A cluster that could not be reached has said nothing about whether the
+        command is any good, so it must not consume the attempts that exist to
+        stop a genuinely bad command cycling forever. Two things follow, and both
+        are the point of this method existing next to :meth:`fail`:
+
+        * the attempt this claim took is given straight back, so an unreachable
+          Temporal cannot walk a command to ``5 of 5`` and kill it;
+        * the waiting is bounded by its own budget on a longer backoff, so a
+          hiccup that lasts a minute is outlived rather than burned through.
+
+        Once that budget is spent the failure is no longer plausibly transient
+        and the command settles as ``failed`` - still with its attempts intact,
+        so an owner's explicit retry starts from a clean budget rather than from
+        one an outage emptied.
+        """
+        moment = _now()
+        deferral = record.infrastructure_attempt + 1
+        # ``claim`` charged an attempt to take the lease. Nothing about this
+        # command earned that charge, so hand it back either way.
+        refunded = max(0, record.attempt - 1)
+        if deferral > MAX_INFRASTRUCTURE_DEFERRALS:
+            return self._transition(
+                record,
+                ControlCommandStatus.FAILED,
+                {
+                    "attempt": refunded,
+                    "claim_owner": None,
+                    "lease_expires_at": None,
+                    "completed_at": moment,
+                    "error_code": failure.code[:128],
+                    "error_summary": failure.summary[:500],
+                    "retryable": True,
+                    "progress_phase": "failed",
+                },
+                now=moment,
+            )
+        return self._transition(
+            record,
+            ControlCommandStatus.PENDING,
+            {
+                "attempt": refunded,
+                "infrastructure_attempt": deferral,
+                "claim_owner": None,
+                "lease_expires_at": None,
+                "available_at": moment
+                + timedelta(seconds=infrastructure_backoff_seconds(deferral)),
+                "error_code": failure.code[:128],
+                "error_summary": failure.summary[:500],
+                "retryable": True,
+                "progress_phase": "deferred",
             },
             now=moment,
         )
@@ -574,5 +652,9 @@ class ControlCommandRepository:
                 "error_summary": None,
                 "completed_at": None,
                 "progress_phase": "pending",
+                # An explicit retry is a fresh start against both budgets: a
+                # command failed by a spent deferral budget must be able to run
+                # again once whatever was down is back.
+                "infrastructure_attempt": 0,
             },
         )
