@@ -7,6 +7,7 @@ import type {
   ScriptProjection,
   ScriptSegmentProjection,
   ShotAttemptProjection,
+  ShotCommandProjection,
   ShotDetailProjection,
   StageTimelineEntry,
   StoryboardProjection,
@@ -560,7 +561,7 @@ export const script: ScriptProjection = {
 
 export function storyboardShot(index: number): StoryboardShotProjection {
   return {
-    schema_version: "1.0",
+    schema_version: "1.1",
     shot_id: uuid(index, 6),
     stable_shot_id: uuid(100 + index, 6),
     global_sequence: index,
@@ -588,7 +589,30 @@ export function storyboardShot(index: number): StoryboardShotProjection {
     cost_amount: "0.100000",
     warning_code: null,
     failure_code: null,
+    pending_command: null,
     row_version: 1,
+  };
+}
+
+/** One shot with a durable control command recorded against it. */
+export function shotCommand(
+  overrides: Partial<ShotCommandProjection> = {},
+): ShotCommandProjection {
+  return {
+    schema_version: "1.0",
+    command_id: uuid(700, 7),
+    command_type: "shot_review_continue",
+    status: "pending",
+    active: true,
+    dispatched: false,
+    workflow_id: null,
+    failure_code: null,
+    failure_summary: null,
+    retryable: false,
+    cancel_requested: false,
+    created_at: "2026-08-01T10:00:00Z",
+    updated_at: "2026-08-01T10:00:00Z",
+    ...overrides,
   };
 }
 

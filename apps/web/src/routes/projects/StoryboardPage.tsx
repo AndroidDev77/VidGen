@@ -137,6 +137,13 @@ export function StoryboardPage(): JSX.Element {
   const decisionTargets = useMemo(() => {
     const targets: QaDecisionTarget[] = [];
     for (const entry of storyboard.data?.shots ?? []) {
+      // A shot whose decision is already queued is not waiting on a person any
+      // more, whatever its QA run still says. Leaving it in would let the bulk
+      // actions - and the review counts above them - fire a second command for
+      // work the dispatcher has not got to yet.
+      if (entry.pending_command?.active === true) {
+        continue;
+      }
       const run = decidableRun(visualQaByShot.get(entry.shot_id) ?? []);
       const affordance = decisionAffordance(run);
       if (run !== null && affordance !== null) {
@@ -430,6 +437,9 @@ export function StoryboardPage(): JSX.Element {
     setSearchParams(next, { replace: false });
   };
 
+  // A command already in flight against the selected shot locks the same
+  // actions the mutations above do: both would enqueue duplicate work.
+  const selectedCommandInFlight = shot.data?.shot.pending_command?.active === true;
   const busy =
     regenerate.isPending || retry.isPending || cancelOne.isPending || chooseAttempt.isPending;
   // The QA run the inspector has open, which is not always the run the shot is
@@ -562,7 +572,12 @@ export function StoryboardPage(): JSX.Element {
                 selected={qaRun.data ?? null}
                 evidence={qaEvidence.data?.items ?? []}
                 evidenceSamples={qaEvidence.data?.samples ?? []}
-                busy={busy || startVisualQa.isPending || decideQa.isPending}
+                busy={
+                  busy ||
+                  selectedCommandInFlight ||
+                  startVisualQa.isPending ||
+                  decideQa.isPending
+                }
                 onSelectRun={setSelectedQaRunId}
                 onRunQa={() => startVisualQa.mutate()}
                 onApprove={() => decideSelectedRun("approve")}
@@ -574,7 +589,7 @@ export function StoryboardPage(): JSX.Element {
               <RepairLineagePanel
                 runs={repairs.data?.items ?? []}
                 selected={repairRun.data ?? null}
-                busy={busy || actOnRepair.isPending}
+                busy={busy || selectedCommandInFlight || actOnRepair.isPending}
                 onSelectRun={setSelectedRepairRunId}
                 onAct={(action) => actOnRepair.mutate(action)}
               />

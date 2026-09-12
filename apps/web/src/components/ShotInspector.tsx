@@ -19,6 +19,7 @@ import type { JSX } from "react";
 import type { ShotAttemptProjection, ShotDetailProjection } from "@vidgen/contracts";
 
 import { formatMicroseconds, formatMoney, formatTimecode, humanize } from "../state/format";
+import { shotCommandStateFor } from "../state/shotCommand";
 import { StatusBadge } from "./StatusBadge";
 import { TechnicalDetails } from "./TechnicalDetails";
 
@@ -53,6 +54,11 @@ export function ShotInspector({
 }: ShotInspectorProps): JSX.Element {
   const styles = useStyles();
   const shot = detail.shot;
+  // A command already recorded against this shot is the newer truth: the
+  // attempt rows below it still describe what the command is replacing.
+  const command = shotCommandStateFor(shot);
+  // Everything that would enqueue a second command waits for the first.
+  const locked = busy || command.inFlight;
   return (
     <section className={styles.wrapper} aria-labelledby="shot-inspector-heading">
       <Title3 as="h2" id="shot-inspector-heading">
@@ -64,7 +70,15 @@ export function ShotInspector({
       )}
       <div className={styles.meta}>
         <StatusBadge status={detail.child_workflow_status} />
-        {detail.child_workflow_retryable && (
+        {command.label !== null && (
+          <Badge
+            appearance={command.inFlight ? "filled" : "outline"}
+            color={command.inFlight ? "brand" : "danger"}
+          >
+            {command.label}
+          </Badge>
+        )}
+        {detail.child_workflow_retryable && !command.inFlight && (
           <Badge appearance="outline" color="warning">
             Retryable failure
           </Badge>
@@ -75,6 +89,11 @@ export function ShotInspector({
         <Caption1>Attempts: {shot.attempt_count}</Caption1>
         <Caption1>Cost: {formatMoney(shot.cost_amount)}</Caption1>
       </div>
+
+      {command.description !== null && <Caption1>{command.description}</Caption1>}
+      {command.failureMessage !== null && (
+        <Caption1 role="alert">{command.failureMessage}</Caption1>
+      )}
 
       <Body1>{shot.visual_objective}</Body1>
       <Caption1>
@@ -91,17 +110,17 @@ export function ShotInspector({
       )}
 
       <div className={styles.actions}>
-        <Button appearance="primary" onClick={onRegenerate} disabled={busy}>
+        <Button appearance="primary" onClick={onRegenerate} disabled={locked}>
           Regenerate this shot
         </Button>
         <Button
           appearance="secondary"
           onClick={onRetry}
-          disabled={busy || !detail.child_workflow_retryable}
+          disabled={locked || !detail.child_workflow_retryable}
         >
           Retry failed shot
         </Button>
-        <Button appearance="secondary" onClick={onCancel} disabled={busy}>
+        <Button appearance="secondary" onClick={onCancel} disabled={locked}>
           Cancel this shot
         </Button>
         <Button appearance="subtle" onClick={onRefreshStatus} disabled={busy}>

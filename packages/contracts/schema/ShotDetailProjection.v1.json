@@ -169,6 +169,111 @@
       "title": "ShotAttemptProjection",
       "type": "object"
     },
+    "ShotCommandProjection": {
+      "additionalProperties": false,
+      "description": "The durable control command currently acting on one shot.\n\nBetween a human approving or retrying a shot and the replacement workflow\nwriting its first row, the shot's own tables still describe the *previous*\nattempt. Without this the review UI reads that stale row as a fresh failure\nand offers the same action again, so a reviewer cannot tell their decision\nlanded and can fire duplicates.\n\n``active`` is the flag the UI gates its affordances on; ``dispatched``\nseparates a command still queued for the dispatcher from one that has a\nreal workflow behind it. A terminally failed command is surfaced with\n``active`` false so the error is renderable and the affordance comes back.",
+      "properties": {
+        "active": {
+          "default": false,
+          "title": "Active",
+          "type": "boolean"
+        },
+        "cancel_requested": {
+          "default": false,
+          "title": "Cancel Requested",
+          "type": "boolean"
+        },
+        "command_id": {
+          "format": "uuid",
+          "title": "Command Id",
+          "type": "string"
+        },
+        "command_type": {
+          "maxLength": 64,
+          "title": "Command Type",
+          "type": "string"
+        },
+        "created_at": {
+          "format": "date-time",
+          "title": "Created At",
+          "type": "string"
+        },
+        "dispatched": {
+          "default": false,
+          "title": "Dispatched",
+          "type": "boolean"
+        },
+        "failure_code": {
+          "anyOf": [
+            {
+              "maxLength": 128,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Failure Code"
+        },
+        "failure_summary": {
+          "anyOf": [
+            {
+              "maxLength": 500,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Failure Summary"
+        },
+        "retryable": {
+          "default": false,
+          "title": "Retryable",
+          "type": "boolean"
+        },
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "status": {
+          "maxLength": 32,
+          "title": "Status",
+          "type": "string"
+        },
+        "updated_at": {
+          "format": "date-time",
+          "title": "Updated At",
+          "type": "string"
+        },
+        "workflow_id": {
+          "anyOf": [
+            {
+              "maxLength": 255,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Workflow Id"
+        }
+      },
+      "required": [
+        "command_id",
+        "command_type",
+        "status",
+        "created_at",
+        "updated_at"
+      ],
+      "title": "ShotCommandProjection",
+      "type": "object"
+    },
     "StoryboardShotProjection": {
       "additionalProperties": false,
       "properties": {
@@ -279,6 +384,17 @@
           "default": null,
           "title": "Model"
         },
+        "pending_command": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ShotCommandProjection"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "provider": {
           "anyOf": [
             {
@@ -303,8 +419,8 @@
           "type": "integer"
         },
         "schema_version": {
-          "const": "1.0",
-          "default": "1.0",
+          "const": "1.1",
+          "default": "1.1",
           "title": "Schema Version",
           "type": "string"
         },

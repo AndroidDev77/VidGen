@@ -925,6 +925,162 @@ def test_shot_retry_records_a_durable_command_rather_than_signalling(
         assert stored is not None and stored.project_id == graph.project_id
 
 
+def _queue_shot_retry(client: TestClient, graph: ProjectGraph, shot_id: UUID, key: str) -> UUID:
+    """Ask for a retry and return the durable command the API recorded."""
+    shot = client.get(api(graph.project_id, f"/shots/{shot_id}"), headers=OWNER).json()
+    response = client.post(
+        api(graph.project_id, f"/shots/{shot_id}:retry"),
+        headers=headers(if_match=shot["shot"]["row_version"], key=key),
+    )
+    assert response.status_code == 202
+    return UUID(response.json()["command"]["command_id"])
+
+
+def _shot_from_storyboard(client: TestClient, graph: ProjectGraph, shot_id: UUID) -> dict[str, Any]:
+    body = client.get(api(graph.project_id, "/storyboard"), headers=OWNER).json()
+    return next(entry for entry in body["shots"] if entry["shot_id"] == str(shot_id))
+
+
+def _fail_the_shot(factory: sessionmaker[Session], shot_id: UUID) -> None:
+    """Put the shot in the state the review UI offers a decision on."""
+    with factory() as session:
+        item = session.scalar(select(AnimationItem).where(AnimationItem.shot_id == shot_id))
+        assert item is not None
+        item.status = "failed"
+        item.error_code = "qa_rejected"
+        session.commit()
+
+
+def test_a_queued_shot_command_is_visible_before_anything_dispatches(
+    client: TestClient,
+    graph: ProjectGraph,
+    review_client: tuple[TestClient, sessionmaker[Session], FakeWorkflowController],
+) -> None:
+    """The exact window the review UI used to have no answer for.
+
+    Between an accepted retry and the replacement workflow writing its first
+    row, the shot's own tables still describe the previous, failed attempt. If
+    the projection reports only those, the card renders a fresh failure and
+    offers the same button again - so a reviewer cannot tell their decision
+    landed, and can fire the command twice.
+    """
+    target = graph.shot_ids[4]
+    _fail_the_shot(review_client[1], target)
+    command_id = _queue_shot_retry(client, graph, target, "retry-window-1")
+
+    entry = _shot_from_storyboard(client, graph, target)
+    # The shot is still failed - nothing has replaced it yet - but it is no
+    # longer a shot with no decision recorded against it.
+    assert entry["failure_code"] == "qa_rejected"
+    pending = entry["pending_command"]
+    assert pending is not None
+    assert pending["command_id"] == str(command_id)
+    assert pending["command_type"] == "shot_retry"
+    assert pending["status"] == "pending"
+    assert pending["active"] is True
+    # Queued, not dispatched: no workflow exists yet, and the projection must
+    # not imply one does.
+    assert pending["dispatched"] is False
+    assert pending["workflow_id"] is None
+
+    detail = client.get(api(graph.project_id, f"/shots/{target}"), headers=OWNER).json()
+    assert detail["shot"]["pending_command"]["command_id"] == str(command_id)
+    status = client.get(api(graph.project_id, f"/shots/{target}/status"), headers=OWNER).json()
+    assert status["pending_command"]["active"] is True
+
+    # Sibling shots are untouched: one shot's command never speaks for another.
+    sibling = _shot_from_storyboard(client, graph, graph.shot_ids[5])
+    assert sibling["pending_command"] is None
+
+
+def test_a_dispatched_command_is_distinguishable_from_a_queued_one(
+    client: TestClient,
+    graph: ProjectGraph,
+    review_client: tuple[TestClient, sessionmaker[Session], FakeWorkflowController],
+) -> None:
+    target = graph.shot_ids[4]
+    command_id = _queue_shot_retry(client, graph, target, "retry-window-2")
+    with review_client[1]() as session:
+        record = session.get(ControlCommandRecord, command_id)
+        assert record is not None
+        record.status = "running"
+        record.workflow_id = "shot-retry-workflow-4"
+        session.commit()
+
+    pending = _shot_from_storyboard(client, graph, target)["pending_command"]
+    assert pending["status"] == "running"
+    assert pending["active"] is True
+    assert pending["dispatched"] is True
+    assert pending["workflow_id"] == "shot-retry-workflow-4"
+
+
+def test_a_failed_command_surfaces_its_error_and_gives_the_action_back(
+    client: TestClient,
+    graph: ProjectGraph,
+    review_client: tuple[TestClient, sessionmaker[Session], FakeWorkflowController],
+) -> None:
+    target = graph.shot_ids[4]
+    _fail_the_shot(review_client[1], target)
+    command_id = _queue_shot_retry(client, graph, target, "retry-window-3")
+    with review_client[1]() as session:
+        record = session.get(ControlCommandRecord, command_id)
+        assert record is not None
+        record.status = "failed"
+        record.error_code = "dispatch_rejected"
+        record.error_summary = "the upstream material moved"
+        record.retryable = True
+        session.commit()
+
+    pending = _shot_from_storyboard(client, graph, target)["pending_command"]
+    # Not in flight any more, so the UI restores the affordance - but the
+    # reason it stopped is renderable rather than silently dropped.
+    assert pending["active"] is False
+    assert pending["failure_code"] == "dispatch_rejected"
+    assert pending["failure_summary"] == "the upstream material moved"
+    assert pending["retryable"] is True
+
+
+@pytest.mark.parametrize("terminal", ["completed", "cancelled"])
+def test_a_resolved_command_leaves_the_shot_to_its_own_rows(
+    client: TestClient,
+    graph: ProjectGraph,
+    review_client: tuple[TestClient, sessionmaker[Session], FakeWorkflowController],
+    terminal: str,
+) -> None:
+    target = graph.shot_ids[4]
+    command_id = _queue_shot_retry(client, graph, target, f"retry-window-{terminal}")
+    with review_client[1]() as session:
+        record = session.get(ControlCommandRecord, command_id)
+        assert record is not None
+        record.status = terminal
+        if terminal == "completed":
+            record.workflow_id = "shot-retry-workflow-4"
+        session.commit()
+
+    assert _shot_from_storyboard(client, graph, target)["pending_command"] is None
+
+
+def test_the_newest_command_is_the_one_a_shot_reports(
+    client: TestClient,
+    graph: ProjectGraph,
+    review_client: tuple[TestClient, sessionmaker[Session], FakeWorkflowController],
+) -> None:
+    """A superseded first attempt must not mask the command actually running."""
+    target = graph.shot_ids[4]
+    first = _queue_shot_retry(client, graph, target, "retry-window-first")
+    with review_client[1]() as session:
+        record = session.get(ControlCommandRecord, first)
+        assert record is not None
+        record.status = "failed"
+        record.error_code = "lease_lost"
+        session.commit()
+    second = _queue_shot_retry(client, graph, target, "retry-window-second")
+
+    pending = _shot_from_storyboard(client, graph, target)["pending_command"]
+    assert pending["command_id"] == str(second)
+    assert pending["active"] is True
+
+
 def test_shot_attempt_selection(
     client: TestClient,
     graph: ProjectGraph,
