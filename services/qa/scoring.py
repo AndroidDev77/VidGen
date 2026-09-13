@@ -54,6 +54,7 @@ from vidgen.contracts.visual_qa import (
     VisualQAProviderResult,
     VisualQARepairCode,
     VisualQARepairRecommendation,
+    VisualQAResult,
     VisualQARoutingRecommendation,
     VisualQARubric,
     VisualQASample,
@@ -66,6 +67,32 @@ from vidgen.contracts.visual_qa import VisualQADimensionResult as _DimensionResu
 #: Warning recorded on a dimension when a semantic hard-failure proposal was
 #: demoted because the evaluator's own dimension score did not support it.
 HARD_FAILURE_DOWNGRADED_BY_SCORE: str = "hard_failure_downgraded_by_score"
+
+#: Warning recorded when the outcome named more distinct repair codes than
+#: ``VisualQAResult`` admits and the lowest-priority codes were dropped.
+REPAIR_CODES_TRUNCATED: str = "repair_codes_truncated"
+
+#: Warning recorded when the outcome named more distinct warning codes than
+#: ``VisualQAResult`` admits and the lowest-priority warnings were dropped.
+WARNING_CODES_TRUNCATED: str = "warning_codes_truncated"
+
+UNKNOWN_PROVIDER_HARD_FAILURE_CODE: str = "unknown_provider_hard_failure_code"
+UNEVIDENCED_PROVIDER_HARD_FAILURE_PROPOSAL: str = "unevidenced_provider_hard_failure_proposal"
+
+#: Warnings the contract or a downstream stage reads by exact string. They are
+#: kept ahead of everything else when the warning list has to be bounded.
+_PROTECTED_WARNINGS: frozenset[str] = frozenset(
+    {TOLERATED_SCORE_BELOW_THRESHOLD, REPAIR_CODES_TRUNCATED}
+)
+
+#: Warnings scoring itself derives, kept ahead of provider and dimension codes.
+_SCORING_WARNINGS: frozenset[str] = frozenset(
+    {
+        HARD_FAILURE_DOWNGRADED_BY_SCORE,
+        UNKNOWN_PROVIDER_HARD_FAILURE_CODE,
+        UNEVIDENCED_PROVIDER_HARD_FAILURE_PROPOSAL,
+    }
+)
 
 
 def _warn_only_marker(code: VisualQARepairCode) -> str:
@@ -105,9 +132,9 @@ class ScoringOutcome:
         return bool(self.hard_failure_codes)
 
 
-def _limit(field: str) -> int:
-    """The contract's own bound for one ``VisualQADimensionResult`` collection."""
-    metadata = _DimensionResult.model_fields[field].metadata
+def _limit(field: str, model: type[Any] = _DimensionResult) -> int:
+    """The contract's own bound for one collection, by default a dimension's."""
+    metadata = model.model_fields[field].metadata
     for entry in metadata:
         limit = getattr(entry, "max_length", None)
         if limit is not None:
@@ -117,6 +144,124 @@ def _limit(field: str) -> int:
 
 def _bounded(values: list[Any], field: str) -> list[Any]:
     return values[: _limit(field)]
+
+
+def _result_limit(field: str) -> int:
+    """The bound ``VisualQAResult`` places on one of its code lists.
+
+    Repair codes are also copied into the recommendation, so their bound is the
+    tighter of the two collections that carry them.
+    """
+    limit = _limit(field, VisualQAResult)
+    if field == "repair_codes":
+        limit = min(limit, _limit(field, VisualQARepairRecommendation))
+    return limit
+
+
+def _retain_repair_codes(
+    score: VisualQAScore,
+    codes: Iterable[VisualQARepairCode],
+    *,
+    hard_codes: Iterable[str],
+    required: Iterable[VisualQARepairCode],
+) -> tuple[list[VisualQARepairCode], bool]:
+    """The repair codes a result can carry, and whether any were dropped.
+
+    Each dimension bounds its own codes, but the union across the rubric can
+    exceed what ``VisualQAResult`` admits. T21 routes on these codes, so when
+    the union has to be cut the codes that matter most are kept, in order:
+
+    1. blocking hard-failure codes, alphabetically - the routed primary code is
+       the alphabetically first of them, so it is always retained and the
+       recommendation's routing stays consistent with the retained codes;
+    2. codes the outcome itself requires (the review markers, or the structural
+       family's codes);
+    3. the remaining codes by the points their worst evidencing dimension cost
+       the score, then alphabetically.
+
+    The retained codes are returned sorted, as an unbounded outcome would be.
+    """
+    hard = frozenset(hard_codes)
+    needed = frozenset(required)
+    lost: dict[VisualQARepairCode, float] = {}
+    for dimension in score.dimensions:
+        shortfall = (100 - dimension.raw_score) * dimension.effective_weight / 100
+        for code in dimension.repair_codes:
+            lost[code] = max(lost.get(code, 0.0), shortfall)
+    ranked = sorted(
+        set(codes),
+        key=lambda code: (
+            code.value not in hard,
+            code not in needed,
+            -lost.get(code, 0.0),
+            code.value,
+        ),
+    )
+    limit = _result_limit("repair_codes")
+    return sorted(ranked[:limit], key=lambda code: code.value), len(ranked) > limit
+
+
+def _warning_rank(code: str) -> tuple[int, str]:
+    if code in _PROTECTED_WARNINGS:
+        return 0, code
+    if code in _SCORING_WARNINGS or code.startswith("warn_only:"):
+        return 1, code
+    return 2, code
+
+
+def _retain_warning_codes(codes: Iterable[str]) -> list[str]:
+    """The warning codes a result can carry.
+
+    Warnings the contract or a later stage reads by name are kept first, then
+    the ones scoring derived (tolerance markers, demotions, rejected provider
+    proposals), then provider and dimension codes alphabetically. When anything
+    is dropped the last slot records ``WARNING_CODES_TRUNCATED``.
+    """
+    ranked = sorted(set(codes), key=_warning_rank)
+    limit = _result_limit("warning_codes")
+    if len(ranked) > limit:
+        ranked = [*ranked[: limit - 1], WARNING_CODES_TRUNCATED]
+    return sorted(ranked)
+
+
+def _outcome(
+    score: VisualQAScore,
+    outcome: VisualQAOutcome,
+    *,
+    routing: VisualQARoutingRecommendation,
+    warning_codes: Iterable[str],
+    rationale: str = "",
+    hard_codes: Iterable[str] = (),
+    repair_codes: Iterable[VisualQARepairCode] = (),
+    required: Iterable[VisualQARepairCode] = (),
+    review_reasons: Sequence[str] = (),
+) -> ScoringOutcome:
+    """Build an outcome that ``VisualQAResult`` can always admit.
+
+    Bounding here, rather than when the result is built, keeps the outcome, the
+    recommendation and the persisted row in agreement about which codes exist.
+    """
+    hard = sorted(set(hard_codes))
+    warnings = set(warning_codes)
+    codes, truncated = _retain_repair_codes(score, repair_codes, hard_codes=hard, required=required)
+    # Hard-failure codes are repair-code values, so the taxonomy already keeps
+    # them within the result's bound; the slice only guards that invariant.
+    hard_limit = _result_limit("hard_failure_codes")
+    if truncated or len(hard) > hard_limit:
+        warnings.add(REPAIR_CODES_TRUNCATED)
+    return ScoringOutcome(
+        score=score,
+        outcome=outcome,
+        hard_failure_codes=tuple(hard[:hard_limit]),
+        warning_codes=tuple(_retain_warning_codes(warnings)),
+        repair_codes=tuple(codes),
+        recommendation=VisualQARepairRecommendation(
+            routing=routing,
+            repair_codes=codes,
+            rationale=rationale,
+        ),
+        review_reasons=tuple(review_reasons),
+    )
 
 
 def _severity_rank(finding: VisualQAFinding) -> int:
@@ -434,13 +579,13 @@ def decide(
         try:
             code = VisualQARepairCode(raw)
         except ValueError:
-            warning_codes.add("unknown_provider_hard_failure_code")
+            warning_codes.add(UNKNOWN_PROVIDER_HARD_FAILURE_CODE)
             continue
         if code in HARD_FAILURE_CODES and code in evidenced:
             hard_codes.add(code.value)
             repair_codes.add(code)
         else:
-            warning_codes.add("unevidenced_provider_hard_failure_proposal")
+            warning_codes.add(UNEVIDENCED_PROVIDER_HARD_FAILURE_PROPOSAL)
     # A tolerated code is measured and visible, but it neither blocks nor buys
     # a repair attempt: it moves from the hard and repair sets to the warnings.
     tolerated_repair_codes: set[VisualQARepairCode] = set()
@@ -452,9 +597,8 @@ def decide(
             warning_codes.add(_warn_only_marker(code))
     hard_codes.difference_update(warn_only)
     if hard_codes:
-        codes = sorted(repair_codes, key=lambda code: code.value)
         primary = min(
-            (code for code in codes if code.value in hard_codes),
+            (code for code in repair_codes if code.value in hard_codes),
             key=lambda code: code.value,
             default=None,
         )
@@ -463,54 +607,37 @@ def decide(
             if primary is not None
             else VisualQARoutingRecommendation.TARGETED_REPAIR
         )
-        return ScoringOutcome(
-            score=score,
-            outcome=VisualQAOutcome.FAIL,
-            hard_failure_codes=tuple(sorted(hard_codes)),
-            warning_codes=tuple(sorted(warning_codes)),
-            repair_codes=tuple(codes),
-            recommendation=VisualQARepairRecommendation(
-                routing=routing,
-                repair_codes=codes,
-                rationale="a hard failure blocks the shot regardless of the numeric score",
-            ),
-            review_reasons=tuple(review_reasons),
+        return _outcome(
+            score,
+            VisualQAOutcome.FAIL,
+            routing=routing,
+            rationale="a hard failure blocks the shot regardless of the numeric score",
+            hard_codes=hard_codes,
+            repair_codes=repair_codes,
+            warning_codes=warning_codes,
+            review_reasons=review_reasons,
         )
     if review_reasons:
-        codes = sorted(
-            {
-                *repair_codes,
-                VisualQARepairCode.HUMAN_REVIEW_REQUIRED,
-                VisualQARepairCode.AMBIGUOUS_VISUAL_EVIDENCE,
-            },
-            key=lambda code: code.value,
+        markers = (
+            VisualQARepairCode.HUMAN_REVIEW_REQUIRED,
+            VisualQARepairCode.AMBIGUOUS_VISUAL_EVIDENCE,
         )
-        return ScoringOutcome(
-            score=score,
-            outcome=VisualQAOutcome.REVIEW,
-            hard_failure_codes=(),
-            warning_codes=tuple(sorted(warning_codes)),
-            repair_codes=tuple(codes),
-            recommendation=VisualQARepairRecommendation(
-                routing=VisualQARoutingRecommendation.HUMAN_REVIEW,
-                repair_codes=codes,
-                rationale="; ".join(review_reasons)[:500],
-            ),
-            review_reasons=tuple(review_reasons),
+        return _outcome(
+            score,
+            VisualQAOutcome.REVIEW,
+            routing=VisualQARoutingRecommendation.HUMAN_REVIEW,
+            rationale="; ".join(review_reasons)[:500],
+            repair_codes={*repair_codes, *markers},
+            required=markers,
+            warning_codes=warning_codes,
+            review_reasons=review_reasons,
         )
     if score.total >= score.pass_threshold:
-        return ScoringOutcome(
-            score=score,
-            outcome=VisualQAOutcome.PASS,
-            hard_failure_codes=(),
-            warning_codes=tuple(sorted(warning_codes)),
-            repair_codes=(),
-            recommendation=VisualQARepairRecommendation(
-                routing=VisualQARoutingRecommendation.NONE,
-                repair_codes=[],
-                rationale="",
-            ),
-            review_reasons=(),
+        return _outcome(
+            score,
+            VisualQAOutcome.PASS,
+            routing=VisualQARoutingRecommendation.NONE,
+            warning_codes=warning_codes,
         )
     if score.total >= thresholds.targeted_repair_floor:
         codes = sorted(repair_codes, key=lambda code: code.value)
@@ -529,60 +656,41 @@ def decide(
                 warning_codes.add(TOLERATED_SCORE_BELOW_THRESHOLD)
                 if derived.value in warn_only:
                     warning_codes.add(_warn_only_marker(derived))
-                return ScoringOutcome(
-                    score=score,
-                    outcome=VisualQAOutcome.PASS,
-                    hard_failure_codes=(),
-                    warning_codes=tuple(sorted(warning_codes)),
-                    repair_codes=(),
-                    recommendation=VisualQARepairRecommendation(
-                        routing=VisualQARoutingRecommendation.NONE,
-                        repair_codes=[],
-                        rationale="",
-                    ),
-                    review_reasons=(),
+                return _outcome(
+                    score,
+                    VisualQAOutcome.PASS,
+                    routing=VisualQARoutingRecommendation.NONE,
+                    warning_codes=warning_codes,
                 )
             codes = [derived]
-        return ScoringOutcome(
-            score=score,
-            outcome=VisualQAOutcome.FAIL,
-            hard_failure_codes=(),
-            warning_codes=tuple(sorted(warning_codes)),
-            repair_codes=tuple(codes),
-            recommendation=VisualQARepairRecommendation(
-                routing=VisualQARoutingRecommendation.TARGETED_REPAIR,
-                repair_codes=codes,
-                rationale=(
-                    f"score {score.total:.2f} is below the {score.pass_threshold:.0f} threshold "
-                    f"but at or above the {thresholds.targeted_repair_floor:.0f} repair floor"
-                ),
+        return _outcome(
+            score,
+            VisualQAOutcome.FAIL,
+            routing=VisualQARoutingRecommendation.TARGETED_REPAIR,
+            rationale=(
+                f"score {score.total:.2f} is below the {score.pass_threshold:.0f} threshold "
+                f"but at or above the {thresholds.targeted_repair_floor:.0f} repair floor"
             ),
-            review_reasons=(),
+            repair_codes=codes,
+            warning_codes=warning_codes,
         )
     routing, extra = _structural_routing(score.dimensions)
     tolerated = [code for code in extra if code.value in warn_only]
     warning_codes.update(_warn_only_marker(code) for code in tolerated)
-    codes = sorted(
-        {*repair_codes, *(code for code in extra if code not in tolerated)},
-        key=lambda code: code.value,
-    )
-    if not codes:
+    structural = [code for code in extra if code not in tolerated]
+    if not structural:
         # Every structural code was tolerated; the family's default still names
         # the dimension that failed so the result carries a repair code.
-        codes = [extra[0]]
-    return ScoringOutcome(
-        score=score,
-        outcome=VisualQAOutcome.FAIL,
-        hard_failure_codes=(),
-        warning_codes=tuple(sorted(warning_codes)),
-        repair_codes=tuple(codes),
-        recommendation=VisualQARepairRecommendation(
-            routing=routing,
-            repair_codes=codes,
-            rationale=(
-                f"score {score.total:.2f} is below the "
-                f"{thresholds.targeted_repair_floor:.0f} targeted-repair floor"
-            ),
+        structural = [] if repair_codes else [extra[0]]
+    return _outcome(
+        score,
+        VisualQAOutcome.FAIL,
+        routing=routing,
+        rationale=(
+            f"score {score.total:.2f} is below the "
+            f"{thresholds.targeted_repair_floor:.0f} targeted-repair floor"
         ),
-        review_reasons=(),
+        repair_codes={*repair_codes, *structural},
+        required=structural,
+        warning_codes=warning_codes,
     )

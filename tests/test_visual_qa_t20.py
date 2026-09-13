@@ -63,7 +63,9 @@ from services.qa.sampler import (
 )
 from services.qa.scoring import (
     HARD_FAILURE_DOWNGRADED_BY_SCORE,
+    REPAIR_CODES_TRUNCATED,
     TOLERATED_SCORE_BELOW_THRESHOLD,
+    WARNING_CODES_TRUNCATED,
     build_dimension_results,
     decide,
     recompute,
@@ -1476,6 +1478,69 @@ def test_adjudication_never_softens_a_hard_failure() -> None:
         attempts_used=1,
     )
     assert outcome is VisualQAOutcome.FAIL
+
+
+def test_a_code_union_beyond_the_result_bounds_keeps_the_codes_that_route() -> None:
+    """Each dimension bounds its own codes; the union across the rubric is bounded too.
+
+    Eight dimensions can together name more repair and warning codes than
+    ``VisualQAResult`` admits. The blocking code and the codes of the dimensions
+    that cost the most points survive, routing still follows the retained
+    primary code, and the cut is recorded rather than silent.
+    """
+    hard = VisualQARepairCode.WRONG_LOCATION
+    soft = [code for code in VisualQARepairCode if code is not hard]
+    groups = {
+        dimension: soft[index * 4 : (index + 1) * 4]
+        for index, dimension in enumerate(VisualQADimension)
+    }
+    findings: list[dict[str, object]] = [
+        {
+            "dimension": VisualQADimension.LOCATION,
+            "severity": "hard_failure",
+            "code": "wrong_location",
+            "repair_codes": [hard],
+        }
+    ]
+    for dimension, codes in groups.items():
+        findings.extend(
+            {"dimension": dimension, "code": code.value.lower(), "repair_codes": [code]}
+            for code in codes
+        )
+        findings.extend(
+            {"dimension": dimension, "code": f"{dimension.value}_note_{n}"} for n in range(3)
+        )
+    result = provider_result(
+        scores={
+            **dict.fromkeys(VisualQADimension, 90.0),
+            VisualQADimension.LOCATION: 20.0,
+            VisualQADimension.CHARACTER_IDENTITY: 40.0,
+        },
+        findings=findings,
+    )
+    _, score = _score(result)
+    outcome = decide(score, empty_report(), result, thresholds=THRESHOLDS)
+
+    assert outcome.outcome is VisualQAOutcome.FAIL
+    assert outcome.hard_failure_codes == (hard.value,)
+    assert len(outcome.repair_codes) == 16
+    assert list(outcome.repair_codes) == sorted(outcome.repair_codes, key=lambda code: code.value)
+    assert outcome.recommendation.repair_codes == list(outcome.repair_codes)
+    assert hard in outcome.repair_codes
+    assert outcome.recommendation.routing is REPAIR_CODES[hard].repair_family
+    tolerated = set(THRESHOLDS.warn_only_codes)
+    worst = {
+        code
+        for dimension in (VisualQADimension.LOCATION, VisualQADimension.CHARACTER_IDENTITY)
+        for code in groups[dimension]
+        if code.value not in tolerated
+    }
+    assert worst <= set(outcome.repair_codes)
+
+    assert len(outcome.warning_codes) == 32
+    assert REPAIR_CODES_TRUNCATED in outcome.warning_codes
+    assert WARNING_CODES_TRUNCATED in outcome.warning_codes
+    assert {f"warn_only:{code}" for code in tolerated} <= set(outcome.warning_codes)
 
 
 def test_a_review_outcome_still_carries_repair_codes() -> None:

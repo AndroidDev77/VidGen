@@ -25,7 +25,9 @@ from services.qa.contracts import AuthoritativeInputSelector, VisualQALineageErr
 from services.qa.fake_visual_agent import FakeDefect, FakeFinding, FakeVisualAgent
 from services.qa.human_review import VisualQAHumanReviewService
 from services.qa.pipeline import VisualQAPipeline
+from services.qa.repair_classifier import classify
 from services.qa.rubric import THRESHOLDS
+from services.qa.scoring import REPAIR_CODES_TRUNCATED, WARNING_CODES_TRUNCATED
 from tests.project_template import materialize_project
 from tests.visual_qa_fixtures import VisualQAFixture, build_visual_qa_project
 from vidgen.contracts.visual_qa import (
@@ -356,6 +358,99 @@ def test_a_tolerated_below_threshold_pass_reaches_the_persisted_result(
     assert replay.qa_run_id == result.qa_run_id
     assert replay.outcome is VisualQAOutcome.PASS
     assert TOLERATED_SCORE_BELOW_THRESHOLD in replay.warning_codes
+
+
+def test_a_code_union_beyond_the_result_bounds_still_builds_the_result(
+    graph: tuple[Session, FilesystemBlobStore, VisualQAFixture],
+) -> None:
+    """More distinct codes than the contract admits still produce a verdict.
+
+    The union of every dimension's repair and warning codes can exceed the
+    bounds on ``VisualQAResult``. A ValidationError there is a non-retryable
+    contract violation, so the shot would fail permanently. The pipeline has to
+    build, persist, replay and hand the bounded result to T21.
+    """
+    session, store, fixture = graph
+    hard = VisualQARepairCode.WRONG_LOCATION
+    soft = [code for code in VisualQARepairCode if code is not hard]
+    findings = [
+        FakeFinding(
+            dimension=VisualQADimension.LOCATION,
+            severity="hard_failure",
+            code="wrong_location",
+            summary="the scene is in the wrong place",
+            repair_codes=(hard,),
+        )
+    ]
+    for index, dimension in enumerate(VisualQADimension):
+        findings.extend(
+            FakeFinding(
+                dimension=dimension,
+                severity="warning",
+                code=code.value.lower(),
+                summary=f"flagged {code.value}",
+                repair_codes=(code,),
+            )
+            for code in soft[index * 4 : (index + 1) * 4]
+        )
+        findings.extend(
+            FakeFinding(
+                dimension=dimension,
+                severity="warning",
+                code=f"{dimension.value}_note_{n}",
+                summary="a minor note",
+            )
+            for n in range(3)
+        )
+    defects = {
+        fixture.shot_ids[0]: FakeDefect(
+            dimension_scores={VisualQADimension.LOCATION: 20.0},
+            findings=tuple(findings),
+            warning_codes=tuple(f"provider_note_{n}" for n in range(16)),
+        )
+    }
+    options = VisualQACommandOptions(
+        provider="fake",
+        fake_defects=defects,
+        shot_id=fixture.shot_ids[0],
+        targets=(VisualQATargetType.VIDEO,),
+        idempotency_key="code-union-beyond-bounds",
+        # Nothing tolerated, so all 32 repair codes reach the union.
+        thresholds=THRESHOLDS.model_copy(update={"warn_only_codes": []}),
+    )
+    first = asyncio.run(
+        run_visual_qa(
+            session,
+            store,
+            project_id=fixture.project_id,
+            options=options,
+            identity_resolver=resolver,
+        )
+    )
+    assert first.failures == (), first.failures
+    result = first.results[0]
+    assert result.outcome is VisualQAOutcome.FAIL
+    assert hard.value in result.hard_failure_codes
+    assert len(result.repair_codes) == 16
+    assert hard in result.repair_codes
+    assert result.recommendation.repair_codes == result.repair_codes
+    assert len(result.warning_codes) == 32
+    assert {REPAIR_CODES_TRUNCATED, WARNING_CODES_TRUNCATED} <= set(result.warning_codes)
+    # T21 can classify exactly what T20 persisted.
+    assert classify(result).hard_failure is True
+
+    replay = asyncio.run(
+        run_visual_qa(
+            session,
+            store,
+            project_id=fixture.project_id,
+            options=options,
+            identity_resolver=resolver,
+        )
+    ).results[0]
+    assert replay.qa_run_id == result.qa_run_id
+    assert replay.repair_codes == result.repair_codes
+    assert replay.warning_codes == result.warning_codes
 
 
 def test_a_supplied_idempotency_key_is_scoped_per_shot_and_target(
