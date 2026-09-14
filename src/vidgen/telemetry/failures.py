@@ -15,7 +15,12 @@ def classify_failure(
     metadata: dict[str, Any] | None = None,
 ) -> FailureClassification:
     name = type(exc).__name__.lower()
-    if "unknownprovideroutcome" in name or "ambiguousvideosubmission" in name:
+    if "submissionnotsent" in name:
+        # The adapter proved the request never left the process, so the provider
+        # created nothing: this is an ordinary retryable transport failure, not
+        # an unknown outcome that has to be reconciled by hand.
+        kind, code, retry = FailureClass.TRANSPORT, "PROVIDER_TRANSPORT_NOT_SENT", True
+    elif "unknownprovideroutcome" in name or "ambiguousvideosubmission" in name:
         kind, code, retry = FailureClass.UNKNOWN, "PROVIDER_OUTCOME_UNKNOWN", False
     elif isinstance(exc, (TimeoutError, asyncio.TimeoutError)):
         kind, code, retry = FailureClass.TIMEOUT, "PROVIDER_TIMEOUT", True

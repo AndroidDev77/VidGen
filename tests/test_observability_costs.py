@@ -5,6 +5,10 @@ from uuid import UUID
 import pytest
 from prometheus_client import CollectorRegistry, generate_latest
 
+from services.animation.pipeline_errors import (
+    AmbiguousVideoSubmission,
+    VideoSubmissionNotSent,
+)
 from vidgen.contracts.costs import BudgetDecision, BudgetPolicy, PricingCatalogVersion, PricingRate
 from vidgen.contracts.telemetry import FailureClass, UsageQuantity, UsageUnit
 from vidgen.costs.budgets import decide_budget
@@ -81,6 +85,24 @@ def test_overlapping_rates_are_rejected() -> None:
         PricingCatalog(
             PricingCatalogVersion(id=VERSION, name="bad", currency="USD", rates=(rate(), rate()))
         )
+
+
+def test_a_submission_that_never_went_out_is_a_retryable_transport_failure() -> None:
+    """Two submission failures, two taxonomies, because they differ in fact.
+
+    An ambiguous outcome may already have created a billable remote task, so it
+    is non-retryable and has to be reconciled. One that never left the process
+    created nothing, so it is an ordinary retryable transport failure.
+    """
+    not_sent = classify_failure(VideoSubmissionNotSent("event loop is closed"))
+    assert not_sent.failure_class == FailureClass.TRANSPORT
+    assert not_sent.error_code == "PROVIDER_TRANSPORT_NOT_SENT"
+    assert not_sent.retryable
+
+    ambiguous = classify_failure(AmbiguousVideoSubmission("no task ID was received"))
+    assert ambiguous.failure_class == FailureClass.UNKNOWN
+    assert ambiguous.error_code == "PROVIDER_OUTCOME_UNKNOWN"
+    assert not ambiguous.retryable
 
 
 def test_failure_taxonomy_and_bounded_metrics() -> None:

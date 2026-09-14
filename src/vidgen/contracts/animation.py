@@ -12,6 +12,10 @@ from pydantic.json_schema import SkipJsonSchema
 
 from vidgen.contracts.common import StrictContract
 
+#: Upper bound on the per-item outcomes one reconciliation report may carry, so
+#: a project-wide pass can never answer with an unbounded payload.
+MAX_RECONCILED_ITEMS = 500
+
 
 class VideoProvider(StrEnum):
     RUNWAY = "runway"
@@ -229,3 +233,62 @@ class AnimationRunResult(StrictContract):
 
 class AnimationResult(AnimationRunResult):
     items: list[ShotAnimationResult] = Field(default_factory=list)
+
+
+class AmbiguousSubmissionOutcome(StrEnum):
+    """What one ambiguous T15 submission reconciliation concluded.
+
+    Only ``RECONCILED`` changes anything. The other two are refusals that say
+    which evidence is missing, because an ambiguous submission that is released
+    without it can be resubmitted into a duplicate - and duplicately billed -
+    remote task.
+    """
+
+    #: Verified to hold no remote task, returned to a retryable state, and its
+    #: cost reservation released.
+    RECONCILED = "reconciled"
+    #: A remote task (or a generated video) exists for the attempt, so the
+    #: submission was not lost and must be polled rather than released.
+    REMOTE_TASK_EXISTS = "remote_task_exists"
+    #: Nothing in the database can prove the provider created no task, and the
+    #: caller did not attest that they confirmed it against the provider.
+    ATTESTATION_REQUIRED = "attestation_required"
+
+
+class AmbiguousSubmissionEvidence(StrEnum):
+    """How a reconciliation established that no remote task exists."""
+
+    #: The durable attempt itself records that the request never left the
+    #: process, which is proof no provider task can exist.
+    PROVIDER_NEVER_SENT = "provider_never_sent"
+    #: A named operator confirmed against the provider that no task exists. The
+    #: attestation is persisted with the attempt it released.
+    OPERATOR_ATTESTATION = "operator_attestation"
+
+
+class AmbiguousSubmissionReconciliation(StrictContract):
+    """What reconciliation did - or refused to do - for one animation item."""
+
+    schema_version: Literal["1.0"] = "1.0"
+    animation_item_id: UUID
+    shot_id: UUID
+    outcome: AmbiguousSubmissionOutcome
+    evidence: AmbiguousSubmissionEvidence | None = None
+    #: The remote task the attempt turned out to own, when it owns one.
+    remote_task_id: str | None = Field(default=None, max_length=255)
+    #: The reservation this reconciliation released, when it released one.
+    released_reservation_id: UUID | None = None
+    detail: str = Field(default="", max_length=500)
+
+
+class AmbiguousSubmissionReconciliationReport(StrictContract):
+    """Every ambiguous item one reconciliation pass examined, and its outcome."""
+
+    schema_version: Literal["1.0"] = "1.0"
+    project_id: UUID
+    examined_count: int = Field(default=0, ge=0)
+    reconciled_count: int = Field(default=0, ge=0)
+    refused_count: int = Field(default=0, ge=0)
+    items: list[AmbiguousSubmissionReconciliation] = Field(
+        default_factory=list, max_length=MAX_RECONCILED_ITEMS
+    )

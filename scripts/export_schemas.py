@@ -213,6 +213,8 @@ from vidgen.contracts import (
     YouTubeOAuthState,
 )
 from vidgen.contracts.animation import (
+    AmbiguousSubmissionReconciliation,
+    AmbiguousSubmissionReconciliationReport,
     AnimationResult,
     AnimationRunRequest,
     AnimationRunResult,
@@ -499,6 +501,8 @@ CONTRACTS = (
     GeneratedVideoCandidate,
     ShotAnimationResult,
     AnimationResult,
+    AmbiguousSubmissionReconciliation,
+    AmbiguousSubmissionReconciliationReport,
     ImageGenerationRunRequest,
     ImageGenerationRunResult,
     VisualIntent,

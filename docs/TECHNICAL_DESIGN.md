@@ -2939,6 +2939,7 @@ GET    /v1/projects/{id}/storyboards/{version}
 PATCH  /v1/projects/{id}/shots/{shotId}
 POST   /v1/projects/{id}/shots/{shotId}:regenerate
 POST   /v1/projects/{id}/shots/{shotId}:select-attempt
+POST   /v1/projects/{id}/shots:reconcile-ambiguous-animation
 POST   /v1/projects/{id}/references/{referenceId}:approve
 POST   /v1/projects/{id}/render
 POST   /v1/projects/{id}/review:approve
@@ -3356,6 +3357,24 @@ every restart retrieves it. Local timeouts and transient poll/download/storage/t
 create replacement tasks or reservations. A transport loss before the remote ID is received is an
 ambiguous provider outcome and is never blindly retried because Runway does not document a server
 idempotency mechanism for this endpoint.
+
+That rule applies only where the outcome is genuinely unknown. The adapter separates a submission
+that *provably* never left the process - no connection was ever established, the pool never handed
+one out, or the async client was asked to reuse a connection belonging to an event loop that has
+closed - from one that could have reached Runway. The former created no remote task, so it is an
+ordinary retryable transport failure whose reservation is released; only the latter parks the item
+in `provider_outcome_ambiguous`, holding its reservation because it may be covering real spend. The
+provider client is scoped to the event loop its connections belong to: a worker that runs each
+activity in its own `asyncio.run` loop opens one client per loop and releases it with that loop,
+rather than sharing one client whose pooled connections outlive the loop that created them.
+
+An item that is parked is not stranded. `POST /v1/projects/{id}/shots:reconcile-ambiguous-animation`
+releases it back to a retryable state and gives its reservation back, but only when no remote task
+can exist: the attempt must own neither a remote task ID nor a generated video, and either its own
+durable record proves the request never left the worker or a named operator attests - persisted with
+the attempt - that they confirmed against the provider that no task exists. Without an attestation
+the call is a dry run that reports what is stranded and what each item still needs. Nothing is
+resubmitted by the reconciliation itself; the shot's own retry command does that.
 
 Output URLs are transient. T15 streams one deterministic primary output to bounded temporary disk,
 hashes it while downloading, checks Content-Type, and validates one H.264/HEVC MP4 video stream,

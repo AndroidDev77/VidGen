@@ -21,8 +21,9 @@ from services.continuity.bindings import make_bundle
 from services.continuity.regeneration import ContinuityRegenerator
 from tests.review_fixtures import SHOT_COUNT, ProjectGraph, build_project_graph
 from vidgen.contracts.review import ProjectRunState
-from vidgen.db.animation_models import AnimationGeneratedVideo, AnimationItem
+from vidgen.db.animation_models import AnimationGeneratedVideo, AnimationItem, RunwayTask
 from vidgen.db.control_command_models import ControlCommandRecord
+from vidgen.db.cost_models import ProviderAttempt
 from vidgen.db.models import Project, RenderJob
 from vidgen.db.review_models import ApiIdempotencyRecord, ProjectUIEvent, RenderApproval
 from vidgen.db.script_models import Script, ScriptGenerationRun, ScriptSegment
@@ -1808,3 +1809,133 @@ def test_bump_refuses_a_writer_whose_precondition_went_stale(
     # The winner's increment stands; the loser applied nothing.
     with factory() as check:
         assert RowVersionService(check).current(graph.project_id, "project", graph.project_id) == 2
+
+
+def _strand_on_an_ambiguous_submission(
+    factory: sessionmaker[Session], shot_id: UUID, *, keep_video: bool = False
+) -> UUID:
+    """Park a shot exactly where a lost Runway submission used to leave it.
+
+    A submission that was lost produced no video, so the fixture's completed
+    attempt is removed unless a test is specifically about a shot that has one.
+    """
+    with factory() as session:
+        item = session.scalar(select(AnimationItem).where(AnimationItem.shot_id == shot_id))
+        assert item is not None
+        item.status = "provider_outcome_ambiguous"
+        if not keep_video:
+            item.selected_generated_video_id = None
+            session.flush()
+            for video in session.scalars(
+                select(AnimationGeneratedVideo).where(
+                    AnimationGeneratedVideo.animation_item_id == item.id
+                )
+            ).all():
+                session.delete(video)
+            session.flush()
+        attempt = session.scalar(
+            select(ProviderAttempt).where(ProviderAttempt.related_entity_id == shot_id)
+        )
+        assert attempt is not None
+        session.add(
+            RunwayTask(
+                animation_item_id=item.id,
+                provider_attempt_id=attempt.id,
+                provider_status="ambiguous",
+                request_projection={},
+                response_metadata={},
+            )
+        )
+        session.commit()
+        return item.id
+
+
+def test_an_unattested_reconciliation_reports_the_stranded_shot_without_moving_it(
+    client: TestClient,
+    graph: ProjectGraph,
+    review_client: tuple[TestClient, sessionmaker[Session], FakeWorkflowController],
+) -> None:
+    """The dry run an operator needs before confirming anything upstream."""
+    target = graph.shot_ids[3]
+    item_id = _strand_on_an_ambiguous_submission(review_client[1], target)
+
+    response = client.post(
+        api(graph.project_id, "/shots:reconcile-ambiguous-animation"),
+        headers=headers(key="reconcile-dry-run"),
+        json={},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["examined_count"] == 1
+    assert body["reconciled_count"] == 0
+    assert body["items"][0]["animation_item_id"] == str(item_id)
+    assert body["items"][0]["outcome"] == "attestation_required"
+    with review_client[1]() as session:
+        assert session.get(AnimationItem, item_id).status == "provider_outcome_ambiguous"
+
+
+def test_an_attested_reconciliation_returns_the_stranded_shot_to_a_retryable_state(
+    client: TestClient,
+    graph: ProjectGraph,
+    review_client: tuple[TestClient, sessionmaker[Session], FakeWorkflowController],
+) -> None:
+    target = graph.shot_ids[3]
+    item_id = _strand_on_an_ambiguous_submission(review_client[1], target)
+
+    response = client.post(
+        api(graph.project_id, "/shots:reconcile-ambiguous-animation"),
+        headers=headers(key="reconcile-attested"),
+        json={
+            "shot_ids": [str(target)],
+            "verified_no_remote_task": True,
+            "note": "no matching task on the provider dashboard",
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["reconciled_count"] == 1
+    assert body["items"][0]["outcome"] == "reconciled"
+    assert body["items"][0]["evidence"] == "operator_attestation"
+    with review_client[1]() as session:
+        assert session.get(AnimationItem, item_id).status == "animation_failed"
+
+
+def test_reconciliation_is_owner_scoped(
+    client: TestClient,
+    graph: ProjectGraph,
+    review_client: tuple[TestClient, sessionmaker[Session], FakeWorkflowController],
+) -> None:
+    item_id = _strand_on_an_ambiguous_submission(review_client[1], graph.shot_ids[3])
+
+    response = client.post(
+        api(graph.project_id, "/shots:reconcile-ambiguous-animation"),
+        headers={**INTRUDER, "Idempotency-Key": "reconcile-intruder"},
+        json={"verified_no_remote_task": True},
+    )
+
+    assert response.status_code == 404
+    with review_client[1]() as session:
+        assert session.get(AnimationItem, item_id).status == "provider_outcome_ambiguous"
+
+
+def test_reconciliation_refuses_a_shot_whose_attempt_produced_a_video(
+    client: TestClient,
+    graph: ProjectGraph,
+    review_client: tuple[TestClient, sessionmaker[Session], FakeWorkflowController],
+) -> None:
+    """An attempt that produced a video was never lost, whatever is attested."""
+    target = graph.shot_ids[3]
+    item_id = _strand_on_an_ambiguous_submission(review_client[1], target, keep_video=True)
+
+    body = client.post(
+        api(graph.project_id, "/shots:reconcile-ambiguous-animation"),
+        headers=headers(key="reconcile-has-video"),
+        json={"verified_no_remote_task": True},
+    ).json()
+
+    assert body["reconciled_count"] == 0
+    assert body["items"][0]["outcome"] == "remote_task_exists"
+    with review_client[1]() as session:
+        assert session.get(AnimationItem, item_id).status == "provider_outcome_ambiguous"
