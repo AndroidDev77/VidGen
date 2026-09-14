@@ -255,17 +255,6 @@ class AmbiguousSubmissionOutcome(StrEnum):
     ATTESTATION_REQUIRED = "attestation_required"
 
 
-class AmbiguousSubmissionEvidence(StrEnum):
-    """How a reconciliation established that no remote task exists."""
-
-    #: The durable attempt itself records that the request never left the
-    #: process, which is proof no provider task can exist.
-    PROVIDER_NEVER_SENT = "provider_never_sent"
-    #: A named operator confirmed against the provider that no task exists. The
-    #: attestation is persisted with the attempt it released.
-    OPERATOR_ATTESTATION = "operator_attestation"
-
-
 class AmbiguousSubmissionReconciliation(StrictContract):
     """What reconciliation did - or refused to do - for one animation item."""
 
@@ -273,7 +262,6 @@ class AmbiguousSubmissionReconciliation(StrictContract):
     animation_item_id: UUID
     shot_id: UUID
     outcome: AmbiguousSubmissionOutcome
-    evidence: AmbiguousSubmissionEvidence | None = None
     #: The remote task the attempt turned out to own, when it owns one.
     remote_task_id: str | None = Field(default=None, max_length=255)
     #: The reservation this reconciliation released, when it released one.
@@ -289,6 +277,9 @@ class AmbiguousSubmissionReconciliationReport(StrictContract):
     examined_count: int = Field(default=0, ge=0)
     reconciled_count: int = Field(default=0, ge=0)
     refused_count: int = Field(default=0, ge=0)
+    #: Stranded items this pass did not reach, because one report is bounded.
+    #: Non-zero means there is more to do: call again to continue.
+    remaining_count: int = Field(default=0, ge=0)
     items: list[AmbiguousSubmissionReconciliation] = Field(
         default_factory=list, max_length=MAX_RECONCILED_ITEMS
     )

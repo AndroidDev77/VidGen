@@ -3370,11 +3370,13 @@ rather than sharing one client whose pooled connections outlive the loop that cr
 
 An item that is parked is not stranded. `POST /v1/projects/{id}/shots:reconcile-ambiguous-animation`
 releases it back to a retryable state and gives its reservation back, but only when no remote task
-can exist: the attempt must own neither a remote task ID nor a generated video, and either its own
-durable record proves the request never left the worker or a named operator attests - persisted with
-the attempt - that they confirmed against the provider that no task exists. Without an attestation
-the call is a dry run that reports what is stranded and what each item still needs. Nothing is
-resubmitted by the reconciliation itself; the shot's own retry command does that.
+can exist: the attempt must own neither a remote task ID nor a generated video, and a named operator
+must attest - persisted with the attempt - that they confirmed against the provider that no task
+exists. Only a human can establish that last part, because Runway offers no way to look up a task
+whose ID was never received, which is why these items are parked in the first place. Without an
+attestation the call is a dry run that reports what is stranded and what each item still needs, and
+a bounded report says how many stranded items it did not reach. Nothing is resubmitted by the
+reconciliation itself; the shot's own retry command does that.
 
 Output URLs are transient. T15 streams one deterministic primary output to bounded temporary disk,
 hashes it while downloading, checks Content-Type, and validates one H.264/HEVC MP4 video stream,

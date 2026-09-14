@@ -1897,7 +1897,7 @@ def test_an_attested_reconciliation_returns_the_stranded_shot_to_a_retryable_sta
     body = response.json()
     assert body["reconciled_count"] == 1
     assert body["items"][0]["outcome"] == "reconciled"
-    assert body["items"][0]["evidence"] == "operator_attestation"
+    assert body["remaining_count"] == 0
     with review_client[1]() as session:
         assert session.get(AnimationItem, item_id).status == "animation_failed"
 

@@ -28,10 +28,7 @@ from services.animation.reconciliation import (
     reconcile_ambiguous_submissions,
 )
 from tests.test_animation_pipeline import prepared
-from vidgen.contracts.animation import (
-    AmbiguousSubmissionEvidence,
-    AmbiguousSubmissionOutcome,
-)
+from vidgen.contracts.animation import AmbiguousSubmissionOutcome
 from vidgen.db.animation_models import AnimationItem, RunwayTask
 from vidgen.db.cost_models import CostReservation, ProjectBudget
 
@@ -218,8 +215,8 @@ def test_an_attested_reconciliation_releases_the_shot_and_its_reservation(
     assert report.reconciled_count == 1
     outcome = report.items[0]
     assert outcome.outcome == AmbiguousSubmissionOutcome.RECONCILED
-    assert outcome.evidence == AmbiguousSubmissionEvidence.OPERATOR_ATTESTATION
     assert outcome.released_reservation_id is not None
+    assert report.remaining_count == 0
     assert reservation_statuses(fixture) == ["RELEASED"]
 
     item, task = item_and_task(fixture)
@@ -227,35 +224,11 @@ def test_an_attested_reconciliation_releases_the_shot_and_its_reservation(
     assert task.provider_status == "submission_failed"
     # The release is attributable: who said so, on what evidence.
     assert task.response_metadata["reconciled_by"] == "operator@example.test"
-    assert task.response_metadata["reconciliation_evidence"] == "operator_attestation"
+    assert "dashboard" in task.response_metadata["reconciliation_note"]
 
     # And the shot's next attempt resubmits instead of refusing.
     result = animate(fixture, provider, shot, "ambiguous")
     assert result.completed_count == 1
-
-
-def test_a_recorded_not_sent_failure_reconciles_without_an_attestation(
-    tmp_path: Path,
-) -> None:
-    """An attempt whose own record proves nothing was sent needs no human.
-
-    This is what a shot parked by a worker that predates the classification
-    fix looks like: the durable failure code already rules the provider out.
-    """
-    fixture, _shot, _ = strand(tmp_path)
-    _, task = item_and_task(fixture)
-    task.failure_code = SUBMISSION_NOT_SENT_CODE
-    fixture.session.commit()
-
-    report = reconcile_ambiguous_submissions(
-        fixture.session,
-        project_id=fixture.project.id,
-        attestation=OperatorAttestation(subject="operator@example.test"),
-    )
-
-    assert report.reconciled_count == 1
-    assert report.items[0].evidence == AmbiguousSubmissionEvidence.PROVIDER_NEVER_SENT
-    assert reservation_statuses(fixture) == ["RELEASED"]
 
 
 def test_reconciliation_can_be_scoped_to_one_shot(tmp_path: Path) -> None:
@@ -294,12 +267,23 @@ def test_a_refusal_the_provider_answered_releases_its_reservation(tmp_path: Path
     assert reservation_statuses(fixture) == ["RELEASED"]
 
 
-def test_a_transport_failure_of_unknown_shape_keeps_its_reservation(tmp_path: Path) -> None:
-    """No status code means no answer, so a task may exist and may be billed."""
+def test_every_resubmittable_submission_failure_releases_its_reservation(
+    tmp_path: Path,
+) -> None:
+    """The release follows the resubmission decision, so the two never disagree.
+
+    Marking the task ``submission_failed`` is what lets the next attempt submit
+    again. Holding the reservation for a submit that will be redone from scratch
+    would leak one per attempt, with no way back to it.
+    """
     fixture, shot = budgeted(tmp_path)
-    provider = FailingRunway(RuntimeError("socket closed mid-exchange"))
+    provider = FailingRunway(RuntimeError("provider client misbehaved"), failures=2)
 
-    with pytest.raises(RuntimeError):
-        animate(fixture, provider, shot, "unknown-shape")
+    for key in ("leaky", "leaky"):
+        with pytest.raises(RuntimeError):
+            animate(fixture, provider, shot, key)
 
-    assert reservation_statuses(fixture) == ["RESERVED"]
+    _, task = item_and_task(fixture)
+    assert task.provider_status == "submission_failed"
+    # Two attempts, two reservations, and neither is still held.
+    assert reservation_statuses(fixture) == ["RELEASED", "RELEASED"]

@@ -4,12 +4,13 @@ Two properties of this adapter are load-bearing and easy to lose:
 
 **The client never outlives the event loop its connections belong to.** Every
 Temporal activity runs its coroutine in its own ``asyncio.run`` loop and closes
-that loop on return, while the worker builds its providers once at startup. An
-``AsyncRunwayML`` shared across activities therefore hands out pooled
-connections that belong to a loop which no longer exists, and the first write on
-one fails locally with ``RuntimeError: Event loop is closed``. Constructing this
-provider with a *client factory* makes it open one client per running loop, so a
-single shared provider instance stays correct across any number of loops.
+that loop on return, while the worker builds its providers once at startup and
+runs several activities at a time over them. An ``AsyncRunwayML`` shared across
+activities therefore hands out pooled connections that belong to a loop which no
+longer exists, and the first write on one fails locally with ``RuntimeError:
+Event loop is closed``. Constructing this provider with a *client factory* makes
+it open one client per running loop, so a single shared provider instance stays
+correct across any number of loops and any number of threads running them.
 
 **A local failure is not an ambiguous provider outcome.** The SDK reports every
 transport problem as ``APIConnectionError``, which says nothing about whether
@@ -24,6 +25,7 @@ from __future__ import annotations
 
 import asyncio
 import inspect
+import threading
 from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import Any
@@ -66,9 +68,18 @@ _PRE_SEND_TRANSPORT_ERRORS: tuple[type[BaseException], ...] = (
     httpx.InvalidURL,
 )
 
-#: The local ``RuntimeError`` an async client raises when it is asked to reuse a
-#: connection opened on an event loop that has since closed. The failure happens
-#: as the transport is written to, so nothing reaches the network.
+#: The bare ``RuntimeError`` that surfaces when an async client is asked to
+#: reuse a connection belonging to an event loop that has since closed.
+#:
+#: Reaching this adapter *bare* is what makes it evidence. anyio translates a
+#: ``RuntimeError`` raised by the transport write itself into
+#: ``BrokenResourceError``, which httpx reports as ``WriteError`` - and this
+#: adapter keeps every write failure ambiguous, precisely because a partially or
+#: fully written request may have reached Runway. So a ``RuntimeError`` that
+#: arrives untranslated came from outside the write path: pool maintenance
+#: closing a connection of the dead loop before the request was ever sent. The
+#: incident this rule was written for agrees - the affected tasks were marked
+#: 30-50 ms after creation with no ``POST /v1/image_to_video`` in the worker log.
 _CLOSED_LOOP_MESSAGE = "event loop is closed"
 
 #: Bound on the cause chain walk, so a pathological chain cannot spin.
@@ -76,14 +87,20 @@ _MAX_CAUSE_DEPTH = 16
 
 
 def _causes(error: BaseException) -> list[BaseException]:
-    """``error`` and everything it was raised from, deduplicated and bounded."""
+    """``error`` and everything it was explicitly raised *from*, bounded.
+
+    Only ``__cause__`` is followed. The SDK always re-raises with ``from err``,
+    so the chain that matters is explicit, while ``__context__`` merely records
+    whatever happened to be in flight - an unrelated ambiguous failure being
+    handled when this one was raised would otherwise be read as evidence.
+    """
     seen: list[BaseException] = []
     current: BaseException | None = error
     while current is not None and len(seen) < _MAX_CAUSE_DEPTH:
         if any(item is current for item in seen):
             break
         seen.append(current)
-        current = current.__cause__ or current.__context__
+        current = current.__cause__
     return seen
 
 
@@ -125,20 +142,37 @@ class RunwayVideoProvider:
             )
         self._client = client
         self._factory = client_factory
-        # The loop is held by strong reference deliberately: a closed loop that
-        # were freed could have its identity reused by the next one, and the
-        # comparison below would then match a client bound to a dead loop.
-        self._loop: asyncio.AbstractEventLoop | None = None
-        self._bound: Any | None = None
+        # One client per loop, keyed by the loop itself. A map rather than a
+        # single slot because the worker runs several activities at once, each
+        # on its own loop in its own thread, over this one provider: a single
+        # slot would let those threads evict each other's clients and hand one
+        # across loops, which is the failure this provider exists to prevent.
+        # The keys are strong references deliberately - a freed loop's identity
+        # can be reused by the next one, and the lookup would then match a
+        # client bound to a dead loop.
+        self._clients: dict[asyncio.AbstractEventLoop, Any] = {}
+        self._lock = threading.Lock()
 
     def _current_client(self) -> Any:
         if self._factory is None:
             return self._client
         loop = asyncio.get_running_loop()
-        if self._bound is None or self._loop is not loop:
-            self._bound = self._factory()
-            self._loop = loop
-        return self._bound
+        with self._lock:
+            self._forget_closed_loops()
+            client = self._clients.get(loop)
+            if client is None:
+                client = self._clients[loop] = self._factory()
+            return client
+
+    def _forget_closed_loops(self) -> None:
+        """Drop clients whose loop is gone, so the map cannot grow without end.
+
+        A caller that releases its client on the way out never reaches this. It
+        is the backstop for one that does not: the client cannot be closed from
+        here - its loop is dead - so the reference is simply dropped.
+        """
+        for stale in [loop for loop in self._clients if loop.is_closed()]:
+            del self._clients[stale]
 
     async def release_loop_client(self) -> None:
         """Close the client this loop opened, while the loop is still running.
@@ -148,11 +182,12 @@ class RunwayVideoProvider:
         garbage collector. Best effort: a client that refuses to close must not
         turn a completed activity into a failed one.
         """
-        if self._factory is None or self._bound is None:
+        if self._factory is None:
             return
-        if self._loop is not asyncio.get_running_loop():
+        with self._lock:
+            client = self._clients.pop(asyncio.get_running_loop(), None)
+        if client is None:
             return
-        client, self._bound, self._loop = self._bound, None, None
         closer = getattr(client, "close", None)
         if closer is None:
             return

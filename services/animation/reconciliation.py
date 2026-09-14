@@ -17,12 +17,12 @@ can exist:
 * The attempt must own no ``remote_task_id`` and no generated video. Either one
   means the submission was not lost, and the item is refused rather than
   released - it has a task to poll.
-* Then the provider's side has to be ruled out. Runway offers no way to look up
-  a task whose ID we never received, so exactly two things can establish it: the
-  durable attempt itself recording that the request never left the process, or a
-  named operator confirming against the provider that no task exists. The
-  attestation is persisted with the attempt it released, so the release is
-  always attributable afterwards.
+* Then the provider's side has to be ruled out, and only a human can do that:
+  Runway offers no way to look up a task whose ID we never received, which is
+  exactly why these items are parked in the first place. So a release requires a
+  named operator confirming against the provider that no task exists, and that
+  attestation is persisted with the attempt it released - the release is always
+  attributable afterwards.
 
 A reconciled item goes back to ``animation_failed`` with its task marked
 ``submission_failed``, which is the state the pipeline already knows how to
@@ -40,10 +40,8 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from services.animation.pipeline import SUBMISSION_NOT_SENT_CODE
 from vidgen.contracts.animation import (
     MAX_RECONCILED_ITEMS,
-    AmbiguousSubmissionEvidence,
     AmbiguousSubmissionOutcome,
     AmbiguousSubmissionReconciliation,
     AmbiguousSubmissionReconciliationReport,
@@ -65,6 +63,7 @@ AMBIGUOUS_ITEM_STATUS = "provider_outcome_ambiguous"
 RECONCILED_ERROR_CODE = "AMBIGUOUS_SUBMISSION_RECONCILED"
 #: Bound on the attestation note persisted with a released attempt.
 MAX_NOTE_LENGTH = 500
+
 
 @dataclass(frozen=True, slots=True)
 class OperatorAttestation:
@@ -110,9 +109,15 @@ def reconcile_ambiguous_submissions(
     The caller keeps the transaction: this flushes, never commits, so a request
     that fails afterwards leaves no half-released item behind.
     """
-    items = ambiguous_animation_items(session, project_id, shot_ids=shot_ids)[:MAX_RECONCILED_ITEMS]
+    stranded = ambiguous_animation_items(session, project_id, shot_ids=shot_ids)
+    # One report is bounded, so a project with more stranded items than that is
+    # reconciled over several passes. ``remaining_count`` says so rather than
+    # letting a truncated answer read as a complete one.
     costs = CostRepository(session)
-    outcomes = [_reconcile_item(session, costs, item, attestation) for item in items]
+    outcomes = [
+        _reconcile_item(session, costs, item, attestation)
+        for item in stranded[:MAX_RECONCILED_ITEMS]
+    ]
     session.flush()
     reconciled = sum(
         outcome.outcome == AmbiguousSubmissionOutcome.RECONCILED for outcome in outcomes
@@ -122,6 +127,7 @@ def reconcile_ambiguous_submissions(
         examined_count=len(outcomes),
         reconciled_count=reconciled,
         refused_count=len(outcomes) - reconciled,
+        remaining_count=len(stranded) - len(outcomes),
         items=outcomes,
     )
 
@@ -156,15 +162,14 @@ def _reconcile_item(
             remote_task_id=existing,
             detail="the attempt owns a remote task; poll or cancel it instead of releasing it",
         )
-    evidence = _evidence(task, attestation)
-    if evidence is None:
+    if not (attestation.verified_no_remote_task and attestation.subject.strip()):
         return AmbiguousSubmissionReconciliation(
             animation_item_id=item.id,
             shot_id=item.shot_id,
             outcome=AmbiguousSubmissionOutcome.ATTESTATION_REQUIRED,
             detail=(
-                "nothing proves the provider created no task; confirm against the provider "
-                "and resubmit with an explicit no-remote-task attestation"
+                "only the provider can say whether it created a task; confirm there and "
+                "resubmit with an explicit no-remote-task attestation"
             ),
         )
     released = _release(costs, task)
@@ -176,22 +181,16 @@ def _reconcile_item(
         **dict(task.response_metadata or {}),
         "reconciled_at": datetime.now(UTC).isoformat(),
         "reconciled_by": attestation.subject[:255],
-        "reconciliation_evidence": evidence.value,
         "reconciliation_note": attestation.note[:MAX_NOTE_LENGTH],
     }
     _LOGGER.info(
         "released an ambiguous T15 submission back to a retryable state",
-        extra={
-            "animationItemId": str(item.id),
-            "shotId": str(item.shot_id),
-            "evidence": evidence.value,
-        },
+        extra={"animationItemId": str(item.id), "shotId": str(item.shot_id)},
     )
     return AmbiguousSubmissionReconciliation(
         animation_item_id=item.id,
         shot_id=item.shot_id,
         outcome=AmbiguousSubmissionOutcome.RECONCILED,
-        evidence=evidence,
         released_reservation_id=released,
         detail="returned to a retryable state; the shot's next retry resubmits it",
     )
@@ -205,20 +204,6 @@ def _existing_remote_task(session: Session, item: AnimationItem, task: RunwayTas
         select(AnimationGeneratedVideo).where(AnimationGeneratedVideo.animation_item_id == item.id)
     )
     return video.remote_task_id if video is not None else None
-
-
-def _evidence(
-    task: RunwayTask, attestation: OperatorAttestation
-) -> AmbiguousSubmissionEvidence | None:
-    """How - if at all - this attempt can be shown to hold no remote task."""
-    if task.failure_code == SUBMISSION_NOT_SENT_CODE:
-        # Written by an adapter that proved the request never left the process.
-        # A worker running an older classification could park such a failure as
-        # ambiguous, and its own record is enough to release it again.
-        return AmbiguousSubmissionEvidence.PROVIDER_NEVER_SENT
-    if attestation.verified_no_remote_task and attestation.subject.strip():
-        return AmbiguousSubmissionEvidence.OPERATOR_ATTESTATION
-    return None
 
 
 def _release(costs: CostRepository, task: RunwayTask) -> UUID | None:

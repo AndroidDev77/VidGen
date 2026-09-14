@@ -1,14 +1,5 @@
 {
   "$defs": {
-    "AmbiguousSubmissionEvidence": {
-      "description": "How a reconciliation established that no remote task exists.",
-      "enum": [
-        "provider_never_sent",
-        "operator_attestation"
-      ],
-      "title": "AmbiguousSubmissionEvidence",
-      "type": "string"
-    },
     "AmbiguousSubmissionOutcome": {
       "description": "What one ambiguous T15 submission reconciliation concluded.\n\nOnly ``RECONCILED`` changes anything. The other two are refusals that say\nwhich evidence is missing, because an ambiguous submission that is released\nwithout it can be resubmitted into a duplicate - and duplicately billed -\nremote task.",
       "enum": [
@@ -33,17 +24,6 @@
       "maxLength": 500,
       "title": "Detail",
       "type": "string"
-    },
-    "evidence": {
-      "anyOf": [
-        {
-          "$ref": "#/$defs/AmbiguousSubmissionEvidence"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "default": null
     },
     "outcome": {
       "$ref": "#/$defs/AmbiguousSubmissionOutcome"

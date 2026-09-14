@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import asyncio
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
 from types import SimpleNamespace
 from uuid import uuid4
@@ -231,3 +233,48 @@ def test_releasing_a_caller_owned_client_leaves_it_alone() -> None:
 
     asyncio.run(release())
     assert closed == []
+
+
+def test_concurrent_activities_each_get_their_own_client() -> None:
+    """The worker runs several activities at once, each on its own loop.
+
+    They share one provider instance, so a single cached client would let them
+    evict each other's - and hand one across loops, which is the very failure
+    this provider exists to prevent.
+    """
+    calls: list[object] = []
+    closed: list[object] = []
+    created: list[object] = []
+
+    def build() -> LoopBoundClient:
+        client = LoopBoundClient(calls, closed)
+        created.append(client)
+        return client
+
+    provider = RunwayVideoProvider(client_factory=build)
+    started = threading.Barrier(4)
+
+    async def activity() -> str:
+        try:
+            first = await provider.submit(request(), "data:image/png;base64,abc")
+            # Hold the loop open while the others run, so the threads overlap
+            # on the provider rather than taking turns.
+            await asyncio.sleep(0.05)
+            second = await provider.submit(request(), "data:image/png;base64,abc")
+            assert first.remote_task_id == second.remote_task_id
+            return second.remote_task_id
+        finally:
+            await provider.release_loop_client()
+
+    def run() -> str:
+        started.wait(timeout=10)
+        return asyncio.run(activity())
+
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        results = [future.result(timeout=30) for future in [pool.submit(run) for _ in range(4)]]
+
+    assert results == ["task-1"] * 4
+    # One client per loop, each closed on the loop that opened it, and none
+    # left behind for a loop that has gone.
+    assert len(created) == 4
+    assert len(closed) == 4

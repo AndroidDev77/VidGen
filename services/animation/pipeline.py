@@ -51,7 +51,7 @@ from vidgen.contracts.animation import (
 from vidgen.contracts.costs import BudgetDecision, CostReservationRequest
 from vidgen.contracts.generation import RoutingDecision
 from vidgen.contracts.storyboard import HERO_IMPORTANCE_FLOOR, StoryboardShot
-from vidgen.contracts.telemetry import FailureClass, UsageUnit
+from vidgen.contracts.telemetry import UsageUnit
 from vidgen.db.animation_models import (
     AnimationGeneratedVideo,
     AnimationItem,
@@ -79,21 +79,6 @@ _LOGGER = logging.getLogger("vidgen.animation.pipeline")
 #: can exist for the attempt, which is exactly what an ambiguous submission
 #: cannot say.
 SUBMISSION_NOT_SENT_CODE = "SUBMISSION_NOT_SENT"
-
-#: Failure classes that are the provider's own answer to the request: it was
-#: received, refused, and no task was created. Their pre-call reservation covers
-#: spend that will never happen, so it goes back to the project's budget.
-_PROVIDER_REFUSED_WITHOUT_A_TASK: frozenset[FailureClass] = frozenset(
-    {
-        FailureClass.INVALID_REQUEST,
-        FailureClass.PROVIDER_REJECTED,
-        FailureClass.CONTENT_FILTER,
-        FailureClass.AUTHENTICATION,
-        FailureClass.AUTHORIZATION,
-        FailureClass.RATE_LIMIT,
-        FailureClass.BUDGET_EXCEEDED,
-    }
-)
 
 
 class AnimationCancelled(RuntimeError):
@@ -734,13 +719,13 @@ class AnimationPipeline:
                 _body = getattr(error, "body", None)
                 _provider_msg = _body.get("error") if isinstance(_body, dict) else None
                 task.failure_message = (_provider_msg or failure.sanitized_message)[:1024]
-                # A refusal the provider itself answered with means it received
-                # the request and created nothing, so its reservation is
-                # released here too. Anything else - a transport failure, a
-                # timeout, a cancellation - may have left a task behind, and
-                # this path is not entitled to decide that it did not.
-                if failure.failure_class in _PROVIDER_REFUSED_WITHOUT_A_TASK:
-                    self._release_reservation(task, request.application_idempotency_key)
+                # ``submission_failed`` is the status that makes this attempt
+                # resubmittable, so the release has to follow the same decision:
+                # holding a reservation for a submit the pipeline will redo from
+                # scratch leaks one on every attempt, and there is no way back
+                # to it. A submit whose outcome is genuinely unknown is the
+                # ambiguous branch above - it neither resubmits nor releases.
+                self._release_reservation(task, request.application_idempotency_key)
                 self.session.commit()
                 raise
             task.remote_task_id = provider_task.remote_task_id
