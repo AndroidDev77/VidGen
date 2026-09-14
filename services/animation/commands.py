@@ -37,11 +37,15 @@ def build_provider(
     if options.provider == "runway":
         if not options.runway_api_key:
             raise ValueError("RUNWAYML_API_SECRET is required")
-        if client is None:
-            from runwayml import AsyncRunwayML
+        if client is not None:
+            return RunwayVideoProvider(client)
+        from runwayml import AsyncRunwayML
 
-            client = AsyncRunwayML(api_key=options.runway_api_key, max_retries=0)
-        return RunwayVideoProvider(client)
+        key = options.runway_api_key
+        # A factory rather than a client, so the provider stays correct when the
+        # caller runs more than one event loop over its lifetime - which is what
+        # every Temporal activity does.
+        return RunwayVideoProvider(client_factory=lambda: AsyncRunwayML(api_key=key, max_retries=0))
     raise ValueError(f"unsupported video provider: {options.provider}")
 
 

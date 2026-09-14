@@ -264,3 +264,18 @@ class VideoGenerationProvider(Protocol):
     ) -> VideoProviderTask: ...
     async def retrieve(self, remote_task_id: str) -> VideoProviderTask: ...
     async def cancel(self, remote_task_id: str) -> bool: ...
+
+
+async def release_provider_loop_client(provider: object) -> None:
+    """Close any per-event-loop client ``provider`` opened on the running loop.
+
+    A provider that keeps no loop-bound state - the deterministic fake, which is
+    deliberately shared so a retried polling activity retrieves the task a prior
+    execution submitted - is left completely alone. This is intentionally not
+    part of :class:`VideoGenerationProvider`: needing a client at all is an
+    adapter's private business, not something the pipeline boundary asserts.
+    """
+    release = getattr(provider, "release_loop_client", None)
+    if release is None:
+        return
+    await release()

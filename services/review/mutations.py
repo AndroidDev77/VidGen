@@ -15,6 +15,10 @@ from uuid import UUID, uuid4
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from services.animation.reconciliation import (
+    OperatorAttestation,
+    reconcile_ambiguous_submissions,
+)
 from services.control_plane.commands import ControlPlaneService
 from services.control_plane.shot_commands import next_regeneration_sequence
 from services.render_execution.inputs import resolve_render_inputs
@@ -30,6 +34,10 @@ from services.review.shot_identity import (
     shot_workflow_identity,
 )
 from services.script.canonicalize import compute_segment_content_hash
+from vidgen.contracts.animation import (
+    AmbiguousSubmissionOutcome,
+    AmbiguousSubmissionReconciliationReport,
+)
 from vidgen.contracts.control_commands import (
     ControlCommand,
     ControlCommandTargetType,
@@ -547,6 +555,45 @@ class ReviewMutationService:
             stage=PipelineStage.SHOT_ORCHESTRATION,
         )
         return attempt
+
+    def reconcile_ambiguous_animation(
+        self,
+        project: Project,
+        *,
+        shot_ids: tuple[UUID, ...] = (),
+        verified_no_remote_task: bool = False,
+        note: str = "",
+    ) -> AmbiguousSubmissionReconciliationReport:
+        """Release the shots stranded on an ambiguous T15 submission.
+
+        Called without an attestation this reports what it *would* release and
+        why it cannot, which is what an operator needs before confirming
+        anything against the provider. Each released shot goes back to a
+        retryable state and gives its cost reservation back; the shot's own
+        retry command is what actually resubmits it.
+        """
+        report = reconcile_ambiguous_submissions(
+            self._session,
+            project_id=project.id,
+            attestation=OperatorAttestation(
+                subject=self._owner,
+                verified_no_remote_task=verified_no_remote_task,
+                note=note,
+            ),
+            shot_ids=shot_ids,
+        )
+        if not report.reconciled_count:
+            return report
+        for outcome in report.items:
+            if outcome.outcome == AmbiguousSubmissionOutcome.RECONCILED:
+                self._versions.bump(project.id, "shot", outcome.shot_id)
+        self._events.append(
+            project.id,
+            event_type="ambiguous_submission_reconciled",
+            status="reconciled",
+            stage=PipelineStage.SHOT_ORCHESTRATION,
+        )
+        return report
 
     # ------------------------------------------------------------------
     # Render and approval

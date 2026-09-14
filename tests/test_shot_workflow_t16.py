@@ -134,6 +134,27 @@ def test_a_qa_contract_violation_is_terminal_rather_than_a_parked_retry() -> Non
     assert shot._classify_failure(ApplicationError("boom", type="SomethingElse")).retryable is True
 
 
+def test_only_a_genuinely_unknown_submission_outcome_parks_the_shot() -> None:
+    """The distinction that stops a lost request from stranding a shot forever.
+
+    Resubmitting a submission Runway may have accepted can create and bill a
+    duplicate task, so an ambiguous outcome stays non-retryable. A submission
+    the adapter proved never left the worker created nothing, so it retries.
+    """
+    shot = ShotWorkflow()
+    ambiguous = shot._classify_failure(
+        ApplicationError("lost", type="AmbiguousVideoSubmission", non_retryable=True)
+    )
+    assert ambiguous.classification is ShotFailureClass.UNKNOWN_FAILURE
+    assert ambiguous.retryable is False
+
+    not_sent = shot._classify_failure(
+        ApplicationError("event loop is closed", type="VideoSubmissionNotSent")
+    )
+    assert not_sent.classification is ShotFailureClass.TRANSIENT_PROVIDER_FAILURE
+    assert not_sent.retryable is True
+
+
 def test_ten_shot_failure_isolation_acceptance_model() -> None:
     """Deterministic orchestration model: only failed animation is retried."""
     calls = {index: {"t14": 0, "t15": 0} for index in range(10)}

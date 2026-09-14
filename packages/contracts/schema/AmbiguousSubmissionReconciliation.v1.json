@@ -1,0 +1,76 @@
+{
+  "$defs": {
+    "AmbiguousSubmissionOutcome": {
+      "description": "What one ambiguous T15 submission reconciliation concluded.\n\nOnly ``RECONCILED`` changes anything. The other two are refusals that say\nwhich evidence is missing, because an ambiguous submission that is released\nwithout it can be resubmitted into a duplicate - and duplicately billed -\nremote task.",
+      "enum": [
+        "reconciled",
+        "remote_task_exists",
+        "attestation_required"
+      ],
+      "title": "AmbiguousSubmissionOutcome",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "description": "What reconciliation did - or refused to do - for one animation item.",
+  "properties": {
+    "animation_item_id": {
+      "format": "uuid",
+      "title": "Animation Item Id",
+      "type": "string"
+    },
+    "detail": {
+      "default": "",
+      "maxLength": 500,
+      "title": "Detail",
+      "type": "string"
+    },
+    "outcome": {
+      "$ref": "#/$defs/AmbiguousSubmissionOutcome"
+    },
+    "released_reservation_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Released Reservation Id"
+    },
+    "remote_task_id": {
+      "anyOf": [
+        {
+          "maxLength": 255,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Remote Task Id"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "shot_id": {
+      "format": "uuid",
+      "title": "Shot Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "animation_item_id",
+    "shot_id",
+    "outcome"
+  ],
+  "title": "AmbiguousSubmissionReconciliation",
+  "type": "object"
+}

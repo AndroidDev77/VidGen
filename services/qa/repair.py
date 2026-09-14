@@ -32,7 +32,10 @@ from sqlalchemy.orm import Session
 
 from services.animation.downloader import download_video
 from services.animation.input_assets import resolve_input_asset
-from services.animation.pipeline_errors import AmbiguousVideoSubmission
+from services.animation.pipeline_errors import (
+    AmbiguousVideoSubmission,
+    VideoSubmissionNotSent,
+)
 from services.animation.pricing import estimate_runway_cost
 from services.animation.probe import probe_video
 from services.animation.providers import VideoGenerationProvider, capability_for
@@ -980,9 +983,20 @@ class VisualRepairPipeline:
             try:
                 task = await self.same_provider.submit(request, resolved.data_uri)
             except AmbiguousVideoSubmission:
+                # Never resubmitted: the provider may already have created - and
+                # billed - the task, so the run stops for a human decision.
                 attempt.failure_code = "ambiguous_submission"
                 self.session.commit()
                 raise
+            except VideoSubmissionNotSent as error:
+                # The request provably never left the process, so nothing was
+                # created or billed. That is a spent attempt, not an unknown
+                # outcome: the reservation goes back and the bounded policy
+                # re-routes, rather than leaving this one submitted forever.
+                self._reconcile(attempt, Decimal("0"), billable=False)
+                raise _AttemptFailed(
+                    "submission_not_sent", RepairFailureCategory.PROVIDER_ISSUE
+                ) from error
             attempt.provider_operation_id = task.remote_task_id
             provider_attempt.set_result(
                 provider_request_id=task.provider_request_id or task.remote_task_id,

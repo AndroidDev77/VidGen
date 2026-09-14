@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import logging
 from collections.abc import Callable
 from decimal import Decimal
 from pathlib import Path
@@ -18,7 +19,7 @@ from sqlalchemy.orm import Session
 from services.animation.downloader import download_video
 from services.animation.input_assets import resolve_input_asset
 from services.animation.motion_prompt import compile_motion_prompt
-from services.animation.pipeline_errors import AmbiguousVideoSubmission
+from services.animation.pipeline_errors import AmbiguousVideoSubmission, VideoSubmissionNotSent
 from services.animation.pricing import estimate_runway_cost
 from services.animation.providers import (
     VideoGenerationProvider,
@@ -69,6 +70,15 @@ from vidgen.telemetry.provider import instrument_provider_attempt
 
 PIPELINE_VERSION = "animation/1.1.0"
 VALIDATION_VERSION = "technical-video/1.0"
+
+_LOGGER = logging.getLogger("vidgen.animation.pipeline")
+
+#: The durable ``runway_tasks`` failure code for a submission the adapter proved
+#: never reached the provider. It is what tells a later reader - an operator, a
+#: reconciliation, this pipeline's own resubmission check - that no remote task
+#: can exist for the attempt, which is exactly what an ambiguous submission
+#: cannot say.
+SUBMISSION_NOT_SENT_CODE = "SUBMISSION_NOT_SENT"
 
 
 class AnimationCancelled(RuntimeError):
@@ -670,7 +680,25 @@ class AnimationPipeline:
             self.session.commit()  # durable pre-call checkpoint
             try:
                 provider_task = await self.provider.submit(request, prompt_image)
+            except VideoSubmissionNotSent as error:
+                # The adapter proved the request never left the process, so no
+                # remote task can exist: resubmitting cannot duplicate or
+                # double-bill one. The item stays a plain retryable failure and
+                # the reservation taken for a submit that never happened is
+                # released rather than being held against the project's budget.
+                failure = classify_failure(error)
+                item.status = "animation_failed"
+                item.error_code = failure.error_code
+                task.provider_status = "submission_failed"
+                task.failure_code = SUBMISSION_NOT_SENT_CODE
+                task.failure_message = str(error)[:1024]
+                self._release_reservation(task, request.application_idempotency_key)
+                self.session.commit()
+                raise
             except AmbiguousVideoSubmission:
+                # Deliberately *not* released: if Runway did create the task,
+                # the reservation is covering real spend. An operator
+                # reconciliation releases it once no remote task is confirmed.
                 item.status = "provider_outcome_ambiguous"
                 task.provider_status = "ambiguous"
                 failure = classify_failure(
@@ -691,6 +719,13 @@ class AnimationPipeline:
                 _body = getattr(error, "body", None)
                 _provider_msg = _body.get("error") if isinstance(_body, dict) else None
                 task.failure_message = (_provider_msg or failure.sanitized_message)[:1024]
+                # ``submission_failed`` is the status that makes this attempt
+                # resubmittable, so the release has to follow the same decision:
+                # holding a reservation for a submit the pipeline will redo from
+                # scratch leaks one on every attempt, and there is no way back
+                # to it. A submit whose outcome is genuinely unknown is the
+                # ambiguous branch above - it neither resubmits nor releases.
+                self._release_reservation(task, request.application_idempotency_key)
                 self.session.commit()
                 raise
             task.remote_task_id = provider_task.remote_task_id
@@ -702,6 +737,21 @@ class AnimationPipeline:
             )
             self.session.commit()  # remote ID is durable before the first poll
             return task
+
+    def _release_reservation(self, task: RunwayTask, identity: str) -> None:
+        """Release the pre-call reservation for a submit that created no task.
+
+        Best effort by design: this runs inside an exception path, and a
+        reservation that some earlier attempt already reconciled must never
+        replace the submission failure the caller is propagating.
+        """
+        try:
+            self._reconcile(task, identity, Decimal("0"), billable=False)
+        except (ValueError, LookupError):
+            _LOGGER.warning(
+                "could not release the cost reservation for a failed T15 submission",
+                extra={"animationItemId": str(task.animation_item_id)},
+            )
 
     def _reconcile(
         self, task: RunwayTask, identity: str, actual: Decimal, *, billable: bool = True

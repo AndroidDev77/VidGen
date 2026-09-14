@@ -24,6 +24,8 @@ from apps.api.routes._common import (
 )
 from apps.api.schemas.control_commands import ControlCommandResponse
 from apps.api.schemas.shots import (
+    ReconcileAmbiguousAnimationRequest,
+    ReconcileAmbiguousAnimationResponse,
     RegenerateShotRequest,
     SelectShotAttemptRequest,
     ShotDetailResponse,
@@ -45,6 +47,7 @@ REGENERATE_OPERATION = "shot:regenerate"
 RETRY_OPERATION = "shot:retry"
 CANCEL_OPERATION = "shot:cancel"
 SELECT_ATTEMPT_OPERATION = "shot:select-attempt"
+RECONCILE_OPERATION = "shot:reconcile-ambiguous-animation"
 
 
 @router.get("/{project_id}/shots", response_model=ShotListResponse)
@@ -203,6 +206,59 @@ def cancel_shot(
         key,
         {},
         status.HTTP_202_ACCEPTED,
+        body.model_dump(mode="json"),
+    )
+    session.commit()
+    return body
+
+
+@router.post(
+    "/{project_id}/shots:reconcile-ambiguous-animation",
+    response_model=ReconcileAmbiguousAnimationResponse,
+)
+def reconcile_ambiguous_animation(
+    project_id: UUID,
+    request: ReconcileAmbiguousAnimationRequest,
+    session: SessionDep,
+    principal: PrincipalDep,
+    controller: ControllerDep,
+    idempotency_key: IdempotencyKeyDep = None,
+) -> ReconcileAmbiguousAnimationResponse:
+    """Return shots stranded on an ambiguous T15 submission to a retryable state.
+
+    An ambiguous submission is one whose outcome nobody knows, so the pipeline
+    refuses to resubmit it: doing that blind can create and bill a duplicate
+    remote task. This is the way back out. It releases a shot only when no
+    remote task can exist - the attempt owns none, and either its own durable
+    record proves the request never left the worker or the caller attests they
+    confirmed it against the provider - and it hands the shot's cost reservation
+    back when it does. Nothing is resubmitted here; the shot's retry does that.
+
+    Without ``verified_no_remote_task`` the call is a dry run, which is what an
+    operator wants first: it names every stranded shot and what each still
+    needs. There is no ``If-Match``: the target is every stranded shot of the
+    project rather than one row, and which shots those are is exactly what the
+    caller is asking.
+    """
+    project = owned_project(session, project_id, principal)
+    idempotency = idempotency_for(session, principal)
+    key = idempotency.require_key(RECONCILE_OPERATION, idempotency_key)
+    payload = request.model_dump(mode="json")
+    replayed = idempotency.replay(RECONCILE_OPERATION, str(project_id), key, payload)
+    if replayed is not None:
+        return ReconcileAmbiguousAnimationResponse.model_validate(replayed)
+    body = mutations_for(session, principal, controller).reconcile_ambiguous_animation(
+        project,
+        shot_ids=tuple(request.shot_ids),
+        verified_no_remote_task=request.verified_no_remote_task,
+        note=request.note,
+    )
+    idempotency.record(
+        RECONCILE_OPERATION,
+        str(project_id),
+        key,
+        payload,
+        status.HTTP_200_OK,
         body.model_dump(mode="json"),
     )
     session.commit()

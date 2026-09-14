@@ -1,6 +1,8 @@
 """Versioned contracts shared by all VidGen pipeline stages."""
 
 from vidgen.contracts.animation import (
+    AmbiguousSubmissionReconciliation,
+    AmbiguousSubmissionReconciliationReport,
     AnimationResult,
     AnimationRunRequest,
     AnimationRunResult,
@@ -379,6 +381,8 @@ from vidgen.contracts.workflow import (
 __all__ = [
     "ActionPlan",
     "AliasEvidence",
+    "AmbiguousSubmissionReconciliation",
+    "AmbiguousSubmissionReconciliationReport",
     "AnalysisInference",
     "AnalysisObservation",
     "AnalysisValidationError",

@@ -1,10 +1,20 @@
 from __future__ import annotations
 
 import asyncio
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
 from types import SimpleNamespace
 from uuid import uuid4
 
+import httpx
+import pytest
+from runwayml import APIConnectionError, APITimeoutError
+
+from services.animation.pipeline_errors import (
+    AmbiguousVideoSubmission,
+    VideoSubmissionNotSent,
+)
 from services.animation.runway import RunwayVideoProvider
 from vidgen.contracts.animation import RunwayModel, VideoProvider, VideoProviderRequest
 
@@ -76,3 +86,195 @@ def test_submission_maps_exact_request_and_retrieval_redacts_outputs() -> None:
     assert result.status.value == "succeeded"
     assert result.output_handles == ("https://signed.invalid/output.mp4",)
     assert "signed.invalid" not in result.model_dump_json()
+
+
+class LoopBoundResource:
+    """A resource whose connections belong to the loop that opened them.
+
+    Faithful to the failure the real client has: the first call binds it to the
+    running loop, and any later call from a different loop fails the way httpx
+    does when it is handed a pooled connection from a loop that has closed.
+    """
+
+    def __init__(self, response, calls: list[object]) -> None:
+        self.response = response
+        self.calls = calls
+        self._loop: asyncio.AbstractEventLoop | None = None
+
+    async def create(self, **kwargs):
+        self._bind()
+        self.calls.append(kwargs)
+        return self.response
+
+    def _bind(self) -> None:
+        running = asyncio.get_running_loop()
+        if self._loop is None:
+            self._loop = running
+        elif self._loop is not running:
+            raise APIConnectionError(
+                request=httpx.Request("POST", "https://api.invalid/v1/image_to_video")
+            ) from RuntimeError("Event loop is closed")
+
+
+class LoopBoundClient:
+    def __init__(self, calls: list[object], closed: list[object]) -> None:
+        self.image_to_video = LoopBoundResource(SimpleNamespace(id="task-1"), calls)
+        self.tasks = LoopBoundResource(SimpleNamespace(id="task-1"), calls)
+        self._closed = closed
+
+    async def close(self) -> None:
+        self._closed.append(self)
+
+
+def failing_client(cause: BaseException, *, timeout: bool = False):
+    """A client whose submit fails the way the SDK reports a transport failure."""
+    request = httpx.Request("POST", "https://api.invalid/v1/image_to_video")
+    error = APITimeoutError(request=request) if timeout else APIConnectionError(request=request)
+    error.__cause__ = cause
+
+    class Failing:
+        async def create(self, **kwargs):
+            raise error
+
+    return SimpleNamespace(image_to_video=Failing(), tasks=Failing())
+
+
+def test_a_client_shared_across_two_event_loops_breaks_the_second_submit() -> None:
+    """The regression itself, so the fake below is known to be faithful.
+
+    Every activity runs its coroutine in its own ``asyncio.run`` loop. One
+    client shared across them hands the second activity a connection belonging
+    to a loop that has already closed.
+    """
+    calls: list[object] = []
+    client = LoopBoundClient(calls, [])
+    provider = RunwayVideoProvider(client)
+    assert asyncio.run(provider.submit(request(), "data:image/png;base64,abc"))
+    with pytest.raises(VideoSubmissionNotSent):
+        asyncio.run(provider.submit(request(), "data:image/png;base64,abc"))
+
+
+def test_one_provider_submits_across_separate_event_loops() -> None:
+    """The fix: a shared provider opens - and releases - one client per loop."""
+    calls: list[object] = []
+    closed: list[object] = []
+    provider = RunwayVideoProvider(
+        client_factory=lambda: LoopBoundClient(calls, closed),
+    )
+
+    async def submit_and_release():
+        try:
+            return await provider.submit(request(), "data:image/png;base64,abc")
+        finally:
+            await provider.release_loop_client()
+
+    first = asyncio.run(submit_and_release())
+    second = asyncio.run(submit_and_release())
+    assert first.remote_task_id == second.remote_task_id == "task-1"
+    assert len(calls) == 2
+    # One client per loop, and each one closed on the loop that opened it.
+    assert len(closed) == 2
+
+
+def test_a_closed_event_loop_is_never_an_ambiguous_outcome() -> None:
+    """The failure that stranded ten shots: local, so no remote task exists."""
+    provider = RunwayVideoProvider(failing_client(RuntimeError("Event loop is closed")))
+    with pytest.raises(VideoSubmissionNotSent):
+        asyncio.run(provider.submit(request(), "data:image/png;base64,abc"))
+
+
+@pytest.mark.parametrize(
+    "cause",
+    [
+        httpx.ConnectError("connection refused"),
+        httpx.ConnectTimeout("handshake timed out"),
+        httpx.PoolTimeout("no connection available"),
+    ],
+)
+def test_a_connection_that_was_never_established_is_not_ambiguous(cause: Exception) -> None:
+    provider = RunwayVideoProvider(failing_client(cause))
+    with pytest.raises(VideoSubmissionNotSent):
+        asyncio.run(provider.submit(request(), "data:image/png;base64,abc"))
+
+
+@pytest.mark.parametrize(
+    ("cause", "timeout"),
+    [
+        (httpx.ReadTimeout("no response"), True),
+        (httpx.WriteTimeout("half-written"), True),
+        (httpx.RemoteProtocolError("server disconnected"), False),
+        (OSError("connection reset by peer"), False),
+    ],
+)
+def test_a_failure_after_the_request_could_have_been_sent_stays_ambiguous(
+    cause: Exception, timeout: bool
+) -> None:
+    """Runway may hold a task for any of these, so none of them may be retried."""
+    provider = RunwayVideoProvider(failing_client(cause, timeout=timeout))
+    with pytest.raises(AmbiguousVideoSubmission):
+        asyncio.run(provider.submit(request(), "data:image/png;base64,abc"))
+
+
+def test_a_provider_takes_a_client_or_a_factory_but_never_both() -> None:
+    with pytest.raises(ValueError, match="exactly one"):
+        RunwayVideoProvider()
+    with pytest.raises(ValueError, match="exactly one"):
+        RunwayVideoProvider(SimpleNamespace(), client_factory=SimpleNamespace)
+
+
+def test_releasing_a_caller_owned_client_leaves_it_alone() -> None:
+    """A caller that injected its own client keeps owning its lifetime."""
+    closed: list[object] = []
+    client = LoopBoundClient([], closed)
+    provider = RunwayVideoProvider(client)
+
+    async def release() -> None:
+        await provider.release_loop_client()
+
+    asyncio.run(release())
+    assert closed == []
+
+
+def test_concurrent_activities_each_get_their_own_client() -> None:
+    """The worker runs several activities at once, each on its own loop.
+
+    They share one provider instance, so a single cached client would let them
+    evict each other's - and hand one across loops, which is the very failure
+    this provider exists to prevent.
+    """
+    calls: list[object] = []
+    closed: list[object] = []
+    created: list[object] = []
+
+    def build() -> LoopBoundClient:
+        client = LoopBoundClient(calls, closed)
+        created.append(client)
+        return client
+
+    provider = RunwayVideoProvider(client_factory=build)
+    started = threading.Barrier(4)
+
+    async def activity() -> str:
+        try:
+            first = await provider.submit(request(), "data:image/png;base64,abc")
+            # Hold the loop open while the others run, so the threads overlap
+            # on the provider rather than taking turns.
+            await asyncio.sleep(0.05)
+            second = await provider.submit(request(), "data:image/png;base64,abc")
+            assert first.remote_task_id == second.remote_task_id
+            return second.remote_task_id
+        finally:
+            await provider.release_loop_client()
+
+    def run() -> str:
+        started.wait(timeout=10)
+        return asyncio.run(activity())
+
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        results = [future.result(timeout=30) for future in [pool.submit(run) for _ in range(4)]]
+
+    assert results == ["task-1"] * 4
+    # One client per loop, each closed on the loop that opened it, and none
+    # left behind for a loop that has gone.
+    assert len(created) == 4
+    assert len(closed) == 4

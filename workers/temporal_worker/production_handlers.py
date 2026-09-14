@@ -27,7 +27,10 @@ from services.analysis.pipeline import EpisodeAnalysisPipeline
 from services.animation.fake_provider import FakeVideoProvider
 from services.animation.pipeline import PIPELINE_VERSION as T15_PIPELINE_VERSION
 from services.animation.pipeline import AnimationPipeline
-from services.animation.providers import VideoGenerationProvider
+from services.animation.providers import (
+    VideoGenerationProvider,
+    release_provider_loop_client,
+)
 from services.animation.routing import RoutingError
 from services.animation.runway import RunwayVideoProvider
 from services.continuity.orchestrator import (
@@ -97,6 +100,7 @@ from services.subtitles.pipeline import SubtitlePipeline, SubtitlePipelineConfig
 from services.transcription.fake import FakeTranscriptionProvider
 from services.transcription.openai_adapter import OpenAITranscriptionAdapter
 from services.transcription.pipeline import TranscriptionPipeline
+from vidgen.contracts.animation import AnimationResult
 from vidgen.contracts.continuity import (
     ReferenceGenerationRequest,
     ReferenceGenerationResult,
@@ -115,7 +119,7 @@ from vidgen.contracts.control_commands import (
 from vidgen.contracts.final_editorial import FinalQAStatus
 from vidgen.contracts.media import ExtractedFrame, SceneBoundary
 from vidgen.contracts.render_execution import RenderExecutionResult, RenderExecutionStatus
-from vidgen.contracts.repair import RepairRunState
+from vidgen.contracts.repair import RepairOutcome, RepairRunState
 from vidgen.contracts.shot_workflow import (
     ProjectShotFanoutInput,
     ProjectShotFanoutResult,
@@ -547,9 +551,10 @@ def _run_shot_repair(
             thresholds=_visual_qa_thresholds(session, settings, request.project_id),
         ),
     )
-    try:
-        outcome = asyncio.run(
-            run_visual_repair(
+
+    async def repair() -> RepairOutcome:
+        try:
+            return await run_visual_repair(
                 session,
                 blob_store,
                 project_id=request.project_id,
@@ -557,7 +562,11 @@ def _run_shot_repair(
                 options=options,
                 same_provider=video_provider,
             )
-        )
+        finally:
+            await release_provider_loop_client(video_provider)
+
+    try:
+        outcome = asyncio.run(repair())
     except ValidationError as exc:
         # T21 revalidates every attempt through the same T20 pipeline, so it
         # reaches the same contract and must treat a violation the same way.
@@ -656,9 +665,10 @@ def _run_shot_animation(
     ) or _carried_keyframe_image_run(session, request, shot)
     if image_run is None or image_run.status != "keyframes_complete":
         raise ValueError("InvalidLineage: compatible completed T14 run is missing")
-    try:
-        result = asyncio.run(
-            AnimationPipeline(
+
+    async def animate() -> AnimationResult:
+        try:
+            return await AnimationPipeline(
                 session,
                 blob_store,
                 video_provider,
@@ -673,7 +683,14 @@ def _run_shot_animation(
                 shot_id=request.storyboard_shot_id,
                 idempotency_key=shot_activity_idempotency_key(request.shot_input_hash, "t15"),
             )
-        )
+        finally:
+            # This loop closes when the activity returns, so the client it
+            # opened is shut down here rather than left holding connections
+            # nothing can ever use again.
+            await release_provider_loop_client(video_provider)
+
+    try:
+        result = asyncio.run(animate())
     except Exception as exc:
         terminal = terminal_animation_error(exc)
         if terminal is not None:
@@ -765,8 +782,16 @@ def build_shot_production_handlers(
     if configured.runway_api_secret:
         from runwayml import AsyncRunwayML
 
+        secret = configured.runway_api_secret
+        # A factory, never a client: every activity runs its coroutine in its own
+        # ``asyncio.run`` loop and closes that loop on return, and an async
+        # client's pooled connections belong to the loop they were opened on.
+        # One client shared across activities hands a later one a connection
+        # from a loop that no longer exists, which fails locally with
+        # ``RuntimeError: Event loop is closed``. The adapter opens - and the
+        # activity releases - one client per loop instead.
         video_provider = RunwayVideoProvider(
-            AsyncRunwayML(api_key=configured.runway_api_secret, max_retries=0)
+            client_factory=lambda: AsyncRunwayML(api_key=secret, max_retries=0)
         )
     elif configured.temporal_allow_fake_providers:
         # Retain one fake instance so a retried polling activity can retrieve the

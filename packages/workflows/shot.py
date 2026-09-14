@@ -295,7 +295,12 @@ class ShotWorkflow:
             "OpenAIRateLimited": (ShotFailureClass.RATE_LIMIT, True),
             "UnsupportedCapability": (ShotFailureClass.UNSUPPORTED_CAPABILITY, False),
             "UnknownProviderOutcome": (ShotFailureClass.UNKNOWN_FAILURE, False),
+            # Only a submission whose outcome is genuinely unknown is parked:
+            # resubmitting one can create and bill a duplicate remote task. A
+            # submission the adapter proved never left the process created
+            # nothing, so it retries like any other transport failure.
             "AmbiguousVideoSubmission": (ShotFailureClass.UNKNOWN_FAILURE, False),
+            "VideoSubmissionNotSent": (ShotFailureClass.TRANSIENT_PROVIDER_FAILURE, True),
             "PollingWindowExpired": (ShotFailureClass.POLLING_INTERRUPTION, True),
             "RateLimitError": (ShotFailureClass.RATE_LIMIT, True),
             "TimeoutError": (ShotFailureClass.PROVIDER_TIMEOUT, True),
