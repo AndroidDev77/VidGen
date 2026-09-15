@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from decimal import Decimal
 from functools import lru_cache
 from pathlib import Path
@@ -30,7 +31,32 @@ from vidgen.contracts.visual_qa import (
     VISUAL_QA_WARN_ONLY_ELIGIBLE_CODES,
     VisualQAThresholds,
 )
+from vidgen.providers.openai_models import ModelNameProblem, check_model_name, normalize
 from vidgen.storage.factory import SUPPORTED_BACKENDS
+
+logger = logging.getLogger("vidgen.settings")
+
+#: Every setting that names an OpenAI model. A misconfigured one used to surface
+#: as a provider 400 the first time its stage ran - for final editorial QA, after
+#: the whole pipeline had already been paid for - so all of them are checked here
+#: instead, and the API, the worker and the dispatcher refuse to start without a
+#: callable name. See :mod:`vidgen.providers.openai_models` for the rules.
+#: ``veo_model`` is deliberately absent: it names a Google model, not an OpenAI
+#: one, and is validated by the Veo adapter's capability profile.
+OPENAI_MODEL_SETTINGS: tuple[str, ...] = (
+    "transcription_model",
+    "diarization_model",
+    "analysis_model",
+    "script_compressor_model",
+    "script_writer_model",
+    "script_editor_model",
+    "storyboard_model",
+    "image_model",
+    "visual_qa_first_pass_model",
+    "visual_qa_adjudicator_model",
+    "final_qa_first_pass_model",
+    "final_qa_adjudicator_model",
+)
 
 
 class APISettings(BaseSettings):
@@ -98,31 +124,39 @@ class APISettings(BaseSettings):
     narration_max_trailing_silence: float = Field(default=0.7, ge=0)
     narration_max_internal_silence: float = Field(default=1.5, ge=0)
     openai_api_key: str | None = None
+    #: Escape hatch for a model this repository has not heard of yet. Off by
+    #: default: an unknown name is usually a typo, and one that is not still has
+    #: no price row, so its spend cannot be reconciled against the T23 cap. Set
+    #: it to run a newly published model before the registry catches up; the
+    #: unknown name is then logged as a warning rather than refused. It never
+    #: allows a family name - that is not a model whatever the deployment thinks.
+    allow_unknown_models: bool = False
     transcription_model: str = "whisper-1"
     diarization_model: str = "gpt-4o-transcribe-diarize"
-    analysis_model: str = "gpt-5.6"
+    analysis_model: str = "gpt-5.6-terra"
     #: How many T10 scene analyses may be in flight against the provider at
     #: once. The ceiling is the provider account's concurrent-request limit,
     #: not the machine's: anything above it is rejected with 429 the moment it
     #: is sent. Defaults to 2, which the most restrictive OpenAI tiers allow;
     #: raise it for an account with more headroom.
     analysis_concurrency: int = Field(default=2, ge=1)
-    script_compressor_model: str = "gpt-5.6"
-    script_writer_model: str = "gpt-5.6"
-    script_editor_model: str = "gpt-5.6"
+    script_compressor_model: str = "gpt-5.6-terra"
+    script_writer_model: str = "gpt-5.6-terra"
+    script_editor_model: str = "gpt-5.6-terra"
     #: How many T11 Comedy Editor passes a script generation run may spend.
     #: Each pass stops for human review; a rejection with feedback runs the
     #: next one, and rejecting the last one fails the run.
     script_max_editing_passes: int = Field(default=3, ge=1)
-    storyboard_model: str = "gpt-5.6"
+    storyboard_model: str = "gpt-5.6-terra"
     image_model: str = "gpt-image-2-2026-04-21"
     # T20 visual QA. The design names two roles - Luna for the first pass and
     # Terra for adjudication - and the separation is a policy separation: an
-    # independent attempt, a different prompt, and a higher confidence bar. Both
-    # default to the model this repository already has configured and verified;
-    # check the provider's current official documentation before changing one.
-    visual_qa_first_pass_model: str = "gpt-5.6"
-    visual_qa_adjudicator_model: str = "gpt-5.6"
+    # independent attempt, a different prompt, and a higher confidence bar. The
+    # defaults are the tiers the design names for those roles: the inexpensive
+    # one sees every shot, the stronger one only what is borderline. Check the
+    # provider's current official documentation before changing one.
+    visual_qa_first_pass_model: str = "gpt-5.6-luna"
+    visual_qa_adjudicator_model: str = "gpt-5.6-terra"
     #: Override the unintended-text detector threshold (0.0-1.0; default 0.80).
     #: Raise toward 1.0 for environments where the edge-detection algorithm
     #: produces false positives on AI-generated imagery.
@@ -136,10 +170,9 @@ class APISettings(BaseSettings):
     )
     # T22 final editorial QA reuses the same two-role policy over the assembled
     # recap: Luna evaluates on the inexpensive vision model, Terra adjudicates
-    # only borderline findings on the stronger one. Both default to the model
-    # this repository already has configured and verified.
-    final_qa_first_pass_model: str = "gpt-5.6"
-    final_qa_adjudicator_model: str = "gpt-5.6"
+    # only borderline findings on the stronger one.
+    final_qa_first_pass_model: str = "gpt-5.6-luna"
+    final_qa_adjudicator_model: str = "gpt-5.6-terra"
     #: Off by default: an unconfigured deployment must not silently skip the
     #: bounded second opinion and turn every borderline finding into a failure.
     final_qa_adjudication_enabled: bool = True
@@ -221,6 +254,36 @@ class APISettings(BaseSettings):
         if normalized not in SUPPORTED_BACKENDS:
             raise ValueError(f"blob_backend must be one of {SUPPORTED_BACKENDS}")
         return normalized
+
+    @model_validator(mode="after")
+    def validate_openai_models(self) -> APISettings:
+        """Refuse a model name the provider cannot be called with.
+
+        Cheap and offline: it costs nothing, needs no API key, and it runs before
+        any stage does, so a deployment configured from a stale example fails at
+        start-up rather than at whichever stage happens to reach the provider
+        first. That matters most for the two final-QA settings, whose stage runs
+        after the render.
+
+        A family name is always refused - it is not a model under any
+        configuration. An unknown model is refused too, because nothing can price
+        it, unless the deployment has said it knows better with
+        ``allow_unknown_models``; then it warns and proceeds, so this check can
+        never be the thing that keeps a deployment from starting.
+        """
+        for setting in OPENAI_MODEL_SETTINGS:
+            configured = getattr(self, setting)
+            problem = check_model_name(configured)
+            if problem is None:
+                # Normalized, so the name is checked and sent in the same form.
+                setattr(self, setting, normalize(configured))
+                continue
+            if problem.problem is ModelNameProblem.UNKNOWN and self.allow_unknown_models:
+                logger.warning("%s %s; allowed by allow_unknown_models", setting, problem.reason)
+                setattr(self, setting, normalize(configured))
+                continue
+            raise ValueError(f"{setting} {problem.reason}")
+        return self
 
     @field_validator("cors_allowed_origins", mode="before")
     @classmethod

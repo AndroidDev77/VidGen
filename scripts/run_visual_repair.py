@@ -35,6 +35,7 @@ from services.qa.commands import (
 )
 from vidgen.contracts.repair import RepairAttempt, RepairOutcome
 from vidgen.db.session import build_engine, session_factory
+from vidgen.providers.openai_models import model_from_env
 from vidgen.storage.blob import FilesystemBlobStore
 
 
@@ -200,8 +201,8 @@ async def main() -> int:
         qa=VisualQACommandOptions(
             provider=arguments.qa_provider,
             openai_api_key=os.getenv("VIDGEN_OPENAI_API_KEY"),
-            first_pass_model=os.getenv("VIDGEN_VISUAL_QA_FIRST_PASS_MODEL"),
-            adjudicator_model=os.getenv("VIDGEN_VISUAL_QA_ADJUDICATOR_MODEL"),
+            first_pass_model=model_from_env("VIDGEN_VISUAL_QA_FIRST_PASS_MODEL"),
+            adjudicator_model=model_from_env("VIDGEN_VISUAL_QA_ADJUDICATOR_MODEL"),
             expected_width=arguments.width,
             expected_height=arguments.height,
         ),

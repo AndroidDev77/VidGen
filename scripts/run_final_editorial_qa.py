@@ -23,6 +23,7 @@ from services.qa.final_commands import FinalQACommandOptions, run_final_editoria
 from services.qa.final_inputs import FinalQALineageError
 from vidgen.contracts.final_editorial import FinalEditorialResult
 from vidgen.db.session import build_engine, session_factory
+from vidgen.providers.openai_models import model_from_env
 from vidgen.storage.blob import FilesystemBlobStore
 
 
@@ -106,8 +107,8 @@ async def main() -> int:
         idempotency_key=arguments.idempotency_key,
         adjudicate=not arguments.no_adjudication,
         openai_api_key=os.getenv("VIDGEN_OPENAI_API_KEY"),
-        first_pass_model=os.getenv("VIDGEN_FINAL_QA_FIRST_PASS_MODEL"),
-        adjudicator_model=os.getenv("VIDGEN_FINAL_QA_ADJUDICATOR_MODEL"),
+        first_pass_model=model_from_env("VIDGEN_FINAL_QA_FIRST_PASS_MODEL"),
+        adjudicator_model=model_from_env("VIDGEN_FINAL_QA_ADJUDICATOR_MODEL"),
     )
     store = FilesystemBlobStore(
         Path(os.getenv("VIDGEN_BLOB_ROOT", ".vidgen/blobs")),

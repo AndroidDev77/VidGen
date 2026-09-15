@@ -12,8 +12,9 @@ adjudication - and this registry binds each role to a configured provider and
 model. The role separation is a policy separation: an independent attempt, a
 different prompt, and a higher confidence bar for a decision. Changing a
 production model ID requires checking the provider's current official
-documentation first; the defaults here reuse the model this repository already
-has configured and verified for its other agent roles.
+documentation first; the defaults here are the tiers the technical design names
+for the two roles, and every configured name is checked against
+:mod:`vidgen.providers.openai_models` when settings load.
 """
 
 from __future__ import annotations
@@ -51,13 +52,16 @@ class VisualAgentModel:
 
 
 #: The default registry. ``configure_registry`` replaces it from APISettings so a
-#: deployment never has a model name compiled into the pipeline.
+#: deployment never has a model name compiled into the pipeline. These are the
+#: same tiers ``APISettings.visual_qa_first_pass_model`` and
+#: ``visual_qa_adjudicator_model`` default to, so an adapter built without
+#: settings evaluates on the model the deployment would have chosen anyway.
 DEFAULT_REGISTRY: dict[VisualQARole, VisualAgentModel] = {
     VisualQARole.LUNA_FIRST_PASS: VisualAgentModel(
-        role=VisualQARole.LUNA_FIRST_PASS, provider="openai", model="gpt-5.6"
+        role=VisualQARole.LUNA_FIRST_PASS, provider="openai", model="gpt-5.6-luna"
     ),
     VisualQARole.TERRA_ADJUDICATOR: VisualAgentModel(
-        role=VisualQARole.TERRA_ADJUDICATOR, provider="openai", model="gpt-5.6"
+        role=VisualQARole.TERRA_ADJUDICATOR, provider="openai", model="gpt-5.6-terra"
     ),
 }
 

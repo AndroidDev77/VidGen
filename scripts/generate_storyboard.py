@@ -13,8 +13,10 @@ from services.storyboard.commands import (
     generate_storyboard,
     resolve_capability,
 )
+from services.storyboard.providers import DEFAULT_STORYBOARD_MODEL
 from services.storyboard.retimer import format_us
 from vidgen.db.session import build_engine, session_factory
+from vidgen.providers.openai_models import model_from_env
 from vidgen.storage.blob import FilesystemBlobStore
 
 
@@ -22,7 +24,10 @@ async def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("project_id", type=UUID)
     parser.add_argument("--provider", choices=("fake", "openai"), default="fake")
-    parser.add_argument("--model", default=os.getenv("VIDGEN_STORYBOARD_MODEL", "gpt-5.6"))
+    parser.add_argument(
+        "--model",
+        default=model_from_env("VIDGEN_STORYBOARD_MODEL") or DEFAULT_STORYBOARD_MODEL,
+    )
     parser.add_argument(
         "--capability-profile",
         default=os.getenv("VIDGEN_VISUAL_CAPABILITY_PROFILE"),

@@ -24,9 +24,11 @@ class ScriptCommandOptions:
     humor_intensity: float | None = None
     recap_mode: str | None = None
     openai_api_key: str | None = None
-    compressor_model: str = "gpt-5.6"
-    writer_model: str = "gpt-5.6"
-    editor_model: str = "gpt-5.6"
+    #: The tier the design names for the creative and editorial agents. Matches
+    #: the ``APISettings.script_*_model`` defaults the worker passes in.
+    compressor_model: str = "gpt-5.6-terra"
+    writer_model: str = "gpt-5.6-terra"
+    editor_model: str = "gpt-5.6-terra"
     #: Compression-validation codes reported as warnings instead of failing the
     #: run. ``None`` leaves the pipeline on its own default.
     warn_only_codes: frozenset[str] | None = None

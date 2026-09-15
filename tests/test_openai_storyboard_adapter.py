@@ -103,7 +103,7 @@ async def test_adapter_sends_strict_structured_output_and_parses_the_response() 
         )
 
     director = OpenAIStoryboardDirector(
-        OpenAIStoryboardConfig(api_key="test-key", model="gpt-5.6"), _client(handler)
+        OpenAIStoryboardConfig(api_key="test-key", model="gpt-5.6-terra"), _client(handler)
     )
     result = await director.propose(request)
 
@@ -114,7 +114,7 @@ async def test_adapter_sends_strict_structured_output_and_parses_the_response() 
     assert captured["key"] == request.idempotency_key
     assert captured["auth"] == "Bearer test-key"
     assert result.provider == "openai"
-    assert result.model == "gpt-5.6"
+    assert result.model == "gpt-5.6-terra"
     assert result.provider_request_id == "resp_storyboard_1"
     assert result.usage == {"input_tokens": 1200, "output_tokens": 900}
     assert result.attempt_number == 1
