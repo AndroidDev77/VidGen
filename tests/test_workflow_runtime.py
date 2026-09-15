@@ -388,8 +388,13 @@ def _run_shot_animation_failing_with(monkeypatch: pytest.MonkeyPatch, error: Bas
             return SimpleNamespace(id=UUID(int=14), status="keyframes_complete")
 
     monkeypatch.setattr(production_handlers, "AnimationPipeline", _FailingPipeline)
+    # The activity resolves its T14 run per shot, so the stub shot carries the
+    # id that lookup joins on; ``_Session`` answers every query with the same
+    # completed run, which is all this test needs to reach the pipeline.
     monkeypatch.setattr(
-        production_handlers, "_authoritative_shot", lambda _session, _request: (object(), object())
+        production_handlers,
+        "_authoritative_shot",
+        lambda _session, _request: (object(), SimpleNamespace(id=UUID(int=16))),
     )
     _run_shot_animation(
         _Session(),  # type: ignore[arg-type]
