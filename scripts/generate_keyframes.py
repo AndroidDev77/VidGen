@@ -9,8 +9,10 @@ from pathlib import Path
 from uuid import UUID
 
 from services.image_generation.commands import ImageGenerationCommandOptions, generate_keyframes
+from services.image_generation.providers import GPT_IMAGE_SNAPSHOT
 from vidgen.contracts.image_generation import KeyframeRole
 from vidgen.db.session import build_engine, session_factory
+from vidgen.providers.openai_models import model_from_env
 from vidgen.storage.blob import FilesystemBlobStore
 
 
@@ -27,7 +29,7 @@ async def main() -> int:
     args = parser.parse_args()
     options = ImageGenerationCommandOptions(
         provider=args.provider,
-        model=os.getenv("VIDGEN_IMAGE_MODEL", "gpt-image-2-2026-04-21"),
+        model=model_from_env("VIDGEN_IMAGE_MODEL") or GPT_IMAGE_SNAPSHOT,
         width=args.width,
         height=args.height,
         quality=args.quality,

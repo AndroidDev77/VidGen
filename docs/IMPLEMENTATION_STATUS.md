@@ -1792,9 +1792,14 @@ configuration mistake this system has: nothing notices until the render has been
 setting that names an OpenAI model is therefore checked against
 `src/vidgen/providers/openai_models.py` when settings load, and the API, the worker and the
 dispatcher refuse to start on a name that is not a callable model - a family name such as `gpt-5.6`,
-which prices correctly but is not a model, most of all. `uv run python -m scripts.verify_models`
-adds the half only the provider can answer, verifying with a free `models.retrieve` lookup that the
-configured key may call each one.
+which prices correctly but is not a model, most of all. The operator CLIs that read a
+`VIDGEN_*_MODEL` directly rather than through `APISettings` check it the same way. A model the
+registry does not list is refused too, because without a price row its spend cannot be reconciled;
+`VIDGEN_ALLOW_UNKNOWN_MODELS=true` downgrades that case to a warning for a newly published model
+that cannot wait for a registry entry, and never allows a family name.
+
+`uv run python -m scripts.verify_models` adds the half only the provider can answer, verifying with
+a free `models.retrieve` lookup that the configured key may call each one.
 
 ### Known limitations
 

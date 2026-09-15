@@ -22,6 +22,7 @@ from uuid import UUID
 from services.qa.commands import VisualQACommandOptions, run_visual_qa
 from vidgen.contracts.visual_qa import VisualQAResult, VisualQATargetType
 from vidgen.db.session import build_engine, session_factory
+from vidgen.providers.openai_models import model_from_env
 from vidgen.storage.blob import FilesystemBlobStore
 
 
@@ -120,8 +121,8 @@ async def main() -> int:
         shot_id=arguments.shot_id,
         adjudicate=not arguments.no_adjudication,
         openai_api_key=os.getenv("VIDGEN_OPENAI_API_KEY"),
-        first_pass_model=os.getenv("VIDGEN_VISUAL_QA_FIRST_PASS_MODEL"),
-        adjudicator_model=os.getenv("VIDGEN_VISUAL_QA_ADJUDICATOR_MODEL"),
+        first_pass_model=model_from_env("VIDGEN_VISUAL_QA_FIRST_PASS_MODEL"),
+        adjudicator_model=model_from_env("VIDGEN_VISUAL_QA_ADJUDICATOR_MODEL"),
     )
     store = FilesystemBlobStore(
         Path(os.getenv("VIDGEN_BLOB_ROOT", ".vidgen/blobs")),

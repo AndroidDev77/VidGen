@@ -1,11 +1,12 @@
 from __future__ import annotations
 
+import logging
 from decimal import Decimal
 from functools import lru_cache
 from pathlib import Path
 from typing import Annotated
 
-from pydantic import Field, ValidationInfo, field_validator, model_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 from vidgen.contracts.episode_analysis import (
@@ -30,8 +31,10 @@ from vidgen.contracts.visual_qa import (
     VISUAL_QA_WARN_ONLY_ELIGIBLE_CODES,
     VisualQAThresholds,
 )
-from vidgen.providers.openai_models import check_model_name
+from vidgen.providers.openai_models import ModelNameProblem, check_model_name, normalize
 from vidgen.storage.factory import SUPPORTED_BACKENDS
+
+logger = logging.getLogger("vidgen.settings")
 
 #: Every setting that names an OpenAI model. A misconfigured one used to surface
 #: as a provider 400 the first time its stage ran - for final editorial QA, after
@@ -121,6 +124,13 @@ class APISettings(BaseSettings):
     narration_max_trailing_silence: float = Field(default=0.7, ge=0)
     narration_max_internal_silence: float = Field(default=1.5, ge=0)
     openai_api_key: str | None = None
+    #: Escape hatch for a model this repository has not heard of yet. Off by
+    #: default: an unknown name is usually a typo, and one that is not still has
+    #: no price row, so its spend cannot be reconciled against the T23 cap. Set
+    #: it to run a newly published model before the registry catches up; the
+    #: unknown name is then logged as a warning rather than refused. It never
+    #: allows a family name - that is not a model whatever the deployment thinks.
+    allow_unknown_models: bool = False
     transcription_model: str = "whisper-1"
     diarization_model: str = "gpt-4o-transcribe-diarize"
     analysis_model: str = "gpt-5.6-terra"
@@ -245,9 +255,8 @@ class APISettings(BaseSettings):
             raise ValueError(f"blob_backend must be one of {SUPPORTED_BACKENDS}")
         return normalized
 
-    @field_validator(*OPENAI_MODEL_SETTINGS)
-    @classmethod
-    def validate_openai_model(cls, value: str, info: ValidationInfo) -> str:
+    @model_validator(mode="after")
+    def validate_openai_models(self) -> APISettings:
         """Refuse a model name the provider cannot be called with.
 
         Cheap and offline: it costs nothing, needs no API key, and it runs before
@@ -255,11 +264,26 @@ class APISettings(BaseSettings):
         start-up rather than at whichever stage happens to reach the provider
         first. That matters most for the two final-QA settings, whose stage runs
         after the render.
+
+        A family name is always refused - it is not a model under any
+        configuration. An unknown model is refused too, because nothing can price
+        it, unless the deployment has said it knows better with
+        ``allow_unknown_models``; then it warns and proceeds, so this check can
+        never be the thing that keeps a deployment from starting.
         """
-        reason = check_model_name(value)
-        if reason is not None:
-            raise ValueError(f"{info.field_name} {reason}")
-        return value.strip()
+        for setting in OPENAI_MODEL_SETTINGS:
+            configured = getattr(self, setting)
+            problem = check_model_name(configured)
+            if problem is None:
+                # Normalized, so the name is checked and sent in the same form.
+                setattr(self, setting, normalize(configured))
+                continue
+            if problem.problem is ModelNameProblem.UNKNOWN and self.allow_unknown_models:
+                logger.warning("%s %s; allowed by allow_unknown_models", setting, problem.reason)
+                setattr(self, setting, normalize(configured))
+                continue
+            raise ValueError(f"{setting} {problem.reason}")
+        return self
 
     @field_validator("cors_allowed_origins", mode="before")
     @classmethod

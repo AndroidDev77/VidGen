@@ -31,8 +31,11 @@ from vidgen.costs.openai_rates import ALIASES, RATES, resolve
 from vidgen.providers.openai_models import (
     KNOWN_MODELS,
     MODEL_FAMILIES,
+    ModelNameProblem,
+    UnusableModelError,
     check_model_name,
     is_callable_model,
+    model_from_env,
     preflight_models,
 )
 
@@ -60,6 +63,7 @@ def _isolated_environment(monkeypatch: pytest.MonkeyPatch) -> None:
     # A developer's own exported model names must not decide these outcomes.
     for setting in OPENAI_MODEL_SETTINGS:
         monkeypatch.delenv(_environment_variable(setting), raising=False)
+    monkeypatch.delenv("VIDGEN_ALLOW_UNKNOWN_MODELS", raising=False)
 
 
 @pytest.mark.parametrize("setting", OPENAI_MODEL_SETTINGS)
@@ -124,13 +128,57 @@ def test_a_configured_model_is_normalized(monkeypatch: pytest.MonkeyPatch) -> No
         # A dated snapshot of a known model, which is what the image setting is.
         "gpt-image-2-2026-04-21",
         "gpt-5.6-terra-2026-07-01",
-        # A tier this repository has not heard of yet, in a family it has. Naming
-        # it must not need a code change first.
-        "gpt-5.6-nova",
     ],
 )
-def test_a_snapshot_or_a_newer_tier_is_accepted(model: str) -> None:
+def test_a_dated_snapshot_is_accepted(model: str) -> None:
+    """A snapshot prices as the model it pins, so accepting one costs nothing."""
     assert is_callable_model(model)
+
+
+@pytest.mark.parametrize("model", ["gpt-5.6-nova", "gpt-5.6-", "gpt-4o-"])
+def test_a_name_that_only_looks_like_a_snapshot_is_refused(model: str) -> None:
+    """An unrecognized tier would price through the family alias.
+
+    The tiers of ``gpt-5.6`` are a factor of twenty apart, so a project's T23
+    hard cap would be enforced against a number that could be that far out.
+    """
+    problem = check_model_name(model)
+    assert problem is not None
+    assert problem.problem is ModelNameProblem.UNKNOWN
+
+
+def test_a_configured_model_is_lower_cased(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The API is case-sensitive, so what was checked is what must be sent."""
+    monkeypatch.setenv("VIDGEN_ANALYSIS_MODEL", "GPT-5.6-Terra")
+    assert APISettings(_env_file=None).analysis_model == "gpt-5.6-terra"
+
+
+def test_an_unknown_model_can_be_allowed_explicitly(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The registry must never be the thing that keeps a deployment from starting."""
+    monkeypatch.setenv("VIDGEN_ANALYSIS_MODEL", "gpt-7-nimbus")
+    monkeypatch.setenv("VIDGEN_ALLOW_UNKNOWN_MODELS", "true")
+    assert APISettings(_env_file=None).analysis_model == "gpt-7-nimbus"
+
+
+def test_a_family_name_is_refused_even_when_unknown_models_are_allowed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """It is not a model under any configuration; nothing may opt into it."""
+    monkeypatch.setenv("VIDGEN_FINAL_QA_FIRST_PASS_MODEL", "gpt-5.6")
+    monkeypatch.setenv("VIDGEN_ALLOW_UNKNOWN_MODELS", "true")
+    with pytest.raises(ValidationError, match="model family"):
+        APISettings(_env_file=None)
+
+
+def test_a_cli_model_from_the_environment_is_checked(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The operator CLIs resolve their model without APISettings."""
+    monkeypatch.delenv("VIDGEN_FINAL_QA_FIRST_PASS_MODEL", raising=False)
+    assert model_from_env("VIDGEN_FINAL_QA_FIRST_PASS_MODEL") is None
+    monkeypatch.setenv("VIDGEN_FINAL_QA_FIRST_PASS_MODEL", " GPT-5.6-Luna ")
+    assert model_from_env("VIDGEN_FINAL_QA_FIRST_PASS_MODEL") == "gpt-5.6-luna"
+    monkeypatch.setenv("VIDGEN_FINAL_QA_FIRST_PASS_MODEL", "gpt-5.6")
+    with pytest.raises(UnusableModelError, match="VIDGEN_FINAL_QA_FIRST_PASS_MODEL"):
+        model_from_env("VIDGEN_FINAL_QA_FIRST_PASS_MODEL")
 
 
 def test_every_setting_that_names_a_model_is_validated() -> None:

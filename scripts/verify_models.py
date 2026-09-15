@@ -45,6 +45,15 @@ def main() -> int:
     for reason in failures.values():
         print(reason, file=sys.stderr)
     if failures:
+        if len(failures) == len(configured):
+            # Nothing answered at all. A bad key, a blocked egress or an outage
+            # fails every lookup the same way, and pointing the operator at
+            # twelve model names would send them the wrong direction entirely.
+            print(
+                "every lookup failed: check VIDGEN_OPENAI_API_KEY and network reachability "
+                "before changing any model name",
+                file=sys.stderr,
+            )
         print(f"{len(failures)} configured model(s) unusable", file=sys.stderr)
         return EXIT_FAILED
     print(f"all {len(configured)} configured models are callable with this key")

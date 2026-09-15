@@ -18,17 +18,25 @@ What the rules are
 ------------------
 
 * An exact :data:`KNOWN_MODELS` entry is callable.
-* A name that extends a known model with ``-`` is a dated snapshot of it
-  (``gpt-image-2-2026-04-21``) and is callable.
-* A name that extends a :data:`MODEL_FAMILIES` key with ``-`` is a tier of a
-  family this repository knows, and is accepted so adopting a newly published
-  tier does not require a code change first.
+* A name that extends a known model with ``-`` and something else is a dated
+  snapshot of it (``gpt-image-2-2026-04-21``) and is callable. A snapshot prices
+  as the model it pins, so accepting one costs nothing.
 * A :data:`MODEL_FAMILIES` key on its own is a family, not a model. It is
-  rejected, and the error names the tiers it spans.
-* Anything else names no family this deployment knows. It is rejected: it has no
-  published price either, so it would silently report no spend even if it did
-  answer. Adding a model means one entry here and one price row in
-  :mod:`vidgen.costs.openai_rates`.
+  refused, and the error names the tiers it spans.
+* Anything else - a typo, a tier of a known family this repository has not heard
+  of, a model from a family it does not know - is refused as unknown. Not
+  because it cannot possibly work, but because nothing here can price it: an
+  unrecognized ``gpt-5.6-*`` tier prices through the family alias at the middle
+  tier, and the tiers of that one family are a factor of twenty apart, so a
+  project's T23 hard cap would be enforced against a number that could be off by
+  that much. Naming a new model therefore means one entry here and one price row
+  in :mod:`vidgen.costs.openai_rates`, which is the same pair of facts a
+  deployment needs anyway.
+
+A deployment that has to run a model this repository does not know yet can set
+``VIDGEN_ALLOW_UNKNOWN_MODELS=true``, which downgrades the unknown case to a
+logged warning. A family name is refused either way: it is not a model under any
+configuration, and the spend it would waste is the whole point of this module.
 
 Only real provider calls read these settings. A fake-provider deployment never
 does - each fake carries its own recorded model name - so nothing here
@@ -37,7 +45,10 @@ constrains local development or the test suites.
 
 from __future__ import annotations
 
+import os
 from collections.abc import Mapping
+from dataclasses import dataclass
+from enum import StrEnum
 from typing import Protocol
 
 #: Model IDs that may be sent to the API as-is. Keep in step with the priced
@@ -74,16 +85,43 @@ MODEL_FAMILIES: dict[str, tuple[str, ...]] = {
 }
 
 
+class ModelNameProblem(StrEnum):
+    """Why a configured model name cannot be used. The kinds differ in gravity."""
+
+    #: Nothing was configured at all.
+    EMPTY = "empty"
+    #: A family rather than a model. Never callable, under any configuration.
+    FAMILY = "family"
+    #: Not a model this repository knows how to call or price.
+    UNKNOWN = "unknown"
+
+
+@dataclass(frozen=True, slots=True)
+class ModelNameError:
+    """One rejected model name: what kind of problem, and how to say so."""
+
+    problem: ModelNameProblem
+    #: The reason alone, with no setting name in it, so a caller can prefix
+    #: whichever setting it is validating.
+    reason: str
+
+
 def normalize(model: str) -> str:
-    """The comparable form of a configured model name."""
+    """The comparable form of a configured model name.
+
+    Lower-cased, because the API is case-sensitive and every published model ID
+    is lower-case: ``GPT-5.6-Terra`` is a name a person writes and the provider
+    rejects. Callers store what this returns, so a name is checked and sent in
+    exactly the same form.
+    """
     return model.strip().lower()
 
 
-def _longest_prefix(name: str) -> str | None:
-    """The longest known model or family ``name`` is a ``-`` extension of."""
-    candidates = sorted(KNOWN_MODELS | MODEL_FAMILIES.keys(), key=len, reverse=True)
-    for candidate in candidates:
-        if name.startswith(f"{candidate}-"):
+def _snapshot_of(name: str) -> str | None:
+    """The known model ``name`` is a dated snapshot of, if it is one."""
+    for candidate in sorted(KNOWN_MODELS, key=len, reverse=True):
+        prefix = f"{candidate}-"
+        if name.startswith(prefix) and len(name) > len(prefix):
             return candidate
     return None
 
@@ -93,33 +131,61 @@ def is_callable_model(model: str) -> bool:
     return check_model_name(model) is None
 
 
-def check_model_name(model: str) -> str | None:
-    """Explain why ``model`` cannot be called, or return None if it can.
-
-    The string is the reason alone, with no setting name in it, so a caller can
-    prefix whichever setting it is validating.
-    """
+def check_model_name(model: str) -> ModelNameError | None:
+    """Explain why ``model`` cannot be called, or return None if it can."""
     name = normalize(model)
     if not name:
-        return "is empty; every configured model must name a model"
-    if name in KNOWN_MODELS:
+        return ModelNameError(
+            ModelNameProblem.EMPTY, "is empty; every configured model must name a model"
+        )
+    if name in KNOWN_MODELS or _snapshot_of(name) is not None:
         return None
     if name in MODEL_FAMILIES:
         tiers = ", ".join(MODEL_FAMILIES[name])
-        return (
+        return ModelNameError(
+            ModelNameProblem.FAMILY,
             f"names the model family {name!r}, which is not a model the API can be "
-            f"called with. Name one of its tiers instead: {tiers}"
+            f"called with. Name one of its tiers instead: {tiers}",
         )
-    if _longest_prefix(name) is not None:
-        return None
-    families = ", ".join(sorted(MODEL_FAMILIES))
-    return (
+    return ModelNameError(
+        ModelNameProblem.UNKNOWN,
         f"names {name!r}, which is not an OpenAI model this deployment knows. Known "
-        f"models: {', '.join(sorted(KNOWN_MODELS))} (and dated snapshots or newer "
-        f"tiers of the {families} families). A model that belongs here needs an "
-        "entry in vidgen.providers.openai_models.KNOWN_MODELS and a price row in "
-        "vidgen.costs.openai_rates"
+        f"models: {', '.join(sorted(KNOWN_MODELS))}, or a dated snapshot of one. A "
+        "model that belongs here needs an entry in "
+        "vidgen.providers.openai_models.KNOWN_MODELS and a price row in "
+        "vidgen.costs.openai_rates, without which its spend cannot be reconciled",
     )
+
+
+class UnusableModelError(ValueError):
+    """A configured model name that cannot be called. Deterministic."""
+
+
+def require_callable_model(model: str, *, setting: str) -> str:
+    """Return the normalized ``model``, or raise naming ``setting`` and the reason.
+
+    For the entry points that resolve a model themselves rather than through
+    ``APISettings`` - the operator CLIs in ``scripts/`` - so a mistyped
+    ``VIDGEN_*_MODEL`` fails before the run starts there too.
+    """
+    problem = check_model_name(model)
+    if problem is not None:
+        raise UnusableModelError(f"{setting} {problem.reason}")
+    return normalize(model)
+
+
+def model_from_env(variable: str) -> str | None:
+    """The checked model ``variable`` names, or None when it is not set.
+
+    The operator CLIs in ``scripts/`` read their model straight from the
+    environment rather than through ``APISettings``, so without this a mistyped
+    ``VIDGEN_*_MODEL`` would reach the provider there exactly as it used to.
+    Unset stays unset: the caller then falls back to its own registry default.
+    """
+    value = os.getenv(variable)
+    if value is None:
+        return None
+    return require_callable_model(value, setting=variable)
 
 
 class ModelLookup(Protocol):
@@ -143,14 +209,18 @@ def preflight_models(configured: Mapping[str, str], retrieve: ModelLookup) -> di
     at deployment time than after a render.
 
     Returns the settings that failed and why - empty when everything is usable.
-    Each distinct model is looked up once however many settings name it.
+    Each distinct model is looked up once however many settings name it. A
+    failure that is really about the credential or the network fails every
+    lookup identically, which is what :mod:`scripts.verify_models` reads to say
+    so rather than blaming twelve model names.
     """
     failures: dict[str, str] = {}
     seen: dict[str, str | None] = {}
     for setting, model in configured.items():
         name = normalize(model)
         if name not in seen:
-            reason = check_model_name(name)
+            problem = check_model_name(name)
+            reason = None if problem is None else problem.reason
             if reason is None:
                 try:
                     retrieve(name)
