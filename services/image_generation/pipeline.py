@@ -110,9 +110,25 @@ class ImageGenerationPipeline:
         storyboard_id: UUID | None = None,
         shot_id: UUID | None = None,
         role: KeyframeRole | None = None,
+        regeneration_sequence: int = 0,
     ) -> ImageGenerationResult:
+        """Generate, or reuse, the keyframes of one storyboard - or of one shot.
+
+        ``regeneration_sequence`` is the deliberate-regeneration counter of the
+        shot workflow that asked for this run. It is zero for the child T16
+        created and for every project-wide run, and is then omitted from the
+        hashed material, so every run and item identity minted before it
+        existed keeps the hash it already has. A non-zero sequence is what makes
+        a regeneration produce a *different* keyframe: without it the material
+        identity of an unchanged shot is unchanged, the existing item is reused,
+        and the regeneration an owner paid to request returns the same image.
+        """
         selected = self.repo.selected_storyboard(project_id, storyboard_id)
+        regeneration: dict[str, Any] = (
+            {"regeneration_sequence": regeneration_sequence} if regeneration_sequence else {}
+        )
         material = {
+            **regeneration,
             "project_id": str(project_id),
             "storyboard_id": str(selected.storyboard.id),
             "storyboard_version": selected.storyboard.version,
@@ -157,7 +173,11 @@ class ImageGenerationPipeline:
             for shot, keyframe_role in targets:
                 if self.cancelled():
                     raise ImageGenerationCancelled("T14 cancellation requested at item checkpoint")
-                results.append(await self._process_item(selected, run, shot, keyframe_role))
+                results.append(
+                    await self._process_item(
+                        selected, run, shot, keyframe_role, regeneration=regeneration
+                    )
+                )
             run.completed_item_count = sum(
                 item.status in {"completed", "reused"} for item in results
             )
@@ -210,12 +230,19 @@ class ImageGenerationPipeline:
         return result
 
     async def _process_item(
-        self, selected: SelectedStoryboard, run: ImageGenerationRun, row: Any, role: KeyframeRole
+        self,
+        selected: SelectedStoryboard,
+        run: ImageGenerationRun,
+        row: Any,
+        role: KeyframeRole,
+        *,
+        regeneration: dict[str, Any] | None = None,
     ) -> ShotKeyframeResult:
         shot = StoryboardShot.model_validate(row.contract)
         package = self._package(selected, shot, role)
         identity = _hash(
             {
+                **(regeneration or {}),
                 "project": selected.project.id,
                 "storyboard": run.storyboard_id,
                 "storyboard_version": run.storyboard_version,

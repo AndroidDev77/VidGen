@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import Select, select
 from sqlalchemy.orm import Session
 
 from vidgen.db.animation_models import (
@@ -66,11 +66,6 @@ class AnimationRepository:
             ImageGenerationRun.storyboard_version == selected.storyboard.version,
             ImageGenerationRun.status == "keyframes_complete",
         )
-        # When a specific shot is targeted, authoritativeness is scoped to runs
-        # that contain items for that shot. This supports concurrent per-shot T14
-        # runs where each shot workflow creates its own ImageGenerationRun: the
-        # globally most-recent run may belong to a sibling shot, not this one.
-        #
         # shot_id may be either the shot's primary key or its stable_shot_id
         # (production_handlers passes request.storyboard_shot_id, which is the
         # stable_shot_id). Resolve to the primary key so the ImageGenerationItem
@@ -87,24 +82,26 @@ class AnimationRepository:
                     f"shot {shot_id} is not part of the selected storyboard",
                 )
             shot_pk_id = shot_record.id
-            authoritative_query = base_query.join(
-                ImageGenerationItem, ImageGenerationItem.run_id == ImageGenerationRun.id
-            ).where(ImageGenerationItem.shot_id == shot_pk_id)
-        else:
-            authoritative_query = base_query
-        authoritative = self.session.scalar(
-            authoritative_query.order_by(ImageGenerationRun.created_at.desc())
-        )
-        query = base_query
-        if image_run_id is not None:
-            query = query.where(ImageGenerationRun.id == image_run_id)
-        runs = list(self.session.scalars(query.order_by(ImageGenerationRun.created_at.desc())))
+        runs = list(self.session.scalars(base_query.order_by(ImageGenerationRun.created_at.desc())))
         if not runs:
             raise AnimationLineageError(
                 "image_run_missing",
                 "no completed T14 run matches the exact selected storyboard version",
             )
-        image_run = runs[0]
+        authoritative = self._authoritative_run(base_query, shot_pk_id)
+        if image_run_id is not None:
+            requested = next((run for run in runs if run.id == image_run_id), None)
+            if requested is None:
+                raise AnimationLineageError(
+                    "image_run_missing",
+                    "no completed T14 run matches the exact selected storyboard version",
+                )
+            image_run = requested
+        else:
+            # A shot-scoped caller that names no run animates the run this shot
+            # is authoritatively bound to, not the project's globally newest
+            # one, which may hold nothing of this shot's.
+            image_run = authoritative if authoritative is not None else runs[0]
         if authoritative is None or image_run.id != authoritative.id:
             raise AnimationLineageError("image_run_stale", "requested T14 run is not authoritative")
         if image_run.project_id != selected.project.id:
@@ -163,6 +160,56 @@ class AnimationRepository:
             last_asset = self._asset(last, project_id) if last is not None else None
             result[shot.id] = SelectedKeyframes(first, first_asset, last, last_asset)
         return AnimationInputs(selected, image_run, result)
+
+    def _authoritative_run(
+        self, base_query: Select[tuple[ImageGenerationRun]], shot_pk_id: UUID | None
+    ) -> ImageGenerationRun | None:
+        """The T14 run that owns this shot's keyframes, or the project's newest.
+
+        A project-wide caller animates the newest completed run, which owns
+        every shot's keyframes at once.
+
+        A shot-scoped caller cannot: each shot workflow creates its own
+        ``ImageGenerationRun``, so the globally newest run may belong to a
+        sibling shot (#39). Authority for one shot is therefore the run holding
+        the item behind that shot's *selected* FIRST_FRAME keyframe - the very
+        image T15 is about to animate. Defining it that way is what makes a
+        replacement child work: its own T14 step may have found the keyframe
+        material unchanged and reused the existing item, which belongs to the
+        run that first generated it, leaving the replacement's own run holding
+        no item at all. Such a run is not this shot's authority and must not
+        become it, whether it was created before or after the selected keyframe.
+
+        The fallback - the newest completed run with any item for this shot -
+        covers a shot whose keyframe rows cannot name a run: it keeps the
+        original scoping so an unrelated lineage break still reports itself as
+        the missing or invalid keyframe it is rather than as a stale run.
+        """
+        if shot_pk_id is None:
+            return self.session.scalar(base_query.order_by(ImageGenerationRun.created_at.desc()))
+        owning_run = self.session.scalar(
+            base_query.join(
+                ImageGenerationItem, ImageGenerationItem.run_id == ImageGenerationRun.id
+            )
+            .join(
+                GeneratedKeyframeImage,
+                GeneratedKeyframeImage.item_id == ImageGenerationItem.id,
+            )
+            .where(
+                GeneratedKeyframeImage.shot_id == shot_pk_id,
+                GeneratedKeyframeImage.keyframe_role == "FIRST_FRAME",
+                GeneratedKeyframeImage.selected,
+            )
+        )
+        if owning_run is not None:
+            return owning_run
+        return self.session.scalar(
+            base_query.join(
+                ImageGenerationItem, ImageGenerationItem.run_id == ImageGenerationRun.id
+            )
+            .where(ImageGenerationItem.shot_id == shot_pk_id)
+            .order_by(ImageGenerationRun.created_at.desc())
+        )
 
     def _asset(self, frame: GeneratedKeyframeImage, project_id: UUID) -> Asset:
         asset = self.session.get(Asset, frame.asset_id)

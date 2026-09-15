@@ -288,6 +288,12 @@ class ShotWorkflow:
                 False,
             ),
             "VisualQALineageError": (ShotFailureClass.INVALID_LINEAGE, False),
+            # T15 refuses a T14 run that is not the shot's authoritative one,
+            # or keyframes that do not belong to it. Nothing a retry does
+            # changes which run holds the shot's selected keyframe, so the
+            # default retryable classification parked the shot waiting for a
+            # signal that would deterministically fail again.
+            "AnimationLineageError": (ShotFailureClass.INVALID_LINEAGE, False),
             "BudgetExceededError": (ShotFailureClass.BUDGET_DENIAL, False),
             # An OpenAI spend limit is the provider's own budget denial: the
             # adapter already gave up on it, so the shot must not retry either.

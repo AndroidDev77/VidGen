@@ -1883,6 +1883,103 @@ def test_a_child_still_waiting_on_a_retry_signal_is_resumed(
         assert record.workflow_id == workflow_id
 
 
+def _retry(client: TestClient, graph: ProjectGraph, shot_id: UUID, key: str) -> None:
+    shot = client.get(api(graph.project_id, f"/shots/{shot_id}"), headers=OWNER).json()
+    response = client.post(
+        api(graph.project_id, f"/shots/{shot_id}:retry"),
+        headers=headers(if_match=shot["shot"]["row_version"], key=key),
+    )
+    assert response.status_code == 202, response.text
+
+
+def test_a_retry_animates_the_keyframe_the_failed_run_already_produced(
+    client: TestClient,
+    graph: ProjectGraph,
+    dispatcher: ControlCommandDispatcher,
+    controller: FakeWorkflowController,
+) -> None:
+    """A retry resumes work that failed, and T14 is not what failed.
+
+    Rerunning it spends on an image that already exists and already cleared its
+    gate - and, because T14 reuses an item whose material identity has not
+    moved, the replacement's own run completes owning no items at all. T15 then
+    refuses that empty run as not authoritative, which is exactly how every
+    retry of a shot with a keyframe died. The replacement is handed the
+    keyframe instead, so it skips T14 and animates the run that holds it.
+    """
+    index = 2
+    _retry(client, graph, graph.shot_ids[index], key="retry-keyframe-1")
+
+    assert dispatcher.run_once().dispatched == 1
+
+    started = list(controller.shots.values())
+    assert len(started) == 1
+    assert started[0].selected_keyframe_asset_id == graph.keyframe_asset_ids[index]
+    assert started[0].workflow_identity.regeneration_sequence == 1
+
+
+def test_a_retry_regenerates_a_keyframe_set_that_is_incomplete(
+    client: TestClient,
+    graph: ProjectGraph,
+    dispatcher: ControlCommandDispatcher,
+    controller: FakeWorkflowController,
+    review_client: tuple[TestClient, sessionmaker[Session], FakeWorkflowController],
+) -> None:
+    """A partial set is not something to resume from.
+
+    This shot needs a LAST_FRAME anchor and has only a FIRST_FRAME, so handing
+    the replacement that one image would skip T14 and animate without the
+    anchor T13 planned for. It runs T14 and produces the whole set instead.
+    """
+    _, factory, _ = review_client
+    index = 7
+    target = graph.shot_ids[index]
+    with factory() as session:
+        shot = session.get(StoryboardShotRecord, target)
+        assert shot is not None
+        shot.contract = {**dict(shot.contract), "requires_last_frame": True}
+        session.commit()
+
+    _retry(client, graph, target, key="retry-partial-1")
+
+    assert dispatcher.run_once().dispatched == 1
+
+    started = list(controller.shots.values())
+    assert len(started) == 1
+    assert started[0].selected_keyframe_asset_id is None
+
+
+def test_a_regeneration_inherits_no_keyframe_and_binds_its_own_sequence(
+    client: TestClient,
+    graph: ProjectGraph,
+    dispatcher: ControlCommandDispatcher,
+    controller: FakeWorkflowController,
+) -> None:
+    """The one command that must produce a different image, and does.
+
+    A regeneration inherits nothing, so it reruns T14 - and the sequence it
+    carries is what T14 binds into the keyframe's material identity, which is
+    what makes the image genuinely new rather than the reused one an owner
+    already asked to replace.
+    """
+    index = 8
+    target = graph.shot_ids[index]
+    shot = client.get(api(graph.project_id, f"/shots/{target}"), headers=OWNER).json()
+    response = client.post(
+        api(graph.project_id, f"/shots/{target}:regenerate"),
+        json={"confirm_invalidation": True},
+        headers=headers(if_match=shot["shot"]["row_version"], key="regen-fresh-1"),
+    )
+    assert response.status_code == 200, response.text
+
+    assert dispatcher.run_once().dispatched == 1
+
+    started = list(controller.shots.values())
+    assert len(started) == 1
+    assert started[0].selected_keyframe_asset_id is None
+    assert started[0].workflow_identity.regeneration_sequence == 1
+
+
 def test_a_retry_and_a_regeneration_never_share_a_replacement_identity(
     client: TestClient,
     graph: ProjectGraph,

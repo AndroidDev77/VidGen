@@ -376,6 +376,12 @@ def _run_shot_keyframe(
             storyboard_id=request.storyboard_run_id,
             shot_id=request.storyboard_shot_id,
             idempotency_key=shot_activity_idempotency_key(request.shot_input_hash, "t14"),
+            # Only a child that means to generate reaches T14 at all: one that
+            # may reuse an existing keyframe is handed it and skips this step.
+            # Binding the regeneration sequence therefore makes a deliberate
+            # regeneration produce a new image instead of resolving to the
+            # material identity of the keyframe it was asked to replace.
+            regeneration_sequence=request.workflow_identity.regeneration_sequence,
         )
     )
     first = next(
@@ -618,32 +624,70 @@ def terminal_animation_error(exc: Exception) -> ApplicationError | None:
     return ApplicationError(failure.sanitized_message, type=type(exc).__name__, non_retryable=True)
 
 
-def _carried_keyframe_image_run(
+def _keyframe_image_run(
     session: Session, request: ShotWorkflowInput, shot: StoryboardShotRecord
 ) -> ImageGenerationRun | None:
-    """The T14 run that produced the keyframe this child was handed.
+    """The T14 run that produced the keyframe this child is going to animate.
 
-    A replacement child for a keyframe a person already approved deliberately
-    skips T14, so no run exists under this child's own idempotency key.
-    Animating still has to name the run the image came from, and that is the
-    run T14 actually produced it in - not a new one, which would mean paying
-    for the keyframe the owner asked to keep.
+    Two children reach T15 without a T14 run of their own to name:
+
+    * A replacement for a keyframe a person already approved deliberately skips
+      T14, so nothing was ever written under this child's idempotency key. It
+      names the asset it was handed, and the run wanted is the one T14 actually
+      produced that image in - not a new one, which would mean paying for the
+      keyframe the owner asked to keep.
+    * A replacement that did run T14 but found every keyframe's material
+      identity unchanged. T14 reuses an item across runs, so the run it created
+      completed holding no items of its own; the image it resolved to still
+      lives in the run that first generated it.
+
+    Both animate the shot's currently selected FIRST_FRAME keyframe, so both
+    resolve to the run holding the item behind it - which is exactly the run
+    :meth:`AnimationRepository.authoritative_inputs` judges authoritative.
     """
-    asset_id = request.selected_keyframe_asset_id
-    if asset_id is None:
-        return None
-    return session.scalar(
+    query = (
         select(ImageGenerationRun)
         .join(ImageGenerationItem, ImageGenerationItem.run_id == ImageGenerationRun.id)
         .join(GeneratedKeyframeImage, GeneratedKeyframeImage.item_id == ImageGenerationItem.id)
         .where(
             ImageGenerationRun.project_id == request.project_id,
-            GeneratedKeyframeImage.asset_id == asset_id,
             GeneratedKeyframeImage.shot_id == shot.id,
             GeneratedKeyframeImage.keyframe_role == "FIRST_FRAME",
             GeneratedKeyframeImage.selected,
         )
     )
+    if request.selected_keyframe_asset_id is not None:
+        # A child that was handed a keyframe animates that one or nothing: it
+        # must never silently adopt a different image than the approved one.
+        query = query.where(GeneratedKeyframeImage.asset_id == request.selected_keyframe_asset_id)
+    return session.scalar(query)
+
+
+def _own_t14_image_run(
+    session: Session, request: ShotWorkflowInput, shot: StoryboardShotRecord
+) -> ImageGenerationRun | None:
+    """This child's own T14 run, but only if it actually generated for this shot.
+
+    A run that completed by reusing every keyframe owns no
+    ``image_generation_items``, so it can never be the shot's authoritative T14
+    run and animating from it fails the lineage check outright. Ignoring it
+    here sends T15 to the run that holds the keyframe instead.
+    """
+    run = session.scalar(
+        select(ImageGenerationRun).where(
+            ImageGenerationRun.project_id == request.project_id,
+            ImageGenerationRun.idempotency_key
+            == shot_activity_idempotency_key(request.shot_input_hash, "t14"),
+        )
+    )
+    if run is None:
+        return None
+    owns_shot = session.scalar(
+        select(ImageGenerationItem.id).where(
+            ImageGenerationItem.run_id == run.id, ImageGenerationItem.shot_id == shot.id
+        )
+    )
+    return run if owns_shot is not None else None
 
 
 def _run_shot_animation(
@@ -656,13 +700,9 @@ def _run_shot_animation(
 ) -> ShotWorkflowResult:
     request = ShotWorkflowInput.model_validate(raw_request)
     _, shot = _authoritative_shot(session, request)
-    image_run = session.scalar(
-        select(ImageGenerationRun).where(
-            ImageGenerationRun.project_id == request.project_id,
-            ImageGenerationRun.idempotency_key
-            == shot_activity_idempotency_key(request.shot_input_hash, "t14"),
-        )
-    ) or _carried_keyframe_image_run(session, request, shot)
+    image_run = _own_t14_image_run(session, request, shot) or _keyframe_image_run(
+        session, request, shot
+    )
     if image_run is None or image_run.status != "keyframes_complete":
         raise ValueError("InvalidLineage: compatible completed T14 run is missing")
 

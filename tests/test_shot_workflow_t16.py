@@ -134,6 +134,26 @@ def test_a_qa_contract_violation_is_terminal_rather_than_a_parked_retry() -> Non
     assert shot._classify_failure(ApplicationError("boom", type="SomethingElse")).retryable is True
 
 
+def test_a_broken_t15_lineage_fails_rather_than_parking_on_a_retry() -> None:
+    """Nothing a retry can do changes which T14 run holds a shot's keyframe.
+
+    The shot parked as ``failed, retryable`` waiting for a signal that would
+    reach the same refusal every time - which is how ten retries of one project
+    each failed identically with nothing pending to explain it. It joins the
+    other lineage refusals as the deterministic failure it is.
+    """
+    shot = ShotWorkflow()
+    failure = shot._classify_failure(
+        ApplicationError(
+            "image_run_stale: requested T14 run is not authoritative",
+            type="AnimationLineageError",
+            non_retryable=True,
+        )
+    )
+    assert failure.classification is ShotFailureClass.INVALID_LINEAGE
+    assert failure.retryable is False
+
+
 def test_only_a_genuinely_unknown_submission_outcome_parks_the_shot() -> None:
     """The distinction that stops a lost request from stranding a shot forever.
 
