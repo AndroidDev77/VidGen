@@ -246,6 +246,56 @@ def test_a_regeneration_sequence_produces_a_new_keyframe_rather_than_the_old_one
     assert replayed.completed_count == 0
 
 
+def test_an_existing_run_keeps_the_sequence_it_was_created_with(tmp_path: Path) -> None:
+    """The durable run row binds its own material, not whatever a caller passes.
+
+    A replacement child's T14 activity can be re-entered after a deploy that
+    changed what the sequence binds. Recomputing from the argument would refuse
+    the run's own idempotency key as binding different material - and, if it got
+    past that, would try to write a second item into the same (run, shot, role)
+    slot. Reading the sequence back off the run makes re-entry resolve exactly
+    the identities that run already wrote.
+    """
+    fixture = build_fixture(tmp_path)
+    storyboard = run_storyboard(fixture)
+    shot = fixture.session.scalar(
+        select(StoryboardShotRecord)
+        .where(StoryboardShotRecord.storyboard_run_id == storyboard.storyboard_run_id)
+        .order_by(StoryboardShotRecord.global_sequence)
+    )
+    assert shot is not None
+    pipeline = ImageGenerationPipeline(
+        fixture.session, fixture.blobs, DeterministicFakeImageProvider()
+    )
+    original = asyncio.run(
+        pipeline.process(
+            project_id=fixture.project.id,
+            idempotency_key="t14-in-flight",
+            shot_id=shot.id,
+        )
+    )
+    assert original.completed_count == 1
+
+    # The same run, re-entered by a worker that now binds a sequence.
+    resumed = asyncio.run(
+        pipeline.process(
+            project_id=fixture.project.id,
+            idempotency_key="t14-in-flight",
+            shot_id=shot.id,
+            regeneration_sequence=4,
+        )
+    )
+    assert resumed.run_id == original.run_id
+    assert resumed.reused_count == 1, "it resolves the item this run already wrote"
+    assert resumed.completed_count == 0
+    owned = fixture.session.scalar(
+        select(func.count())
+        .select_from(ImageGenerationItem)
+        .where(ImageGenerationItem.run_id == original.run_id)
+    )
+    assert owned == 1, "and never writes a second item into the same slot"
+
+
 def test_ambiguous_outcome_is_durable_and_never_resubmitted(tmp_path: Path) -> None:
     fixture = build_fixture(tmp_path)
     storyboard = run_storyboard(fixture)

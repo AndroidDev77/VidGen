@@ -65,7 +65,11 @@ from vidgen.contracts.workflow import (
 )
 from vidgen.db.continuity_models import character_reference_sets, location_reference_sets
 from vidgen.db.control_command_models import ControlCommandRecord
-from vidgen.db.image_generation_models import GeneratedKeyframeImage
+from vidgen.db.image_generation_models import (
+    GeneratedKeyframeImage,
+    ImageGenerationItem,
+    ImageGenerationRun,
+)
 from vidgen.db.models import Project, SourceVideo
 from vidgen.db.storyboard_models import StoryboardRun, StoryboardShotRecord
 from vidgen.db.visual_qa_repository import VisualQARepository
@@ -266,8 +270,19 @@ def _approved_keyframe_asset_id(
     return qa_run.target_asset_id if qa_run is not None else None
 
 
+def _keyframe_was_rejected(session: Session, shot: StoryboardShotRecord) -> bool:
+    """Whether this shot's own keyframe is what its T20 gate is shut on.
+
+    A gate nobody has evaluated yet is not a rejection: a shot interrupted
+    between T14 and T20 has an image whose verdict is simply unknown, and the
+    replacement reruns the gate on it.
+    """
+    opened, reason = VisualQARepository(session).gate(shot.id, VisualQATargetType.KEYFRAME)
+    return not opened and reason != "visual_qa_missing"
+
+
 def _complete_keyframe_asset_id(session: Session, shot: StoryboardShotRecord) -> UUID | None:
-    """This shot's selected FIRST_FRAME keyframe, if its whole set is present.
+    """This shot's selected FIRST_FRAME keyframe, if its whole set is animatable.
 
     A retry asks the pipeline to have another go at the work that failed, which
     is almost never the keyframe: a shot parks on a T15 provider failure, a
@@ -281,11 +296,22 @@ def _complete_keyframe_asset_id(session: Session, shot: StoryboardShotRecord) ->
     reuse the same item, and complete owning nothing - the empty run that made
     every retry fail T15's authority check.
 
-    ``None`` when the set is incomplete - no selected FIRST_FRAME, or a shot
-    that requires a LAST_FRAME and has none - because a replacement handed a
-    partial set would skip T14 and animate without the anchor T13 planned for.
-    That child runs T14 and generates the whole set in one run instead.
+    ``None`` whenever the keyframe is not something to resume from, and the
+    replacement then runs T14 and produces a whole new set in one run:
+
+    * T20 rejected this image, or is waiting on a person to judge it. Carrying
+      it would rerun the gate on the very thing the gate is shut on and park
+      the shot again for the same reason, having paid for another evaluation.
+    * There is no selected FIRST_FRAME, or the shot requires a LAST_FRAME and
+      has none. A child handed a partial set skips T14 and animates without
+      the anchor T13 planned for.
+    * The set does not come from one completed T14 run - a run that committed a
+      new FIRST_FRAME and then failed, say. T15 requires the shot's keyframes
+      to share a ``keyframes_complete`` run, so carrying such a set would only
+      move the failure to a lineage refusal at T15.
     """
+    if _keyframe_was_rejected(session, shot):
+        return None
     roles = {
         frame.keyframe_role: frame
         for frame in session.scalars(
@@ -298,12 +324,22 @@ def _complete_keyframe_asset_id(session: Session, shot: StoryboardShotRecord) ->
     first = roles.get("FIRST_FRAME")
     if first is None:
         return None
+    first_item = session.get(ImageGenerationItem, first.item_id)
+    if first_item is None:
+        return None
+    run = session.get(ImageGenerationRun, first_item.run_id)
+    if run is None or run.status != "keyframes_complete":
+        return None
     # Read straight off the stored contract rather than through
     # ``StoryboardShot``: whether a keyframe set is complete must not depend on
     # every other field of a T13 contract still validating.
-    requires_last_frame = bool(dict(shot.contract or {}).get("requires_last_frame", False))
-    if requires_last_frame and "LAST_FRAME" not in roles:
-        return None
+    if bool(dict(shot.contract or {}).get("requires_last_frame", False)):
+        last = roles.get("LAST_FRAME")
+        if last is None:
+            return None
+        last_item = session.get(ImageGenerationItem, last.item_id)
+        if last_item is None or last_item.run_id != run.id:
+            return None
     return first.asset_id
 
 

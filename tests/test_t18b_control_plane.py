@@ -65,6 +65,11 @@ from vidgen.db.control_command_repository import (
     ControlCommandRepository,
     infrastructure_backoff_seconds,
 )
+from vidgen.db.image_generation_models import (
+    GeneratedKeyframeImage,
+    ImageGenerationItem,
+    ImageGenerationRun,
+)
 from vidgen.db.models import Project
 from vidgen.db.repair_models import RepairRun
 from vidgen.db.storyboard_models import StoryboardRun, StoryboardShotRecord
@@ -1941,6 +1946,77 @@ def test_a_retry_regenerates_a_keyframe_set_that_is_incomplete(
         session.commit()
 
     _retry(client, graph, target, key="retry-partial-1")
+
+    assert dispatcher.run_once().dispatched == 1
+
+    started = list(controller.shots.values())
+    assert len(started) == 1
+    assert started[0].selected_keyframe_asset_id is None
+
+
+def test_a_retry_regenerates_a_keyframe_its_own_gate_rejected(
+    client: TestClient,
+    graph: ProjectGraph,
+    dispatcher: ControlCommandDispatcher,
+    controller: FakeWorkflowController,
+    review_client: tuple[TestClient, sessionmaker[Session], FakeWorkflowController],
+) -> None:
+    """Carrying the image the gate is shut on would park the shot again.
+
+    T20 would rerun on the very keyframe it just rejected, reach the same
+    verdict, and have paid for another evaluation to do it. A retry of a shot
+    whose keyframe is what failed produces a different keyframe.
+    """
+    _, factory, _ = review_client
+    index = 9
+    target = graph.shot_ids[index]
+    with factory() as session:
+        # A completed T20 keyframe run that failed, with nobody having cleared it.
+        _keyframe_qa_run(session, graph, index)
+        session.commit()
+
+    _retry(client, graph, target, key="retry-rejected-1")
+
+    assert dispatcher.run_once().dispatched == 1
+
+    started = list(controller.shots.values())
+    assert len(started) == 1
+    assert started[0].selected_keyframe_asset_id is None
+
+
+def test_a_retry_regenerates_a_keyframe_set_no_single_run_completed(
+    client: TestClient,
+    graph: ProjectGraph,
+    dispatcher: ControlCommandDispatcher,
+    controller: FakeWorkflowController,
+    review_client: tuple[TestClient, sessionmaker[Session], FakeWorkflowController],
+) -> None:
+    """T15 requires one completed run behind a shot's keyframes, so T18b does too.
+
+    A run that committed this keyframe and then failed leaves an image nothing
+    may animate from. Carrying it would only move the failure to a lineage
+    refusal at T15.
+    """
+    _, factory, _ = review_client
+    index = 1
+    target = graph.shot_ids[index]
+    with factory() as session:
+        frame = session.scalar(
+            select(GeneratedKeyframeImage).where(
+                GeneratedKeyframeImage.shot_id == target,
+                GeneratedKeyframeImage.keyframe_role == "FIRST_FRAME",
+                GeneratedKeyframeImage.selected,
+            )
+        )
+        assert frame is not None
+        item = session.get(ImageGenerationItem, frame.item_id)
+        assert item is not None
+        run = session.get(ImageGenerationRun, item.run_id)
+        assert run is not None
+        run.status = "keyframes_failed"
+        session.commit()
+
+    _retry(client, graph, target, key="retry-unfinished-run-1")
 
     assert dispatcher.run_once().dispatched == 1
 

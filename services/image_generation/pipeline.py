@@ -117,13 +117,22 @@ class ImageGenerationPipeline:
         ``regeneration_sequence`` is the deliberate-regeneration counter of the
         shot workflow that asked for this run. It is zero for the child T16
         created and for every project-wide run, and is then omitted from the
-        hashed material, so every run and item identity minted before it
-        existed keeps the hash it already has. A non-zero sequence is what makes
-        a regeneration produce a *different* keyframe: without it the material
-        identity of an unchanged shot is unchanged, the existing item is reused,
-        and the regeneration an owner paid to request returns the same image.
+        hashed material, so every identity minted before it existed keeps the
+        hash it already has. A non-zero sequence is what makes a regeneration
+        produce a *different* keyframe: without it the material identity of an
+        unchanged shot is unchanged, the existing item is reused, and the
+        regeneration an owner paid to request returns the same image.
+
+        A run that already exists binds the material it was created with,
+        sequence included, so the durable row decides rather than this argument.
+        Re-entering a run started before the sequence was bound therefore
+        resolves the identities it already wrote instead of refusing its own
+        idempotency key or colliding with its own items.
         """
         selected = self.repo.selected_storyboard(project_id, storyboard_id)
+        run = self.repo.run_by_key(project_id, idempotency_key)
+        if run is not None:
+            regeneration_sequence = int(run.parameters.get("regeneration_sequence", 0) or 0)
         regeneration: dict[str, Any] = (
             {"regeneration_sequence": regeneration_sequence} if regeneration_sequence else {}
         )
@@ -145,7 +154,6 @@ class ImageGenerationPipeline:
             "role": role.value if role is not None else None,
         }
         input_hash = _hash(material)
-        run = self.repo.run_by_key(project_id, idempotency_key)
         if run is not None and run.input_hash != input_hash:
             raise ValueError("idempotency key already binds different material inputs")
         if run is None:
