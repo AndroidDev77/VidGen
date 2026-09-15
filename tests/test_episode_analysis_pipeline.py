@@ -288,6 +288,9 @@ class _MeteredProvider(FakeEpisodeAnalysisProvider):
     """Fake provider that reports token usage like the OpenAI Responses API does."""
 
     #: A name the published rate table resolves, so the fallback path is real.
+    #: Deliberately the bare family name: no setting may be configured with one
+    #: any more, but an attempt recorded before that check existed still has to
+    #: price rather than report nothing.
     model = "gpt-5.6"
     #: Cached share of ``input_tokens``, as OpenAI reports it.
     cached_input_tokens: int | None = None

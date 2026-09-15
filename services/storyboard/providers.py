@@ -25,7 +25,9 @@ from vidgen.contracts.storyboard import (
 
 OPENAI_RESPONSES_PATH = "/responses"
 OPENAI_BASE_URL = "https://api.openai.com/v1"
-DEFAULT_STORYBOARD_MODEL = "gpt-5.6"
+#: The tier the design names for the creative agents. Matches
+#: ``APISettings.storyboard_model``; a deployment overrides it there.
+DEFAULT_STORYBOARD_MODEL = "gpt-5.6-terra"
 DIRECTOR_VERSION = "storyboard-director/1.1.0"
 #: v2 adds the shot-pacing guidance and the semantic cutting rules.
 PROMPT_VERSION = "storyboard-director-v2"

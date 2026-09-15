@@ -53,16 +53,17 @@ class FinalEditorialModel:
 
 
 #: The default registry. ``build_registry`` replaces it from settings so a
-#: deployment never has a model name compiled into the pipeline. The defaults
-#: reuse the model this repository already has configured and verified for its
-#: other vision agent roles; changing a production model ID requires checking
-#: the provider's current official documentation first.
+#: deployment never has a model name compiled into the pipeline. The defaults are
+#: the tiers the technical design names for the two roles, matching what
+#: ``APISettings.final_qa_first_pass_model`` and ``final_qa_adjudicator_model``
+#: default to; changing a production model ID requires checking the provider's
+#: current official documentation first.
 DEFAULT_REGISTRY: dict[FinalEditorialRole, FinalEditorialModel] = {
     FinalEditorialRole.LUNA_FIRST_PASS: FinalEditorialModel(
-        role=FinalEditorialRole.LUNA_FIRST_PASS, provider="openai", model="gpt-5.6"
+        role=FinalEditorialRole.LUNA_FIRST_PASS, provider="openai", model="gpt-5.6-luna"
     ),
     FinalEditorialRole.TERRA_ADJUDICATOR: FinalEditorialModel(
-        role=FinalEditorialRole.TERRA_ADJUDICATOR, provider="openai", model="gpt-5.6"
+        role=FinalEditorialRole.TERRA_ADJUDICATOR, provider="openai", model="gpt-5.6-terra"
     ),
 }
 

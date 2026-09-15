@@ -46,10 +46,12 @@ RATES: dict[str, TokenRates] = {
     "gpt-5-nano": TokenRates(Decimal("0.05"), Decimal("0.005"), Decimal("0.40")),
 }
 
-#: Names that do not identify a tier on their own. Every model setting in this
-#: repository is the bare ``gpt-5.6``, which spans three tiers a factor of
-#: twenty apart, so it resolves to the middle one rather than reporting nothing.
-#: A deployment that runs a different tier should say so in its model setting.
+#: Family names that do not identify a tier on their own. No model setting in
+#: this repository is configured with one - :mod:`vidgen.providers.openai_models`
+#: refuses a family name, because the API cannot be called with it - but a
+#: provider attempt recorded before that check existed still has to price, and
+#: ``gpt-5.6`` spans three tiers a factor of twenty apart. It resolves to the
+#: middle one rather than reporting nothing.
 ALIASES: dict[str, str] = {
     "gpt-5.6": "gpt-5.6-terra",
     "gpt-6": "gpt-6-astra",

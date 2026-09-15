@@ -240,10 +240,12 @@ analysis model. Where it does not - which is every deployment today, since nothi
 - the call falls back to the published list prices in `src/vidgen/costs/openai_rates.py` and the
 attempt is marked `pricing_status: fallback`, so a defaulted amount is never mistaken for one the
 catalog stands behind. A model nobody has published a price for records its tokens at zero and is
-marked `unpriced` rather than being assigned an invented rate. Every model setting in this
-repository is the bare `gpt-5.6`, which spans three tiers a factor of twenty apart; it resolves to
-the middle (Terra) tier, and a deployment on another tier should name it in its model setting.
-Seeding real dated rates makes the fallback inert.
+marked `unpriced` rather than being assigned an invented rate. Every model setting names a tier
+directly (`gpt-5.6-terra` for the creative and editorial agents, `gpt-5.6-luna` for first-pass QA),
+so the fallback prices what was actually called; the bare family name `gpt-5.6` is refused when
+settings load, because the API cannot be called with it, and still resolves to the middle (Terra)
+tier for an attempt recorded before that check existed. Seeding real dated rates makes the fallback
+inert.
 
 ## T11 compression and comedy script pipeline
 
@@ -442,7 +444,7 @@ uv run python scripts/generate_storyboard.py PROJECT_UUID --provider fake
 Run the configured OpenAI Responses adapter (the model stays configuration):
 
 ```bash
-VIDGEN_OPENAI_API_KEY=... VIDGEN_STORYBOARD_MODEL=gpt-5.6 \
+VIDGEN_OPENAI_API_KEY=... VIDGEN_STORYBOARD_MODEL=gpt-5.6-terra \
   uv run python scripts/generate_storyboard.py PROJECT_UUID --provider openai \
   --capability-profile runway-gen4-turbo
 ```
@@ -1263,10 +1265,9 @@ VIDGEN_OPENAI_API_KEY=... uv run python scripts/run_visual_qa.py PROJECT_UUID --
 uv run python scripts/inspect_visual_qa.py PROJECT_UUID --json
 ```
 
-Relevant configuration: `VIDGEN_OPENAI_API_KEY`, `VIDGEN_VISUAL_QA_FIRST_PASS_MODEL` and
-`VIDGEN_VISUAL_QA_ADJUDICATOR_MODEL` (both default to the model this repository already has
-configured and verified for its other agent roles), plus the usual `VIDGEN_BLOB_ROOT`,
-`VIDGEN_BLOB_SIGNING_SECRET` and `VIDGEN_DATABASE_URL`.
+Relevant configuration: `VIDGEN_OPENAI_API_KEY`, `VIDGEN_VISUAL_QA_FIRST_PASS_MODEL` (defaults to
+`gpt-5.6-luna`) and `VIDGEN_VISUAL_QA_ADJUDICATOR_MODEL` (defaults to `gpt-5.6-terra`), plus the
+usual `VIDGEN_BLOB_ROOT`, `VIDGEN_BLOB_SIGNING_SECRET` and `VIDGEN_DATABASE_URL`.
 
 ### Troubleshooting
 
@@ -1781,10 +1782,19 @@ audio and caption results, blocking/review/warning counts, provider and model, t
 result when one was used, the cost summary, the report asset ID, the gate decision and the final
 status.
 
-Production configuration: `VIDGEN_OPENAI_API_KEY`, `VIDGEN_FINAL_QA_FIRST_PASS_MODEL`,
-`VIDGEN_FINAL_QA_ADJUDICATOR_MODEL` and `VIDGEN_FINAL_QA_ADJUDICATION_ENABLED`. Both model defaults
-are the model this repository already has configured and verified for its other vision agent roles;
-check the provider's current official documentation before changing one.
+Production configuration: `VIDGEN_OPENAI_API_KEY`, `VIDGEN_FINAL_QA_FIRST_PASS_MODEL` (defaults to
+`gpt-5.6-luna`), `VIDGEN_FINAL_QA_ADJUDICATOR_MODEL` (defaults to `gpt-5.6-terra`) and
+`VIDGEN_FINAL_QA_ADJUDICATION_ENABLED`; check the provider's current official documentation before
+changing a production model ID.
+
+T22 is the last stage of the pipeline, so a model name it cannot call is the most expensive kind of
+configuration mistake this system has: nothing notices until the render has been paid for. Every
+setting that names an OpenAI model is therefore checked against
+`src/vidgen/providers/openai_models.py` when settings load, and the API, the worker and the
+dispatcher refuse to start on a name that is not a callable model - a family name such as `gpt-5.6`,
+which prices correctly but is not a model, most of all. `uv run python -m scripts.verify_models`
+adds the half only the provider can answer, verifying with a free `models.retrieve` lookup that the
+configured key may call each one.
 
 ### Known limitations
 
