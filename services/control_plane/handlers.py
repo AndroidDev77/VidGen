@@ -65,6 +65,11 @@ from vidgen.contracts.workflow import (
 )
 from vidgen.db.continuity_models import character_reference_sets, location_reference_sets
 from vidgen.db.control_command_models import ControlCommandRecord
+from vidgen.db.image_generation_models import (
+    GeneratedKeyframeImage,
+    ImageGenerationItem,
+    ImageGenerationRun,
+)
 from vidgen.db.models import Project, SourceVideo
 from vidgen.db.storyboard_models import StoryboardRun, StoryboardShotRecord
 from vidgen.db.visual_qa_repository import VisualQARepository
@@ -244,7 +249,7 @@ def _approved_reference_set_ids(session: Session, project_id: UUID) -> list[UUID
 def _approved_keyframe_asset_id(
     context: DispatchContext, record: ControlCommandRecord, shot: StoryboardShotRecord
 ) -> UUID | None:
-    """The keyframe a replacement run must reuse rather than pay to replace.
+    """The keyframe a review continuation must reuse rather than pay to replace.
 
     A review continuation exists because a person settled this shot's T20
     verdict - by approving an ambiguous review, or by force-approving a soft
@@ -253,12 +258,7 @@ def _approved_keyframe_asset_id(
     keyframe the owner just approved, spend T14 again and re-open the same gate
     on a different image, so the replacement is handed the asset the open gate
     was recorded against and skips keyframe generation.
-
-    Every other shot command means what it says: a retry or a regeneration asks
-    for new work, and neither inherits a keyframe.
     """
-    if record.command_type != ControlCommandType.SHOT_REVIEW_CONTINUE.value:
-        return None
     repository = VisualQARepository(context.session)
     opened, _reason = repository.gate(shot.id, VisualQATargetType.KEYFRAME)
     if not opened:
@@ -268,6 +268,96 @@ def _approved_keyframe_asset_id(
         return None
     qa_run = repository.canonical_run(shot.id, VisualQATargetType.KEYFRAME)
     return qa_run.target_asset_id if qa_run is not None else None
+
+
+def _keyframe_was_rejected(session: Session, shot: StoryboardShotRecord) -> bool:
+    """Whether this shot's own keyframe is what its T20 gate is shut on.
+
+    A gate nobody has evaluated yet is not a rejection: a shot interrupted
+    between T14 and T20 has an image whose verdict is simply unknown, and the
+    replacement reruns the gate on it.
+    """
+    opened, reason = VisualQARepository(session).gate(shot.id, VisualQATargetType.KEYFRAME)
+    return not opened and reason != "visual_qa_missing"
+
+
+def _complete_keyframe_asset_id(session: Session, shot: StoryboardShotRecord) -> UUID | None:
+    """This shot's selected FIRST_FRAME keyframe, if its whole set is animatable.
+
+    A retry asks the pipeline to have another go at the work that failed, which
+    is almost never the keyframe: a shot parks on a T15 provider failure, a
+    worker interruption or a budget denial long after T14 produced an image
+    that already cleared its T20 gate. Regenerating it would spend on a replay
+    of work that succeeded, and would risk trading a good keyframe for one the
+    gate rejects.
+
+    Handing the replacement that keyframe is also what keeps its T14 step
+    honest. The step would otherwise re-derive the same material identity,
+    reuse the same item, and complete owning nothing - the empty run that made
+    every retry fail T15's authority check.
+
+    ``None`` whenever the keyframe is not something to resume from, and the
+    replacement then runs T14 and produces a whole new set in one run:
+
+    * T20 rejected this image, or is waiting on a person to judge it. Carrying
+      it would rerun the gate on the very thing the gate is shut on and park
+      the shot again for the same reason, having paid for another evaluation.
+    * There is no selected FIRST_FRAME, or the shot requires a LAST_FRAME and
+      has none. A child handed a partial set skips T14 and animates without
+      the anchor T13 planned for.
+    * The set does not come from one completed T14 run - a run that committed a
+      new FIRST_FRAME and then failed, say. T15 requires the shot's keyframes
+      to share a ``keyframes_complete`` run, so carrying such a set would only
+      move the failure to a lineage refusal at T15.
+    """
+    if _keyframe_was_rejected(session, shot):
+        return None
+    roles = {
+        frame.keyframe_role: frame
+        for frame in session.scalars(
+            select(GeneratedKeyframeImage).where(
+                GeneratedKeyframeImage.shot_id == shot.id,
+                GeneratedKeyframeImage.selected,
+            )
+        )
+    }
+    first = roles.get("FIRST_FRAME")
+    if first is None:
+        return None
+    first_item = session.get(ImageGenerationItem, first.item_id)
+    if first_item is None:
+        return None
+    run = session.get(ImageGenerationRun, first_item.run_id)
+    if run is None or run.status != "keyframes_complete":
+        return None
+    # Read straight off the stored contract rather than through
+    # ``StoryboardShot``: whether a keyframe set is complete must not depend on
+    # every other field of a T13 contract still validating.
+    if bool(dict(shot.contract or {}).get("requires_last_frame", False)):
+        last = roles.get("LAST_FRAME")
+        if last is None:
+            return None
+        last_item = session.get(ImageGenerationItem, last.item_id)
+        if last_item is None or last_item.run_id != run.id:
+            return None
+    return first.asset_id
+
+
+def _carried_keyframe_asset_id(
+    context: DispatchContext, record: ControlCommandRecord, shot: StoryboardShotRecord
+) -> UUID | None:
+    """The keyframe this command's replacement child animates instead of paying.
+
+    A regeneration means what it says: it inherits nothing, runs T14 bound to
+    its own regeneration sequence, and produces a genuinely different image.
+    A retry and a review continuation both resume work that was already done,
+    and each reuses the keyframe that work produced.
+    """
+    if record.command_type == ControlCommandType.SHOT_REVIEW_CONTINUE.value:
+        return _approved_keyframe_asset_id(context, record, shot)
+    if record.command_type == ControlCommandType.SHOT_RETRY.value:
+        return _complete_keyframe_asset_id(context.session, shot)
+    return None
 
 
 def _replacement_shot_input(
@@ -300,7 +390,7 @@ def _replacement_shot_input(
         storyboard_shot_id=shot.stable_shot_id,
         shot_input_hash=identity.identity_hash,
         workflow_identity=identity,
-        selected_keyframe_asset_id=_approved_keyframe_asset_id(context, record, shot),
+        selected_keyframe_asset_id=_carried_keyframe_asset_id(context, record, shot),
         idempotency_key=f"t18b:{record.id}:{identity.identity_hash}"[:255],
         trace_context={
             key: str(value)[:128] for key, value in dict(record.trace_context or {}).items()
@@ -379,10 +469,11 @@ def dispatch_shot_retry(context: DispatchContext, record: ControlCommandRecord) 
     already returned would fail forever without ever recovering the shot.
 
     A shot whose workflow has closed is recovered by starting a new immutable
-    run with the next regeneration sequence, which reruns T14, T20, T15, T20
-    and T21 exactly as policy requires and leaves every previous attempt
-    intact - except for a keyframe a person has already approved, which the
-    replacement reuses instead of regenerating.
+    run with the next regeneration sequence, which reruns T20, T15, T20 and T21
+    exactly as policy requires and leaves every previous attempt intact. It
+    reruns T14 only when there is no complete keyframe set to resume from: a
+    retry is a second go at the work that failed, and a keyframe that already
+    exists is work that did not.
     """
     _project(context, record)
     shot = context.session.get(StoryboardShotRecord, record.target_id)

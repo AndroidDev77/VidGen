@@ -173,11 +173,14 @@ class ShotWorkflowInput(StrictContract):
     workflow_identity: ShotWorkflowIdentity
     t14_run_id: UUID | None = None
     t15_run_id: UUID | None = None
-    #: The keyframe this run must animate instead of generating one. Set only
-    #: when a person has already cleared this shot's T20 keyframe gate and the
-    #: child that owned the shot has closed: the replacement then skips T14 and
-    #: animates the very image the owner approved, rather than paying to
-    #: generate another one and throwing that decision away.
+    #: The keyframe this run must animate instead of generating one. Set when a
+    #: replacement child resumes work a previous child already did: a person has
+    #: cleared this shot's T20 keyframe gate, or a retry is picking up a shot
+    #: whose keyframes are complete and whose failure lay downstream of them.
+    #: The replacement then skips T14 and animates the very image that exists,
+    #: rather than paying to generate another one and throwing the decision - or
+    #: the gate the image already passed - away. A regeneration sets nothing:
+    #: producing a different image is the whole point of asking for one.
     #:
     #: It is deliberately not part of ``workflow_identity``. Which keyframe a
     #: replacement is handed is an owner's routing decision, recorded in the

@@ -65,6 +65,11 @@ from vidgen.db.control_command_repository import (
     ControlCommandRepository,
     infrastructure_backoff_seconds,
 )
+from vidgen.db.image_generation_models import (
+    GeneratedKeyframeImage,
+    ImageGenerationItem,
+    ImageGenerationRun,
+)
 from vidgen.db.models import Project
 from vidgen.db.repair_models import RepairRun
 from vidgen.db.storyboard_models import StoryboardRun, StoryboardShotRecord
@@ -1881,6 +1886,174 @@ def test_a_child_still_waiting_on_a_retry_signal_is_resumed(
         record = session.get(ControlCommandRecord, command_id)
         assert record is not None
         assert record.workflow_id == workflow_id
+
+
+def _retry(client: TestClient, graph: ProjectGraph, shot_id: UUID, key: str) -> None:
+    shot = client.get(api(graph.project_id, f"/shots/{shot_id}"), headers=OWNER).json()
+    response = client.post(
+        api(graph.project_id, f"/shots/{shot_id}:retry"),
+        headers=headers(if_match=shot["shot"]["row_version"], key=key),
+    )
+    assert response.status_code == 202, response.text
+
+
+def test_a_retry_animates_the_keyframe_the_failed_run_already_produced(
+    client: TestClient,
+    graph: ProjectGraph,
+    dispatcher: ControlCommandDispatcher,
+    controller: FakeWorkflowController,
+) -> None:
+    """A retry resumes work that failed, and T14 is not what failed.
+
+    Rerunning it spends on an image that already exists and already cleared its
+    gate - and, because T14 reuses an item whose material identity has not
+    moved, the replacement's own run completes owning no items at all. T15 then
+    refuses that empty run as not authoritative, which is exactly how every
+    retry of a shot with a keyframe died. The replacement is handed the
+    keyframe instead, so it skips T14 and animates the run that holds it.
+    """
+    index = 2
+    _retry(client, graph, graph.shot_ids[index], key="retry-keyframe-1")
+
+    assert dispatcher.run_once().dispatched == 1
+
+    started = list(controller.shots.values())
+    assert len(started) == 1
+    assert started[0].selected_keyframe_asset_id == graph.keyframe_asset_ids[index]
+    assert started[0].workflow_identity.regeneration_sequence == 1
+
+
+def test_a_retry_regenerates_a_keyframe_set_that_is_incomplete(
+    client: TestClient,
+    graph: ProjectGraph,
+    dispatcher: ControlCommandDispatcher,
+    controller: FakeWorkflowController,
+    review_client: tuple[TestClient, sessionmaker[Session], FakeWorkflowController],
+) -> None:
+    """A partial set is not something to resume from.
+
+    This shot needs a LAST_FRAME anchor and has only a FIRST_FRAME, so handing
+    the replacement that one image would skip T14 and animate without the
+    anchor T13 planned for. It runs T14 and produces the whole set instead.
+    """
+    _, factory, _ = review_client
+    index = 7
+    target = graph.shot_ids[index]
+    with factory() as session:
+        shot = session.get(StoryboardShotRecord, target)
+        assert shot is not None
+        shot.contract = {**dict(shot.contract), "requires_last_frame": True}
+        session.commit()
+
+    _retry(client, graph, target, key="retry-partial-1")
+
+    assert dispatcher.run_once().dispatched == 1
+
+    started = list(controller.shots.values())
+    assert len(started) == 1
+    assert started[0].selected_keyframe_asset_id is None
+
+
+def test_a_retry_regenerates_a_keyframe_its_own_gate_rejected(
+    client: TestClient,
+    graph: ProjectGraph,
+    dispatcher: ControlCommandDispatcher,
+    controller: FakeWorkflowController,
+    review_client: tuple[TestClient, sessionmaker[Session], FakeWorkflowController],
+) -> None:
+    """Carrying the image the gate is shut on would park the shot again.
+
+    T20 would rerun on the very keyframe it just rejected, reach the same
+    verdict, and have paid for another evaluation to do it. A retry of a shot
+    whose keyframe is what failed produces a different keyframe.
+    """
+    _, factory, _ = review_client
+    index = 9
+    target = graph.shot_ids[index]
+    with factory() as session:
+        # A completed T20 keyframe run that failed, with nobody having cleared it.
+        _keyframe_qa_run(session, graph, index)
+        session.commit()
+
+    _retry(client, graph, target, key="retry-rejected-1")
+
+    assert dispatcher.run_once().dispatched == 1
+
+    started = list(controller.shots.values())
+    assert len(started) == 1
+    assert started[0].selected_keyframe_asset_id is None
+
+
+def test_a_retry_regenerates_a_keyframe_set_no_single_run_completed(
+    client: TestClient,
+    graph: ProjectGraph,
+    dispatcher: ControlCommandDispatcher,
+    controller: FakeWorkflowController,
+    review_client: tuple[TestClient, sessionmaker[Session], FakeWorkflowController],
+) -> None:
+    """T15 requires one completed run behind a shot's keyframes, so T18b does too.
+
+    A run that committed this keyframe and then failed leaves an image nothing
+    may animate from. Carrying it would only move the failure to a lineage
+    refusal at T15.
+    """
+    _, factory, _ = review_client
+    index = 1
+    target = graph.shot_ids[index]
+    with factory() as session:
+        frame = session.scalar(
+            select(GeneratedKeyframeImage).where(
+                GeneratedKeyframeImage.shot_id == target,
+                GeneratedKeyframeImage.keyframe_role == "FIRST_FRAME",
+                GeneratedKeyframeImage.selected,
+            )
+        )
+        assert frame is not None
+        item = session.get(ImageGenerationItem, frame.item_id)
+        assert item is not None
+        run = session.get(ImageGenerationRun, item.run_id)
+        assert run is not None
+        run.status = "keyframes_failed"
+        session.commit()
+
+    _retry(client, graph, target, key="retry-unfinished-run-1")
+
+    assert dispatcher.run_once().dispatched == 1
+
+    started = list(controller.shots.values())
+    assert len(started) == 1
+    assert started[0].selected_keyframe_asset_id is None
+
+
+def test_a_regeneration_inherits_no_keyframe_and_binds_its_own_sequence(
+    client: TestClient,
+    graph: ProjectGraph,
+    dispatcher: ControlCommandDispatcher,
+    controller: FakeWorkflowController,
+) -> None:
+    """The one command that must produce a different image, and does.
+
+    A regeneration inherits nothing, so it reruns T14 - and the sequence it
+    carries is what T14 binds into the keyframe's material identity, which is
+    what makes the image genuinely new rather than the reused one an owner
+    already asked to replace.
+    """
+    index = 8
+    target = graph.shot_ids[index]
+    shot = client.get(api(graph.project_id, f"/shots/{target}"), headers=OWNER).json()
+    response = client.post(
+        api(graph.project_id, f"/shots/{target}:regenerate"),
+        json={"confirm_invalidation": True},
+        headers=headers(if_match=shot["shot"]["row_version"], key="regen-fresh-1"),
+    )
+    assert response.status_code == 200, response.text
+
+    assert dispatcher.run_once().dispatched == 1
+
+    started = list(controller.shots.values())
+    assert len(started) == 1
+    assert started[0].selected_keyframe_asset_id is None
+    assert started[0].workflow_identity.regeneration_sequence == 1
 
 
 def test_a_retry_and_a_regeneration_never_share_a_replacement_identity(

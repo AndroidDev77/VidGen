@@ -110,9 +110,34 @@ class ImageGenerationPipeline:
         storyboard_id: UUID | None = None,
         shot_id: UUID | None = None,
         role: KeyframeRole | None = None,
+        regeneration_sequence: int = 0,
     ) -> ImageGenerationResult:
+        """Generate, or reuse, the keyframes of one storyboard - or of one shot.
+
+        ``regeneration_sequence`` is the deliberate-regeneration counter of the
+        shot workflow that asked for this run. It is zero for the child T16
+        created and for every project-wide run, and is then omitted from the
+        hashed material, so every identity minted before it existed keeps the
+        hash it already has. A non-zero sequence is what makes a regeneration
+        produce a *different* keyframe: without it the material identity of an
+        unchanged shot is unchanged, the existing item is reused, and the
+        regeneration an owner paid to request returns the same image.
+
+        A run that already exists binds the material it was created with,
+        sequence included, so the durable row decides rather than this argument.
+        Re-entering a run started before the sequence was bound therefore
+        resolves the identities it already wrote instead of refusing its own
+        idempotency key or colliding with its own items.
+        """
         selected = self.repo.selected_storyboard(project_id, storyboard_id)
+        run = self.repo.run_by_key(project_id, idempotency_key)
+        if run is not None:
+            regeneration_sequence = int(run.parameters.get("regeneration_sequence", 0) or 0)
+        regeneration: dict[str, Any] = (
+            {"regeneration_sequence": regeneration_sequence} if regeneration_sequence else {}
+        )
         material = {
+            **regeneration,
             "project_id": str(project_id),
             "storyboard_id": str(selected.storyboard.id),
             "storyboard_version": selected.storyboard.version,
@@ -129,7 +154,6 @@ class ImageGenerationPipeline:
             "role": role.value if role is not None else None,
         }
         input_hash = _hash(material)
-        run = self.repo.run_by_key(project_id, idempotency_key)
         if run is not None and run.input_hash != input_hash:
             raise ValueError("idempotency key already binds different material inputs")
         if run is None:
@@ -157,7 +181,11 @@ class ImageGenerationPipeline:
             for shot, keyframe_role in targets:
                 if self.cancelled():
                     raise ImageGenerationCancelled("T14 cancellation requested at item checkpoint")
-                results.append(await self._process_item(selected, run, shot, keyframe_role))
+                results.append(
+                    await self._process_item(
+                        selected, run, shot, keyframe_role, regeneration=regeneration
+                    )
+                )
             run.completed_item_count = sum(
                 item.status in {"completed", "reused"} for item in results
             )
@@ -210,12 +238,19 @@ class ImageGenerationPipeline:
         return result
 
     async def _process_item(
-        self, selected: SelectedStoryboard, run: ImageGenerationRun, row: Any, role: KeyframeRole
+        self,
+        selected: SelectedStoryboard,
+        run: ImageGenerationRun,
+        row: Any,
+        role: KeyframeRole,
+        *,
+        regeneration: dict[str, Any] | None = None,
     ) -> ShotKeyframeResult:
         shot = StoryboardShot.model_validate(row.contract)
         package = self._package(selected, shot, role)
         identity = _hash(
             {
+                **(regeneration or {}),
                 "project": selected.project.id,
                 "storyboard": run.storyboard_id,
                 "storyboard_version": run.storyboard_version,

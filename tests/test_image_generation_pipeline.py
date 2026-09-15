@@ -167,6 +167,135 @@ def test_new_material_candidate_replaces_selection_without_overwrite(tmp_path: P
     assert total == 2 * selected
 
 
+def test_a_regeneration_sequence_produces_a_new_keyframe_rather_than_the_old_one(
+    tmp_path: Path,
+) -> None:
+    """A regeneration an owner paid to request must not return the same image.
+
+    Nothing about an unchanged shot's material moves when a person asks for a
+    different keyframe, so the identity resolves to the item that already
+    exists, the run completes owning nothing, and the owner gets back the very
+    image they rejected. Binding the shot workflow's regeneration sequence is
+    what makes the request mean something.
+    """
+    fixture = build_fixture(tmp_path)
+    storyboard = run_storyboard(fixture)
+    shot = fixture.session.scalar(
+        select(StoryboardShotRecord)
+        .where(StoryboardShotRecord.storyboard_run_id == storyboard.storyboard_run_id)
+        .order_by(StoryboardShotRecord.global_sequence)
+    )
+    assert shot is not None
+    provider = DeterministicFakeImageProvider()
+    pipeline = ImageGenerationPipeline(fixture.session, fixture.blobs, provider)
+    original = asyncio.run(
+        pipeline.process(project_id=fixture.project.id, idempotency_key="t14-original")
+    )
+    assert original.status == "keyframes_complete"
+
+    # Sequence zero is the child T16 created, and is omitted from the hashed
+    # material: every identity minted before the sequence existed keeps its hash.
+    reused = asyncio.run(
+        pipeline.process(
+            project_id=fixture.project.id,
+            idempotency_key="t14-same-material",
+            shot_id=shot.id,
+        )
+    )
+    assert reused.reused_count == 1
+    assert reused.completed_count == 0
+
+    regenerated = asyncio.run(
+        pipeline.process(
+            project_id=fixture.project.id,
+            idempotency_key="t14-regenerated",
+            shot_id=shot.id,
+            regeneration_sequence=1,
+        )
+    )
+    assert regenerated.status == "keyframes_complete"
+    assert regenerated.completed_count == 1, "a regeneration generates rather than reuses"
+    assert regenerated.reused_count == 0
+    run_id = regenerated.run_id
+    owned = fixture.session.scalars(
+        select(ImageGenerationItem).where(ImageGenerationItem.run_id == run_id)
+    ).all()
+    assert [item.shot_id for item in owned] == [shot.id], "the run owns the item it generated"
+    # The new candidate replaces the selection without overwriting the old one,
+    # so the regenerated image is what T20 and T15 now see.
+    frames = fixture.session.scalars(
+        select(GeneratedKeyframeImage).where(
+            GeneratedKeyframeImage.shot_id == shot.id,
+            GeneratedKeyframeImage.keyframe_role == "FIRST_FRAME",
+        )
+    ).all()
+    assert len(frames) == 2
+    selected = [frame for frame in frames if frame.selected]
+    assert [frame.item_id for frame in selected] == [owned[0].id]
+
+    # Replaying the same sequence is still idempotent: it reuses, never repays.
+    replayed = asyncio.run(
+        pipeline.process(
+            project_id=fixture.project.id,
+            idempotency_key="t14-regenerated-replay",
+            shot_id=shot.id,
+            regeneration_sequence=1,
+        )
+    )
+    assert replayed.reused_count == 1
+    assert replayed.completed_count == 0
+
+
+def test_an_existing_run_keeps_the_sequence_it_was_created_with(tmp_path: Path) -> None:
+    """The durable run row binds its own material, not whatever a caller passes.
+
+    A replacement child's T14 activity can be re-entered after a deploy that
+    changed what the sequence binds. Recomputing from the argument would refuse
+    the run's own idempotency key as binding different material - and, if it got
+    past that, would try to write a second item into the same (run, shot, role)
+    slot. Reading the sequence back off the run makes re-entry resolve exactly
+    the identities that run already wrote.
+    """
+    fixture = build_fixture(tmp_path)
+    storyboard = run_storyboard(fixture)
+    shot = fixture.session.scalar(
+        select(StoryboardShotRecord)
+        .where(StoryboardShotRecord.storyboard_run_id == storyboard.storyboard_run_id)
+        .order_by(StoryboardShotRecord.global_sequence)
+    )
+    assert shot is not None
+    pipeline = ImageGenerationPipeline(
+        fixture.session, fixture.blobs, DeterministicFakeImageProvider()
+    )
+    original = asyncio.run(
+        pipeline.process(
+            project_id=fixture.project.id,
+            idempotency_key="t14-in-flight",
+            shot_id=shot.id,
+        )
+    )
+    assert original.completed_count == 1
+
+    # The same run, re-entered by a worker that now binds a sequence.
+    resumed = asyncio.run(
+        pipeline.process(
+            project_id=fixture.project.id,
+            idempotency_key="t14-in-flight",
+            shot_id=shot.id,
+            regeneration_sequence=4,
+        )
+    )
+    assert resumed.run_id == original.run_id
+    assert resumed.reused_count == 1, "it resolves the item this run already wrote"
+    assert resumed.completed_count == 0
+    owned = fixture.session.scalar(
+        select(func.count())
+        .select_from(ImageGenerationItem)
+        .where(ImageGenerationItem.run_id == original.run_id)
+    )
+    assert owned == 1, "and never writes a second item into the same slot"
+
+
 def test_ambiguous_outcome_is_durable_and_never_resubmitted(tmp_path: Path) -> None:
     fixture = build_fixture(tmp_path)
     storyboard = run_storyboard(fixture)
