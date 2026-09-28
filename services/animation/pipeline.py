@@ -18,7 +18,7 @@ from sqlalchemy.orm import Session
 
 from services.animation.downloader import download_video
 from services.animation.input_assets import resolve_input_asset
-from services.animation.motion_prompt import compile_motion_prompt
+from services.animation.motion_prompt import compile_motion_prompt, motion_style_tag
 from services.animation.pipeline_errors import AmbiguousVideoSubmission, VideoSubmissionNotSent
 from services.animation.pricing import estimate_runway_cost
 from services.animation.providers import (
@@ -245,7 +245,6 @@ class AnimationPipeline:
         shot = StoryboardShot.model_validate(row.contract)
         frame = inputs.keyframes[row.id]
         intent = self._motion_intent(shot, inputs.storyboard.project.visual_style)
-        package = compile_motion_prompt(intent)
         generation = project_generation_settings(inputs.storyboard.project)
         raw_duration = shot.requested_generation_duration_us / 1_000_000
         prior = self.session.scalar(
@@ -279,6 +278,9 @@ class AnimationPipeline:
         )
         model = selected_model(decision)
         capability = capability_for(model)
+        # The prompt budget is the selected model's documented limit, so the
+        # prompt is compiled only once routing has chosen the model.
+        package = compile_motion_prompt(intent, limit=capability.prompt_characters)
         # The routing policy already snapped the T13 duration to the smallest
         # whole second the selected model accepts; the storyboard never plans a
         # duration outside the profile, but a pre-integer storyboard may carry
@@ -851,7 +853,9 @@ class AnimationPipeline:
             ),
             camera_movement=shot.camera.movement,
             motion_intensity=shot.camera.movement_intensity,
-            style_lock=visual_style,
+            # A short style tag, not the project paragraph: the keyframe
+            # already carries the style.
+            style_lock=motion_style_tag(visual_style),
             subject_priority=[str(value) for value in incoming.present_character_ids],
             character_state=[
                 item.model_dump_json() for item in incoming.character_appearance_states

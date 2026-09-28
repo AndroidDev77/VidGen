@@ -59,7 +59,7 @@ def request():
 
 def test_prompt_and_routing_are_stable():
     item = intent()
-    assert compile_motion_prompt(item) == compile_motion_prompt(item)
+    assert compile_motion_prompt(item, limit=1000) == compile_motion_prompt(item, limit=1000)
     assert route_model(RoutingContext()).selected_model == RunwayModel.GEN4_TURBO.value
     hero = RoutingContext(quality_mode=GenerationQuality.BALANCED, hero_shot=True)
     assert route_model(hero).selected_model == RunwayModel.GEN4_5.value
