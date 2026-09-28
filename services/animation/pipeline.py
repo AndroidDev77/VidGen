@@ -287,7 +287,14 @@ class AnimationPipeline:
         # a fractional value.
         duration = decision.generation_duration_seconds
         strict_last = bool(shot.requires_last_frame)
-        warnings: list[dict[str, str]] = []
+        warnings: list[dict[str, str]] = [
+            {
+                "code": "motion_prompt_trimmed",
+                "message": f"{note} to fit the {model.value} prompt limit",
+            }
+            for note in package.diagnostics
+            if note.startswith("trimmed_")
+        ]
         last_asset_id = frame.last_asset.id if frame.last_asset else None
         last_hash = frame.last_asset.sha256 if frame.last_asset else None
         if frame.last is not None and not capability.supports_last_frame:
@@ -368,6 +375,11 @@ class AnimationPipeline:
                 item.model = model.value
                 item.requested_duration = duration
                 item.routing_decision = decision.model_dump(mode="json")
+                # The prompt is part of the identity; keep the item's provenance on
+                # the prompt that is actually sent.
+                item.motion_prompt_hash = package.prompt_hash
+                item.motion_prompt_package = package.model_dump(mode="json")
+                item.warnings = warnings
                 self.session.flush()
                 self.session.commit()
             else:

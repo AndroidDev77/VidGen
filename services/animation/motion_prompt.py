@@ -41,7 +41,16 @@ CONTINUITY_STATEMENT = (
 #: A style tag is "a handful of words", bounded in both words and characters.
 STYLE_TAG_MAX_WORDS = 6
 STYLE_TAG_MAX_CHARACTERS = 60
-_CLAUSE_BREAK = re.compile(r"[.;:,!?\n()\[\]]|\s[-\u2013\u2014]\s|[\u2013\u2014]")
+#: Sentence-level breaks. Punctuation inside a token ("2.5D", "1950s\u201360s",
+#: "squash-and-stretch") is not a break.
+_SENTENCE_BREAK = re.compile(r"[.;!?](?=\s|$)|\s[-\u2013\u2014]\s|\u2014")
+_PHRASE_BREAK = re.compile(r",(?=\s|$)")
+#: A short leading label such as "Style:" or "Visual style:".
+_LEADING_LABEL = re.compile(r"^(?:\w+\s){0,2}\w+:\s+")
+_BRACKETS = re.compile(r"[()\[\]{}\"]")
+#: Phrases are joined until the tag has at least this many words, so a lone
+#: leading adjective ("Bold, flat 2D ...") does not become the whole tag.
+_MIN_TAG_WORDS = 3
 _TRAILING_CONNECTORS = frozenset(
     {"a", "an", "and", "as", "at", "by", "for", "from", "in", "of", "on", "or", "the", "to"}
     | {"with", "where", "which", "that", "while"}
@@ -51,7 +60,8 @@ _TRAILING_CONNECTORS = frozenset(
 def motion_style_tag(visual_style: str) -> str:
     """A short, deterministic style tag derived from a project's ``visual_style``.
 
-    The tag is the first clause of the style text, capped at
+    The tag is the first sentence of the style text (without a leading label
+    such as "Style:"), taken phrase by phrase until it has a few words, capped at
     ``STYLE_TAG_MAX_WORDS`` words and ``STYLE_TAG_MAX_CHARACTERS`` characters,
     with dangling connector words removed. The keyframe carries the rest of the
     style; this is only a brief reinforcing hint.
@@ -60,12 +70,30 @@ def motion_style_tag(visual_style: str) -> str:
     per-project motion style override resolves ahead of this derivation and
     passes through the compiler unchanged as ``MotionIntent.style_lock``.
     """
-    normalized = " ".join(visual_style.split())
-    clause = _CLAUSE_BREAK.split(normalized, maxsplit=1)[0].strip()
-    words = clause.split()[:STYLE_TAG_MAX_WORDS]
+    normalized = _BRACKETS.sub("", " ".join(visual_style.split()))
+    sentence = next(
+        (
+            part.strip()
+            for part in _SENTENCE_BREAK.split(_LEADING_LABEL.sub("", normalized))
+            if part.strip()
+        ),
+        "",
+    )
+    words: list[str] = []
+    for phrase in _PHRASE_BREAK.split(sentence):
+        if len(words) >= _MIN_TAG_WORDS:
+            break
+        phrase_words = phrase.split()
+        if words and phrase_words:
+            words[-1] += ","
+        words.extend(phrase_words)
+    words = [word.rstrip(":") for word in words[:STYLE_TAG_MAX_WORDS]]
     while words and len(" ".join(words)) > STYLE_TAG_MAX_CHARACTERS:
         words.pop()
-    while words and words[-1].lower() in _TRAILING_CONNECTORS:
+    while words and (words[-1].endswith(",") or words[-1].lower() in _TRAILING_CONNECTORS):
+        if words[-1].endswith(","):
+            words[-1] = words[-1].rstrip(",")
+            continue
         words.pop()
     return " ".join(words)
 

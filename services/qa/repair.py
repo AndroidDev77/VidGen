@@ -38,7 +38,7 @@ from services.animation.pipeline_errors import (
 )
 from services.animation.pricing import estimate_runway_cost
 from services.animation.probe import probe_video
-from services.animation.providers import VideoGenerationProvider, capability_for
+from services.animation.providers import VideoGenerationProvider, capability_for, prompt_length
 from services.animation.routing import RoutingContext, RoutingError, route_model
 from services.animation.task_poller import PollingWindowExpired, poll_task
 from services.animation.trim import trim_video
@@ -870,7 +870,7 @@ class VisualRepairPipeline:
         model = RunwayModel(plan.model)
         capability = capability_for(model)
         prompt = self._repaired_prompt(inputs, plan)
-        if len(prompt) > capability.prompt_characters:
+        if prompt_length(prompt) > capability.prompt_characters:
             raise _AttemptFailed(
                 "unsupported_prompt_length",
                 RepairFailureCategory.PROVIDER_ISSUE,

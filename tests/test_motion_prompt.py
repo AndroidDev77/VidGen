@@ -109,6 +109,13 @@ def test_style_tag_is_a_short_deterministic_clause() -> None:
     assert motion_style_tag("  flat   cel animation ") == "flat cel animation"
     assert motion_style_tag("Watercolour; soft edges") == "Watercolour"
     assert motion_style_tag("x" * 200) == ""
+    assert motion_style_tag("2.5D cel-shaded cartoon. Soft light") == "2.5D cel-shaded cartoon"
+    assert motion_style_tag("Style: bold flat cartoon") == "bold flat cartoon"
+    assert motion_style_tag("(Retro) flat animation") == "Retro flat animation"
+    assert motion_style_tag("1950s\u201360s UPA cartoon, limited") == "1950s\u201360s UPA cartoon"
+    assert motion_style_tag("Bold, flat 2D cartoon animation with ink") == (
+        "Bold, flat 2D cartoon animation"
+    )
 
 
 @pytest.mark.parametrize("model", list(RunwayModel))
