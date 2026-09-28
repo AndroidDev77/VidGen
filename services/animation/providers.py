@@ -21,7 +21,11 @@ Verified on 2026-09-09 against the official sources named in
 * Image-to-video ``ratio`` values for both models: ``1280:720``, ``720:1280``,
   ``1104:832``, ``832:1104``, ``960:960`` and ``1584:672``. Gen-4.5
   text-to-video accepts ``1280:720`` and ``720:1280``.
-* ``promptText`` is at most 1000 UTF-16 code units and is required for Gen-4.5.
+* ``promptText`` is at most 1000 UTF-16 code units for both models (re-checked
+  against the ``gen4_turbo`` and ``gen4.5`` image-to-video request types of
+  runwayml Python SDK 5.20.1) and is required for Gen-4.5. The limit is each
+  capability's ``prompt_characters``; the T15 motion-prompt compiler budgets
+  against the selected model's value, measured with :func:`prompt_length`.
 * ``promptImage`` is an HTTPS URL (16 MB), a Runway upload URI, or a base64
   data URI of at most 5 MB, in JPEG, PNG or WebP. The Gen-4.5 image-to-video
   input aspect ratio must fall between 0.5 and 2.0.
@@ -175,6 +179,7 @@ GEN4_TURBO_CAPABILITY = VideoCapability(
     durations=RUNWAY_DURATIONS_SECONDS,
     dimensions=RUNWAY_IMAGE_TO_VIDEO_DIMENSIONS,
     credits_per_second=5,
+    prompt_characters=1000,
     image_to_video=True,
     text_to_video=False,
 )
@@ -188,6 +193,7 @@ GEN4_5_CAPABILITY = VideoCapability(
     dimensions=RUNWAY_IMAGE_TO_VIDEO_DIMENSIONS,
     text_to_video_dimensions=RUNWAY_TEXT_TO_VIDEO_DIMENSIONS,
     credits_per_second=12,
+    prompt_characters=1000,
     prompt_required=True,
     image_to_video=True,
     text_to_video=True,
@@ -197,6 +203,11 @@ CAPABILITIES: dict[str, VideoCapability] = {
     GEN4_TURBO_CAPABILITY.model: GEN4_TURBO_CAPABILITY,
     GEN4_5_CAPABILITY.model: GEN4_5_CAPABILITY,
 }
+
+
+def prompt_length(prompt: str) -> int:
+    """``prompt``'s length as Runway measures ``promptText``: UTF-16 code units."""
+    return len(prompt.encode("utf-16-le")) // 2
 
 
 def capability_for(model: RunwayModel | str) -> VideoCapability:
@@ -246,7 +257,7 @@ def validate_request(request: VideoProviderRequest) -> None:
         )
     if not capability.supports_dimensions(request.width, request.height):
         raise ValueError(f"unsupported_dimensions: {request.width}:{request.height}")
-    if len(request.compiled_motion_prompt) > capability.prompt_characters:
+    if prompt_length(request.compiled_motion_prompt) > capability.prompt_characters:
         raise ValueError("invalid_motion_prompt: provider prompt limit exceeded")
     if capability.prompt_required and not request.compiled_motion_prompt.strip():
         raise ValueError(f"invalid_motion_prompt: {request.model.value} requires prompt text")

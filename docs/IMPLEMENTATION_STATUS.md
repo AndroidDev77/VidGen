@@ -506,7 +506,15 @@ supported output ratio, an MP4 result, a bounded prompt, and a keyframe whose as
 matches the output.
 
 Motion prompts are compiled without an LLM in stable action, pose, camera, timing, environment,
-continuity, and restriction order. Runway receives the verified first keyframe as a bounded data
+style, preserve, and continuity order, after routing, against the selected model's
+`prompt_characters` limit (1000 UTF-16 code units for both `gen4_turbo` and `gen4.5`). Following
+Runway's guidance the text is motion-only: style is a short tag derived from the project's
+`visual_style`, and continuity is stated positively. The template adds no negative phrasing, and
+shot-authored `negative_motion_constraints` stay on the persisted intent for T20/T21 rather than
+being rendered into the prompt (storyboard action and pose text is passed through as authored). The budget is adaptive: the style tag, then environment items, timing beats and the
+camera line are trimmed until the prompt fits (each trim is recorded as a `motion_prompt_trimmed`
+item warning), and only the action, movement and continuity
+statements exceeding the limit fail the shot. Runway receives the verified first keyframe as a bounded data
 URI. Unsupported last-frame controls are never sent; strict T13 last-frame enforcement fails
 rather than being silently ignored. Signed URLs, data URIs, output URLs, provider payloads, and
 video bytes are excluded from contracts, database JSON, logs, telemetry, and Temporal history.

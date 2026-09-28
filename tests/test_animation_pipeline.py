@@ -12,7 +12,7 @@ from services.animation.pipeline import AnimationPipeline
 from services.image_generation.pipeline import ImageGenerationPipeline
 from tests.storyboard_fixtures import build_fixture
 from tests.test_storyboard_pipeline import run_pipeline as run_storyboard
-from vidgen.db.animation_models import AnimationGeneratedVideo, RunwayTask
+from vidgen.db.animation_models import AnimationGeneratedVideo, AnimationItem, RunwayTask
 from vidgen.db.animation_repository import AnimationLineageError, AnimationRepository
 from vidgen.db.cost_models import ProviderAttempt
 from vidgen.db.image_generation_models import (
@@ -382,3 +382,31 @@ def test_a_child_handed_an_approved_keyframe_animates_that_runs_keyframe(tmp_pat
 
     stranger = _shot_workflow_input(fixture, shot, keyframe_asset_id=shot.id)
     assert _keyframe_image_run(fixture.session, stranger, shot) is None
+
+
+def test_runway_receives_a_style_tag_and_positive_continuity(tmp_path: Path) -> None:
+    fixture, shot = prepared(tmp_path)
+    fixture.project.visual_style = (
+        "Bold flat 2D cartoon animation with thick black outlines, saturated primary "
+        "colours, exaggerated rubbery expressions, simple geometric backgrounds, "
+        "high-contrast cel shading, playful squash-and-stretch posing, a warm "
+        "late-afternoon palette, and a hand-drawn texture that evokes classic "
+        "Saturday-morning television while staying crisp at vertical phone resolution."
+    )
+    fixture.session.commit()
+    provider = FakeVideoProvider()
+    pipeline = AnimationPipeline(
+        fixture.session, fixture.blobs, provider, max_polls=2, poll_interval_seconds=0
+    )
+    result = asyncio.run(
+        pipeline.process(
+            project_id=fixture.project.id, idempotency_key="t15-style-tag", shot_id=shot.id
+        )
+    )
+    assert result.status == "animation_complete"
+    package = fixture.session.scalars(select(AnimationItem)).one().motion_prompt_package
+    prompt = package["prompt"]
+    assert "Style: Bold flat 2D cartoon animation." in prompt
+    assert "thick black outlines" not in prompt
+    assert "Never" not in prompt
+    assert package["intent"]["style_lock"] == "Bold flat 2D cartoon animation"
