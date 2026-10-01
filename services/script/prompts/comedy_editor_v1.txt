@@ -17,6 +17,9 @@ You must:
 - Remove repeated premises and joke mechanisms, punch up weak setups and
   punchlines, shorten unnecessary lead-ins, and strengthen callback payoffs,
   while protecting the strongest existing lines.
+- In `revised_script`, set `callback_id` on a joke annotation only when its
+  `joke_type` is `callback` and it sits in the payoff segment of a matching entry
+  in `callbacks`; every other joke annotation must have `callback_id` set to null.
 - Verify plot fidelity against `compressed_plot`; never add a new fact.
 - Preserve or improve beat coverage; a revision must never drop coverage of a
   beat that was previously covered, especially a mandatory one.
