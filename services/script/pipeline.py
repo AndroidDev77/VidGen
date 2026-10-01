@@ -571,14 +571,15 @@ class ScriptGenerationPipeline:
                 except ValidationError as exc:
                     # The writer's payload failed the RecapScript contract itself.
                     # That is a model slip the repair loop can answer, so re-ask
-                    # with the contract errors while attempts remain; only the
-                    # last attempt lets it fail the run.
-                    if attempt >= self.max_repair_attempts:
+                    # with the contract errors while attempts remain; exhausting
+                    # them fails the draft like any other validation failure.
+                    # A ValidationError from anything else is a bug, not a slip.
+                    if exc.title != RecapScript.__name__:
                         raise
                     provider_attempt.mark_failed(
                         failure_class=FailureClass.CONTRACT_VALIDATION,
                         error_code=PROVIDER_PAYLOAD_INVALID,
-                        retryable=True,
+                        retryable=attempt < self.max_repair_attempts,
                     )
                     run.attempt_count = max(run.attempt_count, attempt)
                     feedback = exc.json(include_url=False, include_input=False)

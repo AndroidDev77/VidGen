@@ -119,11 +119,12 @@ def normalize_raw_joke_callbacks(raw: Any) -> None:
     segments = raw.get("segments")
     if not isinstance(segments, list):
         return
-    payoff_by_callback = {
-        _id_key(item["callback_id"]): _id_key(item.get("payoff_segment_id"))
-        for item in raw.get("callbacks") or []
-        if isinstance(item, dict) and item.get("callback_id") is not None
-    }
+    payoffs_by_callback: dict[str, set[str]] = {}
+    for item in raw.get("callbacks") or []:
+        if isinstance(item, dict) and item.get("callback_id") is not None:
+            payoffs_by_callback.setdefault(_id_key(item["callback_id"]), set()).add(
+                _id_key(item.get("payoff_segment_id"))
+            )
     notes: list[dict[str, str]] = []
     for segment in segments:
         if not isinstance(segment, dict):
@@ -147,7 +148,7 @@ def normalize_raw_joke_callbacks(raw: Any) -> None:
                 continue
             key = _id_key(callback_id)
             where = f"joke {annotation.get('joke_id')} in segment {segment.get('segment_id')}"
-            if payoff_by_callback.get(key) == segment_key and key not in claimed:
+            if segment_key in payoffs_by_callback.get(key, ()) and key not in claimed:
                 claimed.add(key)
                 notes.append(
                     {

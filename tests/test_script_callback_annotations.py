@@ -25,8 +25,10 @@ from services.script.provider import GenerationContext
 from services.script.writer import write_script
 from tests.test_openai_script_adapter import _compression_request, _writing_request
 from tests.test_script_pipeline import _database, _make_analysis
-from vidgen.contracts.script import JokeAnnotation, RecapScript
-from vidgen.db.cost_models import ProviderAttempt
+from vidgen.contracts.script import JokeAnnotation, RecapScript, TextSpan
+from vidgen.db.cost_models import PipelineFailureEvent, ProviderAttempt
+from vidgen.db.models import Project
+from vidgen.db.script_models import ScriptGenerationRun
 
 
 def _sound_raw_script() -> tuple[Any, dict[str, Any]]:
@@ -226,11 +228,60 @@ async def test_a_draft_the_contract_refuses_is_re_asked_not_fatal(tmp_path: Path
 async def test_the_re_ask_is_bounded_by_the_repair_budget(tmp_path: Path) -> None:
     session, blobs, project, _record = _database(tmp_path)
     provider = _OnceInvalidDraftProvider(failures=2)
-    with pytest.raises(ValidationError):
+    with pytest.raises(RuntimeError, match="DRAFT_VALIDATION_FAILED"):
         await ScriptGenerationPipeline(session, blobs, provider, max_repair_attempts=2).process(
             project_id=project.id, idempotency_key="run-1"
         )
     assert len(provider.contexts) == 2
+
+    # Exhaustion fails the run cleanly instead of stranding it mid-writing.
+    session.expire_all()
+    run = session.scalars(select(ScriptGenerationRun)).one()
+    assert run.error_code == "DRAFT_VALIDATION_FAILED"
+    assert session.get(Project, project.id).status == "script_generation_failed"
+    attempts = session.scalars(
+        select(ProviderAttempt)
+        .where(ProviderAttempt.operation == "script.write_script")
+        .order_by(ProviderAttempt.attempt_number)
+    ).all()
+    assert [(row.status, row.failure_class, row.error_code) for row in attempts] == [
+        ("FAILED", "CONTRACT_VALIDATION", PROVIDER_PAYLOAD_INVALID),
+    ] * 2
+    assert len(session.scalars(select(PipelineFailureEvent)).all()) == 1
+
+
+class _MetadataBugProvider(FakeScriptGenerationProvider):
+    """Raises a ValidationError that is not the writer's payload failing RecapScript."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.calls = 0
+
+    async def write_script(self, request, context):  # type: ignore[override]
+        self.calls += 1
+        TextSpan(start=2, end=1)
+
+
+@pytest.mark.asyncio
+async def test_a_validation_error_from_anything_else_is_not_re_asked(tmp_path: Path) -> None:
+    session, blobs, project, _record = _database(tmp_path)
+    provider = _MetadataBugProvider()
+    with pytest.raises(ValidationError, match="TextSpan"):
+        await ScriptGenerationPipeline(session, blobs, provider).process(
+            project_id=project.id, idempotency_key="run-1"
+        )
+    assert provider.calls == 1
+
+
+def test_duplicate_callback_entries_still_resolve_their_payoff() -> None:
+    _request, raw = _sound_raw_script()
+    original = raw["callbacks"][0]
+    raw["callbacks"].append({**original, "payoff_segment_id": original["setup_segment_id"]})
+    joke = _callback_joke(raw)
+    joke["joke_type"] = "contrast"
+    normalize_raw_joke_callbacks(raw)
+    assert joke["joke_type"] == "callback"
+    assert joke["callback_id"] == original["callback_id"]
 
 
 def test_joke_annotation_contract_is_unchanged() -> None:
