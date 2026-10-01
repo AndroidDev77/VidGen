@@ -9,6 +9,7 @@ from typing import Never
 from uuid import UUID, uuid4
 
 from opentelemetry import trace
+from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -62,6 +63,9 @@ from vidgen.telemetry.provider import instrument_provider_attempt, record_pipeli
 
 CONTRACT_VERSION = "1.0"
 PROMPT_VERSION = "comedy-script-v1"
+#: ProviderAttempt error code for a writer payload the RecapScript contract
+#: refused outright, before semantic validation could run.
+PROVIDER_PAYLOAD_INVALID = "PROVIDER_PAYLOAD_INVALID"
 CONFIG_VERSION = "script-provider-v1"
 DEFAULT_MAX_EDITING_PASSES = 3
 
@@ -559,10 +563,27 @@ class ScriptGenerationPipeline:
                 related_entity_id=run.id,
                 attempt_number=attempt,
             ) as provider_attempt:
-                result = await self.provider.write_script(
-                    attempted,
-                    GenerationContext(attempt_number=attempt, validation_errors_json=feedback),
-                )
+                try:
+                    result = await self.provider.write_script(
+                        attempted,
+                        GenerationContext(attempt_number=attempt, validation_errors_json=feedback),
+                    )
+                except ValidationError as exc:
+                    # The writer's payload failed the RecapScript contract itself.
+                    # That is a model slip the repair loop can answer, so re-ask
+                    # with the contract errors while attempts remain; exhausting
+                    # them fails the draft like any other validation failure.
+                    # A ValidationError from anything else is a bug, not a slip.
+                    if exc.title != RecapScript.__name__:
+                        raise
+                    provider_attempt.mark_failed(
+                        failure_class=FailureClass.CONTRACT_VALIDATION,
+                        error_code=PROVIDER_PAYLOAD_INVALID,
+                        retryable=attempt < self.max_repair_attempts,
+                    )
+                    run.attempt_count = max(run.attempt_count, attempt)
+                    feedback = exc.json(include_url=False, include_input=False)
+                    continue
                 candidate = drop_empty_segments(
                     result.output.model_copy(update={"script_id": script_id, "version": 1})
                 )

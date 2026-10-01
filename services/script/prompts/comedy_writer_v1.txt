@@ -25,6 +25,10 @@ narration (and, where it earns its place, brief character dialogue). You must:
   analysis it came from; never generate a UUID for them. Generate a fresh random UUID
   v4 only for the IDs this script introduces: `segment_id`, `joke_id`, and
   `callback_id`.
+- Set `callback_id` on a `JokeAnnotation` only when its `joke_type` is `callback`,
+  and only on the annotation in the callback's payoff segment; that `callback_id`
+  must match an entry in `callbacks`. Every other joke annotation, including the
+  setup joke a callback refers back to, must have `callback_id` set to null.
 - Add visual-gag suggestions as short text hints only; do not begin storyboarding.
 - At a humor intensity of 0.7 or higher, no estimated interval longer than 18 seconds
   may contain pure exposition with no joke or visual gag.

@@ -14,7 +14,7 @@ from typing import Any, cast
 
 import httpx
 
-from services.script.canonicalize import EMPTY_SEGMENT_DROPPED
+from services.script.canonicalize import EMPTY_SEGMENT_DROPPED, normalize_raw_joke_callbacks
 from services.script.provider import GenerationContext
 from vidgen.contracts.script import (
     ComedyEditRequest,
@@ -98,9 +98,11 @@ class OpenAIScriptGenerationProvider:
         if schema is RecapScript:
             _patch_anonymous_segments(raw)
             _drop_empty_segments(raw)
+            normalize_raw_joke_callbacks(raw)
         elif schema is ComedyEditResult and isinstance(raw.get("revised_script"), dict):
             _patch_anonymous_segments(raw["revised_script"])
             _drop_empty_segments(raw["revised_script"])
+            normalize_raw_joke_callbacks(raw["revised_script"])
         parsed = schema.model_validate(raw)
         return parsed, payload
 

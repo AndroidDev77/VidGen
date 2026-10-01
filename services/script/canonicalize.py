@@ -14,6 +14,10 @@ SCRIPT_NAMESPACE = UUID("2f6f9e5f-8a2b-4a34-9a2a-3d6a2f0a9d41")
 #: Warning code recorded on a script whose provider output carried a segment
 #: with no text; the segment is removed rather than passed downstream.
 EMPTY_SEGMENT_DROPPED = "EMPTY_SEGMENT_DROPPED"
+#: Warning code recorded on a script whose provider output carried a
+#: ``callback_id`` on a joke not typed ``callback``; the annotation is either
+#: retyped or unlinked before the contract sees it.
+JOKE_CALLBACK_NORMALIZED = "JOKE_CALLBACK_NORMALIZED"
 
 
 def stable_id(
@@ -85,6 +89,93 @@ def canonical_script_hash(script: RecapScript) -> str:
         canonicalize_script(script).model_dump(mode="json"), sort_keys=True, separators=(",", ":")
     )
     return hashlib.sha256(payload.encode()).hexdigest()
+
+
+def _id_key(value: Any) -> str:
+    return str(value).strip().lower()
+
+
+def normalize_raw_joke_callbacks(raw: Any) -> None:
+    """Reconcile ``callback_id`` with ``joke_type`` on a raw script payload, in place.
+
+    ``JokeAnnotation`` refuses a ``callback_id`` on a joke whose type is not
+    ``callback``. That is a cross-field rule a structured-output schema cannot
+    express, so a model can satisfy every field and still emit it - and the
+    whole payload would then fail validation. The script's ``callbacks`` list
+    decides which reading is right:
+
+    * the id resolves to a callback whose payoff is this annotation's segment,
+      and no other annotation there already claims it - the annotation *is*
+      the callback payoff with the wrong type, so it is retyped ``callback``;
+    * otherwise (no such callback, the annotation sits in the setup or another
+      segment, or the payoff already has its callback joke) the id is spurious
+      and is dropped; the joke keeps the mechanism the model gave it.
+
+    Each change is recorded as a ``JOKE_CALLBACK_NORMALIZED`` warning. Anything
+    that is not shaped like a script is left for the contract to refuse.
+    """
+    if not isinstance(raw, dict):
+        return
+    segments = raw.get("segments")
+    if not isinstance(segments, list):
+        return
+    payoffs_by_callback: dict[str, set[str]] = {}
+    for item in raw.get("callbacks") or []:
+        if isinstance(item, dict) and item.get("callback_id") is not None:
+            payoffs_by_callback.setdefault(_id_key(item["callback_id"]), set()).add(
+                _id_key(item.get("payoff_segment_id"))
+            )
+    notes: list[dict[str, str]] = []
+    for segment in segments:
+        if not isinstance(segment, dict):
+            continue
+        annotations = segment.get("joke_annotations")
+        if not isinstance(annotations, list):
+            continue
+        segment_key = _id_key(segment.get("segment_id"))
+        claimed = {
+            _id_key(item["callback_id"])
+            for item in annotations
+            if isinstance(item, dict)
+            and item.get("joke_type") == "callback"
+            and item.get("callback_id") is not None
+        }
+        for annotation in annotations:
+            if not isinstance(annotation, dict):
+                continue
+            callback_id = annotation.get("callback_id")
+            if callback_id is None or annotation.get("joke_type") == "callback":
+                continue
+            key = _id_key(callback_id)
+            where = f"joke {annotation.get('joke_id')} in segment {segment.get('segment_id')}"
+            if segment_key in payoffs_by_callback.get(key, ()) and key not in claimed:
+                claimed.add(key)
+                notes.append(
+                    {
+                        "code": JOKE_CALLBACK_NORMALIZED,
+                        "message": (
+                            f"{where} paid off callback {callback_id} but was typed "
+                            f"{annotation.get('joke_type')}; retyped as callback"
+                        ),
+                    }
+                )
+                annotation["joke_type"] = "callback"
+            else:
+                notes.append(
+                    {
+                        "code": JOKE_CALLBACK_NORMALIZED,
+                        "message": (
+                            f"{where} is typed {annotation.get('joke_type')} but carried "
+                            f"callback_id {callback_id}, which it does not pay off; "
+                            "callback_id removed"
+                        ),
+                    }
+                )
+                annotation["callback_id"] = None
+    if notes:
+        warnings = raw.setdefault("warnings", [])
+        if isinstance(warnings, list):
+            warnings.extend(notes)
 
 
 def _is_empty_beat(segment: ScriptSegment) -> bool:
